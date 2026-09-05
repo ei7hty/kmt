@@ -1,0 +1,187 @@
+# Requirements, phases 1 to 3 (full text)
+
+<!-- Moved out of requirements.md on 2026-09-05 because forge phases see at most 10000
+characters of that file. requirements.md keeps a one-line summary of each requirement
+below plus the current phase in full. Nothing here has been withdrawn. -->
+
+# Requirements
+
+<!-- Maintained by forge and by you. Edit freely: the agent reads this before it plans. -->
+
+Each requirement is testable: it says what must be true, not how to build it.
+
+## Functional
+
+_R1._ A customer, starting at `/`, can submit a tire request: vehicle info, a tire
+choice picked from a hardcoded catalog, and location/date placeholders. No login
+required.
+
+_R2._ On submission, the system immediately produces a draft quote by running
+faked/simplified pricing rules over the hardcoded catalog. No manual pricing step
+blocks this.
+
+_R3._ An owner, at `/owner`, can see drafted quotes and for each one either:
+- **Approve & Send** in one tap, or
+- see it flagged as an **exception** requiring attention instead of being
+  auto-sendable (the trigger for "exception" may be scripted/faked, but the state
+  must be visibly distinct from a normal approvable quote).
+
+_R4._ There is an obvious, tappable way to navigate between the customer flow (`/`)
+and the owner flow (`/owner`) so both can be demoed from one session on one device.
+
+_R5._ After the owner approves a quote, the customer can view the approved quote
+and complete a fake payment step that always succeeds (no real processor).
+
+_R6._ The flow has a clear end state after payment ("confirmed and paid"). No
+scheduling, dispatch, or fulfillment screens follow it.
+
+_R7._ The app is deployed to a public URL reachable from an arbitrary phone browser
+(no VPN, no localhost, no login wall).
+
+## Non-functional
+
+- **Responsive**: primary target is a phone-sized viewport; layout must also remain
+  usable and correct at desktop widths. No functionality is desktop-only.
+- **No dead ends**: every screen in the one happy path has a visible next action;
+  the demo never leaves the tapper stuck with no way forward.
+- **Data need not persist** across reloads/sessions unless the lack of persistence
+  makes a step in the demo read as broken (e.g. owner approving something the
+  customer submitted in the same sitting should still connect, if the demo depends
+  on that connection being visible).
+- **Minimal dependencies**: stack is React + Vite + Tailwind; avoid adding libraries
+  unless they clearly pay for themselves, since Copilot is doing much of the
+  implementation and a smaller surface is easier for it (and for review) to reason
+  about.
+- **No real integrations**: no real payment processor, no real messaging/email
+  provider, no real pricing data source. All of these are simulated in-app.
+
+## Open questions
+
+_Nothing blocking planning at this time._ Everything needed to define the Phase 1
+prototype has an answer above. Product/scope questions that will matter for a real
+Phase 2 (real pricing entry tool, real payments, accounts, scheduling) are
+deliberately deferred and listed as "eventual real answer" in project.md rather
+than as open questions here, since they don't change what gets built in this phase.
+
+---
+
+## Phase 2 -- UI refinement requirements
+
+Phase 2 changes appearance and consistency only. R1-R7 above and their behavior are
+unchanged and still apply; Phase 2 adds presentation requirements on top of them.
+
+_R8._ `/owner` uses the same visual system as `/` (dark ground, card-based panels
+with subtle borders, red accent reserved for primary actions/key figures, condensed
+uppercase headings with small red uppercase eyebrow labels, small gray secondary
+text) instead of default/unstyled Tailwind gray-and-blue utility styling. This
+applies at both phone and desktop widths.
+
+_R9._ On `/owner`, the distinction between a normal approvable draft quote and one
+flagged as an **exception** (R3) remains visually obvious after restyling, using a
+color other than the brand red or brand green for the exception state (amber, per
+the design reference in project.md) so it cannot be confused with a primary action
+or a success/paid state.
+
+_R10._ `/status` and `/confirmation` are restyled to reuse the components/classes
+introduced for `/owner` and `/` (nav, typography, buttons, cards) so that no screen
+in the app looks like it belongs to a different product, without introducing new
+layouts beyond what's needed for that consistency.
+
+_R11._ `/status` shows the customer's request position in the draft -> approved ->
+paid lifecycle using the same numbered stepper component/pattern already used in
+the customer order flow on `/`, rather than inventing a new progress indicator.
+
+_R12._ Success/paid and error/rejected states across `/owner`, `/status`, and
+`/confirmation` keep using green for success and a clearly distinct warning color
+for exceptions/attention-needed, consistent with existing production-site use of
+green as a secondary semantic accent alongside brand red (see project.md design
+reference) -- i.e. the redesign does not force every accent into brand red.
+
+_R13._ No functional behavior, state, route, or business rule introduced in Phase 1
+(R1-R7) changes as a result of this restyling. Any place where a clean visual fix
+seems to require a behavior change is flagged for a decision rather than
+implemented silently.
+
+## Phase 2 non-functional
+
+- **No new dependencies** (icon libraries, UI kits, animation libraries, CSS
+  frameworks beyond the existing Tailwind 4 + hand-written CSS mix) unless a
+  specific package is proposed with a justification that outweighs the
+  minimal-dependencies constraint from Phase 1.
+- **Mobile-first verification**: every restyled screen is checked at a phone-sized
+  viewport first (the client reviews on a phone), then at desktop width, matching
+  how `/` was originally verified (see `.forge/shots/phone-*` and
+  `.forge/shots/desktop-*` for the Phase 1 pattern to follow).
+- **Deployment URL is not a deliverable**: the existing Vercel deployment is
+  treated as this project's production environment; Phase 2 may ship to a new
+  deployment URL and no task effort is spent making URLs stable across phases.
+
+## Phase 2 open questions
+
+_Nothing blocking planning at this time._ The client confirmed: no owner-screen
+mockup exists (both supplied mockups are customer-facing production pages, used as
+visual-language reference only); green-for-success/amber-for-attention alongside
+brand red is confirmed correct and matches the live production site; `/owner` gets
+a full redesign while `/status` and `/confirmation` get a lighter reuse-only pass,
+with the customer-flow stepper explicitly reused on `/status`; deployment
+permanence is explicitly not a goal for this phase.
+
+---
+
+## Phase 3 -- Real inventory reaches the customer
+
+Between Phase 2 and this plan, a real owner backend (`backend/`, SQLite) was built
+separately: the owner can curate supplier inventory scraped from giga-tires.com, set
+his own price per tire, and rely on a markup rule for anything unpriced (see
+`.forge/owner-backend.md`). It was deliberately scoped to stop short of the
+customer -- "wiring the snapshot into the live catalog is a separate, deliberate
+step." Phase 3 (m8) takes that step. R1-R13 above are unchanged; nothing about the
+request/approve/pay/confirm flow, the exception rules, or payment changes in this
+phase.
+
+_R14._ When the owner backend (`backend/dev.mjs`) is reachable, the tire catalog a
+customer sees and is quoted against at `/` reflects the owner's real inventory
+choices: only tires the owner has enabled are offered, at the owner's price where
+he has set one, or at the markup-proposed price otherwise -- the same resolution
+`src/markup.js`'s `quotedPrice` already implements for the owner's own screen.
+
+_R15._ When the owner backend is not reachable (including the deployed, static
+production URL, which cannot run it), the customer flow at `/` continues to work
+exactly as it does today, using the existing generated static catalog. Nothing
+about R1-R7 depends on the backend being present.
+
+_R16._ The data exposed to the customer for this purpose is limited to what the
+existing static catalog already exposes per tire (name, size, price, in-stock,
+category, description). Supplier SKU, list price, stock counts, owner notes, and
+tires the owner has not enabled are never sent to the customer-facing app.
+
+## Phase 3 non-functional
+
+- **No change to where request/quote state lives.** Requests and quotes stay in
+  `localStorage` in this phase (see Phase 1 decision log); only the catalog read
+  path changes. Moving that state into a real backend is an open question for the
+  owner, tracked in roadmap.md, not assumed here.
+- **No change to the exception engine's rules.** `src/pricing.js` keeps deciding
+  exceptions from whatever catalog array it is given (generated or real) using the
+  same rules as today; no new exception trigger is added speculatively for
+  real-supplier data (see the open question in roadmap.md).
+- **Verification spans two environments.** Because the deployed URL cannot run the
+  backend, "done" requires checking the fallback path in production (deployed) and
+  the live-backend path locally (against `backend/dev.mjs`) -- one check cannot
+  stand in for the other.
+
+## Phase 3 open questions
+
+Not yet decided by the owner; see roadmap.md's "Open questions for the owner" for
+the full reasoning behind each:
+
+1. Does the owner backend get deployed anywhere customer-reachable, or does the
+   curated-inventory experience stay a local-only demo for now?
+2. Should request/quote data move into a real backend/database alongside
+   inventory, or stay in `localStorage` for now?
+3. What should a customer see for a tire size where the owner has curated zero
+   offered tires -- a "call us" state, or a silent fallback to the generated
+   catalog for that size only?
+4. Should real supplier data (e.g. a tire the supplier lists as no longer active)
+   feed the exception engine, or is that explicitly out of scope until asked for?
+</content>

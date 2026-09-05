@@ -1,181 +1,114 @@
 # Requirements
 
-<!-- Maintained by forge and by you. Edit freely: the agent reads this before it plans. -->
+<!-- Maintained by forge and by you. Edit freely: the agent reads this before it plans.
+Keep this file under 10000 characters: that is all a forge phase sees. Earlier phases'
+full text lives in requirements-history.md; only the current phase is here in full. -->
 
 Each requirement is testable: it says what must be true, not how to build it.
 
-## Functional
+## Standing requirements from phases 1 to 3 (summary; full text in requirements-history.md)
 
-_R1._ A customer, starting at `/`, can submit a tire request: vehicle info, a tire
-choice picked from a hardcoded catalog, and location/date placeholders. No login
-required.
+All of these still apply.
 
-_R2._ On submission, the system immediately produces a draft quote by running
-faked/simplified pricing rules over the hardcoded catalog. No manual pricing step
-blocks this.
+- _R1._ A customer at `/` can submit a tire request (vehicle, tire from the catalog, location, date) with no login.
+- _R2._ Submission immediately produces a draft quote from the pricing rules; no manual step blocks it.
+- _R3._ The owner sees drafted quotes and can Approve & Send in one tap, or sees them flagged as an exception, visibly distinct.
+- _R4._ There is an obvious, tappable way between the customer flow and the owner flow.
+- _R5._ After approval the customer can view the quote and complete a fake payment that always succeeds.
+- _R6._ The flow ends clearly at "confirmed and paid"; no scheduling or dispatch follows.
+- _R7._ The app is deployed at a public URL reachable from any phone browser.
+- _R8._ `/owner` uses the same visual system as `/`: dark ground, cards, red for primary actions, condensed uppercase headings.
+- _R9._ The exception state on the owner screen stays visually distinct, in amber, never red or green.
+- _R10._ `/status` and `/confirmation` reuse the shared components; no screen looks like a different product.
+- _R11._ `/status` shows the request's position with the same numbered stepper as the order flow.
+- _R12._ Green means success or paid, amber means attention, across every screen.
+- _R13._ Restyling changed no behaviour, state, route or rule.
+- _R14._ With the owner backend reachable, the customer catalog reflects the owner's choices: enabled tires only, at his price or the markup price.
+- _R15._ With the backend unreachable the customer flow keeps working from the static catalog (browsing; see R22 for submit).
+- _R16._ The customer is sent only name, size, price, in-stock, category and description per tire; never SKU, list price, stock, notes or unoffered tires.
 
-_R3._ An owner, at `/owner`, can see drafted quotes and for each one either:
-- **Approve & Send** in one tap, or
-- see it flagged as an **exception** requiring attention instead of being
-  auto-sendable (the trigger for "exception" may be scripted/faked, but the state
-  must be visibly distinct from a normal approvable quote).
-
-_R4._ There is an obvious, tappable way to navigate between the customer flow (`/`)
-and the owner flow (`/owner`) so both can be demoed from one session on one device.
-
-_R5._ After the owner approves a quote, the customer can view the approved quote
-and complete a fake payment step that always succeeds (no real processor).
-
-_R6._ The flow has a clear end state after payment ("confirmed and paid"). No
-scheduling, dispatch, or fulfillment screens follow it.
-
-_R7._ The app is deployed to a public URL reachable from an arbitrary phone browser
-(no VPN, no localhost, no login wall).
-
-## Non-functional
-
-- **Responsive**: primary target is a phone-sized viewport; layout must also remain
-  usable and correct at desktop widths. No functionality is desktop-only.
-- **No dead ends**: every screen in the one happy path has a visible next action;
-  the demo never leaves the tapper stuck with no way forward.
-- **Data need not persist** across reloads/sessions unless the lack of persistence
-  makes a step in the demo read as broken (e.g. owner approving something the
-  customer submitted in the same sitting should still connect, if the demo depends
-  on that connection being visible).
-- **Minimal dependencies**: stack is React + Vite + Tailwind; avoid adding libraries
-  unless they clearly pay for themselves, since Copilot is doing much of the
-  implementation and a smaller surface is easier for it (and for review) to reason
-  about.
-- **No real integrations**: no real payment processor, no real messaging/email
-  provider, no real pricing data source. All of these are simulated in-app.
-
-## Open questions
-
-_Nothing blocking planning at this time._ Everything needed to define the Phase 1
-prototype has an answer above. Product/scope questions that will matter for a real
-Phase 2 (real pricing entry tool, real payments, accounts, scheduling) are
-deliberately deferred and listed as "eventual real answer" in project.md rather
-than as open questions here, since they don't change what gets built in this phase.
+Non-functional rules that still apply: mobile-first, no dead ends, minimal dependencies,
+no new dependency without a justification, verification by running the checks in
+`.forge/AGENTS.md` rather than reading the diff.
 
 ---
 
-## Phase 2 -- UI refinement requirements
 
-Phase 2 changes appearance and consistency only. R1-R7 above and their behavior are
-unchanged and still apply; Phase 2 adds presentation requirements on top of them.
+## Phase 4 -- The owner reviews real requests from any device
 
-_R8._ `/owner` uses the same visual system as `/` (dark ground, card-based panels
-with subtle borders, red accent reserved for primary actions/key figures, condensed
-uppercase headings with small red uppercase eyebrow labels, small gray secondary
-text) instead of default/unstyled Tailwind gray-and-blue utility styling. This
-applies at both phone and desktop widths.
+Corrections to the phase 3 section, so nobody plans against them: the
+production site runs the owner backend (R15's "cannot run it" is no longer
+true, though the fallback it asks for still exists and is still verified), and
+open questions 1 and 3 are settled -- the backend is deployed customer-reachable,
+and a size with nothing curated shows generated coverage, which is today's
+behaviour. Question 4 was settled by #24: a delisted tire is out of stock and
+the existing rule routes it to owner review. This phase answers question 2.
 
-_R9._ On `/owner`, the distinction between a normal approvable draft quote and one
-flagged as an **exception** (R3) remains visually obvious after restyling, using a
-color other than the brand red or brand green for the exception state (amber, per
-the design reference in project.md) so it cannot be confused with a primary action
-or a success/paid state.
+R1-R16 stand. Nothing about the exception rules, the catalog, or what a customer
+is asked changes here; only where requests and quotes live and who can see them.
 
-_R10._ `/status` and `/confirmation` are restyled to reuse the components/classes
-introduced for `/owner` and `/` (nav, typography, buttons, cards) so that no screen
-in the app looks like it belongs to a different product, without introducing new
-layouts beyond what's needed for that consistency.
+_R17._ A request submitted from any browser at `/` is stored by the backend, and
+its draft quote is produced by the backend from the same catalog the customer was
+shown, using `calculateDraftQuote` unchanged. The customer sees the same draft,
+total and exception state they see today.
 
-_R11._ `/status` shows the customer's request position in the draft -> approved ->
-paid lifecycle using the same numbered stepper component/pattern already used in
-the customer order flow on `/`, rather than inventing a new progress indicator.
+_R18._ The owner, at `/owner/quotes` on any device, sees every request with its
+draft quote and can Approve & Send or Reject, exactly as today, and the result
+is visible to the customer on `/status` from their own device without either
+side reloading more than once. When hosted, `/owner/quotes` sits behind the same
+owner sign-in as `/owner`; locally it needs no password.
 
-_R12._ Success/paid and error/rejected states across `/owner`, `/status`, and
-`/confirmation` keep using green for success and a clearly distinct warning color
-for exceptions/attention-needed, consistent with existing production-site use of
-green as a secondary semantic accent alongside brand red (see project.md design
-reference) -- i.e. the redesign does not force every accent into brand red.
+_R19._ A customer can return to `/status` on the device they submitted from,
+without logging in, and see their own requests and nobody else's. A link that
+carries a request's id opens that one request on any device. There is no way to
+list requests without holding either the device's key or a request's id, and ids
+are not guessable.
 
-_R13._ No functional behavior, state, route, or business rule introduced in Phase 1
-(R1-R7) changes as a result of this restyling. Any place where a clean visual fix
-seems to require a behavior change is flagged for a decision rather than
-implemented silently.
+_R20._ Payment stays a fake step that always succeeds, but its result is
+recorded by the backend, so `/confirmation` and the owner's screen both show
+"paid" from any device.
 
-## Phase 2 non-functional
+_R21._ Requests and quotes are never stored in the browser. The only thing kept
+in `localStorage` is the per-browser customer key. If the backend cannot be
+reached when a customer submits, the customer sees a clear failure with the
+shop's phone number and a way to retry; the app does not fall back to drafting a
+quote locally that no owner will ever see.
 
-- **No new dependencies** (icon libraries, UI kits, animation libraries, CSS
-  frameworks beyond the existing Tailwind 4 + hand-written CSS mix) unless a
-  specific package is proposed with a justification that outweighs the
-  minimal-dependencies constraint from Phase 1.
-- **Mobile-first verification**: every restyled screen is checked at a phone-sized
-  viewport first (the client reviews on a phone), then at desktop width, matching
-  how `/` was originally verified (see `.forge/shots/phone-*` and
-  `.forge/shots/desktop-*` for the Phase 1 pattern to follow).
-- **Deployment URL is not a deliverable**: the existing Vercel deployment is
-  treated as this project's production environment; Phase 2 may ship to a new
-  deployment URL and no task effort is spent making URLs stable across phases.
+_R22._ The catalog fallback from phase 3 (R15) still exists and is still
+verified: a customer can browse sizes and tires with the backend down, and only
+the submit step needs it.
 
-## Phase 2 open questions
+## Phase 4 non-functional
 
-_Nothing blocking planning at this time._ The client confirmed: no owner-screen
-mockup exists (both supplied mockups are customer-facing production pages, used as
-visual-language reference only); green-for-success/amber-for-attention alongside
-brand red is confirmed correct and matches the live production site; `/owner` gets
-a full redesign while `/status` and `/confirmation` get a lighter reuse-only pass,
-with the customer-flow stepper explicitly reused on `/status`; deployment
-permanence is explicitly not a goal for this phase.
+- **Same database, same server.** Requests and quotes live in the existing
+  SQLite file next to inventory, served by the existing `backend/dev.mjs` and
+  `backend/server.mjs`. No new process, no new dependency; ids come from
+  `node:crypto`.
+- **Verification runs against the real server.** A `vite preview` cannot
+  complete the customer flow once submit needs the backend, so the browser
+  audits, locally and in the CI gate, run against `backend/server.mjs` serving
+  the built frontend with a temporary database and a known owner password, and
+  they sign in at the owner step. The audit counts are re-baselined in this
+  phase and the new numbers recorded in `.forge/AGENTS.md`.
+- **Behaviour before and after must match on every screen the customer sees.**
+  The dead-end audit, request-flow check and responsive check must pass against
+  the real server before and after each task in this phase.
+- **No personal data beyond what the form asks for**, and nothing the owner
+  writes about a request is sent to a customer.
 
----
+## Phase 4 open questions
 
-## Phase 3 -- Real inventory reaches the customer
+For the owner, not guessed at in the tasks:
 
-Between Phase 2 and this plan, a real owner backend (`backend/`, SQLite) was built
-separately: the owner can curate supplier inventory scraped from giga-tires.com, set
-his own price per tire, and rely on a markup rule for anything unpriced (see
-`.forge/owner-backend.md`). It was deliberately scoped to stop short of the
-customer -- "wiring the snapshot into the live catalog is a separate, deliberate
-step." Phase 3 (m8) takes that step. R1-R13 above are unchanged; nothing about the
-request/approve/pay/confirm flow, the exception rules, or payment changes in this
-phase.
-
-_R14._ When the owner backend (`backend/dev.mjs`) is reachable, the tire catalog a
-customer sees and is quoted against at `/` reflects the owner's real inventory
-choices: only tires the owner has enabled are offered, at the owner's price where
-he has set one, or at the markup-proposed price otherwise -- the same resolution
-`src/markup.js`'s `quotedPrice` already implements for the owner's own screen.
-
-_R15._ When the owner backend is not reachable (including the deployed, static
-production URL, which cannot run it), the customer flow at `/` continues to work
-exactly as it does today, using the existing generated static catalog. Nothing
-about R1-R7 depends on the backend being present.
-
-_R16._ The data exposed to the customer for this purpose is limited to what the
-existing static catalog already exposes per tire (name, size, price, in-stock,
-category, description). Supplier SKU, list price, stock counts, owner notes, and
-tires the owner has not enabled are never sent to the customer-facing app.
-
-## Phase 3 non-functional
-
-- **No change to where request/quote state lives.** Requests and quotes stay in
-  `localStorage` in this phase (see Phase 1 decision log); only the catalog read
-  path changes. Moving that state into a real backend is an open question for the
-  owner, tracked in roadmap.md, not assumed here.
-- **No change to the exception engine's rules.** `src/pricing.js` keeps deciding
-  exceptions from whatever catalog array it is given (generated or real) using the
-  same rules as today; no new exception trigger is added speculatively for
-  real-supplier data (see the open question in roadmap.md).
-- **Verification spans two environments.** Because the deployed URL cannot run the
-  backend, "done" requires checking the fallback path in production (deployed) and
-  the live-backend path locally (against `backend/dev.mjs`) -- one check cannot
-  stand in for the other.
-
-## Phase 3 open questions
-
-Not yet decided by the owner; see roadmap.md's "Open questions for the owner" for
-the full reasoning behind each:
-
-1. Does the owner backend get deployed anywhere customer-reachable, or does the
-   curated-inventory experience stay a local-only demo for now?
-2. Should request/quote data move into a real backend/database alongside
-   inventory, or stay in `localStorage` for now?
-3. What should a customer see for a tire size where the owner has curated zero
-   offered tires -- a "call us" state, or a silent fallback to the generated
-   catalog for that size only?
-4. Should real supplier data (e.g. a tire the supplier lists as no longer active)
-   feed the exception engine, or is that explicitly out of scope until asked for?
-</content>
+1. **Should the owner be able to change the drafted total before approving?**
+   Today he can only approve or reject the number the rules produced. That is
+   fine for a demo and probably wrong for a business where "Ken prices the job
+   in his head" is the current process. Not built here; it changes what
+   "approve" means.
+2. **How long are requests kept, and does the owner need to close or archive
+   them?** Phase 4 keeps everything forever and shows everything. A list that
+   only grows will need a "done" state before long.
+3. **Notifications.** With requests on the server, telling the owner a request
+   arrived and telling the customer a quote is ready are the obvious next step
+   and the first real integration (SMS or email). Which channel, and whether the
+   owner wants one at all, is his call.
