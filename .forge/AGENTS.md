@@ -40,13 +40,12 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| `owner-inventory-backend` | Codex | owner / inventory backend | 2026-09-05 |
-| `wire-scraped-catalog` | unknown | `src/data/catalog.js`, `src/markup.js` | 2026-09-05 |
+| _none_ | | | |
 
-`scraper-catalog-updater` and `codex/refine-order-flow` were merged into `main`
-on 2026-09-05 and their rows removed. If you are still working on either, branch
-again from current `main` rather than continuing on the old branch — both are
-now behind it.
+`scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
+`owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
+rows removed. If you are still working on any of them, branch again from current
+`main` rather than continuing on the old branch -- all four are now behind it.
 
 ---
 
@@ -57,11 +56,14 @@ file from opposite ends.
 
 | area | typically |
 | --- | --- |
-| `src/App.jsx`, `src/App.css` | UI work |
+| `src/App.jsx`, `src/App.css`, `src/RequestFlow.css`, `src/components/` | UI work |
 | `src/data/catalog.js`, `src/pricing.js` | catalog and quoting rules |
 | `scripts/`, `src/data/scraped-tires.json` | supplier / scraper work |
 | `.forge/*.md`, `.forge/state.json` | planning, requirements, task status |
-| `.forge/*-audit.mjs`, `.forge/responsive-check.mjs` | verification tooling |
+| `.forge/*-audit.mjs`, `.forge/*-check.mjs` | verification tooling |
+| `backend/`, `src/owner/` | owner workspace and its API |
+| `src/markup.js` | supplier price -> customer price |
+| `Dockerfile`, `fly.toml`, `.github/workflows/` | deployment |
 
 `package.json` and `README.md` are shared. Touch them in a commit of their own so
 a conflict is trivial to resolve.
@@ -86,13 +88,29 @@ Nothing is done until these pass. Run them; do not assume them.
 
 ```bash
 npm run build
-npx eslint src
+npx eslint src backend
+node --test backend/owner.test.mjs   # 18 tests
 node .forge/responsive-check.mjs     # 8 checks, overflow at 375px and 1280px
 node .forge/dead-end-audit.mjs       # 36 checks across the full click path
+node .forge/request-flow-check.mjs   # 26 checks across the request flow
+node .forge/owner-inventory-audit.mjs  # needs the owner server running
 ```
 
-The audits need `npm run preview` running, or `AUDIT_BASE` pointed at a
-deployed URL.
+Start the app with `node backend/dev.mjs` (http://127.0.0.1:4180), not
+`npm run preview` -- preview serves the built frontend only, so `/owner` shows
+"backend is not connected" and any check touching it is meaningless.
+
+**The audits read `AUDIT_BASE`, and each defaults to a different port** --
+4179 for the dead-end audit, 4173 for the responsive check, 4183 for the
+request-flow check, and the owner-inventory audit is fixed at 4180. Pass
+anything else -- `BASE`, `B` -- or nothing, and they silently audit whatever is
+on that port instead of erroring. That produces false failures *and* false
+passes; see the notes below. Always set `AUDIT_BASE`.
+
+GitHub Actions runs the backend tests, lint and build on every push to `main`
+and on every pull request, then deploys `main` to https://kmt.fly.dev and runs
+the three browser audits against the live site. Nothing deploys from any other
+branch.
 
 **Run the dead-end audit against the live URL before calling a deploy good.**
 This build has passed every local check and 404'd in production: a missing SPA
@@ -123,8 +141,15 @@ script errors before reaching its assertions, say so loudly.
 
 ## Settled — do not relitigate without asking
 
-- No backend. `localStorage` carries state between the customer and owner views.
-  The catalog is generated. Payment always succeeds. These are demo choices.
+- **There is a backend now** (this bullet used to say there wasn't). `backend/`
+  is a node:sqlite service behind `/owner`, deployed at https://kmt.fly.dev and
+  run locally with `node backend/dev.mjs`. Quote state is still `localStorage`
+  and payment still always succeeds -- those remain demo choices.
+- The catalog is no longer purely generated. Real scraped tires from
+  giga-tires.com cover four sizes; generated rows cover the rest. Customer price
+  = the owner's price if he set one, else the markup rule. See `src/markup.js`.
+- **The markup rate is a placeholder, not Ken's number.** `isPlaceholder` says
+  so in the data. Do not present those prices as real, and do not invent a rate.
 - Brand red is for the single primary action on a screen and for key figures.
   Approve/Reject stay green/red: a paired opposed decision needs colour to carry
   meaning. Green and amber are legitimate semantic accents — the production site
@@ -170,23 +195,79 @@ rebased branch. Your commits have new SHAs. The pre-rebase tip is kept at
 `backup/wire-scraped-catalog-prerebase` (`14e1f22`) if you want to compare or
 recover. The branch is not pushed: publishing unfinished work is your call.
 
-**2026-09-05 — Claude (forge/CLI session)**
-Both open claims were merged into `main` while their branches were still
-active, at the owner's request: `wire-scraped-catalog` (`de7d128`) and
-`owner-inventory-backend` (`32aded5`). One conflict, in `src/App.jsx`, where
-both branches added an import next to `./App.css` — kept both. Verified on the
-merge result, not on the branches: eslint, `vite build`, `node --test
-backend/owner.test.mjs` (15/15), the dead-end audit (36 checks) and the
-responsive check all pass.
+**2026-09-05 — Claude (kmt CLI session)**
+`.forge/dead-end-audit.mjs` reads **`AUDIT_BASE`**, not `BASE` or `B`, and falls
+back to port **4179**. Pass the wrong variable and it silently audits whatever
+else is listening on 4179 instead of erroring. Mine hit a stale `vite preview`
+from an earlier worktree and failed at the Quote requests step — which reads
+exactly like a regression in the owner routing and was not one. It also means a
+*passing* run can be testing a stale build, which is the worse direction: I
+reported a green audit for a commit it never touched. Check what is on 4179
+before believing either result. `request-flow-check.mjs` and
+`responsive-check.mjs` read the same variable.
 
-Your branches are untouched and your rows are still in the claims table, since
-neither of you was finished. **Merge or rebase onto `main` before you continue**
-— your work is already in it, and carrying on from the old tip will replay it.
+**2026-09-05 — Claude (kmt CLI session)**
+Supplier prices and KMT prices are now two different things, and the boundary is
+`src/markup.js`. `quotedPrice()` resolves them: an owner price from the backend's
+`offers.price_cents` wins outright, otherwise the markup rule proposes one, and a
+tire the owner disabled leaves the customer catalog. The owner sets the rule on
+`/owner`; the default rate lives in `DEFAULT_MARKUP_SETTINGS` and the backend
+imports it rather than restating it, so the two cannot drift. The rate shipped is
+still a placeholder — `isPlaceholder` says so, and it is not Ken's number. If you
+add real pricing rules, they go inside `retailPrice` and nowhere else.
 
-Worth knowing for anyone writing the demo script: `/owner` is now the inventory
-workspace, and quote review moved to `/owner/quotes`, reached by the "Quote
-requests →" button in the owner nav. The dead-end audit still passes because it
-clicks through from `/` rather than typing the URL. The responsive check's
-`/owner` row is labelled `owner-list (draft, exception)` and now measures the
-inventory screen instead — it only checks for overflow, so it passed without
-noticing. That label is stale.
+**2026-09-05 — Claude (kmt CLI session)**
+`buildCatalog()` skips generated rows only for sizes that end up with *real*
+rows, not for every size in `scraped-tires.json`. Those differ once the owner
+deselects tires: a size he empties gets its generated coverage back instead of
+becoming a dead end. If you change that filter, re-run the dead-end audit — this
+is exactly the invariant it protects.
+
+**2026-09-05 — Claude (kmt CLI session)**
+Deployment now exists and is at https://kmt.fly.dev -- one Fly machine in `ewr`,
+always on, SQLite on a volume at `/data`. Vercel is retired to a 307 redirect;
+the old `temporary-flying-slate-pie8smm.vercel.app` link still works and forwards.
+Five things bit during that cutover, none of which show up locally:
+
+`fly launch` reads the *working directory*, not the repository. Run in a checkout
+without `Dockerfile`/`fly.toml` on disk and it scaffolds its own -- here a
+`FROM pierrezemb/gostatic` static file server with `min_machines_running = 0`.
+That deploys cleanly and serves no backend at all, which is the worst kind of
+wrong. Deploy from a checkout that is actually on `main`.
+
+`ENV NODE_ENV=production` before `npm ci` means `--omit=dev`, and Vite is a
+devDependency, so the image build dies with `vite: not found`. Playwright is
+also a devDependency needed at *runtime* by refreshes, so never prune dev deps
+in the image.
+
+`xvfb-run` needs the `xauth` package, which `xvfb` does not pull in. Without it
+it exits 3 before Node starts, Fly restarts ten times and gives up, and there is
+no application log to explain it.
+
+`fly secrets set --stage` stages without applying. The machine keeps booting
+with the old value and the failure looks like the new secret was wrong. Drop
+`--stage` unless you are deliberately batching before a deploy.
+
+`fly machine stop` does not retire an app when `auto_start_machines = true` --
+the next HTTP request wakes it and it answers 200. `fly scale count 0` removes
+the machine and keeps the volume.
+
+Fly app names are immutable and map to `<name>.fly.dev`, so renaming means a new
+app, a new volume and re-setting every secret. Pick the public-facing name
+first. Fly deploy tokens are app-scoped by default; a token made for one app
+will not deploy another, and CI fails on permissions.
+
+**2026-09-05 — Claude (docs session)**
+`README.md` now describes the project as it stands (screens, pricing, the
+owner backend, verification, deployment) instead of the Vite template. A root
+`AGENTS.md` and `CLAUDE.md` point here, so a tool that reads those on start-up
+finds this protocol without being told. Keep the README's layout table and
+verification commands current when you add a directory or a check.
+
+Also: the local `main` in the shared checkout had diverged from `origin/main`
+when I looked. Both had merged `owner-inventory-backend`, through different
+merge commits; only the local one carried `.forge/reset-runbook.md`, and only
+`origin/main` carried the Fly deployment, `backend/server.mjs` and
+`backend/auth.mjs`. `origin/main` is what CI deploys, so treat it as the truth
+and reconcile the local branch before branching from it. This branch was cut
+from `origin/main`.

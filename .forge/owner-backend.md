@@ -98,15 +98,187 @@ list price, availability, stock count, category, segment, description/specs, SKU
 and product link, plus the raw imported fields. It does not claim to extract every
 field Giga might show on individual product pages, nor prefetch all 290 sizes.
 
-## Deployment boundary
+## Running it hosted
 
-This is a local backend slice, not a deployable public admin system. It binds to
-loopback, rejects unexpected hosts and cross-origin API requests, and keeps DB
-files out of Vite's served files. There is no owner login yet. The existing static
-Vercel deployment cannot run this persistent SQLite/browser process. Before remote
-owner use: add authentication/authorization, choose persistent hosting/database,
-and run scraping in a worker appropriate for that environment. Do not expose this
-local server or deploy the changed frontend alone as a working owner backend.
+There are two entry points. `backend/dev.mjs` is the local one -- Vite in
+middleware mode, loopback bind, no password, because whoever reaches it is
+already at the keyboard. `backend/server.mjs` is the hosted one: it serves the
+built `dist/` and the API from one origin, binds a real interface, and refuses
+to start without a password.
+
+One origin is deliberate. The API's same-origin check keeps working as written,
+so there is no CORS surface and no token to hand a separate frontend. It also
+means the static Vercel deployment becomes redundant once this is up -- the
+container serves the customer flow too.
+
+### Configuration
+
+Everything comes from the environment, so the same image runs anywhere:
+
+| variable | |
+| --- | --- |
+| `KMT_OWNER_PASSWORD` | **Required.** At least 12 characters. The server exits without it rather than starting open. |
+| `KMT_SESSION_SECRET` | Recommended. Without it a random secret is generated per boot, which signs everyone out on every restart. |
+| `KMT_OWNER_DB` | SQLite path. Point it at a mounted volume; the default lives inside the container and dies with it. |
+| `PORT` | Defaults to 8080. Most hosts set this for you. |
+| `KMT_BIND` | Defaults to `0.0.0.0`. |
+| `KMT_ALLOWED_HOSTS` | Comma-separated hostnames to accept. Unset accepts any, which is fine behind a host terminating its own TLS. |
+| `KMT_SESSION_HOURS` | Session lifetime, default 12. |
+
+### Deploying
+
+The `Dockerfile` is plain and host-agnostic: an image listening on `$PORT` with
+its database on a volume at `/data`. Nothing in it is specific to a provider.
+
+```bash
+docker build -t kmt .
+docker run -p 8080:8080 -v kmt-data:/data \
+  -e KMT_OWNER_PASSWORD=... -e KMT_SESSION_SECRET=... kmt
+```
+
+#### Fly, specifically
+
+**Run these from a checkout that is on `main`.** `fly launch` reads the working
+directory, not the repository: run it where `Dockerfile` and `fly.toml` are not
+checked out and it scaffolds its own. It did exactly that here -- generated a
+`FROM pierrezemb/gostatic` Dockerfile (a static file server: no Node, no SQLite,
+no Chromium) and a fly.toml with `min_machines_running = 0`, which is the
+opposite of what this app is for. Deploying that ships raw files and no backend,
+and it looks like a successful deploy.
+
+If those generated files exist, delete them before deploying; the committed ones
+are the real config.
+
+
+`fly.toml` is committed and tuned for this app. Volume first, secrets second,
+deploy last -- a deploy without the volume looks fine until the next one wipes
+the database.
+
+```bash
+fly launch --no-deploy              # claim the app name, keep the committed fly.toml
+fly volumes create kmt_data --region ewr --size 1
+fly secrets set KMT_OWNER_PASSWORD='...' KMT_SESSION_SECRET="$(openssl rand -hex 32)"
+fly deploy
+```
+
+Three settings in `fly.toml` are load-bearing and explained in its comments:
+`auto_stop_machines = false` and `min_machines_running = 1` (a suspended machine
+cannot hold a refresh job), `memory = "1gb"` (Chromium, not the server, sets the
+floor), and the standing warning never to run more than one machine -- a Fly
+volume attaches to one machine, so a second gets a second empty database and the
+two diverge silently.
+
+After the first deploy, set `KMT_ALLOWED_HOSTS` to the app's hostname if you
+want the Host check enforced:
+
+```bash
+fly secrets set KMT_ALLOWED_HOSTS=kmt.fly.dev
+```
+
+Any container host takes it from there: Fly (`fly launch`, add a volume mounted
+at `/data`), Render (Docker service plus a persistent disk), Railway, or Docker
+on a VPS. The only requirements are a persistent volume and a process that stays
+running -- serverless platforms satisfy neither, which is why Vercel cannot host
+this half.
+
+### Known: the machine stops every five minutes
+
+As of 2026-09-05 the Fly org is still treated as a trial, and machines are force
+stopped after exactly 5m0s of uptime:
+
+```
+Trial machine stopping. To run for longer than 5m0s,
+add a credit card by visiting https://fly.io/trial.
+```
+
+This is not a configuration fault. `fly.toml` sets `auto_stop_machines = false`
+with `min_machines_running = 1`, and the machine itself reports `autostop:
+false` -- Fly overrides both for billing. A card was added and the limit was
+still firing afterwards, so it needs resolving in the Fly dashboard rather than
+in this repo.
+
+What it costs meanwhile: `kmt.fly.dev` cold-starts on the first request after
+each idle period (a few seconds), and any long-running work can be killed
+partway. A multi-page supplier refresh is the obvious casualty -- it applies a
+size only when every page has arrived, so an interrupted one changes nothing
+rather than half-writing, but it will need running again.
+
+Check with `fly logs -a kmt | grep "Trial machine"`. No matches means it is
+fixed.
+
+### What the password does and does not cover
+
+It guards the data that is actually on the server: supplier costs, offers and
+prices. It does not cover `/owner/quotes`, and deliberately so -- that screen
+reads `localStorage` in the browser and never contacts this server, so a server
+password would protect nothing there while locking the owner out of a screen
+that works everywhere. The sign-in gate keeps its nav link reachable.
+
+One shared password, because there is one owner. It is not an account system:
+no users, no registration, no reset. If more than one person ever needs their
+own login, replace it rather than growing it.
+
+### Importing from the owner's browser
+
+Server-side refresh is the normal route and was tested working from Fly (see
+below). This is the fallback for the day it stops being: it runs on the owner's
+own connection and needs no server access to the supplier at all.
+
+A page on kmt.fly.dev cannot fetch giga-tires: cross-origin requests come back
+as an empty 202 with no `Access-Control-Allow-Origin`. Verified, not assumed.
+The one place the fetch is permitted is a giga-tires page itself, where it is
+same-origin -- so a bookmarklet runs there, walks every page of the listing with
+the same 1.5s pause the server uses, and POSTs each page's HTML to
+`POST /api/owner/import`.
+
+- The parser stays on the server. Extracting rows in the browser would be a
+  smaller payload and a second implementation of the thing most likely to break
+  when the supplier changes their markup.
+- Pages accumulate in memory and only reach the database once the size is
+  complete, via the same `refreshSize` a server refresh uses. A half-read size
+  never replaces a whole one, and a listing that changes page count mid-import
+  is discarded rather than mixed.
+- Auth is a bearer token from `POST /api/owner/import-token`, not the session
+  cookie: that cookie is `SameSite=Strict` and deliberately does not travel
+  cross-site. The import token lasts two hours and authorises nothing else.
+- CORS is granted to the two giga-tires origins for that one endpoint. Every
+  other route stays same-origin only.
+
+`src/owner/bookmarklet.js` is the readable source; `buildBookmarklet` in
+OwnerInventory holds the minified copy that becomes the `javascript:` URL. Edit
+the readable one first.
+
+### Supplier refreshes on the host
+
+Refreshes run on the server, triggered by hand from `/owner`. Nothing is
+scheduled: no cron, no refresh on boot.
+
+The image carries Chromium and Xvfb because refreshes drive a **headful**
+browser -- giga-tires' WAF refuses headless outright, and that does not stop
+being true on a server. Xvfb supplies the display a headful browser needs on a
+machine with no screen. `KMT_CHROMIUM_PATH` and `KMT_CHROMIUM_NO_SANDBOX` point
+Playwright at the system Chromium and drop the sandbox, which is required when
+running as root in a container; both are unset locally and change nothing there.
+
+**Tested from the datacenter on 2026-09-05 and it works.** Run on the Fly
+machine in `ewr`, the headful-under-Xvfb fetcher returned a full listing page --
+801KB, ten product cards, price data present. The concern was that the WAF
+weighs IP reputation as well as browser fingerprint and would refuse a cloud
+range; on this evidence it does not. Server-side refresh is the normal route,
+not a hopeful one.
+
+Reproduce it with:
+
+```bash
+fly ssh console -a kmt -C "sh -c 'xvfb-run -a node /tmp/probe.mjs'"
+```
+
+That is one observation, not a guarantee: IP reputation can change, and a WAF
+that accepts you today can challenge you tomorrow. If refreshes start coming
+back blocked, the fallback is the browser import above, which runs on the
+owner's own connection and needs no server access to the supplier at all. Do not
+respond by adding stealth plugins or residential proxies -- that is evading the
+supplier's bot detection rather than being a well-behaved client.
 
 ## Verification
 

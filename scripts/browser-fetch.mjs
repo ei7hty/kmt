@@ -31,7 +31,20 @@ export async function createBrowserFetcher(options = {}) {
   const { headless = false, timeout = 60000 } = options
 
   const { chromium } = await import('playwright')
-  const browser = await chromium.launch({ headless })
+
+  // In a container there is no bundled browser and no user to drop privileges
+  // to, so both come from the environment. Unset -- which is every local run --
+  // this changes nothing: Playwright's own Chromium, sandbox intact.
+  //
+  // The browser is still headful there. Xvfb supplies the display, because the
+  // supplier's WAF refuses headless browsers outright and that does not stop
+  // being true on a server.
+  const executablePath = process.env.KMT_CHROMIUM_PATH || undefined
+  const args = process.env.KMT_CHROMIUM_NO_SANDBOX === '1'
+    ? ['--no-sandbox', '--disable-dev-shm-usage']
+    : []
+
+  const browser = await chromium.launch({ headless, executablePath, args })
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   const page = await context.newPage()
 

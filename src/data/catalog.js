@@ -90,23 +90,21 @@ const priceFor = (base, size) => {
 const slug = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
 /**
- * Real rows, reduced to the same shape as every other row.
- *
- * The snapshot's `source` block (SKU, stock count, list price, product URL) is
- * deliberately dropped here: it is there so a human reviewing the JSON can
- * trace a row back to its page, and nothing in the app should start depending
- * on fields that only some rows have.
- */
-/**
- * Real rows, priced for a given owner configuration.
+ * Real rows, priced for a given owner configuration and reduced to the same
+ * shape as every other row.
  *
  * `offers` is keyed by the snapshot's tire id, which is also the owner
  * backend's `supplier.id` -- it seeds from this same file and validates the
  * `giga-` prefix, so the two agree by construction rather than by convention.
  *
- * With no offers passed, which is the case until the backend is wired up,
- * every tire is priced by markup and offered. That is exactly what the catalog
- * did before any of this existed.
+ * With no offers passed, every tire is priced by markup and offered. That is
+ * exactly what the catalog did before any of this existed, and it is what the
+ * customer flow gets whenever the owner backend is not supplying overrides.
+ *
+ * The snapshot's `source` block (SKU, stock count, list price, product URL) is
+ * deliberately dropped: it is there so a human reviewing the JSON can trace a
+ * row back to its page, and nothing in the app should start depending on
+ * fields that only some rows have.
  */
 function scrapedTiresFor({ settings, offers } = {}) {
   const rows = []

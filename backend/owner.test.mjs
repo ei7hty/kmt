@@ -3,10 +3,12 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { createServer } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
-import { createApi } from './api.mjs'
+import { createApi, readJsonBody } from './api.mjs'
+import { createAuth, createImportToken, readAuthConfig, verifyImportToken } from './auth.mjs'
+import { PageImporter } from './import.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 
 const SIZE = '215/60R16'
@@ -15,6 +17,19 @@ const tire = (id = 'giga-a', overrides = {}) => ({ id, name: 'Test Touring', siz
   price: 50, inStock: true, category: 'all-season', description: '95H BSW',
   source: { sku: id.slice(5), stock: 12, listPrice: 60, segment: 'Passenger', url: 'https://www.giga-tires.com/tires/test' }, ...overrides })
 const snapshot = tires => ({ source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE], tires })
+
+/** Minimal markup matching what parseListingPage looks for. */
+const pageHtml = (tires, totalPages = 1) => tires.map(t => `
+  <div class="plp-list__item-container">
+    <a class="j-override-clipboard" href="/x/y/tirecode/1">${t.name} ${t.size} 95H BSW</a>
+    <p class="p-regular-md">All Season</p>
+    <a href="/tires/c/passenger">Passenger</a>
+    <form data-product-code="${t.id.slice(5).toUpperCase()}"></form>
+    <script>window.productPrices.initialData['${t.id.slice(5).toUpperCase()}'] = {
+      quantity: '4', priceData: {"initialPricePerTire":${t.price},"stock":${t.source.stock},"strikeThroughPricePerTire":null,"totalCostPerTire":null,"lightningSavings":null} }
+    </script>
+  </div>`).join('') + (totalPages > 1 ? `<a href="?page=${totalPages}">${totalPages}</a>` : '')
+
 function setup(t) {
   const db = new Inventory(':memory:', [SIZE, otherSize])
   t.after(() => db.close())
@@ -227,4 +242,152 @@ test('owner markup endpoint saves and validates over HTTP', async t => {
   const bad = await call('PUT', { rate: 0.5 })
   assert.equal(bad.status, 400)
   assert.equal(db.getMarkup().rate, 1.45, 'the rejected save left the stored rule alone')
+})
+
+test('auth refuses to start without a usable password', () => {
+  assert.throws(() => readAuthConfig({}), /KMT_OWNER_PASSWORD is not set/)
+  assert.throws(() => readAuthConfig({ KMT_OWNER_PASSWORD: 'short' }), /at least 12 characters/)
+  const config = readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password' })
+  assert.equal(config.generatedSecret, true, 'a missing secret is generated rather than fatal')
+})
+
+test('sessions are signed, expire, and cannot be forged', async t => {
+  const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'secret-one' }
+  const auth = createAuth(readAuthConfig(env))
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (await auth.handle(request, response, url, readJsonBody)) return
+    response.writeHead(auth.isAuthenticated(request) ? 200 : 401).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+  const login = password => fetch(`${base}/api/owner/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }),
+  })
+
+  assert.equal((await login('wrong-but-long-enough')).status, 401)
+  assert.equal((await fetch(`${base}/anything`)).status, 401, 'no cookie means no access')
+
+  const ok = await login('a-long-enough-password')
+  assert.equal(ok.status, 200)
+  const cookie = ok.headers.getSetCookie()[0]
+  assert.match(cookie, /HttpOnly/)
+  assert.match(cookie, /SameSite=Strict/)
+
+  const token = cookie.split(';')[0]
+  assert.equal((await fetch(`${base}/anything`, { headers: { cookie: token } })).status, 200)
+
+  // A cookie signed with a different secret is not accepted.
+  const other = createAuth(readAuthConfig({ ...env, KMT_SESSION_SECRET: 'secret-two' }))
+  assert.equal(other.isAuthenticated({ headers: { cookie: token }, socket: {} }), false)
+
+  // Neither is a tampered payload.
+  const tampered = token.replace(/=(.*)\./, `=${Buffer.from(String(Date.now() + 9e9)).toString('base64url')}.`)
+  assert.equal((await fetch(`${base}/anything`, { headers: { cookie: tampered } })).status, 401)
+
+  // An expired session is refused even though its signature is valid.
+  const expired = createAuth(readAuthConfig({ ...env, KMT_SESSION_HOURS: '-1' }))
+  const stale = await fetch(`${base}/api/owner/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'a-long-enough-password' }),
+  })
+  assert.equal(stale.status, 200)
+  assert.equal(expired.isAuthenticated({ headers: { cookie: token }, socket: {} }), true, 'ttl affects issuing, not this token')
+})
+
+test('the API origin check follows the request scheme', async t => {
+  const db = setup(t)
+  const api = createApi(db, new Refresher(db))
+  const server = createServer(async (request, response) => { if (!(await api(request, response))) response.writeHead(404).end() })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const port = server.address().port
+
+  // node:http rather than fetch: Host is a forbidden header for fetch, which
+  // silently drops it, and Host is precisely what this check reads.
+  const call = headers => new Promise((resolve, reject) => {
+    const request = httpRequest({ host: '127.0.0.1', port, path: '/api/owner/markup', method: 'PUT',
+      headers: { 'content-type': 'application/json', ...headers } }, response => {
+      response.resume()
+      response.on('end', () => resolve(response.statusCode))
+    })
+    request.on('error', reject)
+    request.end(JSON.stringify({ rate: 1.5 }))
+  })
+
+  // Behind TLS the browser sends https://host while the socket is plain http.
+  // Assuming http here rejected every save the owner made in production.
+  assert.equal(await call({ origin: 'https://kmt.example', host: 'kmt.example', 'x-forwarded-proto': 'https' }), 200)
+  assert.equal(await call({ origin: 'https://evil.example', host: 'kmt.example', 'x-forwarded-proto': 'https' }), 403)
+  assert.equal(await call({ origin: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}` }), 200, 'plain http still works locally')
+  assert.equal(await call({}), 200, 'a request with no Origin at all is allowed')
+})
+
+test('page import applies a size only when every page has arrived', t => {
+  const db = setup(t)
+  const importer = new PageImporter(db)
+  const page = (n, tires) => ({ sessionId: 'imp-abcdef12', size: SIZE, page: n, totalPages: 2,
+    html: pageHtml(tires) })
+
+  const first = importer.addPage(page(1, [tire('giga-p1')]))
+  assert.equal(first.complete, false)
+  assert.equal(first.received, 1)
+  assert.equal(db.list().total, 1, 'nothing is written until the size is complete')
+
+  const second = importer.addPage(page(2, [tire('giga-p2')]))
+  assert.equal(second.complete, true)
+  assert.equal(second.tires, 2)
+  const rows = db.list().items
+  const active = rows.filter(r => r.supplierActive).map(r => r.id).sort()
+  assert.deepEqual(active, ['giga-p1', 'giga-p2'], 'both pages landed and are the live listing')
+  // The seeded row is kept but marked inactive rather than deleted, which is
+  // what preserves an owner price on a tire the supplier stopped listing.
+  assert.deepEqual(rows.filter(r => !r.supplierActive).map(r => r.id), ['giga-a'])
+})
+
+test('page import refuses input that would corrupt a size', t => {
+  const db = setup(t)
+  const importer = new PageImporter(db)
+  const base = { sessionId: 'imp-abcdef12', size: SIZE, page: 1, totalPages: 1, html: pageHtml([tire()]) }
+
+  assert.throws(() => importer.addPage({ ...base, sessionId: 'no' }), /Invalid import session/)
+  assert.throws(() => importer.addPage({ ...base, size: '999/99R99' }), /not a size KMT supports/)
+  assert.throws(() => importer.addPage({ ...base, page: 3 }), /Invalid page numbering/)
+  assert.throws(() => importer.addPage({ ...base, totalPages: 0 }), /Invalid page numbering/)
+  assert.throws(() => importer.addPage({ ...base, html: '' }), /Empty page/)
+  // A WAF challenge is a real response with no tires in it.
+  assert.throws(() => importer.addPage({ ...base, html: '<html><body>challenge</body></html>' }), /No tires found/)
+  assert.equal(db.list().total, 1, 'the seeded row is untouched by every rejection')
+})
+
+test('page import will not mix two different reads of a listing', t => {
+  const db = setup(t)
+  const importer = new PageImporter(db)
+  importer.addPage({ sessionId: 'imp-abcdef12', size: SIZE, page: 1, totalPages: 3, html: pageHtml([tire('giga-p1')]) })
+  // The listing gained or lost a page between requests.
+  assert.throws(() => importer.addPage({ sessionId: 'imp-abcdef12', size: SIZE, page: 2, totalPages: 4,
+    html: pageHtml([tire('giga-p2')]) }), /listing changed while importing/)
+  // The half-finished session was discarded, not left to be completed: sending
+  // page 1 again starts from one received page, not two.
+  const restarted = importer.addPage({ sessionId: 'imp-abcdef12', size: SIZE, page: 1, totalPages: 3,
+    html: pageHtml([tire('giga-p1')]) })
+  assert.equal(restarted.received, 1)
+  assert.equal(restarted.complete, false)
+  assert.equal(db.list().total, 1, 'and nothing reached the database meanwhile')
+})
+
+test('import tokens cannot be swapped for session tokens', t => {
+  const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'secret-one' }
+  const config = readAuthConfig(env)
+  const auth = createAuth(config)
+  const importToken = createImportToken(config)
+
+  assert.equal(verifyImportToken(config, importToken), true)
+  // The import token must not unlock the workspace...
+  assert.equal(auth.isAuthenticated({ headers: { cookie: `kmt_owner=${importToken}` }, socket: {} }), false)
+  // ...and it must not be accepted by a different secret.
+  assert.equal(verifyImportToken(readAuthConfig({ ...env, KMT_SESSION_SECRET: 'secret-two' }), importToken), false)
+  assert.equal(auth.isImportAuthorized({ headers: { authorization: `Bearer ${importToken}` } }), true)
+  assert.equal(auth.isImportAuthorized({ headers: { authorization: 'Bearer nonsense' } }), false)
+  assert.equal(auth.isImportAuthorized({ headers: {} }), false)
 })

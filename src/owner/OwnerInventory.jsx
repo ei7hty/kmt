@@ -4,6 +4,9 @@ import './OwnerInventory.css'
 const dollars = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const dateLabel = value => value ? new Date(value).toLocaleString() : 'Never refreshed'
 
+/** Thrown on a 401 so callers can show the sign-in form instead of an error. */
+class NeedsSignIn extends Error {}
+
 async function api(path, options = {}) {
   const response = await fetch(`/api/owner/${path}`, {
     ...options, headers: { 'Content-Type': 'application/json', ...options.headers },
@@ -11,8 +14,62 @@ async function api(path, options = {}) {
   const type = response.headers.get('content-type') || ''
   if (!type.includes('application/json')) throw new Error('The owner backend is not connected. Start the owner server to load inventory.')
   const data = await response.json()
+  if (response.status === 401) throw new NeedsSignIn(data.error || 'Sign in to continue.')
   if (!response.ok) throw new Error(data.error || 'The request could not be completed.')
   return data
+}
+
+/**
+ * Sign-in gate for hosted deployments.
+ *
+ * The local server has no password -- it binds loopback, so whoever reaches it
+ * is already at the keyboard. A hosted one does, and this is what the owner
+ * sees until he enters it. It never appears locally, because nothing there
+ * returns 401.
+ */
+function SignIn({ onSignedIn, navigate }) {
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(event) {
+    event.preventDefault()
+    setError('')
+    setBusy(true)
+    try {
+      await api('login', { method: 'POST', body: JSON.stringify({ password }) })
+      setPassword('')
+      onSignedIn()
+    } catch (err) { setError(err.message) }
+    finally { setBusy(false) }
+  }
+
+  return <div className="oi-shell">
+    {/* Quote requests stays reachable without the password. That screen reads
+        localStorage in the browser and never touches this server, so gating it
+        behind a server password protects nothing and only locks the owner out
+        of the part that works everywhere. The password guards the data that is
+        actually here: supplier costs and prices. */}
+    <nav className="oi-nav">
+      <button className="oi-brand" onClick={() => navigate('/')}>KMT<span>.</span></button>
+      <span>OWNER WORKSPACE</span>
+      <button className="oi-button" onClick={() => navigate('/owner/quotes')}>Quote requests →</button>
+    </nav>
+    <main className="oi-content">
+      <form className="oi-signin" onSubmit={submit}>
+        <p className="oi-kicker">OWNER ONLY</p>
+        <h1>Sign in</h1>
+        <p className="oi-muted">This workspace holds supplier costs and your prices.</p>
+        <label htmlFor="owner-password">Password</label>
+        <input id="owner-password" type="password" autoComplete="current-password" value={password}
+          onChange={e => setPassword(e.target.value)} disabled={busy} />
+        <button type="submit" className="oi-button oi-primary" disabled={busy || !password}>
+          {busy ? 'Checking…' : 'Sign in'}
+        </button>
+        {error && <p role="alert" className="oi-error">{error}</p>}
+      </form>
+    </main>
+  </div>
 }
 
 function SupplierLink({ url }) {
@@ -22,6 +79,86 @@ function SupplierLink({ url }) {
     allowed = parsed.protocol === 'https:' && ['giga-tires.com', 'www.giga-tires.com'].includes(parsed.hostname)
   } catch { /* Missing supplier URL. */ }
   return allowed ? <a href={url} target="_blank" rel="noreferrer">View on Giga Tires ↗</a> : null
+}
+
+/**
+ * The bookmarklet, built around a freshly issued import token.
+ *
+ * Minified deliberately -- it has to survive being a `javascript:` URL in a
+ * bookmark. `src/owner/bookmarklet.js` is the same code written to be read;
+ * change that first, then mirror it here.
+ */
+function buildBookmarklet(base, token) {
+  const source = `(async()=>{try{
+var m=location.pathname.match(/\\/tires\\/(?:.*\\/)?(\\d{3})-(\\d{2})-(\\d{2})(?:$|[\\/?])/);
+if(!m){alert('Open a giga-tires size listing first, e.g. /tires/215-60-16');return}
+var sz=m[1]+'/'+m[2]+'R'+m[3],sp=m[1]+'-'+m[2]+'-'+m[3];
+var id='imp'+Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+var post=async function(p,t,h){var r=await fetch('${base}/api/owner/import',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer ${token}'},body:JSON.stringify({sessionId:id,size:sz,page:p,totalPages:t,html:h})});var d=await r.json().catch(function(){return{}});if(!r.ok)throw new Error(d.error||'Import failed ('+r.status+')');return d};
+var h1=document.documentElement.outerHTML;
+var ls=[].map.call(h1.match(/[?&]page=(\\d+)/g)||[],function(s){return +s.split('=')[1]});
+var tp=ls.length?Math.max.apply(null,ls):1;
+var res=await post(1,tp,h1);
+for(var p=2;p<=tp;p++){await new Promise(function(r){setTimeout(r,1500)});
+var rr=await fetch('/tires/'+sp+'?page='+p,{credentials:'include'});
+if(!rr.ok)throw new Error('Supplier returned '+rr.status+' for page '+p);
+res=await post(p,tp,await rr.text())}
+alert(res.message)}catch(e){alert('KMT import: '+e.message)}})()`
+  return `javascript:${encodeURIComponent(source.replace(/\n/g, ''))}`
+}
+
+/**
+ * Import supplier pages from the owner's own browser.
+ *
+ * The server cannot be relied on to fetch giga-tires -- a datacenter IP may be
+ * refused -- and this page cannot fetch it either: cross-origin requests return
+ * an empty 202 with no CORS headers. A giga-tires page fetching its own further
+ * pages is same-origin and allowed, so the work happens there and the HTML
+ * comes back here.
+ */
+function BrowserImport({ sizes }) {
+  const [link, setLink] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [size, setSize] = useState(sizes?.[0] || '215/60R16')
+
+  async function generate() {
+    setError('')
+    setBusy(true)
+    try {
+      const { token } = await api('import-token', { method: 'POST', body: '{}' })
+      setLink(buildBookmarklet(window.location.origin, token))
+    } catch (err) { setError(err.message) }
+    finally { setBusy(false) }
+  }
+
+  const sizePath = size.replace('/', '-').replace('R', '-')
+
+  return <section className="oi-refresh" aria-label="Import from your browser">
+    <div>
+      <h2>Import from your browser</h2>
+      <p>Refreshes run from this server, and the supplier may refuse it. This route runs from your own connection instead: open a size on Giga Tires, click the bookmark, and every page of that listing is sent back here.</p>
+      <ol className="oi-import-steps">
+        <li>Generate the bookmark below and drag it to your bookmarks bar.</li>
+        <li>Open <a href={`https://www.giga-tires.com/tires/${sizePath}`} target="_blank" rel="noreferrer">giga-tires.com/tires/{sizePath} ↗</a></li>
+        <li>Click the bookmark and wait for the &ldquo;Imported…&rdquo; message.</li>
+      </ol>
+      <p className="oi-muted">The bookmark carries a key that expires in two hours and can do nothing but import tires. Generate a new one whenever it stops working.</p>
+    </div>
+    <div className="oi-refresh-actions">
+      <label htmlFor="import-size" className="oi-kicker">SIZE TO OPEN</label>
+      <select id="import-size" value={size} onChange={e => setSize(e.target.value)}>
+        {(sizes || []).map(value => <option key={value} value={value}>{value}</option>)}
+      </select>
+      <button type="button" className="oi-button oi-primary" onClick={generate} disabled={busy}>
+        {busy ? 'Generating…' : link ? 'Generate a new bookmark' : 'Generate bookmark'}
+      </button>
+      {link && <a className="oi-bookmarklet" href={link} onClick={e => e.preventDefault()} draggable>
+        ⇱ Send to KMT — drag me to your bookmarks bar
+      </a>}
+      {error && <p role="alert" className="oi-error">{error}</p>}
+    </div>
+  </section>
 }
 
 /**
@@ -144,6 +281,7 @@ export default function OwnerInventory({ navigate }) {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [needsSignIn, setNeedsSignIn] = useState(false)
   const sequence = useRef(0)
   const invalidate = useCallback(() => { sequence.current++ }, [])
   const jobRunning = data?.summary.job?.status === 'running'
@@ -154,8 +292,13 @@ export default function OwnerInventory({ navigate }) {
     try {
       const result = await api(`inventory?${new URLSearchParams({ search, size, filter, page })}`)
       if (request !== sequence.current) return
-      setData(result); setError('')
-    } catch (err) { if (request === sequence.current) setError(err.message) }
+      setData(result); setError(''); setNeedsSignIn(false)
+    } catch (err) {
+      if (request !== sequence.current) return
+      // A 401 is not an error to report, it is a door to open.
+      if (err instanceof NeedsSignIn) { setNeedsSignIn(true); setError('') }
+      else setError(err.message)
+    }
     finally { if (request === sequence.current) setLoading(false) }
   }, [search, size, filter, page])
 
@@ -201,6 +344,8 @@ export default function OwnerInventory({ navigate }) {
     setNotice('Offer saved. Your selection and price are stored in the owner database.')
   }
 
+  if (needsSignIn) return <SignIn onSignedIn={load} navigate={navigate} />
+
   const summary = data?.summary
   const job = summary?.job
   const coverage = summary?.coverage.find(item => item.size === size)
@@ -217,6 +362,7 @@ export default function OwnerInventory({ navigate }) {
         <div><h2>Supplier inventory</h2><p>{summary?.importedSizeCount ? `${summary.importedSizeCount} sizes started from a limited snapshot. ` : ''}Refresh reads every results page for the selected size. All-size refreshes can take a while and open a browser on this computer.</p><p className="oi-muted">Supplier prices and stock are last-seen listings, not guaranteed quotes. Your saved KMT prices stay under your control.</p></div>
         <div className="oi-refresh-actions"><button className="oi-button oi-primary" onClick={refresh} disabled={!data || busy || jobRunning}>{size ? `Refresh ${size}` : `Refresh all ${summary?.sizes.length ?? ''} sizes`}</button>{jobRunning && <button className="oi-button" onClick={cancel} disabled={busy}>Stop refresh</button>}</div>
       </section>
+      <BrowserImport sizes={summary?.sizes} />
       {summary?.markup && <MarkupRule markup={summary.markup} onSaved={markupSaved} />}
       {job && <div className={`oi-job ${['failed', 'interrupted'].includes(job.status) ? 'oi-attention' : ''}`} role="status"><strong>{job.status.toUpperCase()}</strong><span>{job.message}</span><span>{job.completed} / {job.sizes.length} sizes · {job.tiresRead} tires · {job.pagesRead} pages</span>{job.failed?.length > 0 && <span>Earlier saved inventory and offers are preserved. Choose the failed size to retry.</span>}</div>}
       <div className="oi-filters">

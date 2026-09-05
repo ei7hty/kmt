@@ -28,3 +28,6 @@ dist-ssr
 
 # Agent worktrees live inside the repo. Never commit them.
 .worktrees/
+
+# Local credentials for the owner workspace. Never commit.
+secrets/
