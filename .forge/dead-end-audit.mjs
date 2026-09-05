@@ -45,6 +45,7 @@ async function submitRequest(page, { size, tireName, vehicle, location, date }) 
 
     // Step 2: pick the tire by its catalog name, and say what it is going on.
     await page.click(`.tire-option:has-text("${tireName}")`, step);
+    await page.locator('.manual-vehicle summary').click();
     await page.fill('#vehicleInfo', vehicle, step);
     await page.click('button:has-text("Continue to mobile service")', step);
 
