@@ -60,6 +60,14 @@ extract the supported-size list first so missing supplier stock cannot shrink it
   concurrent jobs return 409. The UI can send one size or every KMT size.
 - `POST /api/owner/refresh/cancel`: `{}`. Stops after the current page; incomplete
   sizes are not applied. The UI polls the inventory endpoint for progress.
+- `POST /api/owner/import-snapshot`: `{snapshot, complete, dryRun}`, where
+  `snapshot` is the file `scripts/scrape-tires.mjs` writes. Applies every size in
+  one transaction through the same `writeSize` a refresh uses, so offers are
+  untouched and nothing is deleted. `complete: false` (the default) upserts and
+  retires nothing, labelled `snapshot` coverage; `complete: true` retires rows the
+  file omits, labelled `full`. `dryRun` answers with per-size counts (new,
+  changed, unchanged, retired) and writes nothing. 409 while a refresh runs.
+  `scripts/import-tires.mjs` is the client.
 - `GET /api/owner/markup`, `PUT /api/owner/markup`: `{rate}`. The default markup,
   stored in `metadata`. Rates below 1 (quoting under supplier cost) or above 10
   (a typo repricing everything) are rejected. Also returned on the inventory
@@ -254,6 +262,23 @@ the same 1.5s pause the server uses, and POSTs each page's HTML to
 `src/owner/bookmarklet.js` is the readable source; `buildBookmarklet` in
 OwnerInventory holds the minified copy that becomes the `javascript:` URL. Edit
 the readable one first.
+
+### Importing a scrape run somewhere else
+
+The third route to the supplier, beside the server refresh and the bookmarklet:
+run `scripts/scrape-tires.mjs` on any machine with a screen and a home
+connection, then `scripts/import-tires.mjs` pushes the resulting file to
+`POST /api/owner/import-snapshot` on whichever server should have it. Locally
+that is `backend/dev.mjs` with no password; hosted, the CLI signs in with
+`KMT_OWNER_PASSWORD` from its environment, exactly as the owner screen does,
+and sends the session cookie. It sends no `Origin` header, so the API's
+same-origin check is not in play, and it needs no CORS grant.
+
+Why a separate step rather than a `--push` flag on the scraper: the snapshot is
+meant to be read before it goes anywhere, and the import's dry run is where the
+reading happens against what the server already holds. The seed-once
+`importSnapshot` is unchanged; this is `applySnapshot`, which shares its
+validation and writes whether or not the database was seeded.
 
 ### Supplier refreshes on the host
 

@@ -97,17 +97,91 @@ export class Inventory {
     return markup
   }
 
+  /**
+   * Check a snapshot in the shape scripts/scrape-tires.mjs writes, and group
+   * its rows by size. Throws before anything is written, so a bad row cannot
+   * leave half a snapshot in the database.
+   */
+  validateSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object' || snapshot.source !== 'giga-tires.com' ||
+        !Array.isArray(snapshot.tires) || !Number.isFinite(Date.parse(snapshot.scrapedAt))) {
+      throw new InputError('Invalid supplier snapshot')
+    }
+    const bySize = new Map()
+    for (const tire of snapshot.tires) {
+      validateTire(tire, tire?.size)
+      if (!bySize.has(tire.size)) bySize.set(tire.size, [])
+      bySize.get(tire.size).push(tire)
+    }
+    for (const size of bySize.keys()) {
+      if (!this.sizes.includes(size)) throw new InputError('Snapshot contains unsupported sizes')
+    }
+    if (new Set(snapshot.tires.map(t => t.id)).size !== snapshot.tires.length) throw new InputError('Duplicate supplier IDs')
+    return bySize
+  }
+
   importSnapshot(snapshot) {
     if (this.getMeta('seeded')) return
-    if (snapshot.source !== 'giga-tires.com' || !Array.isArray(snapshot.tires) ||
-        !Number.isFinite(Date.parse(snapshot.scrapedAt))) throw new InputError('Invalid supplier snapshot')
-    const sizes = [...new Set(snapshot.tires.map(tire => tire.size))]
-    for (const tire of snapshot.tires) validateTire(tire, tire.size)
-    if (sizes.some(size => !this.sizes.includes(size))) throw new InputError('Snapshot contains unsupported sizes')
+    const bySize = this.validateSnapshot(snapshot)
     this.transaction(() => {
-      for (const size of sizes) this.writeSize(size, snapshot.tires.filter(t => t.size === size), snapshot.scrapedAt, false)
+      for (const [size, tires] of bySize) this.writeSize(size, tires, snapshot.scrapedAt, false)
       this.setMeta('seeded', { at: now(), snapshotAt: snapshot.scrapedAt })
     })
+  }
+
+  /**
+   * Apply a snapshot to a database that already has one.
+   *
+   * importSnapshot seeds an empty database once and then steps aside, which
+   * is right for the tracked file but leaves no way to get a scrape run on
+   * someone's own machine into a server that is already up. This is that
+   * way. It writes through the same writeSize a refresh uses, so owner
+   * offers and prices are untouched and a row is never deleted.
+   *
+   * By default a size is treated as a *partial* view -- the scraper keeps the
+   * cheapest few per size -- so rows the snapshot does not mention stay
+   * active. `complete` says the snapshot is the supplier's whole listing for
+   * each size it covers, and retires the rest as a refresh would. A dry run
+   * reports what would change and writes nothing.
+   */
+  applySnapshot(snapshot, { complete = false, dryRun = false } = {}) {
+    const bySize = this.validateSnapshot(snapshot)
+    if (!bySize.size) throw new InputError('The snapshot holds no tires; nothing to import')
+
+    const report = []
+    for (const [size, tires] of bySize) {
+      const existing = new Map(this.db.prepare('SELECT id, payload, active FROM supplier WHERE size=?').all(size)
+        .map(row => [row.id, row]))
+      const counts = { size, tires: tires.length, added: 0, changed: 0, unchanged: 0, retired: 0 }
+      for (const tire of tires) {
+        const old = existing.get(tire.id)
+        if (!old) counts.added++
+        else if (!old.active || old.payload !== JSON.stringify(tire)) counts.changed++
+        else counts.unchanged++
+      }
+      if (complete) {
+        const incoming = new Set(tires.map(t => t.id))
+        counts.retired = [...existing.values()].filter(row => row.active && !incoming.has(row.id)).length
+      }
+      report.push(counts)
+    }
+
+    if (!dryRun) {
+      // One transaction for the whole file: a snapshot either lands or it does
+      // not. Validation has already run, so the only failure left is a SKU
+      // that changed size, and half a file is not a useful answer to that.
+      this.transaction(() => {
+        for (const [size, tires] of bySize) this.writeSize(size, tires, snapshot.scrapedAt, complete)
+      })
+      const at = now()
+      this.setMeta('job', {
+        id: `snapshot-${at}`, status: 'completed', sizes: [...bySize.keys()], completed: bySize.size, failed: [],
+        tiresRead: snapshot.tires.length, pagesRead: 0, currentSize: null, startedAt: at, finishedAt: at,
+        message: `Imported ${snapshot.tires.length} tires across ${bySize.size} size${bySize.size === 1 ? '' : 's'} from a snapshot scraped ${snapshot.scrapedAt}.`,
+      })
+    }
+
+    return { dryRun, complete, scrapedAt: snapshot.scrapedAt, tires: snapshot.tires.length, sizes: report }
   }
 
   // Only a complete, validated size refresh may retire missing supplier rows.

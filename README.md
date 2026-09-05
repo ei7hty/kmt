@@ -106,6 +106,7 @@ per-size coverage. Owner prices are never inferred from supplier prices.
 | `GET` / `PUT /api/owner/markup` | Read or set the default markup `{rate}`. Rates below 1 or above 10 are rejected. |
 | `POST /api/owner/refresh` | Start a background supplier refresh for `{sizes}`. One job at a time. |
 | `POST /api/owner/refresh/cancel` | Stop after the current page. Incomplete sizes are not applied. |
+| `POST /api/owner/import-snapshot` | Apply a scraped snapshot `{snapshot, complete, dryRun}` to the live database. What `scripts/import-tires.mjs` calls. Refused while a refresh is running. |
 | `POST /api/owner/login`, `POST /api/owner/logout`, `GET /api/owner/session` | Hosted server only. |
 
 A refresh drives a **visible** Chromium window through Playwright, reads every
@@ -169,6 +170,48 @@ Rows come out in the shape `src/data/catalog.js` uses (`id`, `name`, `size`,
 `price`, `inStock`, `category`, `description`) plus a `source` block holding
 the SKU, stock count, list price and product URL, so any row can be traced back
 to the page it came from.
+
+### Pushing a scrape into a running server
+
+The snapshot seeds a new database once and is otherwise never read again, so
+on its own a local scrape never reaches a server that is already up. This does:
+scrape on the machine with the screen and the home connection, then push the
+file to whichever server should have it.
+
+```bash
+npm run scrape-tires -- 215/60R16 --limit 0 --pages 10
+```
+
+```bash
+npm run import-tires -- --dry-run
+```
+
+```bash
+npm run import-tires
+```
+
+```bash
+KMT_OWNER_PASSWORD='...' npm run import-tires -- --to https://kmt.fly.dev
+```
+
+The local server (`node backend/dev.mjs` on port 4180) is the default target
+and needs no password. The hosted one takes the owner password from the
+environment, signs in the way the owner screen does, and never stores it.
+`--sizes 215/60R16,225/50R17` sends only those sizes; a path argument imports
+a snapshot kept somewhere other than `src/data/scraped-tires.json`.
+
+An import writes through the same door a supplier refresh uses: owner prices,
+choices and notes are untouched, and nothing is ever deleted. A dry run reports
+new, changed and unchanged tires per size and writes nothing. By default a
+size is treated as a **partial** view, because the scraper keeps only the
+cheapest few per size, so tires the file does not mention stay listed. Pass
+`--complete` only for a scrape run with `--limit 0` over every page: then
+tires missing from the file are marked no longer listed, as a refresh would,
+with their offers kept. The result shows on `/owner` like any refresh.
+
+```bash
+npm run import-tires -- --help
+```
 
 ## Verification
 
@@ -272,6 +315,7 @@ the scraper from a home connection and treat the host as serving-only.
 | `backend/dev.mjs`, `backend/server.mjs` | Local and hosted entry points. |
 | `backend/owner.test.mjs` | Backend tests, run with `node --test`. |
 | `scripts/scrape-tires.mjs` | Snapshot CLI: arguments, the run loop, the diff. |
+| `scripts/import-tires.mjs` | Pushes a snapshot into a running owner server, local or hosted. |
 | `scripts/giga-tires.mjs` | Parsing and normalising one supplier listing page. Pure, so it can be tested on saved HTML. |
 | `scripts/browser-fetch.mjs` | Fetching pages through a real browser. |
 | `.forge/` | Project record: requirements, roadmap, decisions, task state, the owner-backend design, the audit scripts, and the protocol for agents sharing this repo. |
