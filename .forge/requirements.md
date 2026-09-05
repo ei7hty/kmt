@@ -96,19 +96,47 @@ the submit step needs it.
 - **No personal data beyond what the form asks for**, and nothing the owner
   writes about a request is sent to a customer.
 
-## Phase 4 open questions
+## Phase 4, second milestone (m10) -- the quote is a real exchange
 
-For the owner, not guessed at in the tasks:
+The three questions above were answered on 2026-09-05 by the client's
+representative: build all three. m10 follows m9; it depends on requests living
+in the backend.
 
-1. **Should the owner be able to change the drafted total before approving?**
-   Today he can only approve or reject the number the rules produced. That is
-   fine for a demo and probably wrong for a business where "Ken prices the job
-   in his head" is the current process. Not built here; it changes what
-   "approve" means.
-2. **How long are requests kept, and does the owner need to close or archive
-   them?** Phase 4 keeps everything forever and shows everything. A list that
-   only grows will need a "done" state before long.
-3. **Notifications.** With requests on the server, telling the owner a request
-   arrived and telling the customer a quote is ready are the obvious next step
-   and the first real integration (SMS or email). Which channel, and whether the
-   owner wants one at all, is his call.
+_R23._ A request carries the customer's name and mobile number (required) and
+email (optional), collected at the service-details step, validated on the
+server (US numbers, stored normalised), shown to the owner with the request,
+and never returned to any other customer.
+
+_R24._ Before sending, the owner can change the tire unit price, change the
+service fee, add or remove a line (with a description and amount) and write a
+note to the customer. Approve & Send sends the adjusted quote; the original
+draft is kept alongside it. The customer sees the sent total and the note.
+
+_R25._ The owner is told by text message when a request arrives, with a link to
+review it. The customer is told by text when their quote is sent, with the
+link to their request, and again when payment is recorded. Texts go through a
+real SMS provider configured by environment; with no provider configured, the
+server records each message in an outbox the owner screen shows, so the flow is
+verifiable without an account.
+
+_R26._ The customer is told on the form that they will be texted about this
+quote and must tick to agree before submitting. No marketing use; one
+conversation per request.
+
+_R27._ A request has an end: after payment the owner marks the job done, or
+rejects or cancels at any earlier point. The owner list shows open requests
+first and by default, with a filter for needs-attention, awaiting-customer,
+paid and closed. Nothing is deleted.
+
+_R28._ Every state change above is visible to the other side from their own
+device, and the stepper on `/status` reflects the new states.
+
+## m10 non-functional
+
+- **No SMS SDK.** The provider's REST API is called with `fetch` and a
+  credential from the environment; the provider is one small module that can be
+  swapped. Provider, number and owner phone are configuration, never code.
+- **Secrets stay out of the repository** and out of the frontend. The owner's
+  own number and the provider credential live only in the server environment.
+- **Verification against the real server**, as in t32. Notification tests use
+  the outbox, not the provider.

@@ -255,9 +255,42 @@ request made on one phone, reviewed on another device, paid on the first.
 - **m9 -- The owner reviews real requests from any device.** t29 -> t30 -> t31
   -> t32 -> t33.
 
+## Then, in the same phase
+
+- **m10 -- The quote is a real exchange between two people.** t34 -> t35 ->
+  t36 -> t37 -> t38. Decided on 2026-09-05 when the client's representative
+  answered the three open questions with "build it": this is a service for a
+  client, not a prototype for reaction.
+
+### Why this sequence inside m10
+
+**t34 (contact details) goes first** because nothing else in the milestone can
+work without a phone number on the request, and because it is embarrassing
+today: a customer submits, the owner approves, and if the customer never comes
+back to `/status` nobody can reach them. It touches the form t31 just rewrote,
+which is why it waits for m9 to finish rather than running alongside.
+
+**t35 (the owner adjusts the quote) comes before notifications**, because the
+text the customer receives says "your quote is ready", and the number in it has
+to be the number the owner meant. Approve & Send changes meaning here: it sends
+the adjusted quote, not the drafted one, and the draft is kept for the record.
+
+**t36 (lifecycle) comes before notifications too**, because a request that can
+end is what makes an owner list usable once real requests arrive, and the
+"job done" state is the last message the customer gets.
+
+**t37 (text messages) is where the first real external integration lands.**
+It is deliberately behind a one-module seam with an outbox fallback, so every
+other task and every test can run without a provider account, and the account
+itself is the client's to open.
+
+**t38 (deploy and prove it with real texts on two phones)** is last for the
+reason it always is.
+
 ## Later
 
-- Notifications to owner and customer, once the owner picks a channel.
-- Owner edits the drafted total before approving, if the owner wants it.
-- Real payment processing.
-- A "done" state for requests, before the list grows past a screen.
+- Real payment processing (phase 5, first item). Stripe Checkout or Square,
+  whichever the client already has an account with.
+- Scheduling: a confirmed time, not just a preferred date.
+- Photo of the tire or the sidewall on the request, for cases where the
+  customer is not sure of the size.
