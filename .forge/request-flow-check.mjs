@@ -45,6 +45,11 @@ try {
     const request = await page.evaluate(() => JSON.parse(localStorage.getItem('kmt_store')).requests.at(-1))
     check(request.vehicleInfo === '2020 Toyota Corolla' && request.location.includes('02149') && request.location.includes('Blue sedan'), 'submitted request keeps vehicle, ZIP and access instructions')
     await page.getByRole('button', { name: 'Owner review' }).click()
+    // /owner is the inventory workspace now; the quote list moved to
+    // /owner/quotes. Follow the visible link rather than typing the URL, the
+    // same way the dead-end audit does.
+    await page.getByRole('button', { name: 'Quote requests' }).click()
+    await page.waitForURL('**/owner/quotes')
     check(await page.getByText(request.location, { exact: false }).isVisible(), 'owner can read the complete service location')
     check(errors.length === 0, 'no browser runtime errors')
     await page.close()
