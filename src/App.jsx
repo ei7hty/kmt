@@ -192,12 +192,24 @@ function App() {
     const quote = getAllQuotes().find(item => item.id === quoteId)
     const request = quote ? getAllRequests().find(item => item.id === quote.requestId) : null
     return (
-      <div className="min-h-screen confirmation-shell bg-gray-50 p-4 sm:p-6 flex items-center justify-center"><div className="max-w-md w-full mx-auto bg-white p-6 sm:p-8 rounded-lg shadow text-center">
-        <div className="mx-auto mb-4 flex items-center justify-center w-16 h-16 rounded-full bg-green-100"><svg className="w-9 h-9 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg></div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">You&apos;re all set!</h1><p className="text-gray-600 mb-6" role="status">Payment confirmed. Your quote has been paid in full.</p>
-        {quote && <div className="border border-gray-200 rounded bg-gray-50 p-4 text-left mb-6">{request && <p className="text-sm text-gray-600 mb-2">Vehicle: <span className="font-medium text-gray-800">{request.vehicleInfo}</span></p>}<p className="text-sm text-gray-600 mb-2">Amount paid</p><p className="text-2xl font-semibold text-gray-900">${quote.total.toFixed(2)}</p><p className="mt-2 text-xs uppercase font-medium text-green-700">Confirmed &amp; Paid</p></div>}
-        <a href="/" onClick={(event) => { event.preventDefault(); navigate('/') }} className="inline-block w-full px-4 py-3 bg-blue-600 text-white font-medium rounded">Start a New Request</a>
-      </div></div>
+      <div className="app-shell confirmation-shell">
+        <nav className="internal-nav">
+          <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
+        </nav>
+        <div className="confirmation-content">
+          <div className="panel confirmation-card">
+            <div className="confirmation-check" aria-hidden="true">✓</div>
+            <p className="eyebrow">CONFIRMED</p>
+            <h1 className="confirmation-heading">You&apos;re all set!</h1>
+            <p className="text-secondary" role="status">Payment confirmed. Your quote has been paid in full.</p>
+            {quote && <dl className="confirmation-detail">
+              {request && <div><dt>Vehicle</dt><dd>{request.vehicleInfo}</dd></div>}
+              <div><dt>Amount paid</dt><dd className="confirmation-total">${quote.total.toFixed(2)}</dd></div>
+            </dl>}
+            <a href="/" onClick={(event) => { event.preventDefault(); navigate('/') }} className="btn btn-primary confirmation-action">Start a New Request</a>
+          </div>
+        </div>
+      </div>
     )
   }
 
@@ -206,10 +218,52 @@ function App() {
     const quotes = getAllQuotes()
     const handlePayment = (quoteId) => { if (updateQuoteStatus(quoteId, 'paid')) navigate(`/confirmation?quoteId=${quoteId}`) }
     return (
-      <div className="min-h-screen status-shell bg-gray-50 p-4 sm:p-6"><nav className="mb-6 flex gap-3"><button onClick={() => navigate('/')} className="px-4 py-2 bg-blue-600 text-white rounded">← New Request</button><button onClick={() => navigate('/owner')} className="px-4 py-2 bg-gray-700 text-white rounded">Owner Review →</button></nav><div className="max-w-2xl mx-auto bg-white p-6 rounded-lg shadow">
-        <h1 className="text-3xl font-bold mb-4">Quote Status</h1><p className="text-gray-600 mb-6">Track submitted requests and owner decisions.</p>
-        {requests.length === 0 ? <div className="border-2 border-gray-200 p-4 rounded bg-gray-50"><p className="text-gray-500">No quote requests have been submitted yet.</p></div> : <div className="space-y-4">{[...requests].reverse().map(request => { const quote = quotes.find(item => item.requestId === request.id); return <div key={request.id} className="border border-gray-300 p-4 rounded bg-gray-50"><p className="text-sm text-gray-600">Request ID: {request.id}</p><p className="font-medium mt-2">{request.vehicleInfo}</p>{quote ? <div className="mt-3"><p className="text-lg font-semibold">${quote.total.toFixed(2)}</p><p className="text-sm uppercase font-medium">{quote.status}</p>{quote.exception && <p className="mt-2 text-amber-800">This quote is awaiting owner review.</p>}{quote.status === 'approved' && <button onClick={() => handlePayment(quote.id)} className="mt-3 px-4 py-2 bg-green-600 text-white rounded">Pay ${quote.total.toFixed(2)}</button>}{quote.status === 'paid' && <div className="mt-2"><p className="text-sm text-green-700">Payment received. Your service is confirmed.</p><button onClick={() => navigate(`/confirmation?quoteId=${quote.id}`)} className="mt-2 text-sm text-blue-700 underline">View confirmation →</button></div>}{quote.status === 'rejected' && <p className="mt-2 text-sm text-red-700">This quote was declined. Please submit a new request.</p>}</div> : <p className="mt-3 text-sm text-gray-600">Quote is being prepared.</p>}</div> })}</div>}
-      </div></div>
+      <div className="app-shell status-shell">
+        <nav className="internal-nav">
+          <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
+          <div className="internal-nav-links">
+            <button className="btn btn-neutral" onClick={() => navigate('/')}>← New Request</button>
+            <button className="btn btn-neutral" onClick={() => navigate('/owner')}>Owner Review →</button>
+          </div>
+        </nav>
+        <div className="owner-content">
+          <p className="eyebrow">YOUR QUOTE</p>
+          <h1 className="owner-heading">Quote Status</h1>
+          <p className="text-secondary owner-subhead">Track your request and the shop&apos;s decision.</p>
+          {requests.length === 0 ? <div className="panel"><p className="text-secondary">No quote requests yet. Start one from the home page.</p></div> : (
+            <div className="owner-list">
+              {[...requests].reverse().map(request => {
+                const quote = quotes.find(item => item.requestId === request.id)
+                // Same three-beat stepper the customer already saw while ordering,
+                // so the journey reads as one flow rather than two products.
+                const stage = !quote ? 1 : quote.status === 'draft' ? 2 : 3
+                return (
+                  <div key={request.id} className="panel owner-request">
+                    <p className="owner-request-vehicle">{request.vehicleInfo}</p>
+                    <div className="order-steps status-steps">
+                      <div className={stage > 1 ? 'order-step complete' : 'order-step current'}><span>1</span>Requested</div>
+                      <div className={stage > 2 ? 'order-step complete' : stage === 2 ? 'order-step current' : 'order-step'}><span>2</span>Owner review</div>
+                      <div className={stage === 3 ? 'order-step current' : 'order-step'}><span>3</span>Pay &amp; confirm</div>
+                    </div>
+                    {quote ? (
+                      <div className="owner-quote">
+                        <div className="owner-quote-summary">
+                          <div><p className="text-secondary">Your quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div>
+                          <span className="owner-quote-status">{quote.status}</span>
+                        </div>
+                        {quote.status === 'draft' && <p className="status-note status-note-wait">This quote is awaiting owner review.</p>}
+                        {quote.status === 'approved' && <div className="owner-actions"><button onClick={() => handlePayment(quote.id)} className="btn btn-primary">Pay ${quote.total.toFixed(2)}</button></div>}
+                        {quote.status === 'paid' && <div className="status-paid"><p className="status-note status-note-ok">Payment received. Your service is confirmed.</p><button className="link-action" onClick={() => navigate(`/confirmation?quoteId=${quote.id}`)}>View confirmation →</button></div>}
+                        {quote.status === 'rejected' && <p className="status-note status-note-bad">This quote was declined. Please submit a new request.</p>}
+                      </div>
+                    ) : <p className="text-secondary">Quote is being prepared.</p>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     )
   }
 

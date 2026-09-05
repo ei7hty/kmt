@@ -605,6 +605,7 @@
 /* Card panel: dark gradient card with a subtle border, the same
    language as the customer flow's .max-w-2xl / .step-panel cards. */
 .panel {
+  box-sizing: border-box;
   padding: 30px;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -1008,4 +1009,141 @@
     right: 0;
     border-right-color: var(--border);
   }
+}
+
+/* ---------------------------------------------------------------- t20 / t21
+   /status and /confirmation, reusing the vocabulary t17 established rather
+   than inventing a third look. Only what those two screens genuinely need
+   beyond the shared classes lives here. */
+
+/* The single primary call to action. Red, per the brand: this is the one
+   thing to click. Distinct from btn-approve, which is green because it sits
+   opposite Reject and the pairing is what carries the meaning there. */
+.btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  border-color: var(--accent-dark);
+  background: var(--accent-dark);
+}
+
+.status-steps {
+  /* minmax(0, 1fr) rather than 1fr: a 1fr track refuses to shrink below its
+     min-content width, so the three labels forced the panel wider than the
+     phone viewport. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 4px 0 18px;
+}
+
+.status-steps .order-step {
+  padding: 14px 4px;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.status-steps .order-step span {
+  flex: 0 0 auto;
+}
+
+.status-steps + .owner-quote {
+  margin-top: 0;
+  padding-top: 4px;
+  border-top: 0;
+}
+
+.status-note {
+  margin: 12px 0 0;
+  font-size: 14px;
+}
+
+.status-note-wait { color: #d9a441; }
+.status-note-ok { color: #4bb96c; }
+.status-note-bad { color: #e8636b; }
+
+.status-paid {
+  margin-top: 12px;
+}
+
+/* A text action, for the secondary route out of a finished state. */
+.link-action {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.link-action:hover { text-decoration: underline; }
+
+.confirmation-content {
+  display: grid;
+  place-items: center;
+  padding: 48px 20px 80px;
+}
+
+.confirmation-card {
+  width: min(460px, 100%);
+  text-align: center;
+}
+
+/* The old markup used an SVG with only Tailwind sizing classes behind it,
+   which resolved to nothing and let the icon grow to fill the viewport.
+   A glyph in a fixed box cannot do that. */
+.confirmation-check {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 18px;
+  border: 1px solid rgba(75, 185, 108, 0.5);
+  border-radius: 50%;
+  background: rgba(75, 185, 108, 0.14);
+  color: #4bb96c;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.confirmation-heading {
+  margin: 6px 0 10px;
+  font-size: clamp(1.7rem, 4vw, 2.4rem);
+  line-height: 1.05;
+}
+
+.confirmation-detail {
+  display: grid;
+  gap: 12px;
+  margin: 22px 0;
+  padding: 18px 0;
+  border-block: 1px solid #26262a;
+  text-align: left;
+}
+
+.confirmation-detail dt {
+  color: #96969a;
+  font-size: 13px;
+}
+
+.confirmation-detail dd {
+  margin: 2px 0 0;
+  color: var(--text-h);
+  font-size: 16px;
+}
+
+.confirmation-total {
+  color: var(--accent) !important;
+  font-size: 28px !important;
+  font-weight: 800;
+}
+
+.confirmation-action {
+  box-sizing: border-box;
+  width: 100%;
+  justify-content: center;
+  text-decoration: none;
 }

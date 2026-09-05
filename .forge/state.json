@@ -383,28 +383,32 @@
       "title": "Restyle /status: reuse shared components and add the numbered stepper (R10, R11)",
       "description": "Apply the shared branded classes (top bar, card panel, typography, buttons) to /status so it reads as the same product as / and /owner. Add the same numbered stepper pattern already used for the customer order flow on / (the order-step markup/classes) to show the request's position in draft -> approved -> paid, reusing the existing CSS rather than inventing a new progress indicator. No change to what triggers each status or what the Pay button does (R13). Verify at phone and desktop widths for a draft, approved, paid, and rejected quote (all four states already covered by fixtures in .forge/dead-end-audit.mjs / responsive-check.mjs).",
       "milestoneId": "m7",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t18"
       ],
-      "notes": [],
+      "notes": [
+        "Done by hand. /status rebuilt on the shared classes: branded top bar, eyebrow + display heading with explicit leading (it was overlapping its own subhead), vehicle leading each card, raw request id dropped, quote total in brand red. R11 satisfied by reusing the existing .order-steps stepper from the customer order flow rather than inventing a second one - Requested / Owner review / Pay & confirm - so the journey reads as one product. Pay is red because it is the single primary action on the screen, unlike Approve/Reject on /owner where the pairing carries the meaning. Verified: eslint clean, build clean, responsive 8/8, dead-end 30/30."
+      ],
       "createdAt": "2026-09-05T12:15:08.476Z",
-      "updatedAt": "2026-09-05T12:15:08.476Z"
+      "updatedAt": "2026-09-05T14:37:42.538Z"
     },
     {
       "id": "t21",
       "title": "Restyle /confirmation to reuse shared components (R10, R12)",
       "description": "Apply the shared branded classes to /confirmation (top bar, card panel, typography, buttons) so it matches / and /owner, keeping the existing green success-state color per R12 (green already used for success elsewhere; do not force it to brand red). No new layout beyond what's needed for visual consistency, and no change to what data is shown or the 'Start a New Request' action (R13). Verify at phone and desktop widths using the existing quote-1/paid fixture.",
       "milestoneId": "m7",
-      "status": "todo",
+      "status": "done",
       "priority": "medium",
       "dependsOn": [
         "t18"
       ],
-      "notes": [],
+      "notes": [
+        "Done by hand. /confirmation rebuilt on the shared classes. The old markup sized its SVG tick with Tailwind classes that resolve to nothing in this project, so the icon grew to fill the entire viewport and crushed the content into a strip at the bottom - it is now a glyph in a fixed 58px badge. Card is centred and width-capped, amount paid is brand red, and the primary action is a full-width red button. Verified: eslint clean, build clean, responsive 8/8, dead-end 30/30."
+      ],
       "createdAt": "2026-09-05T12:15:08.481Z",
-      "updatedAt": "2026-09-05T12:15:08.481Z"
+      "updatedAt": "2026-09-05T14:37:42.538Z"
     },
     {
       "id": "t22",
@@ -452,5 +456,5 @@
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T14:27:51.641Z"
+  "updatedAt": "2026-09-05T14:37:42.538Z"
 }
