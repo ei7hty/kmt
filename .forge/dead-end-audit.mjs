@@ -228,7 +228,51 @@ async function main() {
       fail('/ (step 2, nothing chosen): Continue did nothing and said nothing -- a silent dead end.');
     }
 
-    // 6. Rejected quote path: does the customer have a next action, or a dead end?
+    // 6. Unstocked size. The selector offers the real fitment range, not just the
+    //    sizes in the demo catalog, so a customer can land on one we do not
+    //    carry. That must explain itself and offer a way on, not render an
+    //    empty list under a Continue button that refuses to work.
+    await page.evaluate(() => localStorage.removeItem('kmt_store'));
+    await page.goto(BASE + '/');
+    for (const value of ['275', '35', '22']) {
+      await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
+    }
+    await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
+
+    const emptyExplained = await page
+      .locator('text=We don')
+      .first()
+      .isVisible()
+      .catch(() => false);
+    // Scoped to the panel: the site nav carries the same phone number, and an
+    // unscoped locator matching two elements is a strict-mode violation that
+    // throws and reads as "not visible".
+    const callVisible = await page
+      .locator('.tire-empty a:has-text("Call (617)")')
+      .isVisible()
+      .catch(() => false);
+    const otherSizeVisible = await page
+      .locator('button:has-text("Choose another size")')
+      .isVisible()
+      .catch(() => false);
+
+    if (emptyExplained && callVisible && otherSizeVisible) {
+      ok('/ (size we do not stock): explained, with a call action and a way back to the size picker.');
+    } else {
+      fail('/ (size we do not stock): no explanation or no way forward -- dead end on an unstocked size.');
+    }
+
+    if (otherSizeVisible) {
+      await page.click('button:has-text("Choose another size")');
+      const backAtPicker = await page.locator('.fitment-option').first().isVisible().catch(() => false);
+      if (backAtPicker) {
+        ok('/ (size we do not stock): "Choose another size" returns to the size picker.');
+      } else {
+        fail('/ (size we do not stock): "Choose another size" did not return to the size picker.');
+      }
+    }
+
+    // 7. Rejected quote path: does the customer have a next action, or a dead end?
     await page.evaluate(() => localStorage.removeItem('kmt_store'));
     await submitRequest(page, {
       ...CLEAN_TIRE,

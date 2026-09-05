@@ -1147,3 +1147,34 @@
   justify-content: center;
   text-decoration: none;
 }
+
+/* An open fitment range means a customer can choose a size we do not stock.
+   That is a real outcome for a mobile shop that sources tires, not an error,
+   so it gets an explanation and two ways forward rather than an empty list. */
+.tire-empty {
+  padding: 26px 22px;
+  border: 1px solid rgba(237, 28, 36, 0.35);
+  border-radius: 6px;
+  background: rgba(237, 28, 36, 0.06);
+}
+
+.tire-empty-title {
+  margin: 0 0 8px;
+  color: var(--text-h);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.tire-empty-body {
+  margin: 0 0 18px;
+  color: #a6a6ab;
+  font-size: 14px;
+}
+
+.tire-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tire-empty-actions .btn { text-decoration: none; }

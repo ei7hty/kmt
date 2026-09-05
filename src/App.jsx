@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { calculateDraftQuote } from './pricing.js'
 import { getAllTires } from './data/catalog'
+import { FITMENT_DIAMETERS, FITMENT_RATIOS, FITMENT_WIDTHS } from './data/fitment'
 import { getAllQuotes, getAllRequests, saveQuote, saveRequest, updateQuoteStatus } from './store'
 import './App.css'
 
@@ -49,14 +50,10 @@ function App() {
   const [fitmentStage, setFitmentStage] = useState('width')
   const [fitmentSearch, setFitmentSearch] = useState('')
   const tires = getAllTires()
-  const tireSizes = [...new Set(tires.map(tire => tire.size))]
-  const parsedSizes = tireSizes.map(size => {
-    const match = size.match(/^(\d+)\/(\d+)R(\d+)$/)
-    return match ? { size, width: match[1], ratio: match[2], diameter: match[3] } : null
-  }).filter(Boolean)
-  const widthOptions = [...new Set(parsedSizes.map(item => item.width))]
-  const ratioOptions = [...new Set(parsedSizes.filter(item => item.width === fitment.width).map(item => item.ratio))]
-  const diameterOptions = [...new Set(parsedSizes.filter(item => item.width === fitment.width && item.ratio === fitment.ratio).map(item => item.diameter))]
+  // The real fitment range, not the sizes we happen to stock. See data/fitment.js.
+  const widthOptions = FITMENT_WIDTHS
+  const ratioOptions = FITMENT_RATIOS
+  const diameterOptions = FITMENT_DIAMETERS
 
   useEffect(() => {
     const handlePopState = () => setRoute(window.location.pathname)
@@ -95,8 +92,12 @@ function App() {
     if (part === 'ratio') next.diameter = ''
     setFitment(next)
     setFitmentStage(part === 'width' ? 'ratio' : part === 'ratio' ? 'diameter' : 'zip')
-    const matchingSize = parsedSizes.find(item => item.width === next.width && item.ratio === next.ratio && item.diameter === next.diameter)
-    if (matchingSize) handleSizeSelect(matchingSize.size)
+    // A size is just the three numbers formatted. Whether we stock it is a
+    // different question, answered at the tire step rather than by refusing to
+    // let the customer enter what is on their car.
+    if (next.width && next.ratio && next.diameter) {
+      handleSizeSelect(`${next.width}/${next.ratio}R${next.diameter}`)
+    }
     setFitmentSearch('')
     setStepError('')
   }
@@ -304,7 +305,7 @@ function App() {
       <main className="order-section" id="order"><div className="section-heading"><p className="eyebrow">SHOP KMT</p><h2>Order tires online</h2><p>Find the right fit for your vehicle and we&apos;ll handle the rest.</p></div><div className="order-steps" aria-label="Order progress">{['Tire size', 'Your vehicle', 'Mobile service'].map((label, index) => <div className={orderStep === index + 1 ? 'order-step current' : orderStep > index + 1 ? 'order-step complete' : 'order-step'} key={label}><span>{index + 1}</span><b>{label}</b></div>)}</div>
         <form onSubmit={handleFormSubmit} className="order-form">
           {orderStep === 1 && <div className="fitment-modal"><div className="fitment-heading"><span className="fitment-wheel">◉</span><h3>Select your tire size</h3><button type="button" className="fitment-close" aria-label="Close tire size selector">×</button></div><div className="fitment-progress"><div className={fitmentStage === 'width' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Width</b><span /></div><div className={fitmentStage === 'ratio' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Ratio</b><span /></div><div className={fitmentStage === 'diameter' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Diameter</b><span /></div><div className={fitmentStage === 'zip' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Zip code</b><span /></div></div><div className="fitment-visual"><img className="fitment-guide" src={(FITMENT_GUIDES[fitmentStage] ?? FITMENT_GUIDES.width).src} alt={(FITMENT_GUIDES[fitmentStage] ?? FITMENT_GUIDES.width).alt} /></div><button type="button" className="fitment-back" onClick={goBackFitment} disabled={fitmentStage === 'width'}>← Back</button><div className="fitment-controls">{fitmentStage === 'zip' ? <div className="fitment-zip"><label htmlFor="fitmentZip">Where will we service you?</label><input id="fitmentZip" value={fitment.zip} onChange={event => setFitment(previous => ({ ...previous, zip: event.target.value }))} placeholder="Enter ZIP code (optional)" inputMode="numeric" /></div> : <><div className="fitment-search"><span>⌕</span><input value={fitmentSearch} onChange={event => setFitmentSearch(event.target.value)} placeholder="Search" aria-label="Search tire size" /></div><div className="fitment-options">{(fitmentStage === 'width' ? widthOptions : fitmentStage === 'ratio' ? ratioOptions : diameterOptions).filter(value => value.includes(fitmentSearch.trim())).map(value => <button type="button" className="fitment-option" key={value} onClick={() => selectFitmentPart(fitmentStage, value)}>{value}</button>)}</div></>}</div><div className="fitment-footer"><span>{formData.tireSize ? `Selected: ${formData.tireSize}` : 'Select width, ratio, and diameter'}</span><button type="button" className="primary-action" disabled={!formData.tireSize} onClick={continueFromSize}>Continue to tires <span>→</span></button></div></div>}
-          {orderStep === 2 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(1)}>← Change size</button><p className="panel-kicker">STEP 02 / YOUR TIRES</p><h3>Choose a tire for {formData.tireSize}</h3><div className="tire-options">{matchingTires.map(tire => <button type="button" className={formData.tireSelection === tire.id ? 'tire-option selected' : 'tire-option'} onClick={() => { setFormData(previous => ({ ...previous, tireSelection: tire.id })); setStepError('') }} key={tire.id} disabled={!tire.inStock}><span className="tire-art">◉</span><span className="tire-info"><strong>{tire.name}</strong><small>{tire.description}</small><small>{tire.inStock ? 'In stock' : 'Currently unavailable'}</small></span><b>${tire.price.toFixed(2)}<i>per tire</i></b></button>)}</div><div className="vehicle-inline"><label htmlFor="vehicleInfo">What car are these going on?</label><input id="vehicleInfo" type="text" name="vehicleInfo" value={formData.vehicleInfo} onChange={handleFormChange} placeholder="e.g. 2020 Honda Civic" /></div><button type="button" className="primary-action" onClick={continueFromVehicle}>Continue to mobile service <span>→</span></button></div>}
+          {orderStep === 2 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(1)}>← Change size</button><p className="panel-kicker">STEP 02 / YOUR TIRES</p><h3>Choose a tire for {formData.tireSize}</h3>{matchingTires.length === 0 ? <div className="tire-empty"><p className="tire-empty-title">We don&apos;t stock {formData.tireSize} for online ordering.</p><p className="tire-empty-body">We can still source it. Call us and we&apos;ll sort it out, or pick a different size.</p><div className="tire-empty-actions"><a className="btn btn-primary" href="tel:6174108319">Call (617) 410-8319</a><button type="button" className="btn btn-neutral" onClick={() => { setOrderStep(1); setFitmentStage('width'); setFitment({ width: '', ratio: '', diameter: '', zip: '' }); setFormData(previous => ({ ...previous, tireSize: '', tireSelection: '' })); setStepError('') }}>Choose another size</button></div></div> : <div className="tire-options">{matchingTires.map(tire => <button type="button" className={formData.tireSelection === tire.id ? 'tire-option selected' : 'tire-option'} onClick={() => { setFormData(previous => ({ ...previous, tireSelection: tire.id })); setStepError('') }} key={tire.id} disabled={!tire.inStock}><span className="tire-art">◉</span><span className="tire-info"><strong>{tire.name}</strong><small>{tire.description}</small><small>{tire.inStock ? 'In stock' : 'Currently unavailable'}</small></span><b>${tire.price.toFixed(2)}<i>per tire</i></b></button>)}</div>}<div className="vehicle-inline"><label htmlFor="vehicleInfo">What car are these going on?</label><input id="vehicleInfo" type="text" name="vehicleInfo" value={formData.vehicleInfo} onChange={handleFormChange} placeholder="e.g. 2020 Honda Civic" /></div><button type="button" className="primary-action" onClick={continueFromVehicle}>Continue to mobile service <span>→</span></button></div>}
           {orderStep === 3 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(2)}>← Back to tire selection</button><p className="panel-kicker">STEP 03 / WE COME TO YOU</p><h3>Where should we bring your service?</h3><div className="order-summary-line"><span>{selectedTire?.name} · {formData.tireSize}</span><b>{formData.vehicleInfo}</b></div><div className="service-fields"><div><label htmlFor="location">Service location</label><input id="location" type="text" name="location" value={formData.location} onChange={handleFormChange} placeholder="Address, city or ZIP code" /></div><div><label htmlFor="date">Preferred date</label><input id="date" type="date" name="date" value={formData.date} onChange={handleFormChange} /></div></div><button type="submit" className="primary-action">Request my quote <span>→</span></button></div>}
           {stepError && <p className="step-error" role="alert">{stepError}</p>}
         </form>
