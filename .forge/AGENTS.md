@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| `forge/phase-3` | forge (Claude) | `src/App.jsx`, `src/routes/`, phase 3 of `.forge/state.json`; t26-t27 will touch `backend/api.mjs` and the customer route | 2026-09-05 |
+| _none_ | | | |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
@@ -285,15 +285,34 @@ directions.
 
 `( npx vite preview & )` detaches the server from the shell. When the shell
 exits the process keeps running, keeps its port, and nothing that tracks child
-processes can reach it any more. Start servers so they stay reachable:
+processes can reach it any more.
+
+**Backgrounding `npx` is not enough either, and an earlier version of this note
+got that wrong.** `npx` spawns the real server as a *grandchild*, so `$!` is the
+wrapper: kill it and the server keeps the port. Measured, not assumed --
+`npx vite preview --port 4187 &`, then `kill $!`, and the port still answered
+200. That is how 4187 and 4197 leaked.
+
+Start the server directly, so `$!` is the thing holding the port:
 
 ```bash
-npx vite preview --port 4173 &
-preview=$!
-trap 'kill $preview 2>/dev/null || true' EXIT
+node node_modules/vite/bin/vite.js preview --port 4173 &
+server=$!
+trap 'kill $server 2>/dev/null || true' EXIT
 ```
 
-That is what `.github/workflows/fly-deploy.yml` does, and why CI does not leak.
+Same test against that form: after `kill $!` the port was dead. Or skip the
+bookkeeping and kill by port when you are done, which is the only reliable move
+once something has already detached:
+
+```powershell
+Get-NetTCPConnection -LocalPort 4173 -State Listen |
+  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+```
+
+CI is unaffected either way -- the runner is destroyed at the end of the job, so
+nothing there survives to hold a port. Do not read the workflow as the model for
+local runs.
 
 The damage is not the process, it is the port. The three audits default to
 4179, 4183 and 4173 (see the verification contract above), so a forgotten server
