@@ -5,9 +5,9 @@
 # Render, Railway or `docker run`.
 #
 # Change `app` to whatever name `fly launch` gives you, or run
-# `fly launch --name kmt-owner --no-deploy` to claim this one.
+# `fly launch --name kmt --no-deploy` to claim this one.
 
-app = "kmt-owner"
+app = "kmt"
 primary_region = "ewr"          # Secaucus NJ, nearest Fly region to Everett MA.
 
 [build]
