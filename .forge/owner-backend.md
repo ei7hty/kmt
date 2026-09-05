@@ -131,9 +131,9 @@ The `Dockerfile` is plain and host-agnostic: an image listening on `$PORT` with
 its database on a volume at `/data`. Nothing in it is specific to a provider.
 
 ```bash
-docker build -t kmt-owner .
+docker build -t kmt .
 docker run -p 8080:8080 -v kmt-data:/data \
-  -e KMT_OWNER_PASSWORD=... -e KMT_SESSION_SECRET=... kmt-owner
+  -e KMT_OWNER_PASSWORD=... -e KMT_SESSION_SECRET=... kmt
 ```
 
 #### Fly, specifically
@@ -172,7 +172,7 @@ After the first deploy, set `KMT_ALLOWED_HOSTS` to the app's hostname if you
 want the Host check enforced:
 
 ```bash
-fly secrets set KMT_ALLOWED_HOSTS=kmt-owner.fly.dev
+fly secrets set KMT_ALLOWED_HOSTS=kmt.fly.dev
 ```
 
 Any container host takes it from there: Fly (`fly launch`, add a volume mounted
