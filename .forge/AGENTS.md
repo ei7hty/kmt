@@ -56,11 +56,14 @@ file from opposite ends.
 
 | area | typically |
 | --- | --- |
-| `src/App.jsx`, `src/App.css` | UI work |
-| `src/data/catalog.js`, `src/pricing.js` | catalog and quoting rules |
+| `src/App.jsx`, `src/App.css`, `src/RequestFlow.css`, `src/components/` | customer flow and quote screens |
+| `src/owner/` | the `/owner` inventory workspace |
+| `src/data/catalog.js`, `src/pricing.js`, `src/markup.js` | catalog, pricing and quoting rules |
+| `backend/` | the owner inventory API, database and refresh job |
 | `scripts/`, `src/data/scraped-tires.json` | supplier / scraper work |
+| `Dockerfile`, `fly.toml`, `.github/` | hosting and CI |
 | `.forge/*.md`, `.forge/state.json` | planning, requirements, task status |
-| `.forge/*-audit.mjs`, `.forge/responsive-check.mjs` | verification tooling |
+| `.forge/*-audit.mjs`, `.forge/*-check.mjs` | verification tooling |
 
 `package.json` and `README.md` are shared. Touch them in a commit of their own so
 a conflict is trivial to resolve.
@@ -84,14 +87,23 @@ a conflict is trivial to resolve.
 Nothing is done until these pass. Run them; do not assume them.
 
 ```bash
+node --test backend/owner.test.mjs   # backend: persistence, refresh, markup, auth
+npx eslint src backend
 npm run build
-npx eslint src
 node .forge/responsive-check.mjs     # 8 checks, overflow at 375px and 1280px
 node .forge/dead-end-audit.mjs       # 36 checks across the full click path
+node .forge/request-flow-check.mjs   # 26 checks, vehicle and location entry reaching the owner
 ```
 
-The audits need `npm run preview` running, or `AUDIT_BASE` pointed at a
-deployed URL.
+CI runs the first three on every push to `main` and on every pull request,
+and the three browser audits against https://kmt.fly.dev after a deploy from
+`main`.
+
+The browser audits need a built app running, or `AUDIT_BASE` pointed at a
+deployed URL. **Always set `AUDIT_BASE`.** Each script falls back to a
+different port (4173, 4179 and 4183 respectively), so an unset variable audits
+whatever happens to be listening there. `.forge/owner-inventory-audit.mjs`
+exercises `/owner` and expects `node backend/dev.mjs` on port 4180.
 
 **Run the dead-end audit against the live URL before calling a deploy good.**
 This build has passed every local check and 404'd in production: a missing SPA
@@ -122,8 +134,14 @@ script errors before reaching its assertions, say so loudly.
 
 ## Settled — do not relitigate without asking
 
-- No backend. `localStorage` carries state between the customer and owner views.
-  The catalog is generated. Payment always succeeds. These are demo choices.
+- Requests, quotes and payment are a `localStorage` demo: the store carries
+  state between the customer screens and `/owner/quotes`, and payment always
+  succeeds. The owner inventory behind `/owner` is the real backend (`backend/`,
+  SQLite). The customer catalog is seeds plus the scraped snapshot plus
+  generated coverage, priced by a placeholder markup; wiring the owner's real
+  inventory through to the customer is phase 3, not something to do on the side.
+- Owner prices are never inferred from supplier prices. Markup proposes, the
+  owner's price wins, a disabled tire is not for sale. See `src/markup.js`.
 - Brand red is for the single primary action on a screen and for key figures.
   Approve/Reject stay green/red: a paired opposed decision needs colour to carry
   meaning. Green and amber are legitimate semantic accents — the production site
@@ -196,3 +214,18 @@ rows, not for every size in `scraped-tires.json`. Those differ once the owner
 deselects tires: a size he empties gets its generated coverage back instead of
 becoming a dead end. If you change that filter, re-run the dead-end audit — this
 is exactly the invariant it protects.
+
+**2026-09-05 — Claude (docs session)**
+`README.md` now describes the project as it stands (screens, pricing, the
+owner backend, verification, deployment) instead of the Vite template. A root
+`AGENTS.md` and `CLAUDE.md` point here, so a tool that reads those on start-up
+finds this protocol without being told. Keep the README's layout table and
+verification commands current when you add a directory or a check.
+
+Also: the local `main` in the shared checkout had diverged from `origin/main`
+when I looked. Both had merged `owner-inventory-backend`, through different
+merge commits; only the local one carried `.forge/reset-runbook.md`, and only
+`origin/main` carried the Fly deployment, `backend/server.mjs` and
+`backend/auth.mjs`. `origin/main` is what CI deploys, so treat it as the truth
+and reconcile the local branch before branching from it. This branch was cut
+from `origin/main`.
