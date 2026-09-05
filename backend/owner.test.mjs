@@ -510,3 +510,45 @@ test('the catalog answers a customer with no session, while the owner API still 
     'the exemption is for reading the catalog, not for the path',
   )
 })
+
+test('a tire the supplier has delisted stays in the catalog, out of stock, however it was priced', async t => {
+  // Both ways a row can reach the catalog, because the flag has to win in
+  // each: the owner set a price, and markup proposed one for a tire he never
+  // touched. There is no third state -- saveOffer refuses an enabled offer
+  // with no price, so "marked up" and "untouched" are the same row here.
+  const db = new Inventory(':memory:', [SIZE, otherSize])
+  t.after(() => db.close())
+  db.importSnapshot(snapshot([
+    tire('giga-a'),
+    tire('giga-b', { name: 'Second Tire' }),
+  ]))
+  db.saveMarkup({ rate: 1.4 })
+  db.saveOffer('giga-a', offer({ priceCents: 8999 }))
+
+  const before = Object.fromEntries(db.catalog().map(row => [row.id, row]))
+  assert.deepEqual(
+    ['giga-a', 'giga-b'].map(id => before[id].inStock), [true, true],
+    'both are sellable while the supplier still lists them',
+  )
+
+  // The supplier's next page no longer carries them. That is what delisting
+  // looks like from here -- nothing is deleted, the rows just go inactive.
+  db.refreshSize(SIZE, [tire('giga-z', { name: 'Replacement' })])
+
+  const after = Object.fromEntries(db.catalog().map(row => [row.id, row]))
+  for (const id of ['giga-a', 'giga-b']) {
+    assert.ok(after[id], `${id} is still in the catalog rather than vanishing mid-request`)
+    assert.equal(after[id].inStock, false, `${id} is out of stock once delisted`)
+  }
+  assert.equal(after['giga-a'].price, 89.99, 'and the owner price it carried is untouched')
+  assert.equal(after['giga-b'].price, 70, 'as is the marked-up one')
+  assert.equal(after['giga-z'].inStock, true, 'while what the supplier does list is still in stock')
+})
+
+test('an offer cannot be enabled without a price, which is why there are only two states', async t => {
+  // Pinning the reason the test above covers two cases and not three: an
+  // enabled offer with no price is refused, so the only rows a customer can
+  // see are owner-priced ones and ones markup priced on their own.
+  const db = setup(t)
+  assert.throws(() => db.saveOffer('giga-a', offer({ priceCents: null })), /positive KMT price/)
+})

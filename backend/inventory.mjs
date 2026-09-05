@@ -197,10 +197,16 @@ export class Inventory {
    * shows up as a wrong price. Anything the supplier told us -- SKU, list
    * price, stock count, the URL we scraped -- stops here: the customer sees
    * KMT's price and nothing behind it.
+   *
+   * A tire the supplier has stopped listing is kept and marked out of stock
+   * rather than dropped. Dropping it would quietly shrink the catalog under a
+   * customer mid-request; leaving it in stock would sell something nobody can
+   * source. Out of stock is the honest answer, and the pricing rules already
+   * route an out-of-stock choice to the owner instead of quoting it outright.
    */
   catalog() {
     const settings = this.getMarkup()
-    const rows = this.db.prepare(`SELECT s.payload, o.id AS offer_id, o.price_cents, o.enabled
+    const rows = this.db.prepare(`SELECT s.payload, s.active, o.id AS offer_id, o.price_cents, o.enabled
       FROM supplier s LEFT JOIN offers o ON o.id=s.id
       ORDER BY s.size, json_extract(s.payload,'$.name'), s.id`).all()
 
@@ -224,7 +230,9 @@ export class Inventory {
         name: tire.name,
         size: tire.size,
         price,
-        inStock: tire.inStock,
+        // Delisted at the supplier is out of stock here, whatever the last
+        // snapshot said about it, and whether or not the owner priced it.
+        inStock: !!row.active && tire.inStock,
         category: tire.category,
         description: tire.description,
       })
