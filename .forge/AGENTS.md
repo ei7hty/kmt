@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `import-scraped-snapshot` | Claude (kmt CLI session) | `backend/inventory.mjs`, `backend/api.mjs`, `backend/owner.test.mjs`, new `scripts/import-tires.mjs`; `package.json` and `README.md` in their own commits | 2026-09-05 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
