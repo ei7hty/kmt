@@ -470,11 +470,12 @@
 .fitment-progress-item.active { color: #ef4b54; font-weight: 800; }
 .fitment-progress-item.active span { background: #ef4b54; box-shadow: 0 0 0 1px #ef4b54; }
 .fitment-progress-item.active::after { background: linear-gradient(90deg, #f09ba0 0 52%, #e5e5e5 52%); }
-.fitment-visual { position: relative; min-height: 172px; margin-top: 12px; overflow: hidden; background: linear-gradient(180deg, #fff, #f1f1f1); }
-.fitment-tire-art { position: absolute; left: 16%; bottom: -103px; display: flex; align-items: center; justify-content: center; width: 330px; height: 330px; border: 25px solid #171a1d; border-radius: 50%; color: #c8c8c8; background: radial-gradient(circle, #343a3f 0 41%, #15181a 42% 63%, #292d30 64% 72%, #0c0d0e 73%); box-shadow: inset 0 0 0 4px #3c4247, inset 0 0 0 13px #101112; transform: rotate(-12deg); }
-.fitment-tire-art span { margin-top: -60px; color: #f0f0f0; font-family: var(--mono); font-size: 22px; font-weight: 800; }
-.fitment-tire-art b { margin-top: -60px; font-family: var(--mono); font-size: 19px; }
-.fitment-width-mark { position: absolute; right: 16%; top: 35px; color: #19181d; font-size: 27px; font-weight: 700; }
+.fitment-visual { position: relative; height: 172px; margin-top: 12px; overflow: hidden; background: linear-gradient(180deg, #fff, #f1f1f1); }
+/* Fixed height with object-fit rather than width:100%/height:auto: the three
+   guides have different aspect ratios, so an auto height would make the panel
+   jump every time the stage advances. Transparency plus the light panel means
+   the letterboxing is invisible. */
+.fitment-guide { display: block; box-sizing: border-box; width: 100%; height: 100%; padding: 14px 18px 0; object-fit: contain; object-position: center bottom; }
 .fitment-back { margin: 0 16px; padding: 10px 0 !important; border: 0 !important; background: transparent !important; color: #55525a !important; font-size: 13px; }
 .fitment-back:hover { background: transparent !important; color: #ef4b54 !important; transform: none !important; }
 .fitment-back:disabled { visibility: hidden; }
@@ -535,9 +536,8 @@
   .fitment-heading h3 { font-size: 20px; }
   .fitment-progress { padding-inline: 10px; }
   .fitment-progress-item { font-size: 11px; }
-  .fitment-visual { min-height: 140px; }
-  .fitment-tire-art { left: -2%; bottom: -105px; width: 250px; height: 250px; border-width: 18px; }
-  .fitment-width-mark { right: 8%; top: 25px; font-size: 18px; }
+  .fitment-visual { height: 140px; }
+  .fitment-guide { padding: 10px 12px 0; }
   .fitment-options { grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .fitment-footer { align-items: flex-start; flex-direction: column; }
   .fitment-footer .primary-action { width: 100%; }
