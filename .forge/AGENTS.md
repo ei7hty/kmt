@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `audits-drive-the-ui` | forge (Claude) | t32: `.forge/dead-end-audit.mjs`, `.forge/request-flow-check.mjs`, `.forge/responsive-check.mjs`, `.github/workflows/fly-deploy.yml`, `.forge/conventions.md` | 2026-09-05 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
