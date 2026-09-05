@@ -156,18 +156,19 @@ function App() {
         </nav>
         <div className="owner-content">
           <p className="eyebrow">OWNER</p>
-          <h1 className="owner-heading">Owner Review Screen</h1>
-          <p className="text-secondary owner-subhead">Submitted quote requests:</p>
+          <h1 className="owner-heading">Quote Requests</h1>
+          <p className="text-secondary owner-subhead">{requests.length === 1 ? '1 request waiting on you.' : `${requests.length} requests waiting on you.`}</p>
           {requests.length === 0 ? <div className="panel"><p className="text-secondary">No requests yet. Go to the customer flow and submit a request.</p></div> : (
             <div className="owner-list">
               {requests.map(request => {
                 const quote = quotes.find(item => item.requestId === request.id)
+                // The owner thinks in vehicles and tire names, not record ids.
+                const requestedTire = tires.find(tire => tire.id === request.tireSelection)
                 return (
                   <div key={`${request.id}-${ownerVersion}`} className="panel owner-request">
-                    <div className="text-secondary">Request ID: <code>{request.id}</code></div>
+                    <p className="owner-request-vehicle">{request.vehicleInfo}</p>
                     <dl className="owner-details">
-                      <div><dt>Vehicle:</dt> <dd>{request.vehicleInfo}</dd></div>
-                      <div><dt>Tire:</dt> <dd>{request.tireSelection}</dd></div>
+                      <div><dt>Tire:</dt> <dd>{requestedTire ? `${requestedTire.name} · ${requestedTire.size}` : request.tireSelection}</dd></div>
                       <div><dt>Location:</dt> <dd>{request.location}</dd></div>
                       <div><dt>Preferred Date:</dt> <dd>{request.date}</dd></div>
                     </dl>

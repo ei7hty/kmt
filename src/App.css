@@ -714,12 +714,24 @@
 }
 
 .owner-heading {
-  margin: 0 0 8px;
+  /* The display face is tall and tightly leaded, so it needs an explicit
+     line-height or the caption below sits in its descenders. */
+  margin: 6px 0 12px;
   font-size: clamp(2rem, 5vw, 3.4rem);
+  line-height: 1.02;
 }
 
 .owner-subhead {
-  margin-bottom: 26px;
+  margin: 0 0 28px;
+  font-size: 15px;
+}
+
+/* The vehicle is what the owner recognises a request by, so it leads the card. */
+.owner-request-vehicle {
+  margin: 0 0 14px;
+  color: var(--text-h);
+  font-size: 19px;
+  font-weight: 700;
 }
 
 .owner-list {
@@ -773,10 +785,10 @@
 
 .owner-quote-total {
   margin: 2px 0 0;
-  color: var(--text-h);
-  font-family: var(--mono);
-  font-size: 22px;
+  color: var(--accent);
+  font-size: 30px;
   font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .owner-quote-status {

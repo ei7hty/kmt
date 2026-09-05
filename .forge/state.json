@@ -339,26 +339,30 @@
       "title": "Extract shared branded UI classes (top bar, card panel, buttons, eyebrow/heading, secondary text) into App.css",
       "description": "Generalize the visual language already proven on / (near-black ground, dark card panels with subtle borders, small red uppercase eyebrow labels, bold condensed uppercase headings, red reserved for primary actions/key figures, small gray secondary text, button variants for primary/approve/reject/neutral) into a small set of shared classes in App.css that /owner, /status, and /confirmation can apply, plus a simpler internal top bar variant (KMT wordmark + route-appropriate nav links) distinct from the marketing site-nav per the recorded decision. Done when these classes exist and are exercised by at least one non-customer route (can land together with the /owner task), and no class name collides with or changes the rendering of the existing customer flow (/ must look pixel-identical after this change -- verify by diffing a phone+desktop screenshot of / against .forge/shots/phone-_.png and desktop-_.png).",
       "milestoneId": "m7",
-      "status": "in_progress",
+      "status": "done",
       "priority": "high",
       "dependsOn": [],
-      "notes": [],
+      "notes": [
+        "Verified outside the agent run, which stopped on the turn limit before it could verify itself: npm run build passes; responsive-check.mjs reports ok on all 8 screen/viewport combinations; dead-end-audit.mjs reports 30/30 OK across phone and desktop. Shared classes live in App.css under new names that do not touch the customer flow selectors, so / is unchanged. The audit had to be repaired first (see commit 48cc5c4) because it had silently stopped running when the customer flow became a wizard."
+      ],
       "createdAt": "2026-09-05T12:15:08.459Z",
-      "updatedAt": "2026-09-05T12:50:55.519Z"
+      "updatedAt": "2026-09-05T14:01:26.662Z"
     },
     {
       "id": "t18",
       "title": "Redesign /owner to use the shared branded UI (R8)",
       "description": "Replace the default/unstyled Tailwind gray-and-blue layout at /owner with the shared classes from the previous task: dark ground, card-based request/quote panels with subtle borders, condensed uppercase headings with red eyebrow labels, small gray secondary text, red reserved for the primary Approve & Send action and key figures (quote total). No change to what data is shown, what Approve & Send/Reject do, or the exception trigger logic (R13) -- this is App.jsx JSX/class changes only, calculateDraftQuote and store.js are untouched. Verify by loading /owner (seed via localStorage as the audit script does) at phone and desktop widths and confirming it visually matches the / design language, not default Tailwind.",
       "milestoneId": "m7",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t17"
       ],
-      "notes": [],
+      "notes": [
+        "Completed by hand after two agent runs stopped on the turn limit without writing code. t17 had already applied the shared classes to /owner, so the remaining work was refinement: product copy for the heading and a request count for the subhead, the vehicle promoted to lead the card, tire shown as name and size instead of the raw catalog id, the raw request id dropped, quote total changed from white monospace to brand red at 30px, and explicit leading on the display heading so the caption is not sitting in its descenders. Approve stays green and Reject red-outline: they are a paired opposed decision where colour carries meaning, unlike the single-CTA case the red-primary convention comes from. Verified: eslint clean, build clean, responsive 8/8, dead-end audit 30/30."
+      ],
       "createdAt": "2026-09-05T12:15:08.464Z",
-      "updatedAt": "2026-09-05T12:15:08.464Z"
+      "updatedAt": "2026-09-05T14:27:51.640Z"
     },
     {
       "id": "t19",
@@ -448,5 +452,5 @@
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T12:50:55.519Z"
+  "updatedAt": "2026-09-05T14:27:51.641Z"
 }
