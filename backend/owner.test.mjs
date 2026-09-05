@@ -7,7 +7,8 @@ import { createServer, request as httpRequest } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { createApi, readJsonBody } from './api.mjs'
-import { createAuth, readAuthConfig } from './auth.mjs'
+import { createAuth, createImportToken, readAuthConfig, verifyImportToken } from './auth.mjs'
+import { PageImporter } from './import.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 
 const SIZE = '215/60R16'
@@ -16,6 +17,19 @@ const tire = (id = 'giga-a', overrides = {}) => ({ id, name: 'Test Touring', siz
   price: 50, inStock: true, category: 'all-season', description: '95H BSW',
   source: { sku: id.slice(5), stock: 12, listPrice: 60, segment: 'Passenger', url: 'https://www.giga-tires.com/tires/test' }, ...overrides })
 const snapshot = tires => ({ source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE], tires })
+
+/** Minimal markup matching what parseListingPage looks for. */
+const pageHtml = (tires, totalPages = 1) => tires.map(t => `
+  <div class="plp-list__item-container">
+    <a class="j-override-clipboard" href="/x/y/tirecode/1">${t.name} ${t.size} 95H BSW</a>
+    <p class="p-regular-md">All Season</p>
+    <a href="/tires/c/passenger">Passenger</a>
+    <form data-product-code="${t.id.slice(5).toUpperCase()}"></form>
+    <script>window.productPrices.initialData['${t.id.slice(5).toUpperCase()}'] = {
+      quantity: '4', priceData: {"initialPricePerTire":${t.price},"stock":${t.source.stock},"strikeThroughPricePerTire":null,"totalCostPerTire":null,"lightningSavings":null} }
+    </script>
+  </div>`).join('') + (totalPages > 1 ? `<a href="?page=${totalPages}">${totalPages}</a>` : '')
+
 function setup(t) {
   const db = new Inventory(':memory:', [SIZE, otherSize])
   t.after(() => db.close())
@@ -307,4 +321,73 @@ test('the API origin check follows the request scheme', async t => {
   assert.equal(await call({ origin: 'https://evil.example', host: 'kmt.example', 'x-forwarded-proto': 'https' }), 403)
   assert.equal(await call({ origin: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}` }), 200, 'plain http still works locally')
   assert.equal(await call({}), 200, 'a request with no Origin at all is allowed')
+})
+
+test('page import applies a size only when every page has arrived', t => {
+  const db = setup(t)
+  const importer = new PageImporter(db)
+  const page = (n, tires) => ({ sessionId: 'imp-abcdef12', size: SIZE, page: n, totalPages: 2,
+    html: pageHtml(tires) })
+
+  const first = importer.addPage(page(1, [tire('giga-p1')]))
+  assert.equal(first.complete, false)
+  assert.equal(first.received, 1)
+  assert.equal(db.list().total, 1, 'nothing is written until the size is complete')
+
+  const second = importer.addPage(page(2, [tire('giga-p2')]))
+  assert.equal(second.complete, true)
+  assert.equal(second.tires, 2)
+  const rows = db.list().items
+  const active = rows.filter(r => r.supplierActive).map(r => r.id).sort()
+  assert.deepEqual(active, ['giga-p1', 'giga-p2'], 'both pages landed and are the live listing')
+  // The seeded row is kept but marked inactive rather than deleted, which is
+  // what preserves an owner price on a tire the supplier stopped listing.
+  assert.deepEqual(rows.filter(r => !r.supplierActive).map(r => r.id), ['giga-a'])
+})
+
+test('page import refuses input that would corrupt a size', t => {
+  const db = setup(t)
+  const importer = new PageImporter(db)
+  const base = { sessionId: 'imp-abcdef12', size: SIZE, page: 1, totalPages: 1, html: pageHtml([tire()]) }
+
+  assert.throws(() => importer.addPage({ ...base, sessionId: 'no' }), /Invalid import session/)
+  assert.throws(() => importer.addPage({ ...base, size: '999/99R99' }), /not a size KMT supports/)
+  assert.throws(() => importer.addPage({ ...base, page: 3 }), /Invalid page numbering/)
+  assert.throws(() => importer.addPage({ ...base, totalPages: 0 }), /Invalid page numbering/)
+  assert.throws(() => importer.addPage({ ...base, html: '' }), /Empty page/)
+  // A WAF challenge is a real response with no tires in it.
+  assert.throws(() => importer.addPage({ ...base, html: '<html><body>challenge</body></html>' }), /No tires found/)
+  assert.equal(db.list().total, 1, 'the seeded row is untouched by every rejection')
+})
+
+test('page import will not mix two different reads of a listing', t => {
+  const db = setup(t)
+  const importer = new PageImporter(db)
+  importer.addPage({ sessionId: 'imp-abcdef12', size: SIZE, page: 1, totalPages: 3, html: pageHtml([tire('giga-p1')]) })
+  // The listing gained or lost a page between requests.
+  assert.throws(() => importer.addPage({ sessionId: 'imp-abcdef12', size: SIZE, page: 2, totalPages: 4,
+    html: pageHtml([tire('giga-p2')]) }), /listing changed while importing/)
+  // The half-finished session was discarded, not left to be completed: sending
+  // page 1 again starts from one received page, not two.
+  const restarted = importer.addPage({ sessionId: 'imp-abcdef12', size: SIZE, page: 1, totalPages: 3,
+    html: pageHtml([tire('giga-p1')]) })
+  assert.equal(restarted.received, 1)
+  assert.equal(restarted.complete, false)
+  assert.equal(db.list().total, 1, 'and nothing reached the database meanwhile')
+})
+
+test('import tokens cannot be swapped for session tokens', t => {
+  const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'secret-one' }
+  const config = readAuthConfig(env)
+  const auth = createAuth(config)
+  const importToken = createImportToken(config)
+
+  assert.equal(verifyImportToken(config, importToken), true)
+  // The import token must not unlock the workspace...
+  assert.equal(auth.isAuthenticated({ headers: { cookie: `kmt_owner=${importToken}` }, socket: {} }), false)
+  // ...and it must not be accepted by a different secret.
+  assert.equal(verifyImportToken(readAuthConfig({ ...env, KMT_SESSION_SECRET: 'secret-two' }), importToken), false)
+  assert.equal(auth.isImportAuthorized({ headers: { authorization: `Bearer ${importToken}` } }), true)
+  assert.equal(auth.isImportAuthorized({ headers: { authorization: 'Bearer nonsense' } }), false)
+  assert.equal(auth.isImportAuthorized({ headers: {} }), false)
 })

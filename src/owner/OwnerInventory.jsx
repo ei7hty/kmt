@@ -82,6 +82,86 @@ function SupplierLink({ url }) {
 }
 
 /**
+ * The bookmarklet, built around a freshly issued import token.
+ *
+ * Minified deliberately -- it has to survive being a `javascript:` URL in a
+ * bookmark. `src/owner/bookmarklet.js` is the same code written to be read;
+ * change that first, then mirror it here.
+ */
+function buildBookmarklet(base, token) {
+  const source = `(async()=>{try{
+var m=location.pathname.match(/\\/tires\\/(?:.*\\/)?(\\d{3})-(\\d{2})-(\\d{2})(?:$|[\\/?])/);
+if(!m){alert('Open a giga-tires size listing first, e.g. /tires/215-60-16');return}
+var sz=m[1]+'/'+m[2]+'R'+m[3],sp=m[1]+'-'+m[2]+'-'+m[3];
+var id='imp'+Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+var post=async function(p,t,h){var r=await fetch('${base}/api/owner/import',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer ${token}'},body:JSON.stringify({sessionId:id,size:sz,page:p,totalPages:t,html:h})});var d=await r.json().catch(function(){return{}});if(!r.ok)throw new Error(d.error||'Import failed ('+r.status+')');return d};
+var h1=document.documentElement.outerHTML;
+var ls=[].map.call(h1.match(/[?&]page=(\\d+)/g)||[],function(s){return +s.split('=')[1]});
+var tp=ls.length?Math.max.apply(null,ls):1;
+var res=await post(1,tp,h1);
+for(var p=2;p<=tp;p++){await new Promise(function(r){setTimeout(r,1500)});
+var rr=await fetch('/tires/'+sp+'?page='+p,{credentials:'include'});
+if(!rr.ok)throw new Error('Supplier returned '+rr.status+' for page '+p);
+res=await post(p,tp,await rr.text())}
+alert(res.message)}catch(e){alert('KMT import: '+e.message)}})()`
+  return `javascript:${encodeURIComponent(source.replace(/\n/g, ''))}`
+}
+
+/**
+ * Import supplier pages from the owner's own browser.
+ *
+ * The server cannot be relied on to fetch giga-tires -- a datacenter IP may be
+ * refused -- and this page cannot fetch it either: cross-origin requests return
+ * an empty 202 with no CORS headers. A giga-tires page fetching its own further
+ * pages is same-origin and allowed, so the work happens there and the HTML
+ * comes back here.
+ */
+function BrowserImport({ sizes }) {
+  const [link, setLink] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [size, setSize] = useState(sizes?.[0] || '215/60R16')
+
+  async function generate() {
+    setError('')
+    setBusy(true)
+    try {
+      const { token } = await api('import-token', { method: 'POST', body: '{}' })
+      setLink(buildBookmarklet(window.location.origin, token))
+    } catch (err) { setError(err.message) }
+    finally { setBusy(false) }
+  }
+
+  const sizePath = size.replace('/', '-').replace('R', '-')
+
+  return <section className="oi-refresh" aria-label="Import from your browser">
+    <div>
+      <h2>Import from your browser</h2>
+      <p>Refreshes run from this server, and the supplier may refuse it. This route runs from your own connection instead: open a size on Giga Tires, click the bookmark, and every page of that listing is sent back here.</p>
+      <ol className="oi-import-steps">
+        <li>Generate the bookmark below and drag it to your bookmarks bar.</li>
+        <li>Open <a href={`https://www.giga-tires.com/tires/${sizePath}`} target="_blank" rel="noreferrer">giga-tires.com/tires/{sizePath} ↗</a></li>
+        <li>Click the bookmark and wait for the &ldquo;Imported…&rdquo; message.</li>
+      </ol>
+      <p className="oi-muted">The bookmark carries a key that expires in two hours and can do nothing but import tires. Generate a new one whenever it stops working.</p>
+    </div>
+    <div className="oi-refresh-actions">
+      <label htmlFor="import-size" className="oi-kicker">SIZE TO OPEN</label>
+      <select id="import-size" value={size} onChange={e => setSize(e.target.value)}>
+        {(sizes || []).map(value => <option key={value} value={value}>{value}</option>)}
+      </select>
+      <button type="button" className="oi-button oi-primary" onClick={generate} disabled={busy}>
+        {busy ? 'Generating…' : link ? 'Generate a new bookmark' : 'Generate bookmark'}
+      </button>
+      {link && <a className="oi-bookmarklet" href={link} onClick={e => e.preventDefault()} draggable>
+        ⇱ Send to KMT — drag me to your bookmarks bar
+      </a>}
+      {error && <p role="alert" className="oi-error">{error}</p>}
+    </div>
+  </section>
+}
+
+/**
  * The markup rule: what a tire is priced at until the owner prices it himself.
  *
  * It is a fallback, not a policy. Every price set below overrides it, and this
@@ -282,6 +362,7 @@ export default function OwnerInventory({ navigate }) {
         <div><h2>Supplier inventory</h2><p>{summary?.importedSizeCount ? `${summary.importedSizeCount} sizes started from a limited snapshot. ` : ''}Refresh reads every results page for the selected size. All-size refreshes can take a while and open a browser on this computer.</p><p className="oi-muted">Supplier prices and stock are last-seen listings, not guaranteed quotes. Your saved KMT prices stay under your control.</p></div>
         <div className="oi-refresh-actions"><button className="oi-button oi-primary" onClick={refresh} disabled={!data || busy || jobRunning}>{size ? `Refresh ${size}` : `Refresh all ${summary?.sizes.length ?? ''} sizes`}</button>{jobRunning && <button className="oi-button" onClick={cancel} disabled={busy}>Stop refresh</button>}</div>
       </section>
+      <BrowserImport sizes={summary?.sizes} />
       {summary?.markup && <MarkupRule markup={summary.markup} onSaved={markupSaved} />}
       {job && <div className={`oi-job ${['failed', 'interrupted'].includes(job.status) ? 'oi-attention' : ''}`} role="status"><strong>{job.status.toUpperCase()}</strong><span>{job.message}</span><span>{job.completed} / {job.sizes.length} sizes · {job.tiresRead} tires · {job.pagesRead} pages</span>{job.failed?.length > 0 && <span>Earlier saved inventory and offers are preserved. Choose the failed size to retry.</span>}</div>}
       <div className="oi-filters">

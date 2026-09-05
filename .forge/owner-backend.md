@@ -193,6 +193,35 @@ One shared password, because there is one owner. It is not an account system:
 no users, no registration, no reset. If more than one person ever needs their
 own login, replace it rather than growing it.
 
+### Importing from the owner's browser
+
+The server's Refresh button may be refused by the supplier's WAF from a
+datacenter. The alternative runs on the owner's own connection.
+
+A page on kmt.fly.dev cannot fetch giga-tires: cross-origin requests come back
+as an empty 202 with no `Access-Control-Allow-Origin`. Verified, not assumed.
+The one place the fetch is permitted is a giga-tires page itself, where it is
+same-origin -- so a bookmarklet runs there, walks every page of the listing with
+the same 1.5s pause the server uses, and POSTs each page's HTML to
+`POST /api/owner/import`.
+
+- The parser stays on the server. Extracting rows in the browser would be a
+  smaller payload and a second implementation of the thing most likely to break
+  when the supplier changes their markup.
+- Pages accumulate in memory and only reach the database once the size is
+  complete, via the same `refreshSize` a server refresh uses. A half-read size
+  never replaces a whole one, and a listing that changes page count mid-import
+  is discarded rather than mixed.
+- Auth is a bearer token from `POST /api/owner/import-token`, not the session
+  cookie: that cookie is `SameSite=Strict` and deliberately does not travel
+  cross-site. The import token lasts two hours and authorises nothing else.
+- CORS is granted to the two giga-tires origins for that one endpoint. Every
+  other route stays same-origin only.
+
+`src/owner/bookmarklet.js` is the readable source; `buildBookmarklet` in
+OwnerInventory holds the minified copy that becomes the `javascript:` URL. Edit
+the readable one first.
+
 ### Supplier refreshes on the host
 
 Refreshes run on the server, triggered by hand from `/owner`. Nothing is

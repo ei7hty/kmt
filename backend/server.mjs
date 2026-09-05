@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url'
 import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
+import { PageImporter } from './import.mjs'
 import { createApi, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
 
@@ -66,7 +67,8 @@ mkdirSync(path.dirname(dbPath), { recursive: true })
 const inventory = new Inventory(dbPath, TIRE_CATALOG.map(tire => tire.size))
 inventory.importSnapshot(JSON.parse(readFileSync(path.join(root, 'src/data/scraped-tires.json'), 'utf8')))
 const refresher = new Refresher(inventory)
-const api = createApi(inventory, refresher)
+const importer = new PageImporter(inventory)
+const api = createApi(inventory, refresher, importer)
 
 const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'
@@ -115,7 +117,13 @@ const server = createServer(async (request, response) => {
     if (await auth.handle(request, response, url, readJsonBody)) return
 
     if (url.pathname.startsWith('/api/')) {
-      if (!auth.isAuthenticated(request)) {
+      // The import endpoint is reached from a giga-tires tab, so it carries a
+      // bearer token instead of the session cookie -- SameSite=Strict means the
+      // cookie is deliberately not sent cross-site. Preflight carries neither.
+      const importCall = url.pathname === '/api/owner/import' &&
+        (request.method === 'OPTIONS' || auth.isImportAuthorized(request))
+
+      if (!importCall && !auth.isAuthenticated(request)) {
         response.writeHead(401, { 'Content-Type': 'application/json' })
         response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' }))
         return
