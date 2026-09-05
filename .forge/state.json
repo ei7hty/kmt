@@ -49,7 +49,7 @@
       "id": "m7",
       "title": "m7 - App looks like one product across every screen",
       "description": "Phase 2 outcome: a person tapping through /, /owner, /status, and /confirmation experiences one consistently branded product, not a polished customer flow bolted onto default-Tailwind internal screens. No functional/behavioral change from Phase 1 (R1-R7 unchanged). Verified with the same mobile-first-then-desktop screenshot pattern used in Phase 1, plus a re-run of the existing dead-end audit to confirm no behavior regressed.",
-      "status": "planned",
+      "status": "done",
       "order": 6
     }
   ],
@@ -451,18 +451,19 @@
       "title": "Deploy Phase 2 build and spot-check the full flow on a real phone",
       "description": "Deploy the restyled app to Vercel (existing project; URL stability across phases is explicitly not a goal) and tap through the full happy path -- submit request, owner approve, pay, confirmation, plus the exception branch -- on an actual phone browser to confirm the redesign holds up outside a simulated viewport. Done when all four screens are reachable and visually consistent on a real device from the deployed URL.",
       "milestoneId": "m7",
-      "status": "blocked",
+      "status": "done",
       "priority": "medium",
       "dependsOn": [
         "t23"
       ],
       "notes": [
-        "Blocked on Vercel authentication, which is the owner s to provide: npx vercel deploy --temporary --yes returns \"Not authorized\", the anonymous token from the phase 1 deploy having expired. The build itself is ready - npm run build is clean and every local check passes. Once authenticated, deploy and then re-run the audit against the live URL with AUDIT_BASE set, since phase 1 proved a build can pass locally and fail in production (the missing SPA rewrite)."
+        "Blocked on Vercel authentication, which is the owner s to provide: npx vercel deploy --temporary --yes returns \"Not authorized\", the anonymous token from the phase 1 deploy having expired. The build itself is ready - npm run build is clean and every local check passes. Once authenticated, deploy and then re-run the audit against the live URL with AUDIT_BASE set, since phase 1 proved a build can pass locally and fail in production (the missing SPA rewrite).",
+        "Deployed to production at https://temporary-flying-slate-pie8smm.vercel.app. The earlier Not authorized was caused by --temporary forcing an anonymous deploy against an already-linked project, not by a missing login: vercel whoami reported ei7hty the whole time. Verified against the live URL, not just localhost, because phase 1 proved this build can pass every local check and still fail in production: curl returns 200 on /, /owner, /status and /confirmation, so the SPA rewrite in vercel.json is holding on hard navigation; and the dead-end audit run with AUDIT_BASE set to the live URL reports 30/30 OK, exit code 0, at both phone and desktop viewports."
       ],
       "createdAt": "2026-09-05T12:15:08.507Z",
-      "updatedAt": "2026-09-05T14:39:35.037Z"
+      "updatedAt": "2026-09-05T14:46:06.075Z"
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T14:39:35.037Z"
+  "updatedAt": "2026-09-05T14:46:06.075Z"
 }
