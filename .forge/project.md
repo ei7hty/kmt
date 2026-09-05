@@ -254,9 +254,11 @@ here on, a faked step is a gap with a task against it, not a design choice.
 
 Phase 4 therefore has two milestones. **m9** (t29-t33) puts requests and quotes
 in the backend. **m10** (t34-t38) makes the quote a real exchange between two
-people: the customer leaves a name and a mobile number, the owner can change
-the price before sending, both are told by text message when something
-happens, and a request has an end.
+people: the customer leaves a name and an email address, the owner can change
+the price before sending, both are told by email when something happens (the
+customer gets the quote itself as an itemised email, and a receipt), and a
+request has an end. Email rather than text messages, on the client's direction
+of 2026-09-05 while preparing for live service.
 
 ### Explicitly not in scope for phase 4
 
