@@ -137,7 +137,7 @@ function serve(t, quotes, inventory) {
   const auth = createAuth(readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password' }))
   const requestsApi = createRequestsApi(quotes)
   const catalogApi = createCatalogApi(inventory)
-  const ownerApi = createApi(inventory, { start: () => ({}), cancel: () => ({}) })
+  const ownerApi = createApi(inventory, { start: () => ({}), cancel: () => ({}) }, null, quotes)
 
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
@@ -234,4 +234,145 @@ test('the catalog handler answers the catalog and nothing else', async t => {
 
   const catalog = await (await fetch(base + '/api/catalog')).json()
   assert.ok(Array.isArray(catalog.tires), 'and the catalog still answers its own path')
+})
+
+/* ------------------------------------------------------- owner review (t30) */
+
+/** Sign in the way the owner screen does, and return the cookie header. */
+async function signIn(base) {
+  const answer = await post(base, '/api/owner/login', { password: 'a-long-enough-password' })
+  assert.equal(answer.status, 200, 'the harness password is the one auth was built with')
+  return { cookie: answer.headers.getSetCookie()[0] }
+}
+
+test('the owner sees every request with the tire it was quoted for', async t => {
+  const { quotes } = setup(t)
+  const first = quotes.submit(form())
+  quotes.submit(form({ customerKey: OTHER_KEY, vehicleInfo: '2018 Subaru Outback' }))
+
+  const listed = quotes.listForOwner()
+
+  assert.equal(listed.length, 2, "every request, not one browser's")
+  assert.equal(listed[0].request.id, quotes.listForOwner()[0].request.id)
+  const mine = listed.find(row => row.request.id === first.request.id)
+  assert.equal(mine.tire.name, 'Test Touring', 'the tire resolved from the catalog it was drafted against')
+  assert.equal(mine.tire.size, SIZE)
+  assert.equal(mine.quote.status, 'draft')
+  assert.ok(Array.isArray(mine.quote.exceptionReasons))
+})
+
+test('a tire that has since left the catalog still shows what was quoted', async t => {
+  // The owner is reviewing a decision made earlier. A blank where the tire was
+  // hides the one fact that explains the row.
+  const { inventory, quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+  inventory.saveOffer('giga-a', { priceCents: null, enabled: false, notes: '', version: 0 })
+
+  const row = quotes.listForOwner().find(item => item.request.id === request.id)
+  assert.equal(row.tire.id, 'giga-a', 'the id is still there to look up')
+  assert.equal(row.tire.name, null, 'and it is honest that the catalog no longer carries it')
+  // Compared against what was quoted, not a number written down here: the
+  // point is that the catalog moving does not reprice a quote already given.
+  assert.equal(row.quote.total, quote.total)
+  assert.deepEqual(row.quote.lineItems, quote.lineItems)
+})
+
+test('approving moves a draft, and the customer sees it from their own device', async t => {
+  const { quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+
+  const decided = quotes.decide(request.id, 'approved', quote.version)
+
+  assert.equal(decided.quote.status, 'approved')
+  assert.equal(decided.quote.version, quote.version + 1, 'the version moves with the decision')
+  // The customer's own read, by id, sees the same thing.
+  assert.equal(quotes.get(request.id).quote.status, 'approved')
+  assert.equal(quotes.listForCustomer(KEY)[0].quote.status, 'approved')
+})
+
+test('rejecting moves a draft the same way', async t => {
+  const { quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+
+  assert.equal(quotes.decide(request.id, 'rejected', quote.version).quote.status, 'rejected')
+  assert.equal(quotes.get(request.id).quote.status, 'rejected')
+})
+
+test('a stale version is refused rather than overwriting the newer decision', async t => {
+  // Two owner windows, or a phone and a laptop. The second save must not
+  // silently undo the first -- the same rule PUT /api/owner/offers/:id makes.
+  const { quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+
+  quotes.decide(request.id, 'approved', quote.version)
+
+  assert.throws(
+    () => quotes.decide(request.id, 'rejected', quote.version),
+    error => error.status === 409 && /changed in another window/.test(error.message),
+  )
+  assert.equal(quotes.get(request.id).quote.status, 'approved', 'the first decision stands')
+})
+
+test('only a draft can be decided', async t => {
+  const { quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+  const approved = quotes.decide(request.id, 'approved', quote.version)
+
+  // Right version, wrong state: already decided, and paid is further still.
+  assert.throws(
+    () => quotes.decide(request.id, 'rejected', approved.quote.version),
+    error => error.status === 409 && /already approved/.test(error.message),
+  )
+
+  quotes.pay(request.id, KEY)
+  const paid = quotes.get(request.id)
+  assert.throws(
+    () => quotes.decide(request.id, 'rejected', paid.quote.version),
+    error => error.status === 409 && /already paid/.test(error.message),
+  )
+})
+
+test('a decision has to be a decision, and carry a version', async t => {
+  const { quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+
+  assert.throws(() => quotes.decide(request.id, 'maybe', quote.version), /approved or rejected/)
+  assert.throws(() => quotes.decide(request.id, 'approved', undefined), /version you were shown/)
+  assert.throws(() => quotes.decide(request.id, 'approved', -1), /version you were shown/)
+  assert.throws(() => quotes.decide('0'.repeat(32), 'approved', 1), /No such request/)
+})
+
+test('the owner endpoints need a session, and the customer endpoints are unchanged', async t => {
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory)
+  const { request, quote } = quotes.submit(form())
+
+  // Shut without a cookie, exactly like the rest of the owner API.
+  assert.equal((await fetch(`${base}/api/owner/requests`)).status, 401)
+  assert.equal((await post(base, `/api/owner/quotes/${request.id}/approve`, { version: quote.version })).status, 401)
+
+  const { cookie } = await signIn(base)
+  const headers = { cookie, 'Content-Type': 'application/json' }
+
+  const listed = await (await fetch(`${base}/api/owner/requests`, { headers })).json()
+  assert.equal(listed.requests.length, 1)
+  assert.equal(listed.requests[0].tire.name, 'Test Touring')
+
+  const stale = await fetch(`${base}/api/owner/quotes/${request.id}/approve`, {
+    method: 'POST', headers, body: JSON.stringify({ version: quote.version + 5 }),
+  })
+  assert.equal(stale.status, 409, 'a stale version is a 409 over HTTP too')
+
+  const approved = await fetch(`${base}/api/owner/quotes/${request.id}/approve`, {
+    method: 'POST', headers, body: JSON.stringify({ version: quote.version }),
+  })
+  assert.equal(approved.status, 200)
+  assert.equal((await approved.json()).quote.status, 'approved')
+
+  // t29's endpoints, from a customer with no session, still behave.
+  const seen = await (await fetch(`${base}/api/requests/${request.id}`)).json()
+  assert.equal(seen.quote.status, 'approved', 'the customer sees the decision from their own device')
+  const paid = await post(base, `/api/requests/${request.id}/pay`, { customerKey: KEY })
+  assert.equal(paid.status, 200)
+  assert.equal((await paid.json()).quote.status, 'paid')
 })

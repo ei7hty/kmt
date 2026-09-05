@@ -16,11 +16,12 @@ mkdirSync(path.dirname(filename), { recursive: true })
 const inventory = new Inventory(filename, TIRE_CATALOG.map(tire => tire.size))
 inventory.importSnapshot(JSON.parse(readFileSync(path.join(root, 'src/data/scraped-tires.json'), 'utf8')))
 const refresher = new Refresher(inventory)
-const api = createApi(inventory, refresher, new PageImporter(inventory))
+const quotes = new Quotes(inventory)
+const api = createApi(inventory, refresher, new PageImporter(inventory), quotes)
 // The customer catalog, served here too so the local flow matches the hosted one.
 const catalogApi = createCatalogApi(inventory)
 // Requests and their quotes live in the same database as inventory.
-const requestsApi = createRequestsApi(new Quotes(inventory))
+const requestsApi = createRequestsApi(quotes)
 const port = Number(process.env.KMT_OWNER_PORT || 4180)
 const vite = await createViteServer({ root, server: {
   middlewareMode: true,

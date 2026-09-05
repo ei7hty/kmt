@@ -171,6 +171,65 @@ export class Quotes {
       .map(row => this.shapeRow(row))
   }
 
+  /**
+   * Every request with its quote, newest first, for the owner's screen.
+   *
+   * The tire is resolved here rather than on the screen: the quote was drafted
+   * against a catalog that may since have changed, and the owner reviewing it
+   * should see the tire that was quoted. A row the catalog no longer carries
+   * still shows its id, because "this tire is gone" is information the owner
+   * needs, not a reason to render a blank.
+   */
+  listForOwner() {
+    const catalog = this.catalog()
+    return this.db.prepare('SELECT * FROM requests ORDER BY created_at DESC').all().map(row => {
+      const shaped = this.shapeRow(row)
+      const tire = catalog.find(item => item.id === shaped.request.tireSelection) ?? null
+      return {
+        ...shaped,
+        tire: tire
+          ? { id: tire.id, name: tire.name, size: tire.size, price: tire.price }
+          : { id: shaped.request.tireSelection, name: null, size: null, price: null },
+      }
+    })
+  }
+
+  /**
+   * Approve or reject a draft.
+   *
+   * The version check is the one PUT /api/owner/offers/:id already makes, for
+   * the same reason: two owner windows, or a phone and a laptop, and the second
+   * save would otherwise silently overwrite a decision made in the first. A
+   * stale version is a 409 and the caller reloads.
+   *
+   * Only a draft can be decided. Re-approving an approved quote, or rejecting
+   * one the customer has already paid, is not a decision -- it is a screen that
+   * was looking at something out of date, which is what the version says.
+   */
+  decide(id, decision, version) {
+    if (decision !== 'approved' && decision !== 'rejected') {
+      throw new InputError('A quote is either approved or rejected.')
+    }
+    if (!Number.isInteger(version) || version < 0) {
+      throw new InputError('Send the version you were shown, so a stale screen cannot overwrite a newer decision.')
+    }
+
+    return this.transaction(() => {
+      const found = this.get(id)
+      if (!found?.quote) throw new InputError('No such request.', 404)
+      if (found.quote.version !== version) {
+        throw new InputError('This quote changed in another window. Reload the list before deciding.', 409)
+      }
+      if (found.quote.status !== 'draft') {
+        throw new InputError(`This quote is already ${found.quote.status}, so there is nothing to decide.`, 409)
+      }
+
+      this.db.prepare('UPDATE quotes SET status=?, version=version+1, updated_at=? WHERE id=?')
+        .run(decision, now(), found.quote.id)
+      return this.get(id)
+    })
+  }
+
   keyFor(id) {
     return this.db.prepare('SELECT customer_key FROM requests WHERE id=?').get(id)?.customer_key ?? null
   }

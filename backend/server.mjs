@@ -69,10 +69,11 @@ const inventory = new Inventory(dbPath, TIRE_CATALOG.map(tire => tire.size))
 inventory.importSnapshot(JSON.parse(readFileSync(path.join(root, 'src/data/scraped-tires.json'), 'utf8')))
 const refresher = new Refresher(inventory)
 const importer = new PageImporter(inventory)
-const api = createApi(inventory, refresher, importer)
+const quotes = new Quotes(inventory)
+const api = createApi(inventory, refresher, importer, quotes)
 const catalogApi = createCatalogApi(inventory)
 // Requests and their quotes live in the same database as inventory.
-const requestsApi = createRequestsApi(new Quotes(inventory))
+const requestsApi = createRequestsApi(quotes)
 
 const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'
