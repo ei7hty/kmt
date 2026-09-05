@@ -192,6 +192,30 @@ function generateTires(coveredSizes = new Set()) {
  * over the network, after this module has loaded. Prices cannot be baked in at
  * import time and still reflect what the owner set thirty seconds ago.
  */
+/**
+ * The catalog a customer sees when the owner's backend answered.
+ *
+ * Composition, not replacement, and that distinction is the whole function.
+ * The endpoint returns only what the owner has curated -- today two dozen rows
+ * across four sizes. Handing that to the customer flow as the entire catalog
+ * would leave the fitment selector offering four sizes, turn every other size
+ * into a dead end, and remove the seed tires both audits select by name. None
+ * of that would be caught before it shipped, because the audit gate runs
+ * against a build with no backend and therefore only ever sees the fallback.
+ *
+ * So live rows take the place of the scraped ones and nothing else: the seeds
+ * stay, the live rows follow, and generated coverage fills every size the live
+ * rows do not reach -- the same rule buildCatalog applies to a snapshot, for
+ * the same reason. An empty answer composes to a catalog that still covers
+ * every size, which is what makes an empty one safe to accept as an answer
+ * rather than treat as a failure.
+ */
+export function catalogFromLiveRows(rows = []) {
+  const live = Array.isArray(rows) ? rows : []
+  const coveredSizes = new Set(live.map(tire => tire.size))
+  return [...SEED_TIRES, ...live, ...generateTires(coveredSizes)]
+}
+
 export function buildCatalog(options = {}) {
   const scraped = scrapedTiresFor(options)
   const coveredSizes = new Set(scraped.map(tire => tire.size))
