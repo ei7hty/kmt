@@ -35,7 +35,8 @@ import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
-import { createApi, createCatalogApi, isPublicApiCall, readJsonBody } from './api.mjs'
+import { createApi, createCatalogApi, createRequestsApi, isPublicApiCall, readJsonBody } from './api.mjs'
+import { Quotes } from './quotes.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -70,6 +71,8 @@ const refresher = new Refresher(inventory)
 const importer = new PageImporter(inventory)
 const api = createApi(inventory, refresher, importer)
 const catalogApi = createCatalogApi(inventory)
+// Requests and their quotes live in the same database as inventory.
+const requestsApi = createRequestsApi(new Quotes(inventory))
 
 const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'
@@ -135,6 +138,7 @@ const server = createServer(async (request, response) => {
         return
       }
       if (await catalogApi(request, response)) return
+      if (await requestsApi(request, response)) return
       if (await api(request, response)) return
       response.writeHead(404, { 'Content-Type': 'application/json' })
       response.end(JSON.stringify({ error: 'Owner endpoint not found' }))

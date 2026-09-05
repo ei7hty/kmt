@@ -10,7 +10,8 @@ React + Vite + Tailwind, plus a Node backend under `backend/` (SQLite via
 - `npm run dev` — the app
 - `npm run build` — production build, and the check that the tree is sound
 - `npm run lint` — eslint, expected to be silent
-- `node --test backend/owner.test.mjs` — the backend suite
+- `node --test backend/*.test.mjs` — the backend suites (owner inventory, and
+  requests and quotes). Naming one file skips the others.
 - `node .forge/dead-end-audit.mjs` — every click path still reaches a next action
 - `node .forge/responsive-check.mjs` — no overflow at 375px or 1280px
 - Both audits drive a real browser against `vite preview --port 4179`, so build

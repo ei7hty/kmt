@@ -7,7 +7,8 @@ import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
-import { createApi, createCatalogApi } from './api.mjs'
+import { createApi, createCatalogApi, createRequestsApi } from './api.mjs'
+import { Quotes } from './quotes.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const filename = process.env.KMT_OWNER_DB || path.join(root, 'backend/data/owner.sqlite')
@@ -18,6 +19,8 @@ const refresher = new Refresher(inventory)
 const api = createApi(inventory, refresher, new PageImporter(inventory))
 // The customer catalog, served here too so the local flow matches the hosted one.
 const catalogApi = createCatalogApi(inventory)
+// Requests and their quotes live in the same database as inventory.
+const requestsApi = createRequestsApi(new Quotes(inventory))
 const port = Number(process.env.KMT_OWNER_PORT || 4180)
 const vite = await createViteServer({ root, server: {
   middlewareMode: true,
@@ -30,6 +33,7 @@ const server = createHttpServer(async (request, response) => {
     response.writeHead(403); response.end('Local owner workspace only'); return
   }
   if (await catalogApi(request, response)) return
+  if (await requestsApi(request, response)) return
   if (await api(request, response)) return
   if (request.url.startsWith('/api/')) {
     response.writeHead(404); response.end('Not found'); return
