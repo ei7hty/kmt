@@ -181,30 +181,37 @@ on a VPS. The only requirements are a persistent volume and a process that stays
 running -- serverless platforms satisfy neither, which is why Vercel cannot host
 this half.
 
-### Known: the machine stops every five minutes
+### Resolved: the five-minute trial stop
 
-As of 2026-09-05 the Fly org is still treated as a trial, and machines are force
-stopped after exactly 5m0s of uptime:
+For part of 2026-09-05 the Fly org was treated as a trial and machines were
+force stopped after exactly 5m0s of uptime, logging:
 
 ```
 Trial machine stopping. To run for longer than 5m0s,
 add a credit card by visiting https://fly.io/trial.
 ```
 
-This is not a configuration fault. `fly.toml` sets `auto_stop_machines = false`
-with `min_machines_running = 1`, and the machine itself reports `autostop:
-false` -- Fly overrides both for billing. A card was added and the limit was
-still firing afterwards, so it needs resolving in the Fly dashboard rather than
-in this repo.
+It was never a configuration fault -- `fly.toml` sets `auto_stop_machines =
+false` with `min_machines_running = 1`, and the machine reported `autostop:
+false` while being stopped anyway. Fly was overriding both for billing. The
+limit also kept firing for a while after a card was added, which is why this was
+written down as an open problem rather than a solved one.
 
-What it costs meanwhile: `kmt.fly.dev` cold-starts on the first request after
-each idle period (a few seconds), and any long-running work can be killed
-partway. A multi-page supplier refresh is the obvious casualty -- it applies a
-size only when every page has arrived, so an interrupted one changes nothing
-rather than half-writing, but it will need running again.
+It is gone. Measured at 20:14Z: the machine had been up 7m36s, past the cap it
+used to die at, with no `Trial machine` line anywhere in 33 minutes of logs
+where it had previously appeared every five.
 
-Check with `fly logs -a kmt | grep "Trial machine"`. No matches means it is
-fixed.
+Kept as history because the symptom is confusing on its own: a machine that
+stops despite `auto_stop_machines = false` looks like a broken deploy config,
+and the cause is in the billing account rather than this repo. If it ever
+returns, that is where to look. Check with:
+
+```bash
+fly logs -a kmt --no-tail | grep "Trial machine"
+```
+
+Uptime is the better test, though: `fly status -a kmt` showing more than five
+minutes since the last update settles it either way.
 
 ### What the password does and does not cover
 
