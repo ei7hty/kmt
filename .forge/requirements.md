@@ -119,4 +119,63 @@ brand red is confirmed correct and matches the live production site; `/owner` ge
 a full redesign while `/status` and `/confirmation` get a lighter reuse-only pass,
 with the customer-flow stepper explicitly reused on `/status`; deployment
 permanence is explicitly not a goal for this phase.
+
+---
+
+## Phase 3 -- Real inventory reaches the customer
+
+Between Phase 2 and this plan, a real owner backend (`backend/`, SQLite) was built
+separately: the owner can curate supplier inventory scraped from giga-tires.com, set
+his own price per tire, and rely on a markup rule for anything unpriced (see
+`.forge/owner-backend.md`). It was deliberately scoped to stop short of the
+customer -- "wiring the snapshot into the live catalog is a separate, deliberate
+step." Phase 3 (m8) takes that step. R1-R13 above are unchanged; nothing about the
+request/approve/pay/confirm flow, the exception rules, or payment changes in this
+phase.
+
+_R14._ When the owner backend (`backend/dev.mjs`) is reachable, the tire catalog a
+customer sees and is quoted against at `/` reflects the owner's real inventory
+choices: only tires the owner has enabled are offered, at the owner's price where
+he has set one, or at the markup-proposed price otherwise -- the same resolution
+`src/markup.js`'s `quotedPrice` already implements for the owner's own screen.
+
+_R15._ When the owner backend is not reachable (including the deployed, static
+production URL, which cannot run it), the customer flow at `/` continues to work
+exactly as it does today, using the existing generated static catalog. Nothing
+about R1-R7 depends on the backend being present.
+
+_R16._ The data exposed to the customer for this purpose is limited to what the
+existing static catalog already exposes per tire (name, size, price, in-stock,
+category, description). Supplier SKU, list price, stock counts, owner notes, and
+tires the owner has not enabled are never sent to the customer-facing app.
+
+## Phase 3 non-functional
+
+- **No change to where request/quote state lives.** Requests and quotes stay in
+  `localStorage` in this phase (see Phase 1 decision log); only the catalog read
+  path changes. Moving that state into a real backend is an open question for the
+  owner, tracked in roadmap.md, not assumed here.
+- **No change to the exception engine's rules.** `src/pricing.js` keeps deciding
+  exceptions from whatever catalog array it is given (generated or real) using the
+  same rules as today; no new exception trigger is added speculatively for
+  real-supplier data (see the open question in roadmap.md).
+- **Verification spans two environments.** Because the deployed URL cannot run the
+  backend, "done" requires checking the fallback path in production (deployed) and
+  the live-backend path locally (against `backend/dev.mjs`) -- one check cannot
+  stand in for the other.
+
+## Phase 3 open questions
+
+Not yet decided by the owner; see roadmap.md's "Open questions for the owner" for
+the full reasoning behind each:
+
+1. Does the owner backend get deployed anywhere customer-reachable, or does the
+   curated-inventory experience stay a local-only demo for now?
+2. Should request/quote data move into a real backend/database alongside
+   inventory, or stay in `localStorage` for now?
+3. What should a customer see for a tire size where the owner has curated zero
+   offered tires -- a "call us" state, or a silent fallback to the generated
+   catalog for that size only?
+4. Should real supplier data (e.g. a tire the supplier lists as no longer active)
+   feed the exception engine, or is that explicitly out of scope until asked for?
 </content>

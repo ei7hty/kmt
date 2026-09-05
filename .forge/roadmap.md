@@ -106,6 +106,100 @@ looks and then proves it did not change what it does.
   last in Phase 1: the flow passing locally and failing in production is a
   thing that has already happened once on this project.
 
-## Later
+---
 
-Nothing scheduled. Phase 3 scope is not yet decided.
+# Phase 3 — Real inventory reaches the customer
+
+Phase 2 finished (24/24 tasks). Since then, work landed on this repository
+outside any forge-tracked milestone: a real owner backend (`backend/`, SQLite
+via `node:sqlite`) that lets the owner curate supplier inventory scraped from
+giga-tires.com, set his own price per tire, and fall back to a markup rule
+(`src/markup.js`) for anything he hasn't priced yet. It is documented in
+`.forge/owner-backend.md`, which is explicit that it was scoped to stop short
+of the customer: *"Customer tire selection and pricing are unchanged... Wiring
+the snapshot into the live catalog is a separate, deliberate step."*
+
+That gap is what Phase 3 (**m8**) closes. Today, `/owner` lets the owner curate
+a real inventory that has no effect on what a customer sees or is quoted: the
+customer flow at `/` and the pricing engine in `src/pricing.js` still run
+entirely over the fully-generated static catalog
+(`src/data/catalog.js`'s `buildCatalog()` with no arguments), and requests/
+quotes still live in `localStorage`, disconnected from the SQLite backend.
+Closing that gap is a single, nameable outcome and the most valuable thing to
+do next: everything the owner does on `/owner` today is otherwise invisible
+to the product it's meant to serve.
+
+## Why this sequence inside m8
+
+**t25 (split `App.jsx`) goes first**, ahead of any functional change, because
+every other task in this milestone edits the customer route's tire-loading
+code, and `.forge/AGENTS.md` already flags `App.jsx` as a 23KB single file
+that has burned whole agent sessions just being read. Splitting it first,
+while the change is still behavior-only, is cheap to verify (build, lint, both
+audits, same counts as before) and makes every later diff in this milestone
+smaller and safer to review. Doing it after t27 would mean re-verifying a
+functional change and a structural one tangled together.
+
+**t26 (customer-safe catalog endpoint) comes before t27 (wire it up)**
+because the endpoint's contract -- what shape it returns, what it omits, how
+it resolves owner-price-vs-markup -- needs to be right and tested in isolation
+(via `backend/owner.test.mjs`) before the frontend depends on it. Getting the
+backend and frontend right at the same time, in the same task, means a bug
+could be in either side and there is no isolated test proving which.
+
+**t27 depends on both** and is where fallback behavior matters as much as the
+happy path: the static Vercel deployment cannot run the SQLite/browser backend
+(see the deployment boundary in `.forge/owner-backend.md`), so the public demo
+must keep working exactly as today when no backend is reachable. That's a
+decision already recorded (see decisions.md) rather than left to be discovered
+during implementation.
+
+**t28 (deploy and verify) is last**, as it was in m6 and m7 for the same
+reason each time: a flow that passes locally and fails in production is a
+thing that has already happened once on this project (missing SPA rewrite,
+Phase 1). It also has to verify two different environments -- the deployed
+fallback path, and the live-backend path locally -- because the deployed
+environment cannot demonstrate the live-backend path itself.
+
+## Now
+
+- **m8 — Customer quotes are priced from the owner's real inventory, not the
+  static demo catalog.** t25 → t26 → t27 → t28, as above.
+
+## Open questions for the owner (not guessed at in tasks above)
+
+These change the *scope* of later work in ways only Ken can decide, so they
+are written down here rather than turned into tasks:
+
+1. **Does the owner backend get deployed anywhere the customer can reach, or
+   does the live/curated-inventory experience stay a local-only demo for now?**
+   `.forge/owner-backend.md` is explicit that the current backend binds to
+   loopback, has no auth, and the static Vercel deployment can't run a
+   persistent SQLite + browser process. m8 makes the *wiring* work either way
+   (fallback keeps the public URL working with no backend), but deciding to
+   actually host the backend somewhere reachable is a real infrastructure and
+   cost decision -- hosting, a persistent DB, and where the Playwright-driven
+   supplier refresh runs -- that shouldn't be assumed.
+2. **Should the request/quote data (currently `localStorage`, per the Phase 1
+   decision) move into the same real backend/database as inventory, or stay
+   separate for now?** Once inventory is real, having quotes still live only
+   in the customer's browser is an increasingly odd asymmetry, but merging them
+   is a bigger step (a real backend for demo state, matching real inventory)
+   that Phase 1's decision log explicitly deferred. Worth revisiting once m8
+   ships and the owner has used the wired-up flow, not before.
+3. **What should happen when the owner has curated zero tires for a size (or
+   for everything)?** Before m8, every size always has generated fallback
+   tires, so this never happens. After m8, a size where the owner has offered
+   nothing could show as empty to a customer. Whether that should show "call
+   us" (like the existing no-stock-for-online-ordering path) or silently fall
+   back to the generated catalog for that size is a product call about how
+   "real" the demo should look versus how populated it should look, not
+   something to decide inside a task.
+4. **Does the exception engine (`src/pricing.js`) need to know about real
+   supplier data at all in this phase** -- e.g. should a tire the supplier has
+   marked inactive/no-longer-listed trigger an exception the way "out of
+   stock" already does -- or is that explicitly out of scope until the owner
+   asks for it? Left alone in m8: `calculateDraftQuote` keeps reading
+   `inStock`/`category` off whatever catalog array it's given, generated or
+   real, and no new exception rule is added speculatively.
+</content>

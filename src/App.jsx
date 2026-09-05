@@ -1,74 +1,15 @@
 import { useEffect, useState } from 'react'
-import { calculateDraftQuote } from './pricing.js'
-import { getAllTires } from './data/catalog'
-import { FITMENT_DIAMETERS, FITMENT_RATIOS, FITMENT_WIDTHS } from './data/fitment'
-import { getAllQuotes, getAllRequests, saveQuote, saveRequest, updateQuoteStatus } from './store'
-import { VehicleDetails, ServiceDetails } from './components/RequestDetails'
 import './App.css'
 import './RequestFlow.css'
 import OwnerInventory from './owner/OwnerInventory.jsx'
-
-/**
- * Sidewall artwork for the size selector, one per stage.
- *
- * These replace a tire drawn in CSS with borders and radial gradients, which
- * could suggest a tire but could not point at the number being asked for. Each
- * asset highlights the digit the current stage wants, which is the whole job:
- * someone standing at their car needs to know which number to read off.
- */
-const FITMENT_GUIDES = {
-  width: {
-    src: '/where-to-find.webp',
-    alt: 'A tire sidewall showing where the size is printed, for example P 205 / 65 R 15.',
-  },
-  ratio: {
-    src: '/tire-selector-ratio.webp',
-    alt: 'A tire sidewall with the aspect ratio highlighted: the 65 in P 205 / 65 R 15.',
-  },
-  diameter: {
-    src: '/tire-selector-diameter.webp',
-    alt: 'A tire sidewall with the rim diameter highlighted: the 15 in P 205 / 65 R 15.',
-  },
-  zip: {
-    src: '/where-to-find.webp',
-    alt: 'A tire sidewall showing where the size is printed.',
-  },
-}
+import CustomerRequest from './routes/CustomerRequest.jsx'
+import QuoteRequests from './routes/QuoteRequests.jsx'
+import Status from './routes/Status.jsx'
+import Confirmation from './routes/Confirmation.jsx'
 
 function App() {
   const [route, setRoute] = useState(() => window.location.pathname)
-  const [formData, setFormData] = useState({
-    tireSize: '',
-    vehicleInfo: '',
-    tireSelection: '',
-    location: '',
-    date: '', locationType: 'Home', serviceZip: '', locationNotes: ''
-  })
-  const [vehicle, setVehicle] = useState({ year: '', make: '', model: '' })
-  const [validationErrors, setValidationErrors] = useState({})
-  const [submissionMessage, setSubmissionMessage] = useState('')
   const [ownerVersion, setOwnerVersion] = useState(0)
-  const [orderStep, setOrderStep] = useState(1)
-  const [stepError, setStepError] = useState('')
-  const [fitment, setFitment] = useState({ width: '', ratio: '', diameter: '', zip: '' })
-  const [fitmentStage, setFitmentStage] = useState('width')
-  const [fitmentSearch, setFitmentSearch] = useState('')
-  const tires = getAllTires()
-  // Each stage offers only choices that lead somewhere. The catalog is generated
-  // across the full standard fitment ranges (see data/fitment.js and the
-  // plausibility rule in data/catalog.js), so narrowing here is not a shortage
-  // of stock -- it is the selector refusing to build a size no tire comes in.
-  const parsedSizes = [...new Set(tires.map(tire => tire.size))]
-    .map(size => {
-      const match = size.match(/^(\d+)\/(\d+)R(\d+)$/)
-      return match ? { size, width: match[1], ratio: match[2], diameter: match[3] } : null
-    })
-    .filter(Boolean)
-  const widthOptions = FITMENT_WIDTHS.filter(width => parsedSizes.some(item => item.width === width))
-  const ratioOptions = FITMENT_RATIOS.filter(ratio =>
-    parsedSizes.some(item => item.width === fitment.width && item.ratio === ratio))
-  const diameterOptions = FITMENT_DIAMETERS.filter(diameter =>
-    parsedSizes.some(item => item.width === fitment.width && item.ratio === fitment.ratio && item.diameter === diameter))
 
   useEffect(() => {
     const handlePopState = () => setRoute(window.location.pathname)
@@ -89,260 +30,21 @@ function App() {
     setRoute(window.location.pathname)
   }
 
-  const handleFormChange = (event) => {
-    const { name, value } = event.target
-    setFormData(previous => ({ ...previous, [name]: value }))
-    if (name === 'vehicleInfo') setVehicle({ year: '', make: '', model: '' })
-    if (validationErrors[name]) setValidationErrors(previous => ({ ...previous, [name]: '' }))
-    setStepError('')
-  }
-
-  const handleVehicleChange = (part, value) => {
-    const next = { ...vehicle, [part]: value }
-    if (part === 'make') next.model = ''
-    setVehicle(next)
-    setFormData(previous => ({ ...previous, vehicleInfo: [next.year, next.make, next.model].filter(Boolean).join(' ') }))
-    setStepError('')
-  }
-
-  const handleSizeSelect = (size) => {
-    setFormData(previous => ({ ...previous, tireSize: size, tireSelection: '' }))
-    setStepError('')
-  }
-
-  const selectFitmentPart = (part, value) => {
-    const next = { ...fitment, [part]: value }
-    if (part === 'width') { next.ratio = ''; next.diameter = '' }
-    if (part === 'ratio') next.diameter = ''
-    setFitment(next)
-    setFitmentStage(part === 'width' ? 'ratio' : part === 'ratio' ? 'diameter' : 'zip')
-    // A size is just the three numbers formatted. Whether we stock it is a
-    // different question, answered at the tire step rather than by refusing to
-    // let the customer enter what is on their car.
-    if (next.width && next.ratio && next.diameter) {
-      handleSizeSelect(`${next.width}/${next.ratio}R${next.diameter}`)
-    }
-    setFitmentSearch('')
-    setStepError('')
-  }
-
-  const goBackFitment = () => {
-    const previousStage = fitmentStage === 'zip' ? 'diameter' : fitmentStage === 'diameter' ? 'ratio' : 'width'
-    setFitmentStage(previousStage)
-    setFitmentSearch('')
-    if (previousStage === 'width') {
-      setFitment(previous => ({ ...previous, ratio: '', diameter: '' }))
-      setFormData(previous => ({ ...previous, tireSize: '', tireSelection: '' }))
-    } else if (previousStage === 'ratio') {
-      setFitment(previous => ({ ...previous, diameter: '' }))
-      setFormData(previous => ({ ...previous, tireSize: '', tireSelection: '' }))
-    } else {
-      setFitment(previous => ({ ...previous, zip: '' }))
-    }
-  }
-
-  const continueFromSize = () => {
-    if (!formData.tireSize) {
-      setStepError('Choose your tire size to continue')
-      return
-    }
-    setStepError('')
-    setFormData(previous => ({ ...previous, serviceZip: previous.serviceZip || fitment.zip }))
-    setOrderStep(2)
-  }
-
-  const continueFromVehicle = () => {
-    if (!formData.tireSelection) {
-      setStepError('Choose a tire for your vehicle')
-      return
-    }
-    if (!formData.vehicleInfo.trim()) {
-      setStepError('Tell us what vehicle the tires are going on')
-      return
-    }
-    setStepError('')
-    setOrderStep(3)
-  }
-
-  const handleFormSubmit = (event) => {
-    event.preventDefault()
-    const errors = {}
-    if (!formData.vehicleInfo.trim()) errors.vehicleInfo = 'Vehicle information is required'
-    if (!formData.tireSelection) errors.tireSelection = 'Please select a tire'
-    if (!formData.location.trim()) errors.location = 'Service location is required'
-    if (!formData.date) errors.date = 'Preferred date is required'
-
-    if (Object.keys(errors).length > 0) {
-      setValidationErrors(errors)
-      setStepError('Complete the service details to request your quote')
-      return
-    }
-
-    const location = [formData.location.trim(), formData.serviceZip?.trim() && !formData.location.includes(formData.serviceZip.trim()) ? formData.serviceZip.trim() : '', formData.locationNotes?.trim()].filter(Boolean).join(' · ')
-    const savedRequest = saveRequest({ ...formData, location })
-    if (savedRequest) {
-      const draftQuote = calculateDraftQuote(savedRequest, tires)
-      const savedQuote = saveQuote(savedRequest.id, draftQuote)
-      const quoteMessage = savedQuote ? ` Draft quote total: $${draftQuote.total.toFixed(2)}.` : ''
-      setSubmissionMessage(`Quote request submitted. Request ID: ${savedRequest.id}.${quoteMessage}`)
-      setFormData({ tireSize: '', vehicleInfo: '', tireSelection: '', location: '', date: '', locationType: 'Home', serviceZip: '', locationNotes: '' })
-      setVehicle({ year: '', make: '', model: '' })
-      setFitment({ width: '', ratio: '', diameter: '', zip: '' })
-      setFitmentStage('width')
-      setFitmentSearch('')
-      setValidationErrors({})
-      setStepError('')
-      setOrderStep(1)
-    }
-  }
-
   if (route === '/owner') return <OwnerInventory navigate={navigate} />
 
   if (route === '/owner/quotes') {
-    const requests = getAllRequests()
-    const quotes = getAllQuotes()
-    const handleQuoteStatus = (quoteId, status) => {
-      if (updateQuoteStatus(quoteId, status)) setOwnerVersion(version => version + 1)
-    }
-
-    return (
-      <div className="app-shell owner-shell">
-        <nav className="internal-nav">
-          <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
-          <div className="internal-nav-links"><button className="btn btn-neutral" onClick={() => navigate('/owner')}>← Inventory</button><button className="btn btn-neutral" onClick={() => navigate('/')}>Back to Customer Flow</button></div>
-        </nav>
-        <div className="owner-content">
-          <p className="eyebrow">OWNER</p>
-          <h1 className="owner-heading">Quote Requests</h1>
-          <p className="text-secondary owner-subhead">{requests.length === 1 ? '1 request waiting on you.' : `${requests.length} requests waiting on you.`}</p>
-          {requests.length === 0 ? <div className="panel"><p className="text-secondary">No requests yet. Go to the customer flow and submit a request.</p></div> : (
-            <div className="owner-list">
-              {requests.map(request => {
-                const quote = quotes.find(item => item.requestId === request.id)
-                // The owner thinks in vehicles and tire names, not record ids.
-                const requestedTire = tires.find(tire => tire.id === request.tireSelection)
-                return (
-                  <div key={`${request.id}-${ownerVersion}`} className="panel owner-request">
-                    <p className="owner-request-vehicle">{request.vehicleInfo}</p>
-                    <dl className="owner-details">
-                      <div><dt>Tire:</dt> <dd>{requestedTire ? `${requestedTire.name} · ${requestedTire.size}` : request.tireSelection}</dd></div>
-                      <div><dt>Location:</dt> <dd>{request.location}</dd></div>
-                      <div><dt>Preferred Date:</dt> <dd>{request.date}</dd></div>
-                    </dl>
-                    {quote && <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
-                      <div className="owner-quote-summary"><div><p className="text-secondary">Draft Quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{quote.status}</span></div>
-                      {quote.exception && <div className="owner-exception-note"><p>Owner review required</p><ul>{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
-                      {quote.status === 'draft' && <div className="owner-actions"><button onClick={() => handleQuoteStatus(quote.id, 'approved')} className="btn btn-approve">Approve &amp; Send</button><button onClick={() => handleQuoteStatus(quote.id, 'rejected')} className="btn btn-reject">Reject</button></div>}
-                    </div>}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    )
+    return <QuoteRequests navigate={navigate} ownerVersion={ownerVersion} setOwnerVersion={setOwnerVersion} />
   }
 
   if (route === '/confirmation') {
-    const quoteId = new URLSearchParams(window.location.search).get('quoteId')
-    const quote = getAllQuotes().find(item => item.id === quoteId)
-    const request = quote ? getAllRequests().find(item => item.id === quote.requestId) : null
-    return (
-      <div className="app-shell confirmation-shell">
-        <nav className="internal-nav">
-          <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
-        </nav>
-        <div className="confirmation-content">
-          <div className="panel confirmation-card">
-            <div className="confirmation-check" aria-hidden="true">✓</div>
-            <p className="eyebrow">CONFIRMED</p>
-            <h1 className="confirmation-heading">You&apos;re all set!</h1>
-            <p className="text-secondary" role="status">Payment confirmed. Your quote has been paid in full.</p>
-            {quote && <dl className="confirmation-detail">
-              {request && <div><dt>Vehicle</dt><dd>{request.vehicleInfo}</dd></div>}
-              <div><dt>Amount paid</dt><dd className="confirmation-total">${quote.total.toFixed(2)}</dd></div>
-            </dl>}
-            <a href="/" onClick={(event) => { event.preventDefault(); navigate('/') }} className="btn btn-primary confirmation-action">Start a New Request</a>
-          </div>
-        </div>
-      </div>
-    )
+    return <Confirmation navigate={navigate} />
   }
 
   if (route === '/status') {
-    const requests = getAllRequests()
-    const quotes = getAllQuotes()
-    const handlePayment = (quoteId) => { if (updateQuoteStatus(quoteId, 'paid')) navigate(`/confirmation?quoteId=${quoteId}`) }
-    return (
-      <div className="app-shell status-shell">
-        <nav className="internal-nav">
-          <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
-          <div className="internal-nav-links">
-            <button className="btn btn-neutral" onClick={() => navigate('/')}>← New Request</button>
-            <button className="btn btn-neutral" onClick={() => navigate('/owner')}>Owner Review →</button>
-          </div>
-        </nav>
-        <div className="owner-content">
-          <p className="eyebrow">YOUR QUOTE</p>
-          <h1 className="owner-heading">Quote Status</h1>
-          <p className="text-secondary owner-subhead">Track your request and the shop&apos;s decision.</p>
-          {requests.length === 0 ? <div className="panel"><p className="text-secondary">No quote requests yet. Start one from the home page.</p></div> : (
-            <div className="owner-list">
-              {[...requests].reverse().map(request => {
-                const quote = quotes.find(item => item.requestId === request.id)
-                // Same three-beat stepper the customer already saw while ordering,
-                // so the journey reads as one flow rather than two products.
-                const stage = !quote ? 1 : quote.status === 'draft' ? 2 : 3
-                return (
-                  <div key={request.id} className="panel owner-request">
-                    <p className="owner-request-vehicle">{request.vehicleInfo}</p>
-                    <div className="order-steps status-steps">
-                      <div className={stage > 1 ? 'order-step complete' : 'order-step current'}><span>1</span>Requested</div>
-                      <div className={stage > 2 ? 'order-step complete' : stage === 2 ? 'order-step current' : 'order-step'}><span>2</span>Owner review</div>
-                      <div className={stage === 3 ? 'order-step current' : 'order-step'}><span>3</span>Pay &amp; confirm</div>
-                    </div>
-                    {quote ? (
-                      <div className="owner-quote">
-                        <div className="owner-quote-summary">
-                          <div><p className="text-secondary">Your quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div>
-                          <span className="owner-quote-status">{quote.status}</span>
-                        </div>
-                        {quote.status === 'draft' && <p className="status-note status-note-wait">This quote is awaiting owner review.</p>}
-                        {quote.status === 'approved' && <div className="owner-actions"><button onClick={() => handlePayment(quote.id)} className="btn btn-primary">Pay ${quote.total.toFixed(2)}</button></div>}
-                        {quote.status === 'paid' && <div className="status-paid"><p className="status-note status-note-ok">Payment received. Your service is confirmed.</p><button className="link-action" onClick={() => navigate(`/confirmation?quoteId=${quote.id}`)}>View confirmation →</button></div>}
-                        {quote.status === 'rejected' && <p className="status-note status-note-bad">This quote was declined. Please submit a new request.</p>}
-                      </div>
-                    ) : <p className="text-secondary">Quote is being prepared.</p>}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    )
+    return <Status navigate={navigate} />
   }
 
-  const matchingTires = tires.filter(tire => tire.size === formData.tireSize)
-  const selectedTire = tires.find(tire => tire.id === formData.tireSelection)
-  return (
-    <div className="min-h-screen customer-shell">
-      <nav className="site-nav"><button className="brand-mark" onClick={() => navigate('/')} aria-label="KMT home"><img src="/kmtlogo.jpg" alt="Ken's Mobile Tire" /></button><div className="site-links"><button className="active" onClick={() => document.getElementById('order')?.scrollIntoView({ behavior: 'smooth' })}>Order Tires</button><button onClick={() => document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' })}>Services</button><button onClick={() => navigate('/status')}>My Quote</button></div><a className="phone-link" href="tel:6174108319">Call (617) 410-8319</a></nav>
-      <section className="hero-section"><div className="hero-copy"><p className="eyebrow">WE COME TO YOU</p><h1>Mobile Tire<br /><span>Service</span></h1><p className="hero-lede">Tires. Repairs. Roadside assistance.<br />Fast, reliable &amp; always on the move.</p><button className="hero-cta" onClick={() => document.getElementById('order')?.scrollIntoView({ behavior: 'smooth' })}>Order Tires <span>→</span></button></div><div className="hero-visual" aria-label="Ken's Mobile Tire brand"><img className="hero-logo" src="/kmtlogo.jpg" alt="Ken's Mobile Tire logo" /><span className="hero-visual-label">REAL MOBILE SERVICE / BOSTON</span></div></section>
-      <section className="service-strip" id="services"><div><strong>◉</strong><span><b>WE COME TO YOU</b>Home, work or roadside</span></div><div><strong>↯</strong><span><b>FAST &amp; RELIABLE</b>Quick response you can count on</span></div><div><strong>✓</strong><span><b>QUALITY SERVICE</b>Professional care every time</span></div></section>
-      <main className="order-section" id="order"><div className="section-heading"><p className="eyebrow">SHOP KMT</p><h2>Order tires online</h2><p>Find the right fit for your vehicle and we&apos;ll handle the rest.</p></div><div className="order-steps" aria-label="Order progress">{['Tire size', 'Your vehicle', 'Mobile service'].map((label, index) => <div className={orderStep === index + 1 ? 'order-step current' : orderStep > index + 1 ? 'order-step complete' : 'order-step'} key={label}><span>{index + 1}</span><b>{label}</b></div>)}</div>
-        <form noValidate onSubmit={handleFormSubmit} className="order-form">
-          {orderStep === 1 && <div className="fitment-modal"><div className="fitment-heading"><span className="fitment-wheel">◉</span><h3>Select your tire size</h3></div><div className="fitment-progress"><div className={fitmentStage === 'width' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Width</b><span /></div><div className={fitmentStage === 'ratio' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Ratio</b><span /></div><div className={fitmentStage === 'diameter' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Diameter</b><span /></div><div className={fitmentStage === 'zip' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Zip code</b><span /></div></div><div className="fitment-visual"><img className="fitment-guide" src={(FITMENT_GUIDES[fitmentStage] ?? FITMENT_GUIDES.width).src} alt={(FITMENT_GUIDES[fitmentStage] ?? FITMENT_GUIDES.width).alt} /></div><button type="button" className="fitment-back" onClick={goBackFitment} disabled={fitmentStage === 'width'}>← Back</button><div className="fitment-controls">{fitmentStage === 'zip' ? <div className="fitment-zip"><label htmlFor="fitmentZip">Where will we service you?</label><input id="fitmentZip" value={fitment.zip} onChange={event => setFitment(previous => ({ ...previous, zip: event.target.value }))} placeholder="Enter ZIP code (optional)" inputMode="numeric" /></div> : <><div className="fitment-search"><span>⌕</span><input value={fitmentSearch} onChange={event => setFitmentSearch(event.target.value)} placeholder="Search" aria-label="Search tire size" /></div><div className="fitment-options">{(fitmentStage === 'width' ? widthOptions : fitmentStage === 'ratio' ? ratioOptions : diameterOptions).filter(value => value.includes(fitmentSearch.trim())).map(value => <button type="button" className="fitment-option" key={value} onClick={() => selectFitmentPart(fitmentStage, value)}>{value}</button>)}</div></>}</div><div className="fitment-footer"><span>{formData.tireSize ? `Selected: ${formData.tireSize}` : 'Select width, ratio, and diameter'}</span><button type="button" className="primary-action" disabled={!formData.tireSize} onClick={continueFromSize}>Continue to tires <span>→</span></button></div></div>}
-          {orderStep === 2 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(1)}>← Change size</button><p className="panel-kicker">STEP 02 / YOUR TIRES</p><h3>Your tires. Your vehicle.</h3><p className="panel-note">Choose from tires in size <strong>{formData.tireSize}</strong>, then tell us what you drive.</p><VehicleDetails vehicle={vehicle} onVehicleChange={handleVehicleChange} value={formData.vehicleInfo} onChange={handleFormChange} /><h4 className="tire-list-heading">Choose your tire</h4>{matchingTires.length === 0 ? <div className="tire-empty"><p className="tire-empty-title">We don&apos;t stock {formData.tireSize} for online ordering.</p><p className="tire-empty-body">We can still source it. Call us and we&apos;ll sort it out, or pick a different size.</p><div className="tire-empty-actions"><a className="btn btn-primary" href="tel:6174108319">Call (617) 410-8319</a><button type="button" className="btn btn-neutral" onClick={() => { setOrderStep(1); setFitmentStage('width'); setFitment({ width: '', ratio: '', diameter: '', zip: '' }); setFormData(previous => ({ ...previous, tireSize: '', tireSelection: '' })); setStepError('') }}>Choose another size</button></div></div> : <div className="tire-options">{matchingTires.map(tire => <button type="button" className={formData.tireSelection === tire.id ? 'tire-option selected' : 'tire-option'} aria-pressed={formData.tireSelection === tire.id} onClick={() => { setFormData(previous => ({ ...previous, tireSelection: tire.id })); setStepError('') }} key={tire.id} disabled={!tire.inStock}><span className="tire-art">◉</span><span className="tire-info"><strong>{tire.name}</strong><small>{tire.description}</small><small>{tire.inStock ? 'In stock' : 'Currently unavailable'}</small></span><b>${tire.price.toFixed(2)}<i>per tire</i></b></button>)}</div>}<button type="button" className="primary-action" onClick={continueFromVehicle}>Continue to mobile service <span>→</span></button></div>}
-          {orderStep === 3 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(2)}>← Back to tire selection</button><p className="panel-kicker">STEP 03 / WE COME TO YOU</p><h3>Let’s bring the shop to you.</h3><p className="panel-note">Tell us where to find your vehicle and when you’d prefer service.</p><div className="order-summary-line"><span>{selectedTire?.name} · {formData.tireSize}</span><b>{formData.vehicleInfo}</b></div><ServiceDetails formData={formData} onChange={handleFormChange} errors={validationErrors} /><p className="quote-reassurance">No payment now. Ken reviews your request before you pay.</p><button type="submit" className="primary-action">Request my quote <span>→</span></button></div>}
-          {stepError && <p className="step-error" role="alert">{stepError}</p>}
-        </form>
-        {submissionMessage && <div className="success-message" role="status">{submissionMessage}</div>}
-      </main>
-      <footer className="site-footer"><span>KMT / KEN&apos;S MOBILE TIRE</span><span>Fast. Reliable. Always on the move.</span><button onClick={() => navigate('/owner')}>Owner review →</button></footer>
-    </div>
-  )
+  return <CustomerRequest navigate={navigate} />
 }
 
 export default App
