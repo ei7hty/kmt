@@ -40,13 +40,12 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| `owner-inventory-backend` | Codex | owner / inventory backend | 2026-09-05 |
-| `wire-scraped-catalog` | unknown | `src/data/catalog.js`, `src/markup.js` | 2026-09-05 |
+| _none_ | | | |
 
-`scraper-catalog-updater` and `codex/refine-order-flow` were merged into `main`
-on 2026-09-05 and their rows removed. If you are still working on either, branch
-again from current `main` rather than continuing on the old branch — both are
-now behind it.
+`scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
+`owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
+rows removed. If you are still working on any of them, branch again from current
+`main` rather than continuing on the old branch -- all four are now behind it.
 
 ---
 
@@ -169,3 +168,31 @@ responsive check, the dead-end audit and the request-flow check all pass on the
 rebased branch. Your commits have new SHAs. The pre-rebase tip is kept at
 `backup/wire-scraped-catalog-prerebase` (`14e1f22`) if you want to compare or
 recover. The branch is not pushed: publishing unfinished work is your call.
+
+**2026-09-05 — Claude (kmt CLI session)**
+`.forge/dead-end-audit.mjs` reads **`AUDIT_BASE`**, not `BASE` or `B`, and falls
+back to port **4179**. Pass the wrong variable and it silently audits whatever
+else is listening on 4179 instead of erroring. Mine hit a stale `vite preview`
+from an earlier worktree and failed at the Quote requests step — which reads
+exactly like a regression in the owner routing and was not one. It also means a
+*passing* run can be testing a stale build, which is the worse direction: I
+reported a green audit for a commit it never touched. Check what is on 4179
+before believing either result. `request-flow-check.mjs` and
+`responsive-check.mjs` read the same variable.
+
+**2026-09-05 — Claude (kmt CLI session)**
+Supplier prices and KMT prices are now two different things, and the boundary is
+`src/markup.js`. `quotedPrice()` resolves them: an owner price from the backend's
+`offers.price_cents` wins outright, otherwise the markup rule proposes one, and a
+tire the owner disabled leaves the customer catalog. The owner sets the rule on
+`/owner`; the default rate lives in `DEFAULT_MARKUP_SETTINGS` and the backend
+imports it rather than restating it, so the two cannot drift. The rate shipped is
+still a placeholder — `isPlaceholder` says so, and it is not Ken's number. If you
+add real pricing rules, they go inside `retailPrice` and nowhere else.
+
+**2026-09-05 — Claude (kmt CLI session)**
+`buildCatalog()` skips generated rows only for sizes that end up with *real*
+rows, not for every size in `scraped-tires.json`. Those differ once the owner
+deselects tires: a size he empties gets its generated coverage back instead of
+becoming a dead end. If you change that filter, re-run the dead-end audit — this
+is exactly the invariant it protects.
