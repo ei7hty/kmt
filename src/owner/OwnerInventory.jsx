@@ -4,6 +4,9 @@ import './OwnerInventory.css'
 const dollars = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const dateLabel = value => value ? new Date(value).toLocaleString() : 'Never refreshed'
 
+/** Thrown on a 401 so callers can show the sign-in form instead of an error. */
+class NeedsSignIn extends Error {}
+
 async function api(path, options = {}) {
   const response = await fetch(`/api/owner/${path}`, {
     ...options, headers: { 'Content-Type': 'application/json', ...options.headers },
@@ -11,8 +14,62 @@ async function api(path, options = {}) {
   const type = response.headers.get('content-type') || ''
   if (!type.includes('application/json')) throw new Error('The owner backend is not connected. Start the owner server to load inventory.')
   const data = await response.json()
+  if (response.status === 401) throw new NeedsSignIn(data.error || 'Sign in to continue.')
   if (!response.ok) throw new Error(data.error || 'The request could not be completed.')
   return data
+}
+
+/**
+ * Sign-in gate for hosted deployments.
+ *
+ * The local server has no password -- it binds loopback, so whoever reaches it
+ * is already at the keyboard. A hosted one does, and this is what the owner
+ * sees until he enters it. It never appears locally, because nothing there
+ * returns 401.
+ */
+function SignIn({ onSignedIn, navigate }) {
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(event) {
+    event.preventDefault()
+    setError('')
+    setBusy(true)
+    try {
+      await api('login', { method: 'POST', body: JSON.stringify({ password }) })
+      setPassword('')
+      onSignedIn()
+    } catch (err) { setError(err.message) }
+    finally { setBusy(false) }
+  }
+
+  return <div className="oi-shell">
+    {/* Quote requests stays reachable without the password. That screen reads
+        localStorage in the browser and never touches this server, so gating it
+        behind a server password protects nothing and only locks the owner out
+        of the part that works everywhere. The password guards the data that is
+        actually here: supplier costs and prices. */}
+    <nav className="oi-nav">
+      <button className="oi-brand" onClick={() => navigate('/')}>KMT<span>.</span></button>
+      <span>OWNER WORKSPACE</span>
+      <button className="oi-button" onClick={() => navigate('/owner/quotes')}>Quote requests →</button>
+    </nav>
+    <main className="oi-content">
+      <form className="oi-signin" onSubmit={submit}>
+        <p className="oi-kicker">OWNER ONLY</p>
+        <h1>Sign in</h1>
+        <p className="oi-muted">This workspace holds supplier costs and your prices.</p>
+        <label htmlFor="owner-password">Password</label>
+        <input id="owner-password" type="password" autoComplete="current-password" value={password}
+          onChange={e => setPassword(e.target.value)} disabled={busy} />
+        <button type="submit" className="oi-button oi-primary" disabled={busy || !password}>
+          {busy ? 'Checking…' : 'Sign in'}
+        </button>
+        {error && <p role="alert" className="oi-error">{error}</p>}
+      </form>
+    </main>
+  </div>
 }
 
 function SupplierLink({ url }) {
@@ -144,6 +201,7 @@ export default function OwnerInventory({ navigate }) {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [needsSignIn, setNeedsSignIn] = useState(false)
   const sequence = useRef(0)
   const invalidate = useCallback(() => { sequence.current++ }, [])
   const jobRunning = data?.summary.job?.status === 'running'
@@ -154,8 +212,13 @@ export default function OwnerInventory({ navigate }) {
     try {
       const result = await api(`inventory?${new URLSearchParams({ search, size, filter, page })}`)
       if (request !== sequence.current) return
-      setData(result); setError('')
-    } catch (err) { if (request === sequence.current) setError(err.message) }
+      setData(result); setError(''); setNeedsSignIn(false)
+    } catch (err) {
+      if (request !== sequence.current) return
+      // A 401 is not an error to report, it is a door to open.
+      if (err instanceof NeedsSignIn) { setNeedsSignIn(true); setError('') }
+      else setError(err.message)
+    }
     finally { if (request === sequence.current) setLoading(false) }
   }, [search, size, filter, page])
 
@@ -200,6 +263,8 @@ export default function OwnerInventory({ navigate }) {
       summary: { ...previous.summary, offeredCount: previous.summary.offeredCount + Number(offer.enabled) - Number(previous.items.find(t => t.id === id).offer.enabled) } }))
     setNotice('Offer saved. Your selection and price are stored in the owner database.')
   }
+
+  if (needsSignIn) return <SignIn onSignedIn={load} navigate={navigate} />
 
   const summary = data?.summary
   const job = summary?.job

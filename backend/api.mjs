@@ -1,6 +1,10 @@
 import { InputError } from './inventory.mjs'
 
-async function body(request) {
+/**
+ * Exported as `readJsonBody` so the auth routes parse request bodies the same
+ * way the API does -- same content-type rule, same 32KB ceiling, same errors.
+ */
+export async function readJsonBody(request) {
   if (!request.headers['content-type']?.startsWith('application/json')) throw new InputError('Expected JSON', 415)
   let data = ''
   for await (const chunk of request) {
@@ -20,22 +24,29 @@ export function createApi(inventory, refresher) {
       response.end(JSON.stringify(value))
     }
     try {
+      // Same-origin only. The scheme has to come from the request rather than
+      // being assumed http: behind TLS the browser sends `https://host` and a
+      // hardcoded `http://host` rejects every save the owner makes.
       const origin = request.headers.origin
-      if (origin && origin !== `http://${request.headers.host}`) throw new InputError('Cross-origin access refused', 403)
+      const scheme = (request.headers['x-forwarded-proto'] || '').split(',')[0].trim() ||
+        (request.socket.encrypted ? 'https' : 'http')
+      if (origin && origin !== `${scheme}://${request.headers.host}`) {
+        throw new InputError('Cross-origin access refused', 403)
+      }
       if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
         send(200, { ...inventory.list(Object.fromEntries(url.searchParams)), summary: inventory.summary() })
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/')) {
         const id = decodeURIComponent(url.pathname.slice('/api/owner/offers/'.length))
-        send(200, inventory.saveOffer(id, await body(request)))
+        send(200, inventory.saveOffer(id, await readJsonBody(request)))
       } else if (request.method === 'GET' && url.pathname === '/api/owner/markup') {
         send(200, inventory.getMarkup())
       } else if (request.method === 'PUT' && url.pathname === '/api/owner/markup') {
-        send(200, inventory.saveMarkup(await body(request)))
+        send(200, inventory.saveMarkup(await readJsonBody(request)))
       } else if (request.method === 'POST' && url.pathname === '/api/owner/refresh') {
-        const input = await body(request)
+        const input = await readJsonBody(request)
         send(202, refresher.start(input.sizes))
       } else if (request.method === 'POST' && url.pathname === '/api/owner/refresh/cancel') {
-        await body(request)
+        await readJsonBody(request)
         send(200, refresher.cancel())
       } else { send(404, { error: 'Owner endpoint not found' }) }
     } catch (error) {

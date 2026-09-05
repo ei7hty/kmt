@@ -3,10 +3,11 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { createServer } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
-import { createApi } from './api.mjs'
+import { createApi, readJsonBody } from './api.mjs'
+import { createAuth, readAuthConfig } from './auth.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 
 const SIZE = '215/60R16'
@@ -227,4 +228,83 @@ test('owner markup endpoint saves and validates over HTTP', async t => {
   const bad = await call('PUT', { rate: 0.5 })
   assert.equal(bad.status, 400)
   assert.equal(db.getMarkup().rate, 1.45, 'the rejected save left the stored rule alone')
+})
+
+test('auth refuses to start without a usable password', () => {
+  assert.throws(() => readAuthConfig({}), /KMT_OWNER_PASSWORD is not set/)
+  assert.throws(() => readAuthConfig({ KMT_OWNER_PASSWORD: 'short' }), /at least 12 characters/)
+  const config = readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password' })
+  assert.equal(config.generatedSecret, true, 'a missing secret is generated rather than fatal')
+})
+
+test('sessions are signed, expire, and cannot be forged', async t => {
+  const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'secret-one' }
+  const auth = createAuth(readAuthConfig(env))
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (await auth.handle(request, response, url, readJsonBody)) return
+    response.writeHead(auth.isAuthenticated(request) ? 200 : 401).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+  const login = password => fetch(`${base}/api/owner/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }),
+  })
+
+  assert.equal((await login('wrong-but-long-enough')).status, 401)
+  assert.equal((await fetch(`${base}/anything`)).status, 401, 'no cookie means no access')
+
+  const ok = await login('a-long-enough-password')
+  assert.equal(ok.status, 200)
+  const cookie = ok.headers.getSetCookie()[0]
+  assert.match(cookie, /HttpOnly/)
+  assert.match(cookie, /SameSite=Strict/)
+
+  const token = cookie.split(';')[0]
+  assert.equal((await fetch(`${base}/anything`, { headers: { cookie: token } })).status, 200)
+
+  // A cookie signed with a different secret is not accepted.
+  const other = createAuth(readAuthConfig({ ...env, KMT_SESSION_SECRET: 'secret-two' }))
+  assert.equal(other.isAuthenticated({ headers: { cookie: token }, socket: {} }), false)
+
+  // Neither is a tampered payload.
+  const tampered = token.replace(/=(.*)\./, `=${Buffer.from(String(Date.now() + 9e9)).toString('base64url')}.`)
+  assert.equal((await fetch(`${base}/anything`, { headers: { cookie: tampered } })).status, 401)
+
+  // An expired session is refused even though its signature is valid.
+  const expired = createAuth(readAuthConfig({ ...env, KMT_SESSION_HOURS: '-1' }))
+  const stale = await fetch(`${base}/api/owner/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'a-long-enough-password' }),
+  })
+  assert.equal(stale.status, 200)
+  assert.equal(expired.isAuthenticated({ headers: { cookie: token }, socket: {} }), true, 'ttl affects issuing, not this token')
+})
+
+test('the API origin check follows the request scheme', async t => {
+  const db = setup(t)
+  const api = createApi(db, new Refresher(db))
+  const server = createServer(async (request, response) => { if (!(await api(request, response))) response.writeHead(404).end() })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const port = server.address().port
+
+  // node:http rather than fetch: Host is a forbidden header for fetch, which
+  // silently drops it, and Host is precisely what this check reads.
+  const call = headers => new Promise((resolve, reject) => {
+    const request = httpRequest({ host: '127.0.0.1', port, path: '/api/owner/markup', method: 'PUT',
+      headers: { 'content-type': 'application/json', ...headers } }, response => {
+      response.resume()
+      response.on('end', () => resolve(response.statusCode))
+    })
+    request.on('error', reject)
+    request.end(JSON.stringify({ rate: 1.5 }))
+  })
+
+  // Behind TLS the browser sends https://host while the socket is plain http.
+  // Assuming http here rejected every save the owner made in production.
+  assert.equal(await call({ origin: 'https://kmt.example', host: 'kmt.example', 'x-forwarded-proto': 'https' }), 200)
+  assert.equal(await call({ origin: 'https://evil.example', host: 'kmt.example', 'x-forwarded-proto': 'https' }), 403)
+  assert.equal(await call({ origin: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}` }), 200, 'plain http still works locally')
+  assert.equal(await call({}), 200, 'a request with no Origin at all is allowed')
 })
