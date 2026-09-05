@@ -1,0 +1,396 @@
+{
+  "source": "giga-tires.com",
+  "scrapedAt": "2026-09-05T15:33:54.024Z",
+  "sizes": [
+    "205/65R15",
+    "215/60R16",
+    "225/50R17",
+    "265/70R16"
+  ],
+  "tires": [
+    {
+      "id": "giga-watf0021520565h",
+      "name": "Waterfall Quattro",
+      "size": "205/65R15",
+      "price": 31.14,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 94H BSW",
+      "source": {
+        "sku": "WATF0021520565H",
+        "stock": 4,
+        "listPrice": 38.93,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/205-65-15/waterfall-tires/quattro/tirecode/WT25"
+      }
+    },
+    {
+      "id": "giga-fere0011520565v",
+      "name": "Ferentino Eternopresa",
+      "size": "205/65R15",
+      "price": 33.16,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 94V BSW",
+      "source": {
+        "sku": "FERE0011520565V",
+        "stock": 6989,
+        "listPrice": 41.45,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/205-65-15/ferentino-tires/eternopresa/tirecode/3000000235"
+      }
+    },
+    {
+      "id": "giga-supe0461520565h",
+      "name": "Supermax TR-1",
+      "size": "205/65R15",
+      "price": 33.43,
+      "inStock": true,
+      "category": "performance",
+      "description": "Racing · 94H BSW",
+      "source": {
+        "sku": "SUPE0461520565H",
+        "stock": 971,
+        "listPrice": 41.79,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/205-65-15/supermax-tires/tr-1/tirecode/PCR1504SX"
+      }
+    },
+    {
+      "id": "giga-rckd0011520565h",
+      "name": "Rockblade Multifresh Touring",
+      "size": "205/65R15",
+      "price": 33.9,
+      "inStock": true,
+      "category": "performance",
+      "description": "Racing · 94H BSW",
+      "source": {
+        "sku": "RCKD0011520565H",
+        "stock": 711,
+        "listPrice": 42.38,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/205-65-15/rockblade-tires/multifresh-touring/tirecode/2KRKA004Y"
+      }
+    },
+    {
+      "id": "giga-amet0251520565h",
+      "name": "AmeriTread Total Comfort",
+      "size": "205/65R15",
+      "price": 34.02,
+      "inStock": true,
+      "category": "all-season",
+      "description": "94H BSW",
+      "source": {
+        "sku": "AMET0251520565H",
+        "stock": 2023,
+        "listPrice": 42.53,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/205-65-15/ameritread-tires/total-comfort/tirecode/ADCMTC10"
+      }
+    },
+    {
+      "id": "giga-leao0221520565h2",
+      "name": "Leao Lion Sport HP3",
+      "size": "205/65R15",
+      "price": 34.62,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 94H BSW",
+      "source": {
+        "sku": "LEAO0221520565H2",
+        "stock": 495,
+        "listPrice": 43.28,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/205-65-15/leao-tires/lion-sport-hp3/tirecode/221019847"
+      }
+    },
+    {
+      "id": "giga-fere0011621560h",
+      "name": "Ferentino Eternopresa",
+      "size": "215/60R16",
+      "price": 33.92,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95H BSW",
+      "source": {
+        "sku": "FERE0011621560H",
+        "stock": 3635,
+        "listPrice": 42.4,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/ferentino-tires/eternopresa/tirecode/3000000096"
+      }
+    },
+    {
+      "id": "giga-leao0221621560h",
+      "name": "Leao Lion Sport HP3",
+      "size": "215/60R16",
+      "price": 38.46,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95H BSW",
+      "source": {
+        "sku": "LEAO0221621560H",
+        "stock": 2548,
+        "listPrice": 48.08,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/leao-tires/lion-sport-hp3/tirecode/221012046"
+      }
+    },
+    {
+      "id": "giga-acce0221621560vxl",
+      "name": "Accelera Eco Plush",
+      "size": "215/60R16",
+      "price": 38.54,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · XL 99V BSW",
+      "source": {
+        "sku": "ACCE0221621560VXL",
+        "stock": 447,
+        "listPrice": 48.18,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/accelera-tires/eco-plush/tirecode/1200042440"
+      }
+    },
+    {
+      "id": "giga-rckd0011621560v",
+      "name": "Rockblade Multifresh Touring",
+      "size": "215/60R16",
+      "price": 38.91,
+      "inStock": true,
+      "category": "performance",
+      "description": "Racing · 95V BSW",
+      "source": {
+        "sku": "RCKD0011621560V",
+        "stock": 3193,
+        "listPrice": 48.64,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/rockblade-tires/multifresh-touring/tirecode/2KRKA008Y"
+      }
+    },
+    {
+      "id": "giga-atla0031621560v2",
+      "name": "Atlas Force HP",
+      "size": "215/60R16",
+      "price": 39.11,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95V BSW",
+      "source": {
+        "sku": "ATLA0031621560V2",
+        "stock": 1617,
+        "listPrice": 48.89,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/atlas-tires/force-hp/tirecode/221018383"
+      }
+    },
+    {
+      "id": "giga-grnd0221621560h",
+      "name": "Groundspeed Voyager GT-AS",
+      "size": "215/60R16",
+      "price": 39.58,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95H BSW",
+      "source": {
+        "sku": "GRND0221621560H",
+        "stock": 1388,
+        "listPrice": 49.47,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/groundspeed-tires/voyager-gt-as/tirecode/714968"
+      }
+    },
+    {
+      "id": "giga-fere0011722550v",
+      "name": "Ferentino Eternopresa",
+      "size": "225/50R17",
+      "price": 38.54,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 94V BSW",
+      "source": {
+        "sku": "FERE0011722550V",
+        "stock": 1853,
+        "listPrice": 48.18,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/225-50-17/ferentino-tires/eternopresa/tirecode/3000000110"
+      }
+    },
+    {
+      "id": "giga-apls0061722550wxl",
+      "name": "Aplus Pro Racing",
+      "size": "225/50R17",
+      "price": 40,
+      "inStock": true,
+      "category": "performance",
+      "description": "Ultra High Performance Summer · XL 98W BSW",
+      "source": {
+        "sku": "APLS0061722550WXL",
+        "stock": 860,
+        "listPrice": 50,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/225-50-17/aplus-tires/pro-racing/tirecode/20000281"
+      }
+    },
+    {
+      "id": "giga-rckd0031722550wxl",
+      "name": "Rockblade Staminarace",
+      "size": "225/50R17",
+      "price": 41.68,
+      "inStock": true,
+      "category": "performance",
+      "description": "Racing · XL 98W BSW",
+      "source": {
+        "sku": "RCKD0031722550WXL",
+        "stock": 1122,
+        "listPrice": 52.1,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/225-50-17/rockblade-tires/staminarace/tirecode/2KRKA021Y"
+      }
+    },
+    {
+      "id": "giga-roya0041722550wxl",
+      "name": "Royal Black Racing Trac",
+      "size": "225/50R17",
+      "price": 43,
+      "inStock": true,
+      "category": "performance",
+      "description": "Ultra High Performance Summer · XL 98W BSW",
+      "source": {
+        "sku": "ROYA0041722550WXL",
+        "stock": 955,
+        "listPrice": 53.75,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/225-50-17/royal-black-tires/racing-trac/tirecode/20000533"
+      }
+    },
+    {
+      "id": "giga-pega0301722550wxl",
+      "name": "Pegasus HPX SPORT AS",
+      "size": "225/50R17",
+      "price": 43.58,
+      "inStock": true,
+      "category": "off-road",
+      "description": "All Terrain · XL 98W BSW",
+      "source": {
+        "sku": "PEGA0301722550WXL",
+        "stock": 1716,
+        "listPrice": 54.47,
+        "segment": "Truck/SUV - CUV/Crossover",
+        "url": "https://www.giga-tires.com/225-50-17/pegasus-tires/hpx-sport-as/tirecode/1791101758"
+      }
+    },
+    {
+      "id": "giga-lasp0041722550wxl",
+      "name": "Landspider Citytraxx H/P",
+      "size": "225/50R17",
+      "price": 44.02,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · XL 98W BSW",
+      "source": {
+        "sku": "LASP0041722550WXL",
+        "stock": 76,
+        "listPrice": 55.03,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/225-50-17/landspider-tires/citytraxx-h-p/tirecode/BGP005"
+      }
+    },
+    {
+      "id": "giga-rckd0051626570h",
+      "name": "Rockblade Rapidawn H/T",
+      "size": "265/70R16",
+      "price": 61.48,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Highway · 112H BSW",
+      "source": {
+        "sku": "RCKD0051626570H",
+        "stock": 332,
+        "listPrice": 76.85,
+        "segment": "Truck/SUV - Highway",
+        "url": "https://www.giga-tires.com/265-70-16/rockblade-tires/rapidawn-h-t/tirecode/2KRKA063Y"
+      }
+    },
+    {
+      "id": "giga-vizz0131626570hxl",
+      "name": "Vizzoni VZX45",
+      "size": "265/70R16",
+      "price": 62,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Highway · XL 116H BSW",
+      "source": {
+        "sku": "VIZZ0131626570HXL",
+        "stock": 351,
+        "listPrice": 77.5,
+        "segment": "Truck/SUV - Highway",
+        "url": "https://www.giga-tires.com/265-70-16/vizzoni-tires/vzx45/tirecode/6M6014"
+      }
+    },
+    {
+      "id": "giga-roya0161626570h",
+      "name": "Royal Black Milage SUV/CUV",
+      "size": "265/70R16",
+      "price": 64.69,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Crossover/SUV Touring · 112H BSW",
+      "source": {
+        "sku": "ROYA0161626570H",
+        "stock": 183,
+        "listPrice": 80.86,
+        "segment": "Truck/SUV - Highway",
+        "url": "https://www.giga-tires.com/265-70-16/royal-black-tires/milage-suv-cuv/tirecode/20000466"
+      }
+    },
+    {
+      "id": "giga-pant0051626570h",
+      "name": "Pantera SuperTrac H/T",
+      "size": "265/70R16",
+      "price": 66.34,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Highway · 102H BSW",
+      "source": {
+        "sku": "PANT0051626570H",
+        "stock": 246,
+        "listPrice": 82.93,
+        "segment": "Truck/SUV - Highway",
+        "url": "https://www.giga-tires.com/265-70-16/pantera-tires/supertrac-h-t/tirecode/120856"
+      }
+    },
+    {
+      "id": "giga-trai0071626570t",
+      "name": "Trail Guide HLT",
+      "size": "265/70R16",
+      "price": 67.25,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Highway All Season · 112T WL",
+      "source": {
+        "sku": "TRAI0071626570T",
+        "stock": 43,
+        "listPrice": 84.06,
+        "segment": "Truck/SUV - Highway",
+        "url": "https://www.giga-tires.com/265-70-16/trail-guide-tires/hlt/tirecode/TGH93"
+      }
+    },
+    {
+      "id": "giga-lanv0251626570h",
+      "name": "Lanvigator Flair",
+      "size": "265/70R16",
+      "price": 67.34,
+      "inStock": true,
+      "category": "off-road",
+      "description": "All Terrain · 112H BSW",
+      "source": {
+        "sku": "LANV0251626570H",
+        "stock": 1284,
+        "listPrice": 84.18,
+        "segment": "Truck/SUV - Highway",
+        "url": "https://www.giga-tires.com/265-70-16/lanvigator-tires/flair/tirecode/20002487"
+      }
+    }
+  ]
+}

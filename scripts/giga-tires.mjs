@@ -61,8 +61,15 @@ const CATEGORY_RULES = [
   { category: 'eco', pattern: /\beco\b|low rolling|fuel/i },
 ]
 
-export function toCategory(style) {
-  const found = CATEGORY_RULES.find(rule => rule.pattern.test(style || ''))
+/**
+ * `style` is the site's own classification and wins outright; `name` is only
+ * consulted when the style says nothing useful. Otherwise a model called
+ * "Multifresh Touring" that the site files under Racing gets read off its
+ * marketing name instead of its actual classification.
+ */
+export function toCategory(style, name = '') {
+  const match = (text) => CATEGORY_RULES.find(rule => rule.pattern.test(text || ''))
+  const found = match(style) || match(name)
   return found ? found.category : 'all-season'
 }
 
@@ -81,28 +88,57 @@ function pick(html, pattern, group = 1) {
  * to grab by mistake.
  */
 export function extractPriceData(html) {
-  const start = html.indexOf('window.productPrices.initialData')
-  if (start === -1) return {}
-  const open = html.indexOf('{', start)
-  if (open === -1) return {}
+  const prices = {}
 
-  // Brace-count rather than regex: the blob is nested and a lazy match stops at
-  // the first inner `}`.
-  let depth = 0
-  for (let i = open; i < html.length; i++) {
-    if (html[i] === '{') depth++
-    else if (html[i] === '}') {
-      depth--
-      if (depth === 0) {
-        try {
-          return JSON.parse(html.slice(open, i + 1))
-        } catch {
-          return {}
-        }
-      }
+  // Each card carries its own assignment, and the outer object is JS rather
+  // than JSON -- `quantity: '4'`, unquoted keys, single quotes. Only the
+  // `priceData:` value is strict JSON, so that is the only part we parse:
+  //
+  //   window.productPrices.initialData['FERE0011621560H'] = {
+  //       quantity: '4',
+  //       priceData: {"initialPricePerTire":33.92, ...}
+  //   };
+  //
+  // (Reading `window.productPrices` in a live page shows one merged object.
+  // That is the result of these scripts having run, and it is not in the HTML.)
+  const assignments = html.matchAll(/initialData\[['"]([^'"]+)['"]\]\s*=/g)
+
+  for (const match of assignments) {
+    const sku = match[1]
+    const marker = html.indexOf('priceData:', match.index)
+    if (marker === -1) continue
+
+    const json = matchBraces(html, html.indexOf('{', marker))
+    if (!json) continue
+
+    try {
+      prices[sku] = { priceData: JSON.parse(json) }
+    } catch {
+      // Leave it out. parseListingPage reports the SKU as skipped.
     }
   }
-  return {}
+
+  return prices
+}
+
+/**
+ * The `{...}` starting at `open`, brace-counted.
+ *
+ * Lazy regex is not enough here: priceData nests (`lightningSavings` is an
+ * object when a promotion is running), so `\{[\s\S]*?\}` stops at the wrong
+ * brace exactly on the rows that are on sale.
+ */
+function matchBraces(text, open) {
+  if (open === -1) return null
+  let depth = 0
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === '{') depth++
+    else if (text[i] === '}') {
+      depth--
+      if (depth === 0) return text.slice(open, i + 1)
+    }
+  }
+  return null
 }
 
 /**
@@ -178,7 +214,7 @@ export function parseListingPage(html, requestedSize) {
       size: card.size,
       price: Math.round(price * 100) / 100,
       inStock: stock === null ? true : stock > 0,
-      category: toCategory(`${card.style || ''} ${card.name || ''}`),
+      category: toCategory(card.style, card.name),
       description: [card.style, card.spec].filter(Boolean).join(' · ') || card.title,
       // Provenance. The app never reads this, but it is what makes a stale or
       // wrong row traceable back to the page it came from.
@@ -195,16 +231,39 @@ export function parseListingPage(html, requestedSize) {
   return { rows, skipped, totalPages: readTotalPages(html) }
 }
 
-/** Highest ?page= in the pager, so a caller knows when to stop. */
+/**
+ * Highest ?page= in the pager, so a caller knows when to stop.
+ *
+ * The pager is 1-indexed, so the highest link *is* the page count -- 281
+ * results at ten a page links up to `?page=29`, and there are 29 pages.
+ */
 export function readTotalPages(html) {
   const pages = [...html.matchAll(/[?&]page=(\d+)/g)].map(match => Number(match[1]))
-  return pages.length ? Math.max(...pages) + 1 : 1
+  return pages.length ? Math.max(...pages) : 1
 }
 
-export async function fetchSizePage(size, page = 0, options = {}) {
+/**
+ * Listing URL for a size, paginated from 1.
+ *
+ * Their pager is 1-indexed and `?page=1` serves the same rows as the bare URL,
+ * so page 1 is requested without the parameter. Emitting it anyway means the
+ * first two pages of a multi-page run are the same ten tires.
+ */
+export function sizeUrl(size, page = 1) {
+  return `${ORIGIN}/tires/${toSizePath(size)}${page > 1 ? `?page=${page}` : ''}`
+}
+
+/**
+ * Plain HTTP fetch of a listing page.
+ *
+ * Usually not the one you want: the site sits behind AWS WAF, which answers
+ * a bare fetch with a challenge page instead of the catalog. Kept because it
+ * is the cheapest path if that ever changes, and it is what --plain-fetch runs.
+ */
+export async function fetchSizePage(size, page = 1, options = {}) {
   const { fetchImpl = fetch, userAgent } = options
-  const path = `/tires/${toSizePath(size)}${page > 0 ? `?page=${page}` : ''}`
-  const response = await fetchImpl(`${ORIGIN}${path}`, {
+  const url = sizeUrl(size, page)
+  const response = await fetchImpl(url, {
     headers: {
       Accept: 'text/html,application/xhtml+xml',
       'Accept-Language': 'en-US,en;q=0.9',
@@ -212,7 +271,7 @@ export async function fetchSizePage(size, page = 0, options = {}) {
     },
   })
   if (!response.ok) {
-    throw new Error(`GET ${path} -> ${response.status} ${response.statusText}`)
+    throw new Error(`GET ${url} -> ${response.status} ${response.statusText}`)
   }
-  return { html: await response.text(), url: `${ORIGIN}${path}` }
+  return { html: await response.text(), url }
 }
