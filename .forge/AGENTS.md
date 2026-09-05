@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| `import-scraped-snapshot` | Claude (kmt CLI session) | `backend/inventory.mjs`, `backend/api.mjs`, `backend/owner.test.mjs`, new `scripts/import-tires.mjs`; `package.json` and `README.md` in their own commits | 2026-09-05 |
+| _none_ | | | |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
@@ -89,7 +89,7 @@ Nothing is done until these pass. Run them; do not assume them.
 ```bash
 npm run build
 npx eslint src backend
-node --test backend/owner.test.mjs   # 18 tests
+node --test backend/*.test.mjs       # 52 tests: owner (34) and quotes (18)
 node .forge/responsive-check.mjs     # 8 checks, overflow at 375px and 1280px
 node .forge/dead-end-audit.mjs       # 36 checks across the full click path
 node .forge/request-flow-check.mjs   # 26 checks across the request flow
@@ -342,3 +342,19 @@ Get-NetTCPConnection -LocalPort 4173,4179,4183 -State Listen |
 
 Kill only your own: other agents run servers from their worktrees, and the
 command line tells you whose it is.
+
+**2026-09-05 — Claude (kmt CLI session)**
+A scrape run on your own machine can now reach a server that is already up:
+`npm run import-tires` posts `src/data/scraped-tires.json` (or any snapshot
+path) to `POST /api/owner/import-snapshot`, locally by default or at
+`--to https://kmt.fly.dev` with `KMT_OWNER_PASSWORD` set. Before this the
+snapshot only seeded an empty database, and `importSnapshot` still does only
+that; the new `Inventory.applySnapshot` is the one that writes into a live one.
+Two things worth knowing. The default import is *partial*: the scraper keeps
+the cheapest eight per size, so an import retires nothing unless you pass
+`--complete`, and you should only pass it for a `--limit 0` scrape that read
+every page -- otherwise you mark tires the owner may be offering as no longer
+listed. And `--dry-run` asks the server, so it reports against what that
+server holds, not against the tracked file. The CLI test in
+`backend/owner.test.mjs` spawns the real script against a password-gated
+server, so it takes most of a second; that is the point of it.
