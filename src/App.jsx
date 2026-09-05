@@ -149,28 +149,32 @@ function App() {
     }
 
     return (
-      <div className="min-h-screen owner-shell bg-gray-50 p-4 sm:p-6">
-        <nav className="mb-6"><button onClick={() => navigate('/')} className="px-4 py-2 bg-blue-600 text-white rounded">← Back to Customer Flow</button></nav>
-        <div className="max-w-2xl mx-auto bg-white p-6 rounded-lg shadow">
-          <h1 className="text-3xl font-bold mb-4">Owner Review Screen</h1>
-          <p className="text-gray-600 mb-6">Submitted quote requests:</p>
-          {requests.length === 0 ? <div className="border-2 border-gray-200 p-4 rounded bg-gray-50"><p className="text-gray-500">No requests yet. Go to the customer flow and submit a request.</p></div> : (
-            <div className="space-y-4">
+      <div className="app-shell owner-shell">
+        <nav className="internal-nav">
+          <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
+          <div className="internal-nav-links"><button className="btn btn-neutral" onClick={() => navigate('/')}>← Back to Customer Flow</button></div>
+        </nav>
+        <div className="owner-content">
+          <p className="eyebrow">OWNER</p>
+          <h1 className="owner-heading">Owner Review Screen</h1>
+          <p className="text-secondary owner-subhead">Submitted quote requests:</p>
+          {requests.length === 0 ? <div className="panel"><p className="text-secondary">No requests yet. Go to the customer flow and submit a request.</p></div> : (
+            <div className="owner-list">
               {requests.map(request => {
                 const quote = quotes.find(item => item.requestId === request.id)
                 return (
-                  <div key={`${request.id}-${ownerVersion}`} className="border border-gray-300 p-4 rounded bg-gray-50">
-                    <div className="text-sm text-gray-600 mb-2">Request ID: <code>{request.id}</code></div>
-                    <dl className="space-y-2 text-sm">
-                      <div><dt className="font-medium text-gray-700">Vehicle:</dt> <dd>{request.vehicleInfo}</dd></div>
-                      <div><dt className="font-medium text-gray-700">Tire:</dt> <dd>{request.tireSelection}</dd></div>
-                      <div><dt className="font-medium text-gray-700">Location:</dt> <dd>{request.location}</dd></div>
-                      <div><dt className="font-medium text-gray-700">Preferred Date:</dt> <dd>{request.date}</dd></div>
+                  <div key={`${request.id}-${ownerVersion}`} className="panel owner-request">
+                    <div className="text-secondary">Request ID: <code>{request.id}</code></div>
+                    <dl className="owner-details">
+                      <div><dt>Vehicle:</dt> <dd>{request.vehicleInfo}</dd></div>
+                      <div><dt>Tire:</dt> <dd>{request.tireSelection}</dd></div>
+                      <div><dt>Location:</dt> <dd>{request.location}</dd></div>
+                      <div><dt>Preferred Date:</dt> <dd>{request.date}</dd></div>
                     </dl>
-                    {quote && <div className={`mt-4 border-t pt-4 ${quote.exception ? 'border-amber-300 bg-amber-50' : 'border-gray-200'}`}>
-                      <div className="flex items-center justify-between gap-4"><div><p className="font-medium text-gray-700">Draft Quote</p><p className="text-lg font-semibold">${quote.total.toFixed(2)}</p></div><span className="text-sm font-medium uppercase">{quote.status}</span></div>
-                      {quote.exception && <div className="mt-2 text-sm text-amber-800"><p className="font-medium">Owner review required</p><ul className="list-disc list-inside">{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
-                      {quote.status === 'draft' && <div className="mt-3 flex gap-2"><button onClick={() => handleQuoteStatus(quote.id, 'approved')} className="px-3 py-2 bg-green-600 text-white rounded">Approve &amp; Send</button><button onClick={() => handleQuoteStatus(quote.id, 'rejected')} className="px-3 py-2 bg-red-600 text-white rounded">Reject</button></div>}
+                    {quote && <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
+                      <div className="owner-quote-summary"><div><p className="text-secondary">Draft Quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{quote.status}</span></div>
+                      {quote.exception && <div className="owner-exception-note"><p>Owner review required</p><ul>{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
+                      {quote.status === 'draft' && <div className="owner-actions"><button onClick={() => handleQuoteStatus(quote.id, 'approved')} className="btn btn-approve">Approve &amp; Send</button><button onClick={() => handleQuoteStatus(quote.id, 'rejected')} className="btn btn-reject">Reject</button></div>}
                     </div>}
                   </div>
                 )

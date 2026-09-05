@@ -339,12 +339,12 @@
       "title": "Extract shared branded UI classes (top bar, card panel, buttons, eyebrow/heading, secondary text) into App.css",
       "description": "Generalize the visual language already proven on / (near-black ground, dark card panels with subtle borders, small red uppercase eyebrow labels, bold condensed uppercase headings, red reserved for primary actions/key figures, small gray secondary text, button variants for primary/approve/reject/neutral) into a small set of shared classes in App.css that /owner, /status, and /confirmation can apply, plus a simpler internal top bar variant (KMT wordmark + route-appropriate nav links) distinct from the marketing site-nav per the recorded decision. Done when these classes exist and are exercised by at least one non-customer route (can land together with the /owner task), and no class name collides with or changes the rendering of the existing customer flow (/ must look pixel-identical after this change -- verify by diffing a phone+desktop screenshot of / against .forge/shots/phone-_.png and desktop-_.png).",
       "milestoneId": "m7",
-      "status": "todo",
+      "status": "in_progress",
       "priority": "high",
       "dependsOn": [],
       "notes": [],
       "createdAt": "2026-09-05T12:15:08.459Z",
-      "updatedAt": "2026-09-05T12:15:08.459Z"
+      "updatedAt": "2026-09-05T12:50:55.519Z"
     },
     {
       "id": "t18",
@@ -448,5 +448,5 @@
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T12:15:08.507Z"
+  "updatedAt": "2026-09-05T12:50:55.519Z"
 }

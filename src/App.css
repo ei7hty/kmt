@@ -549,6 +549,289 @@
   .site-footer { flex-direction: column; }
 }
 
+/* ------------------------------------------------------------------ */
+/* Shared branded UI (Phase 2) -- used by /owner, /status,
+   /confirmation. Kept independent of .min-h-screen and .customer-shell
+   so nothing here can change how / renders. Generalizes the same
+   near-black ground, dark card panels, red eyebrow/heading language,
+   and button variants already proven on /. */
+/* ------------------------------------------------------------------ */
+
+.app-shell {
+  min-height: 100svh;
+  color: var(--text);
+  background: radial-gradient(circle at 50% -10%, #282828 0, var(--bg) 42rem);
+}
+
+/* Simple internal top bar: KMT wordmark + route-appropriate nav links.
+   Deliberately distinct from .site-nav (the marketing nav on /), which
+   has in-page anchors that don't apply to internal screens. */
+.internal-nav {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 16px clamp(18px, 4vw, 54px);
+  border-bottom: 1px solid var(--border);
+  background: rgba(5, 5, 5, 0.94);
+}
+
+.internal-nav .brand-word {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-h);
+  font-family: var(--heading);
+  font-size: 26px;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+
+.internal-nav .brand-word span {
+  color: var(--accent);
+}
+
+.internal-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Card panel: dark gradient card with a subtle border, the same
+   language as the customer flow's .max-w-2xl / .step-panel cards. */
+.panel {
+  padding: 30px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: linear-gradient(145deg, rgba(28, 28, 28, 0.96), rgba(13, 13, 13, 0.96));
+  box-shadow: var(--shadow);
+  text-align: left;
+}
+
+/* Exception variant: amber, distinct from brand red and success green (R9). */
+.panel-exception {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: linear-gradient(145deg, rgba(58, 44, 10, 0.55), rgba(13, 13, 13, 0.96));
+}
+
+/* Heading/eyebrow/secondary text, generalized for card content. */
+.card-heading {
+  margin: 0;
+  color: var(--text-h);
+  font-family: var(--heading);
+  font-size: clamp(1.8rem, 4vw, 2.9rem);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.text-secondary {
+  color: #96969a;
+  font-size: 13px;
+}
+
+/* Button variants: primary (brand red), approve (green), reject
+   (outlined red/danger), neutral (low-emphasis dark). */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 12px 18px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 160ms ease, transform 160ms ease, color 160ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--accent-dark);
+}
+
+.btn-approve {
+  border-color: #3ca75b;
+  background: #3ca75b;
+  color: #fff;
+}
+
+.btn-approve:hover {
+  background: #2f8a49;
+}
+
+.btn-reject {
+  border-color: rgba(255, 102, 112, 0.6);
+  background: transparent;
+  color: #ff6670;
+}
+
+.btn-reject:hover {
+  background: rgba(255, 102, 112, 0.12);
+}
+
+.btn-neutral {
+  border-color: var(--border);
+  background: #1a1a1a;
+  color: #e8e8e8;
+}
+
+.btn-neutral:hover {
+  background: #232323;
+}
+
+/* Owner screen layout built on the shared components above. */
+.owner-shell {
+  min-height: 100svh;
+  color: var(--text);
+  background: radial-gradient(circle at 50% -10%, #282828 0, var(--bg) 42rem);
+}
+
+.owner-content {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 34px 24px 70px;
+  text-align: left;
+}
+
+.owner-heading {
+  margin: 0 0 8px;
+  font-size: clamp(2rem, 5vw, 3.4rem);
+}
+
+.owner-subhead {
+  margin-bottom: 26px;
+}
+
+.owner-list {
+  display: grid;
+  gap: 18px;
+}
+
+.owner-request {
+  display: grid;
+  gap: 12px;
+}
+
+.owner-details {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.owner-details div {
+  display: flex;
+  gap: 6px;
+}
+
+.owner-details dt {
+  color: #96969a;
+  font-weight: 800;
+}
+
+.owner-details dd {
+  margin: 0;
+  color: var(--text-h);
+}
+
+.owner-quote {
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.owner-quote-exception {
+  border-top-color: rgba(245, 158, 11, 0.55);
+}
+
+.owner-quote-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.owner-quote-total {
+  margin: 2px 0 0;
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.owner-quote-status {
+  color: var(--text-h);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.owner-exception-note {
+  margin-top: 10px;
+  color: #f5b453;
+  font-size: 13px;
+}
+
+.owner-exception-note p {
+  margin: 0 0 4px;
+  font-weight: 800;
+}
+
+.owner-exception-note ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.owner-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+@media (max-width: 640px) {
+  .internal-nav {
+    flex-wrap: wrap;
+    padding: 14px 18px;
+  }
+
+  .owner-content {
+    padding: 24px 16px 55px;
+  }
+
+  .owner-quote-summary {
+    flex-wrap: wrap;
+  }
+
+  .owner-actions {
+    flex-wrap: wrap;
+  }
+
+  .owner-actions .btn {
+    flex: 1;
+  }
+}
+
 .hero {
   position: relative;
 
