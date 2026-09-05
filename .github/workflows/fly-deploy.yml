@@ -46,29 +46,44 @@ jobs:
       #
       # These also run post-deploy, and that run is not redundant: only it
       # proves the SPA fallback on the real host, which is a server config this
-      # preview cannot exercise. What this one catches is a change that breaks a
+      # job cannot exercise. What this one catches is a change that breaks a
       # click path, which previously passed its PR, merged, deployed, and only
       # then failed -- with main already broken.
       #
-      # `vite preview` serves the built frontend and nothing else, so /owner
-      # reports that its backend is not connected. That is fine for these three:
-      # none of them need the owner API, and the dead-end audit reaches the
-      # quote list by clicking through from /, not by loading /owner directly.
+      # It runs backend/server.mjs with the built dist/, not `vite preview`.
+      # A preview serves the frontend and nothing else, which was enough while
+      # the whole flow lived in the browser. Requests and quotes are moving to
+      # the backend, and an audit that cannot complete the flow proves nothing.
+      # This is also the more faithful test either way: the gate now runs the
+      # thing that gets deployed.
       #
-      # AUDIT_BASE is set explicitly because the three scripts default to three
-      # different ports (4179, 4183, 4173). Leave it unset and they quietly
-      # audit whatever else is listening, which fails in both directions: a
-      # false red, or a false green against a stale server.
-      - name: Audit the built frontend
+      # KMT_BIND is what backend/server.mjs reads for its interface -- not HOST,
+      # which it ignores. Loopback, so nothing on the runner network can reach it.
+      #
+      # The database is a temporary file and the password is a throwaway, both
+      # thrown away with the runner. The password is passed to the audits so
+      # they can sign in when the owner screen asks -- a hosted server always
+      # asks, and a local one never does.
+      #
+      # AUDIT_BASE is set explicitly because the three scripts default to
+      # different ports. Leave it unset and they quietly audit whatever else is
+      # listening, which fails in both directions: a false red, or a false green
+      # against a stale server.
+      - name: Audit the built frontend against the real server
         env:
           AUDIT_BASE: http://localhost:4173
+          KMT_OWNER_PASSWORD: audit-only-password-not-a-secret
         run: |
           # node directly, not `npx`: npx spawns the server as a grandchild, so
           # $! would be the wrapper and killing it leaves the port held. That
           # does not matter here -- the runner is destroyed at the end of the
           # job -- but this file gets copied as an example, and the form that
           # leaks locally should not be the one on display.
-          node node_modules/vite/bin/vite.js preview --port 4173 &
+          KMT_OWNER_DB="$(mktemp -d)/audit.sqlite" \
+          KMT_SESSION_SECRET=audit-only-session-secret \
+          PORT=4173 \
+          KMT_BIND=127.0.0.1 \
+          node backend/server.mjs &
           server=$!
           trap 'kill $server 2>/dev/null || true' EXIT
 
@@ -78,7 +93,7 @@ jobs:
           # caught by the counter below.
           for i in $(seq 1 30); do
             curl -fsS -o /dev/null http://localhost:4173/ 2>/dev/null && break
-            if [ "$i" = "30" ]; then echo "preview did not start in 60s"; exit 1; fi
+            if [ "$i" = "30" ]; then echo "server did not start in 60s"; exit 1; fi
             sleep 2
           done
 
