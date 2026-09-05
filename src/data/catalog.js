@@ -21,6 +21,7 @@
 
 import SCRAPED from './scraped-tires.json' with { type: 'json' }
 import { FITMENT_DIAMETERS, FITMENT_RATIOS, FITMENT_WIDTHS } from './fitment.js'
+import { retailPrice } from '../markup.js'
 
 /** The seed tires. Do not renumber or rename: scripts select these by name. */
 const SEED_TIRES = [
@@ -88,22 +89,6 @@ const priceFor = (base, size) => {
 
 const slug = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-/**
- * What KMT charges over the supplier's listed price.
- *
- * PLACEHOLDER -- this is not Ken's number. The scraped prices are what
- * giga-tires charges a walk-up customer online, which is neither Ken's cost nor
- * what he should quote for a tire someone drives to you and fits at the
- * roadside. It is a single constant precisely so it is one edit once the real
- * margin is known, and so nobody mistakes the scraped figure for the quote.
- *
- * The mobile service fee is separate and lives in src/pricing.js.
- */
-export const SUPPLIER_MARKUP = 1.35
-
-const atMarkup = (supplierPrice) =>
-  Math.round(supplierPrice * SUPPLIER_MARKUP * 100) / 100
-
 /** Sizes we have real tires for. Generated rows step aside for these. */
 const SCRAPED_SIZES = new Set(SCRAPED.tires.map(tire => tire.size))
 
@@ -115,15 +100,20 @@ const SCRAPED_SIZES = new Set(SCRAPED.tires.map(tire => tire.size))
  * trace a row back to its page, and nothing in the app should start depending
  * on fields that only some rows have.
  */
-const scrapedTires = SCRAPED.tires.map(tire => ({
-  id: tire.id,
-  name: tire.name,
-  size: tire.size,
-  price: atMarkup(tire.price),
-  inStock: tire.inStock,
-  category: tire.category,
-  description: tire.description,
-}))
+const scrapedTires = SCRAPED.tires
+  .map(tire => ({
+    id: tire.id,
+    name: tire.name,
+    size: tire.size,
+    // The snapshot holds what the supplier charges. What KMT charges is
+    // markup's business, and the customer never sees the former.
+    price: retailPrice(tire.price, tire),
+    inStock: tire.inStock,
+    category: tire.category,
+    description: tire.description,
+  }))
+  // A row markup cannot price is dropped rather than shown at cost.
+  .filter(tire => tire.price !== null)
 
 function generateTires() {
   const generated = []
