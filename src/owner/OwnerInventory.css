@@ -85,3 +85,6 @@
   .oi-specs { grid-template-columns: 1fr 1fr; }
   .oi-tire-main, .oi-offer { padding: 18px; }
 }
+
+/* Inline "use the suggested price" action, sized to sit in a caption line. */
+.oi-button.oi-inline { display: inline-block; min-height: 0; margin-left: 8px; padding: 4px 9px; font-size: 11px !important; }

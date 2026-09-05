@@ -1,5 +1,12 @@
 import { DatabaseSync } from 'node:sqlite'
 
+// The frontend's markup module owns the default rate and the shape of the
+// rule. Importing it rather than restating 1.35 here means the two cannot
+// drift into disagreeing about what an unconfigured catalog costs.
+import { DEFAULT_MARKUP_SETTINGS } from '../src/markup.js'
+
+const DEFAULT_MARKUP_RATE = DEFAULT_MARKUP_SETTINGS.rate
+
 export class InputError extends Error {
   constructor(message, status = 400) { super(message); this.status = status }
 }
@@ -61,6 +68,33 @@ export class Inventory {
 
   setMeta(key, value) {
     this.db.prepare('INSERT OR REPLACE INTO metadata VALUES (?, ?)').run(key, JSON.stringify(value))
+  }
+
+  /**
+   * The markup rule, which proposes a price for tires the owner has not priced.
+   *
+   * It never overrides one. An offer's price_cents still wins wherever it is
+   * set; this only fills the gap so a tire nobody has reached still has a
+   * number, because there are 290 supported sizes and pricing every tire by
+   * hand is not something anyone finishes.
+   *
+   * `isPlaceholder` stays true until someone saves a rate, so the customer
+   * catalog can mark those prices provisional instead of presenting a default
+   * as a decision that was made.
+   */
+  getMarkup() {
+    return this.getMeta('markup') ?? { rate: DEFAULT_MARKUP_RATE, isPlaceholder: true, updatedAt: null }
+  }
+
+  saveMarkup(input) {
+    // Below 1 would quote under what we pay the supplier. The upper bound is
+    // not a pricing opinion, just a guard against a typo repricing everything.
+    if (!input || !Number.isFinite(input.rate) || input.rate < 1 || input.rate > 10) {
+      throw new InputError('Enter a markup between 1 and 10 times the supplier price.')
+    }
+    const markup = { rate: Math.round(input.rate * 10000) / 10000, isPlaceholder: false, updatedAt: now() }
+    this.setMeta('markup', markup)
+    return markup
   }
 
   importSnapshot(snapshot) {
@@ -159,6 +193,9 @@ export class Inventory {
       fullSizeCount: coverage.filter(c => c.completeness === 'full').length,
       importedSizeCount: coverage.filter(c => c.completeness === 'snapshot').length,
       job: this.getMeta('job'),
+      // Carried on the inventory response so the screen can show the rule and
+      // each tire's suggested price without a second round trip.
+      markup: this.getMarkup(),
     }
   }
 

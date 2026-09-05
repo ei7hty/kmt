@@ -60,6 +60,25 @@ extract the supported-size list first so missing supplier stock cannot shrink it
   concurrent jobs return 409. The UI can send one size or every KMT size.
 - `POST /api/owner/refresh/cancel`: `{}`. Stops after the current page; incomplete
   sizes are not applied. The UI polls the inventory endpoint for progress.
+- `GET /api/owner/markup`, `PUT /api/owner/markup`: `{rate}`. The default markup,
+  stored in `metadata`. Rates below 1 (quoting under supplier cost) or above 10
+  (a typo repricing everything) are rejected. Also returned on the inventory
+  response as `summary.markup`, so the screen needs no second request.
+
+## Markup versus owner prices
+
+Owner prices are still never inferred from supplier prices: `offers.price_cents`
+wins wherever it is set, and nothing here writes to it. Markup only decides what
+a tire nobody has priced costs a customer, because there are 290 supported sizes
+and pricing each one by hand does not finish. `isPlaceholder` stays true until a
+rate is saved, so the customer catalog can mark those prices provisional rather
+than presenting a default as a decision that was made.
+
+The default rate and the rule's shape come from `src/markup.js`, imported rather
+than restated so the backend and the customer catalog cannot disagree about what
+an unconfigured tire costs. Resolution order lives in that module's
+`quotedPrice`: an owner price wins, otherwise markup proposes, and a tire the
+owner has disabled leaves the customer catalog entirely.
 
 ## Supplier refresh behavior
 
@@ -95,8 +114,12 @@ local server or deploy the changed frontend alone as a working owner backend.
 node --test backend/owner.test.mjs
 node node_modules/eslint/bin/eslint.js src
 node node_modules/vite/bin/vite.js build
-# With the owner server running:
+# With the owner server running on 4180:
 node .forge/owner-inventory-audit.mjs
+# The legacy audit reads AUDIT_BASE and otherwise defaults to port 4179. Point it
+# at the owner server, or it silently audits whatever else is on 4179 -- it fails
+# at the Quote requests step, which reads like a regression and is not one.
+$env:AUDIT_BASE="http://127.0.0.1:4180"; node .forge/dead-end-audit.mjs
 ```
 
 Backend tests cover persistence, protected offer pricing, incomplete refreshes,

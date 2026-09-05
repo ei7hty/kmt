@@ -27,6 +27,10 @@ export function createApi(inventory, refresher) {
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/')) {
         const id = decodeURIComponent(url.pathname.slice('/api/owner/offers/'.length))
         send(200, inventory.saveOffer(id, await body(request)))
+      } else if (request.method === 'GET' && url.pathname === '/api/owner/markup') {
+        send(200, inventory.getMarkup())
+      } else if (request.method === 'PUT' && url.pathname === '/api/owner/markup') {
+        send(200, inventory.saveMarkup(await body(request)))
       } else if (request.method === 'POST' && url.pathname === '/api/owner/refresh') {
         const input = await body(request)
         send(202, refresher.start(input.sizes))

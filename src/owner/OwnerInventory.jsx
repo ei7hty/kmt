@@ -24,7 +24,51 @@ function SupplierLink({ url }) {
   return allowed ? <a href={url} target="_blank" rel="noreferrer">View on Giga Tires ↗</a> : null
 }
 
-function TireOffer({ tire, onSaved }) {
+/**
+ * The markup rule: what a tire is priced at until the owner prices it himself.
+ *
+ * It is a fallback, not a policy. Every price set below overrides it, and this
+ * only decides what a tire nobody has reached costs -- which matters because
+ * there are 290 supported sizes and pricing each one by hand does not finish.
+ */
+function MarkupRule({ markup, onSaved }) {
+  const [rate, setRate] = useState(String(markup.rate))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save(event) {
+    event.preventDefault()
+    setError('')
+    const parsed = Number(rate)
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 10) {
+      setError('Enter a markup between 1 and 10 times the supplier price.'); return
+    }
+    setSaving(true)
+    try { onSaved(await api('markup', { method: 'PUT', body: JSON.stringify({ rate: parsed }) })) }
+    catch (err) { setError(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return <section className="oi-refresh" aria-label="Markup rule">
+    <div>
+      <h2>Default markup</h2>
+      <p>Tires you have not priced are offered at the supplier price times this number. Any price you set below wins over it.</p>
+      <p className="oi-muted">
+        {markup.isPlaceholder
+          ? 'Still the starting value — nobody has set this yet, so those prices are provisional.'
+          : `Set ${dateLabel(markup.updatedAt)}.`}
+      </p>
+    </div>
+    <form className="oi-refresh-actions" onSubmit={save}>
+      <label htmlFor="markup-rate" className="oi-kicker">× SUPPLIER PRICE</label>
+      <input id="markup-rate" value={rate} onChange={e => setRate(e.target.value)} inputMode="decimal" disabled={saving} />
+      <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save markup'}</button>
+      {error && <p role="alert" className="oi-error">{error}</p>}
+    </form>
+  </section>
+}
+
+function TireOffer({ tire, markup, onSaved }) {
   const [price, setPrice] = useState(tire.offer.priceCents == null ? '' : (tire.offer.priceCents / 100).toFixed(2))
   const [enabled, setEnabled] = useState(tire.offer.enabled)
   const [notes, setNotes] = useState(tire.offer.notes)
@@ -35,6 +79,8 @@ function TireOffer({ tire, onSaved }) {
   const isAvailable = tire.supplierActive && tire.inStock && stock > 0
   const parsedPrice = /^\d+(\.\d{1,2})?$/.test(price) ? Math.round(Number(price) * 100) : null
   const spread = parsedPrice == null ? null : parsedPrice - Math.round(tire.price * 100)
+  // What this tire costs a customer today if the owner never touches it.
+  const suggestedCents = markup?.rate ? Math.round(tire.price * markup.rate * 100) : null
 
   async function save(event) {
     event.preventDefault()
@@ -75,6 +121,10 @@ function TireOffer({ tire, onSaved }) {
       <label htmlFor={`price-${tire.id}`}>Your price per tire ($)</label>
       <input id={`price-${tire.id}`} value={price} onChange={e => setPrice(e.target.value)} inputMode="decimal" placeholder="Set your price" disabled={saving} />
       <p className={spread != null && spread < 0 ? 'oi-attention oi-spread' : 'oi-spread'}>{spread == null ? 'Set independently from Giga’s price.' : `${dollars(spread)} ${spread < 0 ? 'below' : 'above'} Giga’s listed price`.replace('-$', '$')}</p>
+      {suggestedCents != null && tire.offer.priceCents == null && <p className="oi-spread oi-muted">
+        Markup offers this at {dollars(suggestedCents)} until you set a price.
+        <button type="button" className="oi-button oi-inline" onClick={() => setPrice((suggestedCents / 100).toFixed(2))} disabled={saving}>Use {dollars(suggestedCents)}</button>
+      </p>}
       <label htmlFor={`notes-${tire.id}`}>Owner notes</label>
       <textarea id={`notes-${tire.id}`} value={notes} onChange={e => setNotes(e.target.value)} maxLength={2000} rows={2} placeholder="Why this tire, pricing notes…" disabled={saving} />
       <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save offer'}</button>
@@ -138,6 +188,12 @@ export default function OwnerInventory({ navigate }) {
     finally { setBusy(false) }
   }
 
+  function markupSaved(markup) {
+    invalidate()
+    setData(previous => ({ ...previous, summary: { ...previous.summary, markup } }))
+    setNotice(`Default markup saved. Tires you have not priced are now offered at ${markup.rate}× the supplier price.`)
+  }
+
   function saved(id, offer) {
     invalidate()
     setData(previous => ({ ...previous, items: previous.items.map(tire => tire.id === id ? { ...tire, offer } : tire),
@@ -161,6 +217,7 @@ export default function OwnerInventory({ navigate }) {
         <div><h2>Supplier inventory</h2><p>{summary?.importedSizeCount ? `${summary.importedSizeCount} sizes started from a limited snapshot. ` : ''}Refresh reads every results page for the selected size. All-size refreshes can take a while and open a browser on this computer.</p><p className="oi-muted">Supplier prices and stock are last-seen listings, not guaranteed quotes. Your saved KMT prices stay under your control.</p></div>
         <div className="oi-refresh-actions"><button className="oi-button oi-primary" onClick={refresh} disabled={!data || busy || jobRunning}>{size ? `Refresh ${size}` : `Refresh all ${summary?.sizes.length ?? ''} sizes`}</button>{jobRunning && <button className="oi-button" onClick={cancel} disabled={busy}>Stop refresh</button>}</div>
       </section>
+      {summary?.markup && <MarkupRule markup={summary.markup} onSaved={markupSaved} />}
       {job && <div className={`oi-job ${['failed', 'interrupted'].includes(job.status) ? 'oi-attention' : ''}`} role="status"><strong>{job.status.toUpperCase()}</strong><span>{job.message}</span><span>{job.completed} / {job.sizes.length} sizes · {job.tiresRead} tires · {job.pagesRead} pages</span>{job.failed?.length > 0 && <span>Earlier saved inventory and offers are preserved. Choose the failed size to retry.</span>}</div>}
       <div className="oi-filters">
         <label>Search tires or SKU<input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Brand, model, supplier SKU…" /></label>
@@ -173,7 +230,7 @@ export default function OwnerInventory({ navigate }) {
       {notice && <div className="oi-notice" role="status">{notice}</div>}
       <div className="oi-results-heading"><p>{data ? `${data.total} matching tires` : 'Loading inventory…'}</p><span>{loading ? 'Updating…' : 'Selections are saved for the owner; customer catalog comes later.'}</span></div>
       <div className="oi-results" aria-busy={loading}>
-        {data?.items.map(tire => <TireOffer key={`${tire.id}:${tire.offer.version}`} tire={tire} onSaved={saved} />)}
+        {data?.items.map(tire => <TireOffer key={`${tire.id}:${tire.offer.version}`} tire={tire} markup={summary?.markup} onSaved={saved} />)}
         {data && !data.items.length && <div className="oi-empty"><h2>No tires to show yet</h2><p>{size && !coverage ? 'Refresh this size to load supplier inventory.' : 'Try another search or filter, or refresh a size to add supplier inventory.'}</p></div>}
       </div>
       {data && data.total > data.pageSize && <nav className="oi-pagination" aria-label="Inventory pages"><button className="oi-button" disabled={data.page <= 1 || loading} onClick={() => setPage(data.page - 1)}>← Previous</button><span>Page {data.page} of {Math.ceil(data.total / data.pageSize)}</span><button className="oi-button" disabled={data.page * data.pageSize >= data.total || loading} onClick={() => setPage(data.page + 1)}>Next →</button></nav>}

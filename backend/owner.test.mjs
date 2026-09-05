@@ -7,6 +7,7 @@ import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { createApi } from './api.mjs'
+import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 
 const SIZE = '215/60R16'
 const otherSize = '225/50R17'
@@ -162,4 +163,68 @@ test('owner HTTP API persists offers, validates input, and refuses foreign origi
   const result = await (await fetch(`${base}/inventory?filter=offered`)).json()
   assert.equal(result.items[0].offer.priceCents, 8999)
   assert.equal(result.summary.offeredCount, 1)
+})
+
+test('markup starts as the shared placeholder and survives being saved', t => {
+  const db = setup(t)
+  const initial = db.getMarkup()
+  assert.equal(initial.rate, DEFAULT_MARKUP_SETTINGS.rate, 'default comes from the frontend markup module')
+  assert.equal(initial.isPlaceholder, true)
+  assert.equal(initial.updatedAt, null)
+  assert.equal(db.summary().markup.rate, initial.rate, 'inventory summary carries it for the screen')
+
+  const saved = db.saveMarkup({ rate: 1.6 })
+  assert.equal(saved.rate, 1.6)
+  assert.equal(saved.isPlaceholder, false, 'a saved rate is a decision, not a default')
+  assert.ok(saved.updatedAt)
+  assert.equal(db.getMarkup().rate, 1.6)
+  assert.equal(db.summary().markup.isPlaceholder, false)
+})
+
+test('markup rejects rates that would quote below cost or reprice by typo', t => {
+  const db = setup(t)
+  for (const rate of [0, 0.9, -2, 11, Number.NaN, Infinity, '1.5', null, undefined]) {
+    assert.throws(() => db.saveMarkup({ rate }), /markup between 1 and 10/, `rejected ${String(rate)}`)
+  }
+  assert.throws(() => db.saveMarkup(null), /markup between 1 and 10/)
+  assert.equal(db.getMarkup().isPlaceholder, true, 'nothing was written by the rejected saves')
+})
+
+test('markup never overrides a price the owner set', t => {
+  const db = setup(t)
+  db.saveMarkup({ rate: 2 })
+  db.saveOffer('giga-a', offer({ priceCents: 8999 }))
+
+  // The supplier row is $50, so markup would propose $100. The owner said $89.99.
+  const row = db.list().items.find(item => item.id === 'giga-a')
+  assert.equal(row.offer.priceCents, 8999, 'the owner price is what is stored')
+  assert.equal(db.getMarkup().rate, 2, 'and the rule is still there for tires nobody priced')
+
+  // Resolved the way the customer catalog resolves it.
+  assert.equal(quotedPrice({ supplierPrice: 50, offer: row.offer, settings: db.getMarkup() }).source, 'owner')
+  assert.equal(quotedPrice({ supplierPrice: 50, offer: null, settings: db.getMarkup() }).price, 100)
+})
+
+test('owner markup endpoint saves and validates over HTTP', async t => {
+  const db = setup(t)
+  const api = createApi(db, new Refresher(db))
+  const server = createServer(async (request, response) => { if (!(await api(request, response))) response.writeHead(404).end() })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+  const call = (method, body) => fetch(`${base}/api/owner/markup`, {
+    method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body),
+  })
+
+  const read = await call('GET')
+  assert.equal(read.status, 200)
+  assert.equal((await read.json()).isPlaceholder, true)
+
+  const ok = await call('PUT', { rate: 1.45 })
+  assert.equal(ok.status, 200)
+  assert.equal((await ok.json()).rate, 1.45)
+
+  const bad = await call('PUT', { rate: 0.5 })
+  assert.equal(bad.status, 400)
+  assert.equal(db.getMarkup().rate, 1.45, 'the rejected save left the stored rule alone')
 })
