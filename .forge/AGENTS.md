@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| `customer-live-catalog` | forge (Claude) | `src/routes/CustomerRequest.jsx` and a new catalog loader in `src/`; not `src/pricing.js` or `src/store.js` | 2026-09-05 |
+| _none_ | | | |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
