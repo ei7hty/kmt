@@ -549,12 +549,14 @@
       "title": "Backend owns requests and quotes, and drafts the quote server-side",
       "description": "Add requests and quotes to the existing SQLite database in backend/inventory.mjs (or a sibling module it composes, e.g. backend/quotes.mjs, if inventory.mjs is getting long -- keep it to one database file and one migration style). Request rows hold what the form submits today (vehicleInfo, tireSelection, location, date, locationType, serviceZip, locationNotes), a random 128-bit id from node:crypto, the per-browser customer key that submitted it, and timestamps. Quote rows hold what saveQuote stores today (requestId, lineItems, total, exception, exceptionReasons, status draft/approved/rejected/paid, timestamps) plus a version for optimistic updates like offers. Draft the quote on the server: compose the same catalog the customer was shown with catalogFromLiveRows(inventory.catalog()) from src/data/catalog.js and run calculateDraftQuote from src/pricing.js over it, unchanged, the way the backend already imports src/markup.js. Public endpoints, added to the GET-only allow-list pattern in backend/api.mjs but as their own handler (like createCatalogApi, not inside createApi): POST /api/requests {customerKey, ...form fields} -> 201 {request, quote}; GET /api/requests?customer=<key> -> that key's requests with quotes, newest first; GET /api/requests/:id -> one request with its quote, by id alone; POST /api/requests/:id/pay {customerKey} -> marks the quote paid if it is approved and the key matches. Validate every field the way saveOffer does; reject unknown tire ids against the composed catalog; never return another customer's rows. Mount the handler in both backend/dev.mjs and backend/server.mjs, and extend isPublicApiCall so these paths need no owner session (a prefix rule for /api/requests, still GET-or-listed-POST only). Tests in backend/owner.test.mjs or a new backend/quotes.test.mjs run by the same node --test command: a submit stores both rows and returns the same total and exception state the frontend computes today for the same input (compare against calculateDraftQuote directly); an out-of-stock or off-road tire produces an exception; a wrong customer key cannot list or pay; an unknown id is 404; paying a draft (not yet approved) is refused; no owner session is needed for any of these and the owner endpoints still 401 without one.",
       "milestoneId": "m9",
-      "status": "todo",
+      "status": "done",
       "priority": "medium",
       "dependsOn": [],
-      "notes": [],
+      "notes": [
+        "Shipped in PR #28 and merged 2026-09-05: backend/quotes.mjs stores requests and quotes in the inventory database, drafts each quote server-side with calculateDraftQuote over catalogFromLiveRows(inventory.catalog()), and serves POST /api/requests, GET /api/requests?customer, GET /api/requests/:id and POST /api/requests/:id/pay behind a method-bounded public allow-list."
+      ],
       "createdAt": "2026-09-05T21:22:39.887Z",
-      "updatedAt": "2026-09-05T21:22:39.887Z"
+      "updatedAt": "2026-09-05T22:08:16.953Z"
     },
     {
       "id": "t30",
@@ -615,5 +617,5 @@
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T21:22:39.887Z"
+  "updatedAt": "2026-09-05T22:08:16.953Z"
 }
