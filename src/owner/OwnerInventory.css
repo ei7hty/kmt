@@ -88,3 +88,11 @@
 
 /* Inline "use the suggested price" action, sized to sit in a caption line. */
 .oi-button.oi-inline { display: inline-block; min-height: 0; margin-left: 8px; padding: 4px 9px; font-size: 11px !important; }
+
+/* Sign-in gate. Only ever rendered by a hosted deployment; the local server
+   returns no 401 because it has no password. */
+.oi-signin { display: grid; gap: 10px; max-width: 380px; margin: 8vh auto 0; padding: 28px; border: 1px solid #2c2c30; border-radius: 6px; background: #131316; }
+.oi-signin h1 { margin: 0; font-size: 26px; }
+.oi-signin label { color: #e8e8e8; font-size: 11px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
+.oi-signin input { width: 100%; padding: 12px; border: 1px solid #3e3e42; border-radius: 4px; background: #08080a; color: #f4f4f5; }
+.oi-signin .oi-button { margin-top: 6px; }

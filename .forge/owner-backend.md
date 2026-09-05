@@ -98,15 +98,81 @@ list price, availability, stock count, category, segment, description/specs, SKU
 and product link, plus the raw imported fields. It does not claim to extract every
 field Giga might show on individual product pages, nor prefetch all 290 sizes.
 
-## Deployment boundary
+## Running it hosted
 
-This is a local backend slice, not a deployable public admin system. It binds to
-loopback, rejects unexpected hosts and cross-origin API requests, and keeps DB
-files out of Vite's served files. There is no owner login yet. The existing static
-Vercel deployment cannot run this persistent SQLite/browser process. Before remote
-owner use: add authentication/authorization, choose persistent hosting/database,
-and run scraping in a worker appropriate for that environment. Do not expose this
-local server or deploy the changed frontend alone as a working owner backend.
+There are two entry points. `backend/dev.mjs` is the local one -- Vite in
+middleware mode, loopback bind, no password, because whoever reaches it is
+already at the keyboard. `backend/server.mjs` is the hosted one: it serves the
+built `dist/` and the API from one origin, binds a real interface, and refuses
+to start without a password.
+
+One origin is deliberate. The API's same-origin check keeps working as written,
+so there is no CORS surface and no token to hand a separate frontend. It also
+means the static Vercel deployment becomes redundant once this is up -- the
+container serves the customer flow too.
+
+### Configuration
+
+Everything comes from the environment, so the same image runs anywhere:
+
+| variable | |
+| --- | --- |
+| `KMT_OWNER_PASSWORD` | **Required.** At least 12 characters. The server exits without it rather than starting open. |
+| `KMT_SESSION_SECRET` | Recommended. Without it a random secret is generated per boot, which signs everyone out on every restart. |
+| `KMT_OWNER_DB` | SQLite path. Point it at a mounted volume; the default lives inside the container and dies with it. |
+| `PORT` | Defaults to 8080. Most hosts set this for you. |
+| `KMT_BIND` | Defaults to `0.0.0.0`. |
+| `KMT_ALLOWED_HOSTS` | Comma-separated hostnames to accept. Unset accepts any, which is fine behind a host terminating its own TLS. |
+| `KMT_SESSION_HOURS` | Session lifetime, default 12. |
+
+### Deploying
+
+The `Dockerfile` is plain and host-agnostic: an image listening on `$PORT` with
+its database on a volume at `/data`. Nothing in it is specific to a provider.
+
+```bash
+docker build -t kmt-owner .
+docker run -p 8080:8080 -v kmt-data:/data \
+  -e KMT_OWNER_PASSWORD=... -e KMT_SESSION_SECRET=... kmt-owner
+```
+
+Any container host takes it from there: Fly (`fly launch`, add a volume mounted
+at `/data`), Render (Docker service plus a persistent disk), Railway, or Docker
+on a VPS. The only requirements are a persistent volume and a process that stays
+running -- serverless platforms satisfy neither, which is why Vercel cannot host
+this half.
+
+### What the password does and does not cover
+
+It guards the data that is actually on the server: supplier costs, offers and
+prices. It does not cover `/owner/quotes`, and deliberately so -- that screen
+reads `localStorage` in the browser and never contacts this server, so a server
+password would protect nothing there while locking the owner out of a screen
+that works everywhere. The sign-in gate keeps its nav link reachable.
+
+One shared password, because there is one owner. It is not an account system:
+no users, no registration, no reset. If more than one person ever needs their
+own login, replace it rather than growing it.
+
+### Supplier refreshes on the host
+
+Refreshes run on the server, triggered by hand from `/owner`. Nothing is
+scheduled: no cron, no refresh on boot.
+
+The image carries Chromium and Xvfb because refreshes drive a **headful**
+browser -- giga-tires' WAF refuses headless outright, and that does not stop
+being true on a server. Xvfb supplies the display a headful browser needs on a
+machine with no screen. `KMT_CHROMIUM_PATH` and `KMT_CHROMIUM_NO_SANDBOX` point
+Playwright at the system Chromium and drop the sandbox, which is required when
+running as root in a container; both are unset locally and change nothing there.
+
+**This part is unproven from a datacenter.** The WAF weighs IP reputation as
+well as browser fingerprint, and cloud ranges get more scrutiny than a home
+connection. Headful under Xvfb is the best honest attempt; if refreshes come
+back blocked, the fallback is to run `npm run scrape-tires` from a machine on a
+residential connection and treat the hosted server as serving-only. Do not
+respond by adding stealth plugins or residential proxies -- that is evading the
+supplier's bot detection rather than being a well-behaved client.
 
 ## Verification
 
