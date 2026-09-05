@@ -25,3 +25,6 @@ dist-ssr
 
 .vercel
 .env*
+
+# Agent worktrees live inside the repo. Never commit them.
+.worktrees/
