@@ -8,7 +8,7 @@
 # `fly launch --name kmt-owner --no-deploy` to claim this one.
 
 app = "kmt-owner"
-primary_region = "bos"          # Boston, nearest Fly region to Everett MA.
+primary_region = "ewr"          # Secaucus NJ, nearest Fly region to Everett MA.
 
 [build]
   # No builder or buildpack: Fly builds the Dockerfile in the repo root.
@@ -22,7 +22,7 @@ primary_region = "bos"          # Boston, nearest Fly region to Everett MA.
 # deploy -- which looks exactly like the app working until the first redeploy.
 #
 # Create it once before the first deploy:
-#   fly volumes create kmt_data --region bos --size 1
+#   fly volumes create kmt_data --region ewr --size 1
 [[mounts]]
   source = "kmt_data"
   destination = "/data"

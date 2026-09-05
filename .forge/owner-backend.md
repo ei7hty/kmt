@@ -138,13 +138,25 @@ docker run -p 8080:8080 -v kmt-data:/data \
 
 #### Fly, specifically
 
+**Run these from a checkout that is on `main`.** `fly launch` reads the working
+directory, not the repository: run it where `Dockerfile` and `fly.toml` are not
+checked out and it scaffolds its own. It did exactly that here -- generated a
+`FROM pierrezemb/gostatic` Dockerfile (a static file server: no Node, no SQLite,
+no Chromium) and a fly.toml with `min_machines_running = 0`, which is the
+opposite of what this app is for. Deploying that ships raw files and no backend,
+and it looks like a successful deploy.
+
+If those generated files exist, delete them before deploying; the committed ones
+are the real config.
+
+
 `fly.toml` is committed and tuned for this app. Volume first, secrets second,
 deploy last -- a deploy without the volume looks fine until the next one wipes
 the database.
 
 ```bash
 fly launch --no-deploy              # claim the app name, keep the committed fly.toml
-fly volumes create kmt_data --region bos --size 1
+fly volumes create kmt_data --region ewr --size 1
 fly secrets set KMT_OWNER_PASSWORD='...' KMT_SESSION_SECRET="$(openssl rand -hex 32)"
 fly deploy
 ```
