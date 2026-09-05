@@ -56,3 +56,67 @@ prototype has an answer above. Product/scope questions that will matter for a re
 Phase 2 (real pricing entry tool, real payments, accounts, scheduling) are
 deliberately deferred and listed as "eventual real answer" in project.md rather
 than as open questions here, since they don't change what gets built in this phase.
+
+---
+
+## Phase 2 -- UI refinement requirements
+
+Phase 2 changes appearance and consistency only. R1-R7 above and their behavior are
+unchanged and still apply; Phase 2 adds presentation requirements on top of them.
+
+_R8._ `/owner` uses the same visual system as `/` (dark ground, card-based panels
+with subtle borders, red accent reserved for primary actions/key figures, condensed
+uppercase headings with small red uppercase eyebrow labels, small gray secondary
+text) instead of default/unstyled Tailwind gray-and-blue utility styling. This
+applies at both phone and desktop widths.
+
+_R9._ On `/owner`, the distinction between a normal approvable draft quote and one
+flagged as an **exception** (R3) remains visually obvious after restyling, using a
+color other than the brand red or brand green for the exception state (amber, per
+the design reference in project.md) so it cannot be confused with a primary action
+or a success/paid state.
+
+_R10._ `/status` and `/confirmation` are restyled to reuse the components/classes
+introduced for `/owner` and `/` (nav, typography, buttons, cards) so that no screen
+in the app looks like it belongs to a different product, without introducing new
+layouts beyond what's needed for that consistency.
+
+_R11._ `/status` shows the customer's request position in the draft -> approved ->
+paid lifecycle using the same numbered stepper component/pattern already used in
+the customer order flow on `/`, rather than inventing a new progress indicator.
+
+_R12._ Success/paid and error/rejected states across `/owner`, `/status`, and
+`/confirmation` keep using green for success and a clearly distinct warning color
+for exceptions/attention-needed, consistent with existing production-site use of
+green as a secondary semantic accent alongside brand red (see project.md design
+reference) -- i.e. the redesign does not force every accent into brand red.
+
+_R13._ No functional behavior, state, route, or business rule introduced in Phase 1
+(R1-R7) changes as a result of this restyling. Any place where a clean visual fix
+seems to require a behavior change is flagged for a decision rather than
+implemented silently.
+
+## Phase 2 non-functional
+
+- **No new dependencies** (icon libraries, UI kits, animation libraries, CSS
+  frameworks beyond the existing Tailwind 4 + hand-written CSS mix) unless a
+  specific package is proposed with a justification that outweighs the
+  minimal-dependencies constraint from Phase 1.
+- **Mobile-first verification**: every restyled screen is checked at a phone-sized
+  viewport first (the client reviews on a phone), then at desktop width, matching
+  how `/` was originally verified (see `.forge/shots/phone-*` and
+  `.forge/shots/desktop-*` for the Phase 1 pattern to follow).
+- **Deployment URL is not a deliverable**: the existing Vercel deployment is
+  treated as this project's production environment; Phase 2 may ship to a new
+  deployment URL and no task effort is spent making URLs stable across phases.
+
+## Phase 2 open questions
+
+_Nothing blocking planning at this time._ The client confirmed: no owner-screen
+mockup exists (both supplied mockups are customer-facing production pages, used as
+visual-language reference only); green-for-success/amber-for-attention alongside
+brand red is confirmed correct and matches the live production site; `/owner` gets
+a full redesign while `/status` and `/confirmation` get a lighter reuse-only pass,
+with the customer-flow stepper explicitly reused on `/status`; deployment
+permanence is explicitly not a goal for this phase.
+</content>
