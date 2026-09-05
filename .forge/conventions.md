@@ -26,9 +26,13 @@ React + Vite + Tailwind, plus a Node backend under `backend/` (SQLite via
   every push to `main` -- https://kmt.fly.dev -- and the deployed site runs the
   owner backend, so production exercises the live path and not just the demo
   fallback. Check it on a real phone.
-- CI does not run the browser audits on pull requests. Run them yourself against
-  your own build before opening one: `dead-end-audit.mjs`, `responsive-check.mjs`
-  and `request-flow-check.mjs`, with `AUDIT_BASE` pointed at your preview.
+- CI runs the browser audits on every pull request and again against the
+  deployed site after a merge. Run them locally first anyway -- a red PR costs
+  a round trip: `dead-end-audit.mjs`, `responsive-check.mjs` and
+  `request-flow-check.mjs`, with `AUDIT_BASE` pointed at your preview.
+- Start a preview on a port you have confirmed is free and stop it when you are
+  done. A leaked server is bound by the next audit, which then reports a failure
+  that is not there. CI does this with a trap; locally it is on you.
 - Supplier prices are last-seen listings, never guaranteed quotes, and an owner
   price always overrides what markup proposes.
 - This repository is shared with other agents. Read `.forge/AGENTS.md` before
