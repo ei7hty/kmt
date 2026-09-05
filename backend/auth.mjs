@@ -63,21 +63,39 @@ export function readAuthConfig(env = process.env) {
 
 const sign = (secret, value) => createHmac('sha256', secret).update(value).digest('base64url')
 
-function issue(config) {
-  const expires = Date.now() + config.ttlMs
-  const payload = b64(String(expires))
+/**
+ * Tokens carry what they are for, so one kind cannot be used as another.
+ *
+ * The import token travels in a URL inside a bookmarklet and is handed to a
+ * page on giga-tires.com; the session cookie unlocks the whole workspace. If
+ * both were just "a signed timestamp", the first would be the second.
+ */
+function issue(config, purpose = 'session', ttlMs = config.ttlMs) {
+  const payload = b64(`${purpose}:${Date.now() + ttlMs}`)
   return `${payload}.${sign(config.secret, payload)}`
 }
 
-function verify(config, token) {
+function verify(config, token, purpose = 'session') {
   if (typeof token !== 'string') return false
   const [payload, signature] = token.split('.')
   if (!payload || !signature) return false
   if (!equals(signature, sign(config.secret, payload))) return false
 
-  const expires = Number(Buffer.from(payload, 'base64url').toString())
-  return Number.isFinite(expires) && expires > Date.now()
+  const [tokenPurpose, expires] = Buffer.from(payload, 'base64url').toString().split(':')
+  if (tokenPurpose !== purpose) return false
+  return Number.isFinite(Number(expires)) && Number(expires) > Date.now()
 }
+
+/**
+ * Short-lived credential for posting supplier pages back from a giga-tires tab.
+ *
+ * Two hours, because it is pasted into a bookmark and then sits in the browser's
+ * bookmark bar where the owner may forget it. It authorises exactly one thing --
+ * importing pages for a supported size -- and cannot read or change anything.
+ */
+export const IMPORT_TTL_MS = 2 * 3600_000
+export const createImportToken = (config) => issue(config, 'import', IMPORT_TTL_MS)
+export const verifyImportToken = (config, token) => verify(config, token, 'import')
 
 const readCookie = (header, name) =>
   (header || '').split(';')
@@ -107,6 +125,22 @@ export function createAuth(config) {
   return {
     isAuthenticated: (request) => verify(config, readCookie(request.headers.cookie, COOKIE)),
 
+    /**
+     * Bearer authorisation for posting supplier pages back.
+     *
+     * A cookie cannot do this job: the session cookie is SameSite=Strict, so a
+     * request from a giga-tires page never carries it -- which is the point of
+     * Strict and worth keeping. A scoped bearer token travels instead, and can
+     * do nothing but import.
+     */
+    isImportAuthorized: (request) => {
+      const header = request.headers.authorization || ''
+      return header.startsWith('Bearer ') && verifyImportToken(config, header.slice(7).trim())
+    },
+
+    /** A fresh import token for the signed-in owner to put in a bookmarklet. */
+    newImportToken: () => createImportToken(config),
+
     /** Handles /api/owner/login and /logout. Returns true if it responded. */
     async handle(request, response, url, body) {
       const json = (status, value, headers = {}) => {
@@ -129,6 +163,16 @@ export function createAuth(config) {
         return json(200, { authenticated: true }, {
           'Set-Cookie': setCookie(request, issue(config), Math.floor(config.ttlMs / 1000)),
         })
+      }
+
+      // Issued to a signed-in owner only. Everything the bookmarklet needs to
+      // authenticate is in here, so this route is behind the session like any
+      // other read of workspace state.
+      if (url.pathname === '/api/owner/import-token' && request.method === 'POST') {
+        if (!verify(config, readCookie(request.headers.cookie, COOKIE))) {
+          return json(401, { error: 'Sign in to use the owner workspace.' })
+        }
+        return json(200, { token: createImportToken(config), expiresInMs: IMPORT_TTL_MS })
       }
 
       if (url.pathname === '/api/owner/logout' && request.method === 'POST') {
