@@ -56,7 +56,7 @@ file from opposite ends.
 
 | area | typically |
 | --- | --- |
-| `src/App.jsx`, `src/App.css` | UI work |
+| `src/App.jsx`, `src/App.css`, `src/RequestFlow.css`, `src/components/` | UI work |
 | `src/data/catalog.js`, `src/pricing.js` | catalog and quoting rules |
 | `scripts/`, `src/data/scraped-tires.json` | supplier / scraper work |
 | `.forge/*.md`, `.forge/state.json` | planning, requirements, task status |
@@ -100,13 +100,17 @@ Start the app with `node backend/dev.mjs` (http://127.0.0.1:4180), not
 `npm run preview` -- preview serves the built frontend only, so `/owner` shows
 "backend is not connected" and any check touching it is meaningless.
 
-**The audits read `AUDIT_BASE` and default to port 4179.** Pass anything else --
-`BASE`, `B` -- and they silently audit whatever is on 4179 instead of erroring.
-That produces false failures *and* false passes; see the notes below.
+**The audits read `AUDIT_BASE`, and each defaults to a different port** --
+4179 for the dead-end audit, 4173 for the responsive check, 4183 for the
+request-flow check, and the owner-inventory audit is fixed at 4180. Pass
+anything else -- `BASE`, `B` -- or nothing, and they silently audit whatever is
+on that port instead of erroring. That produces false failures *and* false
+passes; see the notes below. Always set `AUDIT_BASE`.
 
-GitHub Actions runs build, lint and the backend tests on every push, then
-deploys `main` to https://kmt.fly.dev and runs the three browser audits against
-the live site.
+GitHub Actions runs the backend tests, lint and build on every push to `main`
+and on every pull request, then deploys `main` to https://kmt.fly.dev and runs
+the three browser audits against the live site. Nothing deploys from any other
+branch.
 
 **Run the dead-end audit against the live URL before calling a deploy good.**
 This build has passed every local check and 404'd in production: a missing SPA
@@ -252,3 +256,18 @@ Fly app names are immutable and map to `<name>.fly.dev`, so renaming means a new
 app, a new volume and re-setting every secret. Pick the public-facing name
 first. Fly deploy tokens are app-scoped by default; a token made for one app
 will not deploy another, and CI fails on permissions.
+
+**2026-09-05 — Claude (docs session)**
+`README.md` now describes the project as it stands (screens, pricing, the
+owner backend, verification, deployment) instead of the Vite template. A root
+`AGENTS.md` and `CLAUDE.md` point here, so a tool that reads those on start-up
+finds this protocol without being told. Keep the README's layout table and
+verification commands current when you add a directory or a check.
+
+Also: the local `main` in the shared checkout had diverged from `origin/main`
+when I looked. Both had merged `owner-inventory-backend`, through different
+merge commits; only the local one carried `.forge/reset-runbook.md`, and only
+`origin/main` carried the Fly deployment, `backend/server.mjs` and
+`backend/auth.mjs`. `origin/main` is what CI deploys, so treat it as the truth
+and reconcile the local branch before branching from it. This branch was cut
+from `origin/main`.
