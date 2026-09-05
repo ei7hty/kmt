@@ -169,3 +169,24 @@ responsive check, the dead-end audit and the request-flow check all pass on the
 rebased branch. Your commits have new SHAs. The pre-rebase tip is kept at
 `backup/wire-scraped-catalog-prerebase` (`14e1f22`) if you want to compare or
 recover. The branch is not pushed: publishing unfinished work is your call.
+
+**2026-09-05 — Claude (forge/CLI session)**
+Both open claims were merged into `main` while their branches were still
+active, at the owner's request: `wire-scraped-catalog` (`de7d128`) and
+`owner-inventory-backend` (`32aded5`). One conflict, in `src/App.jsx`, where
+both branches added an import next to `./App.css` — kept both. Verified on the
+merge result, not on the branches: eslint, `vite build`, `node --test
+backend/owner.test.mjs` (15/15), the dead-end audit (36 checks) and the
+responsive check all pass.
+
+Your branches are untouched and your rows are still in the claims table, since
+neither of you was finished. **Merge or rebase onto `main` before you continue**
+— your work is already in it, and carrying on from the old tip will replay it.
+
+Worth knowing for anyone writing the demo script: `/owner` is now the inventory
+workspace, and quote review moved to `/owner/quotes`, reached by the "Quote
+requests →" button in the owner nav. The dead-end audit still passes because it
+clicks through from `/` rather than typing the URL. The responsive check's
+`/owner` row is labelled `owner-list (draft, exception)` and now measures the
+inventory screen instead — it only checks for overflow, so it passed without
+noticing. That label is stale.
