@@ -61,9 +61,14 @@ jobs:
         env:
           AUDIT_BASE: http://localhost:4173
         run: |
-          npx vite preview --port 4173 &
-          preview=$!
-          trap 'kill $preview 2>/dev/null || true' EXIT
+          # node directly, not `npx`: npx spawns the server as a grandchild, so
+          # $! would be the wrapper and killing it leaves the port held. That
+          # does not matter here -- the runner is destroyed at the end of the
+          # job -- but this file gets copied as an example, and the form that
+          # leaks locally should not be the one on display.
+          node node_modules/vite/bin/vite.js preview --port 4173 &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
 
           # stderr is dropped because the first attempts legitimately fail while
           # the server boots, and "connection refused" in the log reads like a
