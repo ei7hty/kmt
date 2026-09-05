@@ -11,6 +11,8 @@
 // customer checking the demo against the tires actually on their car usually
 // finds their size.
 
+import { FITMENT_DIAMETERS, FITMENT_RATIOS, FITMENT_WIDTHS } from './fitment.js'
+
 /** The seed tires. Do not renumber or rename: scripts select these by name. */
 const SEED_TIRES = [
   { id: 'tire-1', name: 'All-Weather Standard', size: '215/60R16', price: 85.99, inStock: true, category: 'all-season', description: 'Reliable year-round performance' },
@@ -22,17 +24,35 @@ const SEED_TIRES = [
 ]
 
 /**
- * Common real-world fitments, so most sizes a customer picks return something.
- * Deliberately not exhaustive: "we do not stock that size" is a real outcome
- * for a shop that sources tires, and that path still needs to be reachable.
+ * Which of the standard fitment combinations actually exist.
+ *
+ * The three ranges multiply out to 891 combinations, and most are not real
+ * tires: nobody makes a 175/35R22. Real fitments correlate, bigger rims taking
+ * wider tires and lower profiles, so the catalog is generated from that rule
+ * instead of a hand-listed set. That covers roughly a third of the grid, which
+ * is the third a customer can actually be driving on.
+ *
+ * The selector then offers only onward choices that exist, so a completed
+ * selection always lands on tires. The rule is what makes that possible: it
+ * decides the shape of the catalog, and the catalog decides the menu.
  */
-const COVERED_SIZES = [
-  '175/65R14', '185/65R15', '195/60R15', '195/65R15', '205/55R16', '205/60R16',
-  '215/55R17', '215/65R16', '225/45R17', '225/60R17', '225/65R17', '235/45R18',
-  '235/55R18', '235/60R18', '245/40R18', '245/45R19', '245/60R18', '245/70R17',
-  '255/35R19', '255/45R20', '255/55R20', '265/60R18', '265/65R17', '275/40R20',
-  '275/55R20'
-]
+function isPlausibleFitment(width, ratio, diameter) {
+  const w = Number(width)
+  const r = Number(ratio)
+  const d = Number(diameter)
+  if (d <= 15) return w <= 215 && r >= 55
+  if (d <= 17) return w >= 185 && w <= 265 && r >= 45 && r <= 70
+  if (d <= 19) return w >= 215 && r >= 35 && r <= 60
+  return w >= 245 && r >= 35 && r <= 50
+}
+
+const COVERED_SIZES = FITMENT_WIDTHS.flatMap(width =>
+  FITMENT_RATIOS.flatMap(ratio =>
+    FITMENT_DIAMETERS
+      .filter(diameter => isPlausibleFitment(width, ratio, diameter))
+      .map(diameter => `${width}/${ratio}R${diameter}`)
+  )
+)
 
 /** Models offered per size. The all-terrain option is truck-only, see below. */
 const MODELS = [

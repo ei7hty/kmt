@@ -50,10 +50,21 @@ function App() {
   const [fitmentStage, setFitmentStage] = useState('width')
   const [fitmentSearch, setFitmentSearch] = useState('')
   const tires = getAllTires()
-  // The real fitment range, not the sizes we happen to stock. See data/fitment.js.
-  const widthOptions = FITMENT_WIDTHS
-  const ratioOptions = FITMENT_RATIOS
-  const diameterOptions = FITMENT_DIAMETERS
+  // Each stage offers only choices that lead somewhere. The catalog is generated
+  // across the full standard fitment ranges (see data/fitment.js and the
+  // plausibility rule in data/catalog.js), so narrowing here is not a shortage
+  // of stock -- it is the selector refusing to build a size no tire comes in.
+  const parsedSizes = [...new Set(tires.map(tire => tire.size))]
+    .map(size => {
+      const match = size.match(/^(\d+)\/(\d+)R(\d+)$/)
+      return match ? { size, width: match[1], ratio: match[2], diameter: match[3] } : null
+    })
+    .filter(Boolean)
+  const widthOptions = FITMENT_WIDTHS.filter(width => parsedSizes.some(item => item.width === width))
+  const ratioOptions = FITMENT_RATIOS.filter(ratio =>
+    parsedSizes.some(item => item.width === fitment.width && item.ratio === ratio))
+  const diameterOptions = FITMENT_DIAMETERS.filter(diameter =>
+    parsedSizes.some(item => item.width === fitment.width && item.ratio === fitment.ratio && item.diameter === diameter))
 
   useEffect(() => {
     const handlePopState = () => setRoute(window.location.pathname)
