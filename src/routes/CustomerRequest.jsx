@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import { calculateDraftQuote } from '../pricing.js'
 import { getAllTires } from '../data/catalog'
 import { loadCatalog } from '../data/liveCatalog'
 import { FITMENT_DIAMETERS, FITMENT_RATIOS, FITMENT_WIDTHS } from '../data/fitment'
-import { saveQuote, saveRequest } from '../store'
+import { submitRequest } from '../store'
 import { VehicleDetails, ServiceDetails } from '../components/RequestDetails'
 
 /**
@@ -44,6 +43,13 @@ function CustomerRequest({ navigate }) {
   const [vehicle, setVehicle] = useState({ year: '', make: '', model: '' })
   const [validationErrors, setValidationErrors] = useState({})
   const [submissionMessage, setSubmissionMessage] = useState('')
+  // A failed submit is shown, not worked around: a quote drafted in this
+  // browser is one no owner will ever see, and the customer would wait for a
+  // reply that cannot come (R21).
+  const [submitError, setSubmitError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [lastSubmission, setLastSubmission] = useState(null)
+  const [submittedId, setSubmittedId] = useState('')
   const [orderStep, setOrderStep] = useState(1)
   const [stepError, setStepError] = useState('')
   const [fitment, setFitment] = useState({ width: '', ratio: '', diameter: '', zip: '' })
@@ -158,7 +164,7 @@ function CustomerRequest({ navigate }) {
     setOrderStep(3)
   }
 
-  const handleFormSubmit = (event) => {
+  const handleFormSubmit = async (event) => {
     event.preventDefault()
     const errors = {}
     if (!formData.vehicleInfo.trim()) errors.vehicleInfo = 'Vehicle information is required'
@@ -173,12 +179,27 @@ function CustomerRequest({ navigate }) {
     }
 
     const location = [formData.location.trim(), formData.serviceZip?.trim() && !formData.location.includes(formData.serviceZip.trim()) ? formData.serviceZip.trim() : '', formData.locationNotes?.trim()].filter(Boolean).join(' · ')
-    const savedRequest = saveRequest({ ...formData, location })
-    if (savedRequest) {
-      const draftQuote = calculateDraftQuote(savedRequest, tires)
-      const savedQuote = saveQuote(savedRequest.id, draftQuote)
-      const quoteMessage = savedQuote ? ` Draft quote total: $${draftQuote.total.toFixed(2)}.` : ''
-      setSubmissionMessage(`Quote request submitted. Request ID: ${savedRequest.id}.${quoteMessage}`)
+    // Everything the request is made of, in one place, so the fields t34 adds
+    // are added here rather than threaded through a call signature.
+    const submission = { ...formData, location }
+    setLastSubmission(submission)
+    await sendRequest(submission)
+  }
+
+  /**
+   * Send a request and say what happened.
+   *
+   * The server drafts the quote -- this browser no longer prices anything, so
+   * there is one pricing implementation and the customer is told the number the
+   * owner will see.
+   */
+  async function sendRequest(submission) {
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      const { request, quote } = await submitRequest(submission)
+      setSubmissionMessage(`Quote request submitted. Draft quote total: $${quote.total.toFixed(2)}. Ken reviews it before anything is charged.`)
+      setLastSubmission(null)
       setFormData({ tireSize: '', vehicleInfo: '', tireSelection: '', location: '', date: '', locationType: 'Home', serviceZip: '', locationNotes: '' })
       setVehicle({ year: '', make: '', model: '' })
       setFitment({ width: '', ratio: '', diameter: '', zip: '' })
@@ -187,6 +208,16 @@ function CustomerRequest({ navigate }) {
       setValidationErrors({})
       setStepError('')
       setOrderStep(1)
+      // Acknowledged here rather than by navigating away. The customer asked
+      // for a quote and gets told what it is; "My Quote" in the nav is how they
+      // follow it. Redirecting on submit would also take the confirmation off
+      // the screen the audits check it on.
+      setSubmittedId(request.id)
+    } catch (error) {
+      setSubmissionMessage('')
+      setSubmitError(error.message)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -201,10 +232,23 @@ function CustomerRequest({ navigate }) {
         <form noValidate onSubmit={handleFormSubmit} className="order-form">
           {orderStep === 1 && <div className="fitment-modal"><div className="fitment-heading"><span className="fitment-wheel">◉</span><h3>Select your tire size</h3></div><div className="fitment-progress"><div className={fitmentStage === 'width' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Width</b><span /></div><div className={fitmentStage === 'ratio' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Ratio</b><span /></div><div className={fitmentStage === 'diameter' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Diameter</b><span /></div><div className={fitmentStage === 'zip' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Zip code</b><span /></div></div><div className="fitment-visual"><img className="fitment-guide" src={(FITMENT_GUIDES[fitmentStage] ?? FITMENT_GUIDES.width).src} alt={(FITMENT_GUIDES[fitmentStage] ?? FITMENT_GUIDES.width).alt} /></div><button type="button" className="fitment-back" onClick={goBackFitment} disabled={fitmentStage === 'width'}>← Back</button><div className="fitment-controls">{fitmentStage === 'zip' ? <div className="fitment-zip"><label htmlFor="fitmentZip">Where will we service you?</label><input id="fitmentZip" value={fitment.zip} onChange={event => setFitment(previous => ({ ...previous, zip: event.target.value }))} placeholder="Enter ZIP code (optional)" inputMode="numeric" /></div> : <><div className="fitment-search"><span>⌕</span><input value={fitmentSearch} onChange={event => setFitmentSearch(event.target.value)} placeholder="Search" aria-label="Search tire size" /></div><div className="fitment-options">{(fitmentStage === 'width' ? widthOptions : fitmentStage === 'ratio' ? ratioOptions : diameterOptions).filter(value => value.includes(fitmentSearch.trim())).map(value => <button type="button" className="fitment-option" key={value} onClick={() => selectFitmentPart(fitmentStage, value)}>{value}</button>)}</div></>}</div><div className="fitment-footer"><span>{formData.tireSize ? `Selected: ${formData.tireSize}` : 'Select width, ratio, and diameter'}</span><button type="button" className="primary-action" disabled={!formData.tireSize} onClick={continueFromSize}>Continue to tires <span>→</span></button></div></div>}
           {orderStep === 2 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(1)}>← Change size</button><p className="panel-kicker">STEP 02 / YOUR TIRES</p><h3>Your tires. Your vehicle.</h3><p className="panel-note">Choose from tires in size <strong>{formData.tireSize}</strong>, then tell us what you drive.</p><VehicleDetails vehicle={vehicle} onVehicleChange={handleVehicleChange} value={formData.vehicleInfo} onChange={handleFormChange} /><h4 className="tire-list-heading">Choose your tire</h4>{matchingTires.length === 0 ? <div className="tire-empty"><p className="tire-empty-title">We don&apos;t stock {formData.tireSize} for online ordering.</p><p className="tire-empty-body">We can still source it. Call us and we&apos;ll sort it out, or pick a different size.</p><div className="tire-empty-actions"><a className="btn btn-primary" href="tel:6174108319">Call (617) 410-8319</a><button type="button" className="btn btn-neutral" onClick={() => { setOrderStep(1); setFitmentStage('width'); setFitment({ width: '', ratio: '', diameter: '', zip: '' }); setFormData(previous => ({ ...previous, tireSize: '', tireSelection: '' })); setStepError('') }}>Choose another size</button></div></div> : <div className="tire-options">{matchingTires.map(tire => <button type="button" className={formData.tireSelection === tire.id ? 'tire-option selected' : 'tire-option'} aria-pressed={formData.tireSelection === tire.id} onClick={() => { setFormData(previous => ({ ...previous, tireSelection: tire.id })); setStepError('') }} key={tire.id} disabled={!tire.inStock}><span className="tire-art">◉</span><span className="tire-info"><strong>{tire.name}</strong><small>{tire.description}</small><small>{tire.inStock ? 'In stock' : 'Currently unavailable'}</small></span><b>${tire.price.toFixed(2)}<i>per tire</i></b></button>)}</div>}<button type="button" className="primary-action" onClick={continueFromVehicle}>Continue to mobile service <span>→</span></button></div>}
-          {orderStep === 3 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(2)}>← Back to tire selection</button><p className="panel-kicker">STEP 03 / WE COME TO YOU</p><h3>Let’s bring the shop to you.</h3><p className="panel-note">Tell us where to find your vehicle and when you’d prefer service.</p><div className="order-summary-line"><span>{selectedTire?.name} · {formData.tireSize}</span><b>{formData.vehicleInfo}</b></div><ServiceDetails formData={formData} onChange={handleFormChange} errors={validationErrors} /><p className="quote-reassurance">No payment now. Ken reviews your request before you pay.</p><button type="submit" className="primary-action">Request my quote <span>→</span></button></div>}
+          {orderStep === 3 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(2)}>← Back to tire selection</button><p className="panel-kicker">STEP 03 / WE COME TO YOU</p><h3>Let’s bring the shop to you.</h3><p className="panel-note">Tell us where to find your vehicle and when you’d prefer service.</p><div className="order-summary-line"><span>{selectedTire?.name} · {formData.tireSize}</span><b>{formData.vehicleInfo}</b></div><ServiceDetails formData={formData} onChange={handleFormChange} errors={validationErrors} /><p className="quote-reassurance">No payment now. Ken reviews your request before you pay.</p><button type="submit" className="primary-action" disabled={submitting}>{submitting ? 'Sending…' : <>Request my quote <span>→</span></>}</button></div>}
           {stepError && <p className="step-error" role="alert">{stepError}</p>}
         </form>
-        {submissionMessage && <div className="success-message" role="status">{submissionMessage}</div>}
+        {submissionMessage && <div className="success-message" role="status">
+          {submissionMessage}
+          {submittedId && <button type="button" className="link-action" onClick={() => navigate(`/status?request=${encodeURIComponent(submittedId)}`)}>Track this quote →</button>}
+        </div>}
+        {submitError && <div className="panel submit-failure" role="alert">
+          <p className="status-note status-note-bad">{submitError}</p>
+          <p className="text-secondary">Your details are still here. Try again, or call the shop and we will take it down for you.</p>
+          <div className="tire-empty-actions">
+            <button type="button" className="btn btn-primary" onClick={() => lastSubmission && sendRequest(lastSubmission)} disabled={submitting}>
+              {submitting ? 'Sending…' : 'Try again'}
+            </button>
+            <a className="btn btn-neutral" href="tel:6174108319">Call (617) 410-8319</a>
+          </div>
+        </div>}
       </main>
       <footer className="site-footer"><span>KMT / KEN&apos;S MOBILE TIRE</span><span>Fast. Reliable. Always on the move.</span><button onClick={() => navigate('/owner')}>Owner review →</button></footer>
     </div>
