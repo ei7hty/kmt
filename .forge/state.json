@@ -369,14 +369,16 @@
       "title": "Verify exception state stays visually distinct on redesigned /owner (R9)",
       "description": "After the /owner redesign, confirm a flagged-exception quote is still unmistakably distinct from a normal approvable draft using amber (not brand red, not brand green) -- per the design reference and R9. Verify by seeding an exception quote (same fixture makeStore({exception:true}) used in .forge/dead-end-audit.mjs) and a normal draft quote side by side on /owner at phone and desktop widths, confirming the exception card/badge is amber-coded and reads clearly as 'needs attention' rather than 'error' (red) or 'success' (green).",
       "milestoneId": "m7",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t18"
       ],
-      "notes": [],
+      "notes": [
+        "Verified by measuring computed styles at both viewports rather than by eye, since R9 is a claim about visual distinctness. Exception text renders amber rgb(245,180,83) on an amber border rgba(245,158,11,0.55); Approve is green rgb(60,167,91); Reject is rgb(255,102,112); the quote total is brand red rgb(237,28,36). Four distinct hues, identical at 375px and 1280px, with the heading \"Owner review required\" and both reasons visible. The exception is therefore never confusable with either action button or with the brand red used for figures."
+      ],
       "createdAt": "2026-09-05T12:15:08.471Z",
-      "updatedAt": "2026-09-05T12:15:08.471Z"
+      "updatedAt": "2026-09-05T14:39:35.037Z"
     },
     {
       "id": "t20",
@@ -415,46 +417,52 @@
       "title": "Responsive verification pass on all four restyled screens",
       "description": "Run .forge/responsive-check.mjs (or an equivalent phone-then-desktop screenshot pass) against /, /owner, /status, /confirmation after the restyle, confirming no horizontal overflow and that every screen looks like one product at both 375px and 1280px widths. Save updated screenshots into .forge/shots/ following the existing phone-*/desktop-* naming pattern so before/after is comparable. Done when the script reports no overflow issues and a visual check confirms /owner, /status, /confirmation no longer look like a different product from /.",
       "milestoneId": "m7",
-      "status": "todo",
+      "status": "done",
       "priority": "medium",
       "dependsOn": [
         "t19",
         "t20",
         "t21"
       ],
-      "notes": [],
+      "notes": [
+        "Ran .forge/responsive-check.mjs against the phase 2 build: ok on all 8 screen/viewport combinations (/, /owner, /status, /confirmation at 375px and 1280px). It caught two real overflows during t20/t21 that were not visible by eye - a 1fr stepper track refusing to shrink below min-content, and a full-width button adding padding on top of 100% - both fixed before this pass. Root cause behind both: the project has no global border-box reset, so full-width elements need it applied per selector."
+      ],
       "createdAt": "2026-09-05T12:15:08.490Z",
-      "updatedAt": "2026-09-05T12:15:08.490Z"
+      "updatedAt": "2026-09-05T14:39:35.037Z"
     },
     {
       "id": "t23",
       "title": "Re-run dead-end audit to confirm no behavior regressed (R13)",
       "description": "Run .forge/dead-end-audit.mjs against the restyled app and confirm every check still passes (submission acknowledgement, exception badge, Approve/Reject, Pay flow, confirmation end state, validation errors, rejected-quote messaging). This is the guardrail for R13 -- a pure restyle must not change any Phase 1 business rule, state transition, or route behavior. Done when the script exits 0 with all OK lines and no FAIL lines.",
       "milestoneId": "m7",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t22"
       ],
-      "notes": [],
+      "notes": [
+        "Ran .forge/dead-end-audit.mjs against the phase 2 build: 30/30 OK, 15 checks at each viewport, exit code 0. R13 holds - no behaviour regressed across the /owner, /status and /confirmation restyles. Note that this audit had to be repaired first (commit 48cc5c4): it had silently stopped running when the customer flow became a wizard, so t16 phase-1 claim of a clean audit had not been true for some time."
+      ],
       "createdAt": "2026-09-05T12:15:08.497Z",
-      "updatedAt": "2026-09-05T12:15:08.497Z"
+      "updatedAt": "2026-09-05T14:39:35.037Z"
     },
     {
       "id": "t24",
       "title": "Deploy Phase 2 build and spot-check the full flow on a real phone",
       "description": "Deploy the restyled app to Vercel (existing project; URL stability across phases is explicitly not a goal) and tap through the full happy path -- submit request, owner approve, pay, confirmation, plus the exception branch -- on an actual phone browser to confirm the redesign holds up outside a simulated viewport. Done when all four screens are reachable and visually consistent on a real device from the deployed URL.",
       "milestoneId": "m7",
-      "status": "todo",
+      "status": "blocked",
       "priority": "medium",
       "dependsOn": [
         "t23"
       ],
-      "notes": [],
+      "notes": [
+        "Blocked on Vercel authentication, which is the owner s to provide: npx vercel deploy --temporary --yes returns \"Not authorized\", the anonymous token from the phase 1 deploy having expired. The build itself is ready - npm run build is clean and every local check passes. Once authenticated, deploy and then re-run the audit against the live URL with AUDIT_BASE set, since phase 1 proved a build can pass locally and fail in production (the missing SPA rewrite)."
+      ],
       "createdAt": "2026-09-05T12:15:08.507Z",
-      "updatedAt": "2026-09-05T12:15:08.507Z"
+      "updatedAt": "2026-09-05T14:39:35.037Z"
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T14:37:42.538Z"
+  "updatedAt": "2026-09-05T14:39:35.037Z"
 }
