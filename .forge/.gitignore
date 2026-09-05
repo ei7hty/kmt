@@ -1,0 +1,8 @@
+# Local to one machine, or regenerable from the audit scripts.
+transcripts/
+conversations/
+shots/
+
+# Client mockups: kept on disk as design reference, too large to version.
+mock*.png
+mock*.jfif
