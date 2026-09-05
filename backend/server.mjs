@@ -35,7 +35,7 @@ import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
-import { createApi, readJsonBody } from './api.mjs'
+import { createApi, createCatalogApi, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -69,6 +69,7 @@ inventory.importSnapshot(JSON.parse(readFileSync(path.join(root, 'src/data/scrap
 const refresher = new Refresher(inventory)
 const importer = new PageImporter(inventory)
 const api = createApi(inventory, refresher, importer)
+const catalogApi = createCatalogApi(inventory)
 
 const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'
@@ -123,11 +124,17 @@ const server = createServer(async (request, response) => {
       const importCall = url.pathname === '/api/owner/import' &&
         (request.method === 'OPTIONS' || auth.isImportAuthorized(request))
 
-      if (!importCall && !auth.isAuthenticated(request)) {
+      // The catalog is what a customer is quoted from, and a customer never
+      // signs in. Named in the allow-list in api.mjs rather than by relaxing
+      // the check below, so every other route stays refused by default.
+      const publicCall = isPublicApiCall(request.method, url.pathname)
+
+      if (!publicCall && !importCall && !auth.isAuthenticated(request)) {
         response.writeHead(401, { 'Content-Type': 'application/json' })
         response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' }))
         return
       }
+      if (await catalogApi(request, response)) return
       if (await api(request, response)) return
       response.writeHead(404, { 'Content-Type': 'application/json' })
       response.end(JSON.stringify({ error: 'Owner endpoint not found' }))
