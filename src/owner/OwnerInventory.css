@@ -1,0 +1,90 @@
+.oi-shell { min-height: 100vh; background: #0b0b0c; color: #c4c4ca; text-align: left; font-family: 'Segoe UI', sans-serif; }
+.oi-shell *, .oi-shell *::before, .oi-shell *::after { box-sizing: border-box; }
+.oi-shell button, .oi-shell input, .oi-shell select, .oi-shell textarea { font: inherit; }
+.oi-shell button, .oi-shell summary { cursor: pointer; }
+.oi-shell button:disabled { opacity: .5; cursor: default; }
+.oi-shell :focus-visible { outline: 2px solid #ff5960; outline-offset: 3px; }
+.oi-nav { min-height: 78px; display: flex; align-items: center; gap: 24px; padding: 16px 5%; border-bottom: 1px solid #303034; }
+.oi-nav > span { color: #9999a1; font-size: 11px; letter-spacing: 2px; flex: 1; }
+.oi-brand { font-family: Impact, sans-serif !important; font-size: 32px !important; color: white; background: none; border: 0; padding: 0; }
+.oi-brand span { color: #ed1c24; }
+.oi-button { padding: 11px 16px; border: 1px solid #48484f; border-radius: 5px; color: white; background: #202023; font-weight: 600 !important; font-size: 13px !important; min-height: 44px; }
+.oi-button:hover { background: #333338; }
+.oi-primary { background: #cc1821; border-color: #cc1821; }
+.oi-primary:hover { background: #ea232d; }
+.oi-content { max-width: 1260px; margin: auto; padding: 44px 30px; }
+.oi-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 30px; }
+.oi-kicker { color: #ff525a; font-size: 11px; font-weight: 700; letter-spacing: 1.8px; }
+.oi-heading h1 { font-family: Impact, 'Arial Narrow', sans-serif; font-size: clamp(30px, 4.3vw, 48px); line-height: 1.1; margin: 12px 0; letter-spacing: .5px; }
+.oi-heading > div > p:last-child { font-size: 14px; }
+.oi-owner-badge { white-space: nowrap; font-size: 11px; border: 1px solid #36363d; padding: 7px 10px; border-radius: 20px; }
+.oi-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+.oi-metrics > div { border: 1px solid #303036; border-radius: 6px; padding: 20px 24px; background: #151518; }
+.oi-metrics strong { display: block; font-size: 30px; color: #fafafa; line-height: 1.2; }
+.oi-metrics span { display: block; margin-top: 6px; font-size: 12px; }
+.oi-refresh { border-top: 2px solid #ce1d27; background: #18181b; padding: 22px; display: flex; gap: 28px; align-items: center; margin-bottom: 16px; }
+.oi-shell h2 { font-family: 'Segoe UI', sans-serif; font-size: 18px; font-weight: 650; line-height: 1.3; text-transform: none; letter-spacing: 0; margin: 0 0 9px; }
+.oi-refresh p { font-size: 12px; line-height: 1.7; max-width: 730px; }
+.oi-muted { color: #aaaab3; margin-top: 6px; }
+.oi-refresh-actions { flex-shrink: 0; display: grid; gap: 8px; }
+.oi-job { display: flex; flex-wrap: wrap; gap: 8px 20px; background: #202026; padding: 12px 16px; font-size: 12px; border: 1px solid #41414b; border-radius: 4px; margin-bottom: 16px; }
+.oi-filters { display: grid; grid-template-columns: 2fr 1fr 1fr auto; align-items: end; gap: 14px; padding: 18px 0; }
+.oi-shell label { font-size: 12px; font-weight: 600; display: grid; gap: 7px; color: #dadade; }
+.oi-shell input:not([type=checkbox]), .oi-shell select, .oi-shell textarea { width: 100%; min-width: 0; border: 1px solid #4b4b55; border-radius: 4px; padding: 11px 12px; color: #f5f5f5; background: #111114; font-size: 13px; }
+.oi-shell select { min-height: 44px; color-scheme: dark; }
+.oi-shell input::placeholder, .oi-shell textarea::placeholder { color: #91919d; }
+.oi-shell textarea { resize: vertical; }
+.oi-results-heading { display: flex; gap: 12px; justify-content: space-between; margin: 18px 0; font-size: 12px; }
+.oi-results-heading span { color: #9c9ca6; }
+.oi-results { display: grid; gap: 16px; }
+.oi-tire { display: grid; grid-template-columns: minmax(0, 1fr) 300px; border: 1px solid #33333c; background: #161619; border-radius: 7px; overflow: hidden; }
+.oi-tire-offered { border-left: 3px solid #64c696; }
+.oi-tire-main { padding: 24px; min-width: 0; }
+.oi-tire-tags { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; margin-bottom: 10px; }
+.oi-tire-tags > span:first-child { color: white; letter-spacing: .5px; }
+.oi-stock { color: #73dba3; }
+.oi-attention { color: #edbf6d; }
+.oi-description { color: #a6a6b0; font-size: 13px; }
+.oi-specs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 22px 0; }
+.oi-shell dt { font-size: 11px; color: #9c9ca9; margin-bottom: 5px; }
+.oi-shell dd { font-size: 13px; margin: 0; color: #e6e6eb; overflow-wrap: anywhere; }
+.oi-specs > div:first-child dd { font-size: 22px; font-weight: 650; }
+.oi-shell details { font-size: 12px; color: #aaaab5; }
+.oi-shell summary { padding: 7px 0; }
+.oi-source { display: grid; gap: 12px; }
+.oi-shell a { color: #ff7278; }
+.oi-shell pre { overflow: auto; background: #0c0c10; padding: 14px; font-size: 11px; max-height: 240px; }
+.oi-offer { padding: 24px; display: grid; align-content: start; gap: 10px; border-left: 1px solid #303039; background: #1c1c20; }
+.oi-shell .oi-check { display: flex; align-items: center; gap: 9px; font-size: 14px; margin-bottom: 4px; }
+.oi-check input { accent-color: #ed1c24; width: 18px; height: 18px; }
+.oi-spread { font-size: 11px; margin-top: -3px; }
+.oi-offer > .oi-attention { font-size: 11px; }
+.oi-error { color: #ff9d9d; font-size: 12px; }
+.oi-notice { padding: 12px 16px; border: 1px solid #4a4a53; background: #202025; margin: 12px 0; font-size: 13px; }
+.oi-coverage { font-size: 12px; color: #edbf6d; }
+.oi-pagination { display: flex; justify-content: center; align-items: center; gap: 22px; padding: 28px 0; font-size: 13px; }
+.oi-empty { padding: 40px 24px; border: 1px dashed #44444c; text-align: center; font-size: 13px; }
+@media (max-width: 800px) {
+  .oi-heading { flex-direction: column; }
+  .oi-filters { grid-template-columns: 1fr 1fr; }
+  .oi-filters > label:first-child { grid-column: 1 / -1; }
+  .oi-refresh { align-items: stretch; flex-direction: column; gap: 14px; }
+  .oi-tire { grid-template-columns: 1fr; }
+  .oi-offer { border-left: 0; border-top: 1px solid #303039; }
+  .oi-results-heading { flex-direction: column; gap: 4px; }
+}
+@media (max-width: 480px) {
+  .oi-content { padding: 26px 16px; }
+  .oi-nav { gap: 12px; flex-wrap: wrap; padding: 14px 16px; }
+  .oi-nav > span { font-size: 9px; letter-spacing: 1px; }
+  .oi-nav > .oi-button { font-size: 11px !important; padding: 8px 10px; }
+  .oi-metrics { gap: 6px; }
+  .oi-metrics > div { padding: 14px 10px; }
+  .oi-metrics strong { font-size: 23px; }
+  .oi-metrics span { font-size: 10px; line-height: 1.4; }
+  .oi-specs { grid-template-columns: 1fr 1fr; }
+  .oi-tire-main, .oi-offer { padding: 18px; }
+}
+
+/* Inline "use the suggested price" action, sized to sit in a caption line. */
+.oi-button.oi-inline { display: inline-block; min-height: 0; margin-left: 8px; padding: 4px 9px; font-size: 11px !important; }
