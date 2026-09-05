@@ -25,6 +25,52 @@ const IMPORT_BODY_LIMIT = 4 * 1024 * 1024
 /** The only origins allowed to post pages back. Nothing else gets CORS at all. */
 const IMPORT_ORIGINS = new Set(['https://www.giga-tires.com', 'https://giga-tires.com'])
 
+/**
+ * API paths a customer may reach without signing in.
+ *
+ * An allow-list, not a loosened check. Everything under /api/ is refused
+ * without a session, and the way to make one route public is to name it here
+ * -- so adding a route never quietly makes it reachable, and the set of things
+ * the public can call is one line to read.
+ */
+export const PUBLIC_API_PATHS = new Set(['/api/catalog'])
+
+/** Whether this request is one of the public calls, by path and by method. */
+export function isPublicApiCall(method, pathname) {
+  return method === 'GET' && PUBLIC_API_PATHS.has(pathname)
+}
+
+/**
+ * The customer-facing catalog.
+ *
+ * Separate from createApi rather than another branch inside it: that handler
+ * exists to serve a signed-in owner, with CORS for the import page and a
+ * same-origin check on everything else, and hanging a public route off it
+ * would mean every future change to those rules silently applies to the
+ * public one too.
+ */
+export function createCatalogApi(inventory) {
+  return async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (!isPublicApiCall(request.method, url.pathname)) return false
+
+    try {
+      response.writeHead(200, {
+        'Content-Type': 'application/json',
+        // Prices change the moment the owner saves one. A cached catalog quotes
+        // a price he has already changed his mind about.
+        'Cache-Control': 'no-store',
+      })
+      response.end(JSON.stringify({ tires: inventory.catalog() }))
+    } catch (error) {
+      console.error(error)
+      response.writeHead(500, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ error: 'Could not load the catalog.' }))
+    }
+    return true
+  }
+}
+
 export function createApi(inventory, refresher, importer = null) {
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost')

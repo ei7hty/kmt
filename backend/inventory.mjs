@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 // The frontend's markup module owns the default rate and the shape of the
 // rule. Importing it rather than restating 1.35 here means the two cannot
 // drift into disagreeing about what an unconfigured catalog costs.
-import { DEFAULT_MARKUP_SETTINGS } from '../src/markup.js'
+import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 
 const DEFAULT_MARKUP_RATE = DEFAULT_MARKUP_SETTINGS.rate
 
@@ -182,6 +182,54 @@ export class Inventory {
         .run(id, input.priceCents, Number(input.enabled), input.notes, input.version + 1, now())
       return { ...input, version: input.version + 1 }
     })
+  }
+
+  /**
+   * What a customer may be shown: every tire that is offered and has a price.
+   *
+   * The same rows the owner curates, reduced to what a quote needs. Unpaginated
+   * on purpose -- list() pages because a person scrolls a screen, and this
+   * answers a program that needs the whole catalog to price a request.
+   *
+   * The mapping deliberately mirrors scrapedTiresFor() in src/data/catalog.js,
+   * field for field, because the customer flow already runs on rows of that
+   * shape and a second, subtly different shape is the kind of thing that only
+   * shows up as a wrong price. Anything the supplier told us -- SKU, list
+   * price, stock count, the URL we scraped -- stops here: the customer sees
+   * KMT's price and nothing behind it.
+   */
+  catalog() {
+    const settings = this.getMarkup()
+    const rows = this.db.prepare(`SELECT s.payload, o.id AS offer_id, o.price_cents, o.enabled
+      FROM supplier s LEFT JOIN offers o ON o.id=s.id
+      ORDER BY s.size, json_extract(s.payload,'$.name'), s.id`).all()
+
+    const tires = []
+    for (const row of rows) {
+      const tire = JSON.parse(row.payload)
+      // A missing offers row is not the same as a disabled one: a tire the
+      // owner has never touched is still for sale at the marked-up price,
+      // while one he switched off is a deliberate no.
+      const offer = row.offer_id === null || row.offer_id === undefined
+        ? undefined
+        : { priceCents: row.price_cents ?? null, enabled: !!row.enabled }
+
+      const { price, offered } = quotedPrice({
+        supplierPrice: tire.price, offer, tire, settings,
+      })
+      if (price === null || !offered) continue
+
+      tires.push({
+        id: tire.id,
+        name: tire.name,
+        size: tire.size,
+        price,
+        inStock: tire.inStock,
+        category: tire.category,
+        description: tire.description,
+      })
+    }
+    return tires
   }
 
   summary() {

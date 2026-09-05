@@ -6,7 +6,7 @@ import path from 'node:path'
 import { createServer, request as httpRequest } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
-import { createApi, readJsonBody } from './api.mjs'
+import { createApi, createCatalogApi, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, createImportToken, readAuthConfig, verifyImportToken } from './auth.mjs'
 import { PageImporter } from './import.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
@@ -390,4 +390,123 @@ test('import tokens cannot be swapped for session tokens', t => {
   assert.equal(auth.isImportAuthorized({ headers: { authorization: `Bearer ${importToken}` } }), true)
   assert.equal(auth.isImportAuthorized({ headers: { authorization: 'Bearer nonsense' } }), false)
   assert.equal(auth.isImportAuthorized({ headers: {} }), false)
+})
+
+/* ------------------------------------------------------------------ catalog */
+
+/**
+ * Two tires in one snapshot. Not setup(t) plus a second import: importSnapshot
+ * returns early once the database is seeded, so a later import is a silent
+ * no-op and the second tire would never exist.
+ */
+function twoTires(t) {
+  const db = new Inventory(':memory:', [SIZE, otherSize])
+  t.after(() => db.close())
+  db.importSnapshot(snapshot([tire('giga-a'), tire('giga-b', { name: 'Second Tire' })]))
+  return db
+}
+
+test('the customer catalog quotes the owner price, and markup only where he has not set one', async t => {
+  const db = twoTires(t)
+  db.saveOffer('giga-a', offer({ priceCents: 8999 }))
+  db.saveMarkup({ rate: 1.4 })
+
+  const rows = db.catalog()
+  const owned = rows.find(row => row.id === 'giga-a')
+  const marked = rows.find(row => row.id === 'giga-b')
+
+  assert.equal(owned.price, 89.99, 'the price the owner set is the price the customer sees')
+  assert.equal(marked.price, 70, 'and a tire he has not priced is marked up from supplier cost')
+  // Not a second implementation of the rule: the same function the owner
+  // screen prices with, so the two can never disagree.
+  assert.equal(marked.price, quotedPrice({
+    supplierPrice: 50, offer: undefined, tire: tire('giga-b'), settings: db.getMarkup(),
+  }).price)
+})
+
+test('the owner price wins over any rate, including one saved afterwards', async t => {
+  const db = setup(t)
+  db.saveOffer('giga-a', offer({ priceCents: 8999 }))
+  db.saveMarkup({ rate: 4 })
+
+  assert.equal(db.catalog()[0].price, 89.99, 'a decision outranks a rule')
+})
+
+test('a tire the owner switched off, or that has no usable price, is not in the catalog', async t => {
+  const db = twoTires(t)
+  db.saveMarkup({ rate: 1.4 })
+  db.saveOffer('giga-a', offer({ priceCents: null, enabled: false }))
+
+  const ids = db.catalog().map(row => row.id)
+  assert.ok(!ids.includes('giga-a'), 'a deliberate no stays a no')
+  assert.ok(ids.includes('giga-b'), 'and it does not take the rest of the catalog with it')
+
+  // And a tire whose cost is no longer usable. validateTire refuses to import
+  // one, so the only way to hold this state is the way a bad refresh would
+  // leave it: a stored row whose price has gone. Markup invents nothing from
+  // it, and the customer is not quoted a tire nobody can price.
+  db.db.prepare("UPDATE supplier SET payload=json_set(payload,'$.price',null) WHERE id=?").run('giga-b')
+  assert.deepEqual(db.catalog(), [], 'no usable cost means no row')
+})
+
+test('a catalog row is shaped exactly like a buildCatalog row, and carries nothing else', async t => {
+  const db = setup(t)
+  db.saveOffer('giga-a', offer({ priceCents: 8999 }))
+
+  const [row] = db.catalog()
+  const expected = ['id', 'name', 'size', 'price', 'inStock', 'category', 'description']
+
+  assert.deepEqual(Object.keys(row).sort(), [...expected].sort(), 'field for field')
+  // The supplier's own numbers are the thing the customer must never see.
+  assert.equal(row.source, undefined, 'no supplier block')
+  for (const leak of ['sku', 'listPrice', 'stock', 'notes', 'offer', 'supplierPrice', 'lastSeen']) {
+    assert.equal(row[leak], undefined, `no ${leak}`)
+  }
+  assert.deepEqual(row, {
+    id: 'giga-a', name: 'Test Touring', size: SIZE, price: 89.99,
+    inStock: true, category: 'all-season', description: '95H BSW',
+  })
+})
+
+test('the catalog answers a customer with no session, while the owner API still does not', async t => {
+  // The gate refuses everything under /api/ without a session. This is the one
+  // exemption a customer needs, and it must not become a hole in the rest.
+  const db = setup(t)
+  db.saveOffer('giga-a', offer({ priceCents: 8999 }))
+  const auth = createAuth(readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password' }))
+  const api = createApi(db, new Refresher(db))
+  const catalogApi = createCatalogApi(db)
+
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (await auth.handle(request, response, url, readJsonBody)) return
+    if (url.pathname.startsWith('/api/')) {
+      if (!isPublicApiCall(request.method, url.pathname) && !auth.isAuthenticated(request)) {
+        response.writeHead(401, { 'Content-Type': 'application/json' })
+        response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' }))
+        return
+      }
+      if (await catalogApi(request, response)) return
+      if (await api(request, response)) return
+    }
+    response.writeHead(404).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+
+  const answer = await fetch(`${base}/api/catalog`)
+  assert.equal(answer.status, 200, 'a customer is not signed in and still gets a catalog')
+  assert.match(answer.headers.get('content-type'), /application\/json/)
+  const body = await answer.json()
+  assert.equal(body.tires.length, 1)
+  assert.equal(body.tires[0].price, 89.99)
+  assert.equal(body.tires[0].source, undefined, 'not even over the wire')
+
+  assert.equal((await fetch(`${base}/api/owner/inventory`)).status, 401, 'the owner API is still shut')
+  assert.equal((await fetch(`${base}/api/owner/markup`)).status, 401)
+  assert.equal(
+    (await fetch(`${base}/api/catalog`, { method: 'POST' })).status, 401,
+    'the exemption is for reading the catalog, not for the path',
+  )
 })
