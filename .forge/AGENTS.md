@@ -118,6 +118,17 @@ host, which is server configuration a preview cannot test. What the first run
 buys is that a change breaking a click path fails **before** it merges, instead
 of passing its PR and only failing once main is already deployed.
 
+**Nothing enforces any of this. The gate is convention.** Branch protection is
+unavailable on this repository -- it is private on a free plan, and the API
+answers `403: Upgrade to GitHub Pro`. Every pull request here has been
+self-merged with no review. GitHub will let you merge a red check, a failing
+audit, or a PR whose checks never ran, and nobody will stop you.
+
+So the green check is the whole gate, and the person merging is the rest of it.
+Read the diff, not the badge: confirm the audit counts in the log rather than
+trusting the tick, and merge nothing red. A check that was skipped is not a
+check that passed.
+
 **Run the dead-end audit against the live URL before calling a deploy good.**
 This build has passed every local check and 404'd in production: a missing SPA
 rewrite meant `/owner` and `/status` returned 404 on hard navigation while
