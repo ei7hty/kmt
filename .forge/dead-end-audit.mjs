@@ -11,6 +11,67 @@ function ok(msg) {
   console.log(`OK: ${msg}`);
 }
 
+/**
+ * Drive the customer flow from a clean start through to a submitted request.
+ *
+ * The customer flow is a three-step wizard, not a single form: step 1 is the
+ * fitment selector (width, then ratio, then diameter, then an optional ZIP),
+ * step 2 picks a tire and asks what vehicle it is for, step 3 takes the service
+ * details and submits.
+ *
+ * This helper exists because the audit previously filled four fields on page
+ * load, which is how the old single-page form worked. When the wizard replaced
+ * it, every check in this file stopped running -- the script failed on its first
+ * action and nobody noticed, so a green audit had been asserting nothing. Drive
+ * the UI the way a person does, or the audit only tests the audit.
+ *
+ * @param size  Tire size as it appears in the catalog, e.g. '265/70R16'.
+ */
+async function submitRequest(page, { size, tireName, vehicle, location, date }) {
+  const [width, rest] = size.split('/');
+  const [ratio, diameter] = rest.split('R');
+
+  const step = { timeout: 5000 };
+
+  try {
+    await page.goto(BASE + '/');
+
+    // Step 1: fitment. Each stage advances as soon as a value is chosen.
+    for (const value of [width, ratio, diameter]) {
+      await page.click(`.fitment-option:has-text("${value}")`, step);
+    }
+    await page.fill('#fitmentZip', '02149').catch(() => {}); // Optional field.
+    await page.click('button:has-text("Continue to tires")', step);
+
+    // Step 2: pick the tire by its catalog name, and say what it is going on.
+    await page.click(`.tire-option:has-text("${tireName}")`, step);
+    await page.fill('#vehicleInfo', vehicle, step);
+    await page.click('button:has-text("Continue to mobile service")', step);
+
+    // Step 3: service details, then submit.
+    await page.fill('#location', location, step);
+    await page.fill('#date', date, step);
+    await page.click('button[type="submit"]', step);
+  } catch (error) {
+    // This is exactly how the audit rotted the first time: the customer flow was
+    // rewritten, the script could no longer drive it, and the failure read like
+    // an infrastructure problem rather than "every check below stopped running."
+    // Say that plainly, so nobody reads a broken audit as a passing one.
+    fail(
+      'Could not drive the customer flow to a submitted request. The UI shape has ' +
+        'changed and this script no longer matches it, so NONE of the checks below ' +
+        'ran -- this is not a passing audit. Update submitRequest() to match the ' +
+        `current flow. Underlying error: ${error.message.split('\n')[0]}`,
+    );
+    throw error;
+  }
+}
+
+/** A size whose matching tires include the off-road option, which forces owner review. */
+const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain' };
+/** A size and tire that should sail through without an exception. */
+const CLEAN_TIRE = { size: '215/60R16', tireName: 'All-Weather Standard' };
+
 async function main() {
   const browser = await chromium.launch();
 
@@ -29,30 +90,32 @@ async function main() {
 
     // 1. Customer submits a request that will trigger an exception (truck + off-road tire)
     //    so we can verify the exception path renders distinctly at /owner.
-    await page.fill('input[name="vehicleInfo"]', '2019 Ford F-150 Pickup');
-    await page.selectOption('select[name="tireSelection"]', 'tire-5'); // Off-Road Terrain -> exception trigger
-    await page.fill('input[name="location"]', '123 Demo St');
-    await page.fill('input[name="date"]', '2025-06-01');
-    await page.click('button[type="submit"]');
+    await submitRequest(page, {
+      ...EXCEPTION_TIRE,
+      vehicle: '2019 Ford F-150 Pickup',
+      location: '123 Demo St',
+      date: '2025-06-01',
+    });
 
     const submissionMsg = await page.locator('[role="status"]').first().textContent().catch(() => null);
-    if (submissionMsg && submissionMsg.includes('submitted successfully')) {
+    if (submissionMsg && submissionMsg.includes('Quote request submitted')) {
       ok('Customer form: submit produced an immediate confirmation message with the draft quote total.');
     } else {
       fail(`Customer form: no visible submission acknowledgement. Got: ${submissionMsg}`);
     }
 
-    // Visible next action from / after submitting: nav buttons to /owner and /status.
-    const statusLinkVisible = await page.locator('button:has-text("View Quote Status")').isVisible();
-    const ownerLinkVisible = await page.locator('button:has-text("Go to Owner Review")').isVisible();
+    // Visible next action from / after submitting. The nav carries "My Quote"
+    // to /status; the owner entry point sits alongside it for the demo.
+    const statusLinkVisible = await page.locator('button:has-text("My Quote")').isVisible();
+    const ownerLinkVisible = await page.locator('button:has-text("Owner Review")').isVisible();
     if (statusLinkVisible && ownerLinkVisible) {
-      ok('Customer form screen: visible next actions to Owner Review and Quote Status after submit.');
+      ok('Customer form screen: visible next actions (Owner Review, My Quote) after submit.');
     } else {
       fail('Customer form screen: missing visible next action after submit.');
     }
 
     // 2. Owner review: navigate via visible nav button (not URL typing).
-    await page.click('button:has-text("Go to Owner Review")');
+    await page.click('button:has-text("Owner Review")');
     await page.waitForURL('**/owner');
 
     const exceptionBadge = await page.locator('text=Owner review required').first().isVisible().catch(() => false);
@@ -89,7 +152,7 @@ async function main() {
     // 3. Follow the visible nav back to /, then to /status, to see the approved quote and pay.
     await page.click('button:has-text("Back to Customer Flow")');
     await page.waitForURL(BASE + '/');
-    await page.click('button:has-text("View Quote Status")');
+    await page.click('button:has-text("My Quote")');
     await page.waitForURL('**/status');
 
     const payButtonVisible = await page.locator('button:has-text("Pay $")').first().isVisible().catch(() => false);
@@ -142,26 +205,38 @@ async function main() {
       fail('/status (after reload): paid quote lost its next action.');
     }
 
-    // 5. Validation dead-end check: submitting an empty form on / must show a clear, actionable error, not a silent no-op.
+    // 5. Validation dead-end check. On a wizard the risk is not a failed submit,
+    //    it is a step that refuses to advance without saying why: the tester
+    //    clicks Continue, nothing moves, and there is no visible reason.
     await page.evaluate(() => localStorage.removeItem('kmt_store'));
     await page.goto(BASE + '/');
-    await page.click('button[type="submit"]');
-    const validationVisible = await page.locator('text=Please complete all required fields').isVisible().catch(() => false);
-    if (validationVisible) {
-      ok('/ (empty submit): validation summary is visible, giving the tester a clear next action (fill fields).');
+
+    const [w, r] = CLEAN_TIRE.size.split('/');
+    const [ra, di] = r.split('R');
+    for (const value of [w, ra, di]) await page.click(`.fitment-option:has-text("${value}")`);
+    await page.click('button:has-text("Continue to tires")');
+
+    // Now on step 2, try to advance without choosing a tire.
+    await page.click('button:has-text("Continue to mobile service")');
+    const stepErrorVisible = await page
+      .locator('text=Choose a tire for your vehicle')
+      .isVisible()
+      .catch(() => false);
+    if (stepErrorVisible) {
+      ok('/ (step 2, nothing chosen): a visible reason is given instead of a button that silently does nothing.');
     } else {
-      fail('/ (empty submit): no visible validation feedback -- looks like a dead end / silent failure.');
+      fail('/ (step 2, nothing chosen): Continue did nothing and said nothing -- a silent dead end.');
     }
 
     // 6. Rejected quote path: does the customer have a next action, or a dead end?
     await page.evaluate(() => localStorage.removeItem('kmt_store'));
-    await page.goto(BASE + '/');
-    await page.fill('input[name="vehicleInfo"]', '2021 Honda Civic');
-    await page.selectOption('select[name="tireSelection"]', 'tire-1');
-    await page.fill('input[name="location"]', '456 Demo Ave');
-    await page.fill('input[name="date"]', '2025-06-02');
-    await page.click('button[type="submit"]');
-    await page.click('button:has-text("Go to Owner Review")');
+    await submitRequest(page, {
+      ...CLEAN_TIRE,
+      vehicle: '2021 Honda Civic',
+      location: '456 Demo Ave',
+      date: '2025-06-02',
+    });
+    await page.click('button:has-text("Owner Review")');
     await page.waitForURL('**/owner');
     const rejectVisible = await page.locator('button:has-text("Reject")').first().isVisible().catch(() => false);
     if (rejectVisible) {
@@ -169,7 +244,7 @@ async function main() {
       await page.waitForTimeout(200);
       await page.click('button:has-text("Back to Customer Flow")');
       await page.waitForURL(BASE + '/');
-      await page.click('button:has-text("View Quote Status")');
+      await page.click('button:has-text("My Quote")');
       await page.waitForURL('**/status');
       const rejectedMsgVisible = await page.locator('text=This quote was declined').isVisible().catch(() => false);
       if (rejectedMsgVisible) {
