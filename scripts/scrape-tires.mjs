@@ -20,6 +20,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { createBrowserFetcher } from './browser-fetch.mjs'
 import { canonicalSize, fetchSizePage, parseListingPage, parseSize } from './giga-tires.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -47,7 +48,18 @@ Options:
   --delay MS         Pause between requests (default 1500).
   --out PATH         Snapshot path (default src/data/scraped-tires.json).
   --dry-run          Print the report, write nothing.
+  --replace          Drop sizes this run did not cover. Off by default: a run
+                     over one size updates that size and leaves the rest of the
+                     snapshot alone.
+  --plain-fetch      Use plain HTTP instead of a browser window. Faster, but
+                     the site's WAF answers it with a challenge page, so this
+                     currently returns nothing. Kept for when that changes.
+  --headless         Run the browser hidden. The site refuses headless browsers,
+                     so this is here for debugging, not for real runs.
   --help             This message.
+
+The default run opens a visible browser window and reads pages the way a person
+would. Leave it on screen while it works -- it is how you see it going wrong.
 `.trimStart()
 
 function parseArgs(argv) {
@@ -59,6 +71,9 @@ function parseArgs(argv) {
     delay: 1500,
     out: DEFAULT_OUT,
     dryRun: false,
+    replace: false,
+    plainFetch: false,
+    headless: false,
     help: false,
   }
 
@@ -69,6 +84,9 @@ function parseArgs(argv) {
     if (arg === '--help' || arg === '-h') options.help = true
     else if (arg === '--from-catalog') options.fromCatalog = true
     else if (arg === '--dry-run') options.dryRun = true
+    else if (arg === '--replace') options.replace = true
+    else if (arg === '--plain-fetch') options.plainFetch = true
+    else if (arg === '--headless') options.headless = true
     else if (arg === '--limit') options.limit = Number(value())
     else if (arg === '--pages') options.pages = Number(value())
     else if (arg === '--delay') options.delay = Number(value())
@@ -102,21 +120,22 @@ function rank(rows, limit) {
   return limit > 0 ? sorted.slice(0, limit) : sorted
 }
 
-async function scrapeSize(size, options) {
+async function scrapeSize(size, options, fetcher) {
   const rows = []
   const skipped = []
   let pagesRead = 0
 
-  for (let page = 0; page < options.pages; page++) {
+  // Pages are 1-indexed, matching the site's own pager.
+  for (let page = 1; page <= options.pages; page++) {
     if (pagesRead > 0) await sleep(options.delay)
-    const { html } = await fetchSizePage(size, page, { userAgent: USER_AGENT })
+    const { html } = await fetcher(size, page)
     const parsed = parseListingPage(html, size)
     pagesRead++
 
     rows.push(...parsed.rows)
     skipped.push(...parsed.skipped)
 
-    if (page + 1 >= parsed.totalPages) break
+    if (page >= parsed.totalPages) break
   }
 
   // The same SKU can appear twice when a page boundary shifts between requests.
@@ -196,31 +215,45 @@ async function main() {
   sizes = [...new Set(sizes.map(canonicalSize))]
 
   console.log(`Reading ${sizes.length} size${sizes.length === 1 ? '' : 's'} from giga-tires.com`)
-  console.log(`${options.pages} page(s) each, keeping ${options.limit || 'all'} per size, ${options.delay}ms between requests\n`)
+  console.log(`${options.pages} page(s) each, keeping ${options.limit || 'all'} per size, ${options.delay}ms between requests`)
+  console.log(options.plainFetch ? 'Using plain HTTP.\n' : 'Opening a browser window.\n')
+
+  const browser = options.plainFetch
+    ? null
+    : await createBrowserFetcher({ headless: options.headless })
+  const fetcher = browser
+    ? (size, page) => browser.fetchSizePage(size, page)
+    : (size, page) => fetchSizePage(size, page, { userAgent: USER_AGENT })
 
   const tires = []
   const failures = []
+  const scrapedSizes = new Set()
   let totalSkipped = 0
 
-  for (const [index, size] of sizes.entries()) {
-    if (index > 0) await sleep(options.delay)
-    try {
-      const result = await scrapeSize(size, options)
-      const kept = rank(result.rows, options.limit)
-      tires.push(...kept)
-      totalSkipped += result.skipped.length
+  try {
+    for (const [index, size] of sizes.entries()) {
+      if (index > 0) await sleep(options.delay)
+      try {
+        const result = await scrapeSize(size, options, fetcher)
+        scrapedSizes.add(size)
+        const kept = rank(result.rows, options.limit)
+        tires.push(...kept)
+        totalSkipped += result.skipped.length
 
-      const cheapest = kept.length ? money(Math.min(...kept.map(tire => tire.price))) : 'n/a'
-      const outOfStock = kept.filter(tire => !tire.inStock).length
-      console.log(
-        `  ${size.padEnd(12)} ${String(result.rows.length).padStart(3)} found` +
-        ` -> ${String(kept.length).padStart(2)} kept, from ${cheapest}` +
-        (outOfStock ? `, ${outOfStock} out of stock` : '')
-      )
-    } catch (error) {
-      failures.push({ size, message: error.message })
-      console.log(`  ${size.padEnd(12)} FAILED: ${error.message}`)
+        const cheapest = kept.length ? money(Math.min(...kept.map(tire => tire.price))) : 'n/a'
+        const outOfStock = kept.filter(tire => !tire.inStock).length
+        console.log(
+          `  ${size.padEnd(12)} ${String(result.rows.length).padStart(3)} found` +
+          ` -> ${String(kept.length).padStart(2)} kept, from ${cheapest}` +
+          (outOfStock ? `, ${outOfStock} out of stock` : '')
+        )
+      } catch (error) {
+        failures.push({ size, message: error.message })
+        console.log(`  ${size.padEnd(12)} FAILED: ${error.message}`)
+      }
     }
+  } finally {
+    if (browser) await browser.close()
   }
 
   if (!tires.length) {
@@ -229,21 +262,36 @@ async function main() {
     return
   }
 
-  const snapshot = {
-    source: 'giga-tires.com',
-    scrapedAt: new Date().toISOString(),
-    sizes,
-    tires: tires.sort((a, b) => a.size.localeCompare(b.size) || a.price - b.price),
-  }
-
   const hadPrevious = existsSync(options.out)
   const previous = hadPrevious
     ? JSON.parse(await readFile(options.out, 'utf8'))
     : null
 
-  reportDiff(diffSnapshots(previous, snapshot), hadPrevious)
+  // Sizes this run did not touch keep their existing rows. Without this,
+  // refreshing one size would quietly delete every other size from the
+  // snapshot -- and a size whose fetch *failed* would be indistinguishable
+  // from one that genuinely has nothing left. --replace opts into the wipe.
+  const carried = options.replace
+    ? []
+    : (previous?.tires || []).filter(tire => !scrapedSizes.has(tire.size))
 
-  console.log(`\n${snapshot.tires.length} tires across ${sizes.length} size(s).`)
+  const snapshot = {
+    source: 'giga-tires.com',
+    scrapedAt: new Date().toISOString(),
+    sizes: [...new Set([...carried.map(tire => tire.size), ...scrapedSizes])].sort(),
+    tires: [...tires, ...carried]
+      .sort((a, b) => a.size.localeCompare(b.size) || a.price - b.price),
+  }
+
+  // Carried rows are byte-identical to their previous selves, so they simply
+  // do not show up as changes.
+  reportDiff(diffSnapshots(previous, snapshot), hadPrevious)
+  if (carried.length) {
+    const untouched = new Set(carried.map(tire => tire.size))
+    console.log(`\nKept ${carried.length} tire(s) across ${untouched.size} size(s) this run did not cover.`)
+  }
+
+  console.log(`\nSnapshot now holds ${snapshot.tires.length} tires across ${snapshot.sizes.length} size(s).`)
   if (totalSkipped) console.log(`${totalSkipped} card(s) skipped for having no price.`)
   if (failures.length) console.log(`${failures.length} size(s) failed.`)
 
