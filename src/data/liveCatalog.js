@@ -1,4 +1,4 @@
-import { getAllTires } from './catalog'
+import { catalogFromLiveRows, getAllTires } from './catalog'
 
 /**
  * The catalog the customer is quoted from, live where possible.
@@ -33,7 +33,9 @@ export async function loadCatalog(signal) {
     if (!response.ok) throw new Error(data?.error || 'The catalog service refused the request.')
     if (!Array.isArray(data?.tires)) throw new Error('The catalog service answered in an unexpected shape.')
 
-    return { tires: data.tires, source: 'live' }
+    // Composed, not substituted: the endpoint answers with what the owner
+    // curated, which is a part of the catalog rather than all of it.
+    return { tires: catalogFromLiveRows(data.tires), source: 'live' }
   } catch (error) {
     // An abort is the component going away, not a backend failure, and
     // answering it with a catalog nobody will read hides real cancellation.
