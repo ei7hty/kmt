@@ -1,155 +1,115 @@
-# Resetting forge on KMT
+# Running forge on KMT
 
-`forge reset` clears the memory a finished plan leaves behind. It deliberately
-does not touch the plan, the tasks or the project documents, so the rest of this
-runbook is the re-baselining a full reset still needs around it.
+What forge is for here, what state it is actually in, and the commands that do
+something useful today. Rewritten 2026-09-05 after the morning's merges and a
+round of forge changes; the earlier version described a project that no longer
+exists.
 
-Run everything from `C:\Users\anune\code\kmt` unless a step says otherwise.
+## Where things stand
 
-## What is actually stale (checked 2026-09-05)
+`main` has absorbed everything that was in flight: the scraped catalog and
+markup seam, the owner inventory backend, the refined order flow, the owner page
+import, and — since this runbook was first written — the phase 3 plan itself and
+t25's split of `App.jsx` into `src/routes/`.
 
-| | state | why it matters |
-| --- | --- | --- |
-| plan | 7/7 milestones, 24/24 tasks `done` | `forge task run` refuses: "Nothing is ready to start." |
-| `conversations/intake.json`, `plan.json` | ~139 KB each, from the Phase 2 threads | loaded into context by default, so planning argues with a finished conversation |
-| `transcripts/` | 3.1 MB | not read back, only disk |
-| `conventions.md` | **missing** | every phase prompt drops its CONVENTIONS section; `forge init` will not recreate it (see step 3) |
-| repository | `scraper-catalog-updater` + 3 sibling worktrees | forge writes files and runs shell wherever `--project` points |
-| the scraper work | committed, not in `state.json` | intake/plan re-baseline it in step 4 |
+That last merge dated the paragraph this replaces. It said the phase 3 plan
+lived on `forge/phase-3` and not on `main`; both are now the same thing, the
+branch is deleted, and `forge status --project .` on `main` reports the phase 3
+plan rather than a finished one.
 
-## 0. Decide where forge is allowed to write
+The point underneath it still holds and is the thing to remember before merging:
+`.forge/state.json` is versioned, so **each branch carries its own plan**. Two
+branches that both planned work conflict in a JSON file, and resolving that by
+hand is worse than deciding up front which branch owns the plan.
 
-`implement` has `write_file` and `run_command`. The checkout is not on `main`
-and three other agents hold worktrees (`catalog-wiring`, `order-flow`,
-`owner-inventory-backend`). Give forge its own branch so its edits do not land
-on top of theirs:
+Check the claims table in `.forge/AGENTS.md` for what is reserved right now
+rather than trusting this file.
 
-```bash
-git -C /c/Users/anune/code/kmt worktree add .worktrees/forge -b forge/phase-3
-```
+## Give forge its own worktree
 
-Then point every command below at it with `--project .worktrees/forge`, or drop
-the flag and accept that forge edits the branch you are standing on. `.forge/`
-lives in the repository, so the worktree carries the same project state.
-
-## 1. Clear the phase conversations
+Forge writes files and runs commands wherever `--project` points, and other
+agents hold worktrees off this repository. It already has one:
 
 ```bash
-forge reset --project /c/Users/anune/code/kmt
+git -C C:/Users/anune/code/kmt worktree list
 ```
 
-Add `--dry-run` first if you want to see what goes; `--phase plan` forgets one
-thread instead of all of them. The plan, the tasks and the documents are never
-touched by this command, and it prints the task count afterwards to prove it.
+`.worktrees/forge` exists for this. Run everything there — check what branch it
+is on before you start, since `forge/phase-3` has been merged and deleted. A
+fresh worktree also starts forge with no memory at all, because `conversations/` and
+`transcripts/` are git-ignored and so are not in the checkout — `forge reset` is
+only needed when you are working in a checkout that already has them.
 
-The soft alternative is `--fresh`, which clears **only the phase being run**, at
-the moment it runs. `forge intake --fresh` does not touch the plan thread.
+Run `npm install` in the worktree once, or verification fails on a missing
+`node_modules` and burns a cycle discovering it.
 
-`task run` neither reads nor writes these files — each phase inside the cycle
-starts cold — so `--fresh` on `task run` changes nothing.
-
-## 2. Prune transcripts (optional)
+## Before a run
 
 ```bash
-forge reset --all --project /c/Users/anune/code/kmt
+forge doctor --project C:/Users/anune/code/kmt/.worktrees/forge
 ```
 
-Keep them if you still want the Phase 2 audit trail; they cost only disk.
+Checks the setup — documents present, documents small enough to fit in a prompt,
+a key, a readable `.env` — and then reads the last ten transcripts back, which
+is the only way to see that a previous run explored for twenty turns and wrote
+nothing. Exit code 1 means something is wrong, 0 means at most a note.
 
-## 3. Restore the missing conventions document
-
-`forge init` on an initialised project returns early and writes nothing, so it
-cannot bring back a document that was deleted. Write it by hand:
-
-```bash
-cat > /c/Users/anune/code/kmt/.forge/conventions.md <<'MD'
-# Conventions
-
-- React + Vite + Tailwind. `npm run dev`, `npm run build`, `npm run lint`.
-- Verification scripts live in `.forge/`: `dead-end-audit.mjs` (no click path
-  regresses), `responsive-check.mjs` (no overflow at phone or desktop width).
-  Run both before calling a UI change sound.
-- Shared Tailwind vocabulary is extracted, not re-invented per screen (t17).
-- Deployment is part of done, not a follow-up: Vercel, checked on a real phone.
-MD
-```
-
-`forge status` now warns about a missing document, so it will stop naming
-`conventions.md` once the file is back. Confirm:
-
-```bash
-forge status --project /c/Users/anune/code/kmt
-```
-
-## 4. Re-baseline the documents against reality
-
-Phase 2 finished and work landed afterwards that the plan never described. Let
-intake read the repository as it stands now:
-
-```bash
-forge intake --fresh --project /c/Users/anune/code/kmt --max-cost 1.00 "Phase 2 is done and the catalog now comes from a real giga-tires.com snapshot. Re-read the repository, then update project.md and requirements.md to describe what exists today and what phase 3 has to be."
-```
-
-Read the diff to `project.md` and `requirements.md` before continuing. This is
-the step where a wrong answer gets expensive, because everything below plans
-against it.
-
-## 5. Plan the next phase
-
-```bash
-forge plan --fresh --project /c/Users/anune/code/kmt --max-cost 1.00 "Plan phase 3 as a new milestone with tasks, against the updated requirements. Do not reopen the completed phase 1 and 2 tasks."
-```
-
-`plan` cannot touch source — `write_file` is absent from that phase — so the
-worst case is a bad roadmap, not a bad repository.
-
-## 6. Look before you spend
-
-```bash
-forge status --project /c/Users/anune/code/kmt
-```
-
-```bash
-forge tasks --project /c/Users/anune/code/kmt
-```
-
-If the new tasks are wrong, fix them here by editing `roadmap.md` and re-running
-step 5, not by letting `task run` discover it turn by turn.
-
-## 7. Run the cycle
+## Running the plan
 
 One task, watched, with the guard rails on:
 
 ```bash
-forge task run --project /c/Users/anune/code/kmt --max-cost 2.00
+forge work --project C:/Users/anune/code/kmt/.worktrees/forge --max-tasks 1 --max-cost 6 --checkpoint
 ```
 
-`--max-cost` on `task run` is the budget for the whole cycle — implement,
-verify, any retry, and review together — not a cap per phase.
+- `--max-cost` is the budget for the whole cycle, not per phase, and 40% of it
+  is held back so verification can still run after implementation has spent
+  what it wants.
+- `--checkpoint` commits each verified task and writes the sha onto the task. It
+  only stages paths that task changed, so anything already dirty in the tree
+  stays out of the commit.
+- `--unattended` refuses destructive actions rather than asking a human who is
+  not there, and reports every refusal on the task afterwards. Use it when you
+  are not watching; leave it off when you are.
+- `--milestone m8` confines a run to phase 3.
 
-Once a couple of tasks land the way you expect, let it go without prompting on
-guarded actions (destructive ones still ask):
+`forge work` stops for one of five reasons and says which: nothing ready, the
+task limit, the budget, a task that did not pass, or no progress — that last one
+meaning a task reported success and the plan did not move.
+
+## What a task costs here
+
+Measured across 16 real runs on this project:
+
+| phase | median | max |
+| --- | --- | --- |
+| implement | $1.01 | $1.98 |
+| verify | $2.60 | $3.81 |
+
+Verification is the expensive phase on this project, because verifying it means
+driving a browser through every click path rather than reading a diff. Budget
+about $4-6 for one task, and do not leave `--max-cost` off.
+
+## When the threads go stale
+
+Forge remembers a conversation per phase between runs. When a phase is finished
+with — a plan that is now written, an intake that is answered — the next run
+continues a thread that has ended:
 
 ```bash
-forge task run --project /c/Users/anune/code/kmt --auto-approve --max-cost 3.00 --max-attempts 2
+forge reset --project <path>            # every phase
+forge reset --phase plan --project <path>
+forge reset --all --dry-run --project <path>
 ```
 
-`--max-cost` is not optional advice on this project. A six-turn loop on a small
-repository cost $0.059; the kmt implement runs in `transcripts/` are far larger.
+It never touches the plan, the tasks or the project documents, and prints the
+task count afterwards to prove it.
 
-## 8. Commit the reset
+## Phase 3, if you are starting there
 
-`state.json`, `project.md`, `requirements.md`, `roadmap.md`, `decisions.md` and
-`conventions.md` are versioned; conversations, transcripts and shots are not.
-
-```bash
-git -C /c/Users/anune/code/kmt add .forge && git -C /c/Users/anune/code/kmt commit -m "Re-baseline the forge plan for phase 3"
-```
-
-## The short version
-
-```bash
-forge reset --all --project /c/Users/anune/code/kmt && forge status --project /c/Users/anune/code/kmt
-```
-
-then `intake --fresh` → `plan --fresh` → `status` → `task run`.
+`m8` is *customer quotes are priced from the owner's real inventory, not the
+static demo catalog* — the gap the backend work deliberately stopped short of.
+Four tasks: split `App.jsx` per route, add a customer-safe `/api/catalog`
+endpoint, wire the customer flow to it with a fallback, then verify both
+environments. `roadmap.md` records four questions that were left for Ken rather
+than guessed into tasks.
