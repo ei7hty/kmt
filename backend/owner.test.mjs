@@ -552,3 +552,161 @@ test('an offer cannot be enabled without a price, which is why there are only tw
   const db = setup(t)
   assert.throws(() => db.saveOffer('giga-a', offer({ priceCents: null })), /positive KMT price/)
 })
+
+test('a snapshot applied to a live database upserts rows and leaves offers and unlisted tires alone', t => {
+  // The default import is a partial view: the scraper keeps the cheapest few
+  // per size, so a tire it did not mention is not a tire the supplier dropped.
+  const db = setup(t)
+  db.saveOffer('giga-a', offer())
+  const result = db.applySnapshot(snapshot([
+    tire('giga-a', { price: 72 }),
+    tire('giga-b'),
+    tire('giga-c', { size: otherSize }),
+  ]))
+  assert.deepEqual(result.sizes, [
+    { size: SIZE, tires: 2, added: 1, changed: 1, unchanged: 0, retired: 0 },
+    { size: otherSize, tires: 1, added: 1, changed: 0, unchanged: 0, retired: 0 },
+  ])
+  assert.equal(result.dryRun, false)
+  const rows = Object.fromEntries(db.list().items.map(row => [row.id, row]))
+  assert.equal(rows['giga-a'].price, 72, 'supplier data moved')
+  assert.deepEqual(rows['giga-a'].offer, { ...offer(), version: 1 }, 'the owner price and choice did not')
+  assert.equal(rows['giga-b'].supplierActive, true)
+  assert.equal(db.summary().importedSizeCount, 2, 'a partial import is labelled as such')
+  assert.equal(db.summary().job.status, 'completed', 'and /owner is told')
+  assert.equal(db.summary().job.tiresRead, 3)
+
+  // Applying the same file again changes nothing and says so.
+  const again = db.applySnapshot(snapshot([tire('giga-a', { price: 72 }), tire('giga-b'), tire('giga-c', { size: otherSize })]))
+  assert.deepEqual(again.sizes.map(s => [s.added, s.changed, s.unchanged]), [[0, 0, 2], [0, 0, 1]])
+})
+
+test('a complete snapshot retires what it does not list, exactly as a refresh would', t => {
+  const db = setup(t)
+  db.saveOffer('giga-a', offer())
+  const dry = db.applySnapshot(snapshot([tire('giga-b')]), { complete: true, dryRun: true })
+  assert.deepEqual(dry.sizes, [{ size: SIZE, tires: 1, added: 1, changed: 0, unchanged: 0, retired: 1 }])
+  assert.equal(db.list().total, 1, 'a dry run wrote nothing')
+  assert.equal(db.list().items[0].id, 'giga-a')
+  assert.equal(db.summary().job, null)
+
+  db.applySnapshot(snapshot([tire('giga-b')]), { complete: true })
+  const rows = Object.fromEntries(db.list().items.map(row => [row.id, row]))
+  assert.equal(rows['giga-a'].supplierActive, false, 'delisted, not deleted')
+  assert.equal(rows['giga-a'].offer.enabled, true, 'with the owner offer intact')
+  assert.equal(rows['giga-b'].supplierActive, true)
+  assert.equal(db.summary().fullSizeCount, 1)
+  // A relisted tire counts as a change, not as unchanged.
+  const back = db.applySnapshot(snapshot([tire('giga-a'), tire('giga-b')]), { complete: true, dryRun: true })
+  assert.deepEqual(back.sizes[0], { size: SIZE, tires: 2, added: 0, changed: 1, unchanged: 1, retired: 0 })
+})
+
+test('a snapshot that would corrupt the database is refused whole', t => {
+  const db = setup(t)
+  const bad = [
+    null,
+    { source: 'somewhere-else', scrapedAt: '2026-09-05T15:00:00Z', tires: [tire()] },
+    { ...snapshot([tire()]), scrapedAt: 'yesterday' },
+    snapshot([]),
+    snapshot([tire('giga-b'), tire('giga-b')]),
+    snapshot([tire('giga-b', { size: '999/99R99' })]),
+    snapshot([tire('giga-b', { price: 0 })]),
+    snapshot([tire('giga-b'), { id: 'not-giga', name: 'x', size: SIZE, price: 1, inStock: true, category: 'a', source: { sku: 'x' } }]),
+  ]
+  for (const input of bad) assert.throws(() => db.applySnapshot(input), { status: 400 })
+  assert.equal(db.list().total, 1, 'nothing landed from any of them')
+  assert.equal(db.summary().job, null)
+})
+
+/** The hosted server's gate, reduced to what the import route needs. */
+function gatedServer(t, db, refresher = new Refresher(db)) {
+  const auth = createAuth(readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password' }))
+  const api = createApi(db, refresher)
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (await auth.handle(request, response, url, readJsonBody)) return
+    if (url.pathname.startsWith('/api/') && !auth.isAuthenticated(request)) {
+      response.writeHead(401, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' }))
+      return
+    }
+    if (await api(request, response)) return
+    response.writeHead(404).end()
+  })
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => {
+    t.after(() => new Promise(done => server.close(done)))
+    resolve({ base: `http://127.0.0.1:${server.address().port}`, refresher })
+  }))
+}
+
+test('the snapshot route needs the owner session and waits for a refresh to finish', async t => {
+  const db = setup(t)
+  let release
+  const refresher = new Refresher(db, { pause: async () => {}, createFetcher: async () => ({
+    fetchSizePage: () => new Promise((_, reject) => { release = reject }), close: async () => {},
+  }) })
+  const { base } = await gatedServer(t, db, refresher)
+  const post = (body, cookie) => fetch(`${base}/api/owner/import-snapshot`, { method: 'POST', headers: {
+    'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}),
+  }, body: JSON.stringify(body) })
+
+  assert.equal((await post({ snapshot: snapshot([tire('giga-b')]) })).status, 401)
+  const login = await fetch(`${base}/api/owner/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'a-long-enough-password' }) })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+
+  refresher.start([SIZE])
+  while (!release) await new Promise(resolve => setTimeout(resolve, 5))
+  const busy = await post({ snapshot: snapshot([tire('giga-b')]) }, cookie)
+  assert.equal(busy.status, 409)
+  release(new Error('stop')); await refresher.done
+
+  assert.equal((await post({ snapshot: { source: 'nope' } }, cookie)).status, 400)
+  const ok = await post({ snapshot: snapshot([tire('giga-b')]), dryRun: true }, cookie)
+  assert.equal(ok.status, 200)
+  assert.deepEqual((await ok.json()).sizes[0], { size: SIZE, tires: 1, added: 1, changed: 0, unchanged: 0, retired: 0 })
+  assert.equal(db.list().total, 1, 'the dry run wrote nothing')
+  assert.equal((await post({ snapshot: snapshot([tire('giga-b')]) }, cookie)).status, 200)
+  assert.equal(db.list().total, 2)
+})
+
+test('scripts/import-tires.mjs pushes a snapshot file into a password-gated server', async t => {
+  const { execFile } = await import('node:child_process')
+  const { writeFileSync } = await import('node:fs')
+  const db = setup(t)
+  db.saveOffer('giga-a', offer())
+  const { base } = await gatedServer(t, db)
+
+  const folder = mkdtempSync(path.join(tmpdir(), 'kmt-import-test-'))
+  t.after(() => rmSync(folder, { recursive: true, force: true }))
+  const file = path.join(folder, 'scrape.json')
+  writeFileSync(file, JSON.stringify(snapshot([tire('giga-a', { price: 72 }), tire('giga-b'), tire('giga-c', { size: otherSize })])))
+
+  const script = path.resolve(import.meta.dirname, '../scripts/import-tires.mjs')
+  const run = (args, env = {}) => new Promise(resolve => execFile(process.execPath, [script, file, '--to', base, ...args],
+    { env: { ...process.env, KMT_OWNER_PASSWORD: '', ...env } },
+    (error, stdout, stderr) => resolve({ code: error?.code ?? 0, stdout, stderr })))
+
+  const refused = await run([])
+  assert.equal(refused.code, 1)
+  assert.match(refused.stderr, /KMT_OWNER_PASSWORD/, 'tells you what is missing')
+  assert.equal(db.list().total, 1)
+
+  const wrong = await run([], { KMT_OWNER_PASSWORD: 'not-the-password' })
+  assert.equal(wrong.code, 1)
+  assert.match(wrong.stderr, /Sign-in refused/)
+
+  const dry = await run(['--dry-run', '--sizes', '215-60-16'], { KMT_OWNER_PASSWORD: 'a-long-enough-password' })
+  assert.equal(dry.code, 0, dry.stderr)
+  assert.match(dry.stdout, /Would import 2 tires across 1 size/)
+  assert.match(dry.stdout, /1 new, 1 changed, 0 unchanged/)
+  assert.equal(db.list().total, 1)
+
+  const done = await run([], { KMT_OWNER_PASSWORD: 'a-long-enough-password' })
+  assert.equal(done.code, 0, done.stderr)
+  assert.match(done.stdout, /Imported 3 tires across 2 sizes/)
+  const rows = Object.fromEntries(db.list().items.map(row => [row.id, row]))
+  assert.equal(rows['giga-a'].price, 72)
+  assert.equal(rows['giga-a'].offer.priceCents, 8999, 'the owner price survived the import')
+  assert.equal(rows['giga-c'].size, otherSize)
+})

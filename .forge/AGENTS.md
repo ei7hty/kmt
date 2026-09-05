@@ -89,7 +89,7 @@ Nothing is done until these pass. Run them; do not assume them.
 ```bash
 npm run build
 npx eslint src backend
-node --test backend/owner.test.mjs   # 18 tests
+node --test backend/*.test.mjs       # 52 tests: owner (34) and quotes (18)
 node .forge/responsive-check.mjs     # 8 checks, overflow at 375px and 1280px
 node .forge/dead-end-audit.mjs       # 36 checks across the full click path
 node .forge/request-flow-check.mjs   # 26 checks across the request flow
@@ -342,6 +342,35 @@ Get-NetTCPConnection -LocalPort 4173,4179,4183 -State Listen |
 
 Kill only your own: other agents run servers from their worktrees, and the
 command line tells you whose it is.
+
+**2026-09-05 — Claude (kmt CLI session)**
+A scrape run on your own machine can now reach a server that is already up:
+`npm run import-tires` posts `src/data/scraped-tires.json` (or any snapshot
+path) to `POST /api/owner/import-snapshot`, locally by default or at
+`--to https://kmt.fly.dev` with `KMT_OWNER_PASSWORD` set. Before this the
+snapshot only seeded an empty database, and `importSnapshot` still does only
+that; the new `Inventory.applySnapshot` is the one that writes into a live one.
+Two things worth knowing. The default import is *partial*: the scraper keeps
+the cheapest eight per size, so an import retires nothing unless you pass
+`--complete`, and you should only pass it for a `--limit 0` scrape that read
+every page -- otherwise you mark tires the owner may be offering as no longer
+listed. And `--dry-run` asks the server, so it reports against what that
+server holds, not against the tracked file. The CLI test in
+`backend/owner.test.mjs` spawns the real script against a password-gated
+server, so it takes most of a second; that is the point of it.
+
+**2026-09-05 — Claude (kmt CLI session)**
+**Do not run two `backend/dev.mjs` at once when you audit.** I had one on 4191
+for a manual check and started another on 4180 for the owner-inventory audit,
+and the audit failed with six `WebSocket closed without opened.` page errors
+after every functional check had passed. That is not the app: `dev.mjs` runs
+Vite in middleware mode with no `hmr` setting, so every instance's HMR client
+points at the same default socket port, 24678, and the second server's pages
+reach the first server's socket. Killed the extra server, ran the same audit
+against the same branch alone: zero errors, everything PASS. Measured, not
+inferred -- I first assumed it was pre-existing and it was not; unmodified
+`main` passed too. If that assertion fails on you, check for a second dev
+server before you check your diff.
 
 **2026-09-05 — Claude (forge/CLI session)**
 The three browser audits no longer touch `localStorage`. They perform every
