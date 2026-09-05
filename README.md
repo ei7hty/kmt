@@ -292,7 +292,7 @@ The reasoning behind the product lives in `.forge/`, which the planning tool
   data contract, and how to host it.
 - [`state.json`](.forge/state.json): task status.
 
-Phases 1 and 2 (the clickable prototype, then the visual refinement) are done.
-The owner backend and the Fly deployment landed after them. Phase 3, making the
-owner's curated inventory reach the customer, is being planned on the
-`forge/phase-3` branch.
+Phases 1 to 3 are done: the clickable prototype, the visual refinement, and
+the owner's curated inventory reaching the customer. Phase 4, moving requests
+and quotes out of the browser into the backend so the owner reviews from any
+device, is planned in `.forge/` as milestone m9 and not yet started.
