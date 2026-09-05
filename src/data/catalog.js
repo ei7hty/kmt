@@ -1,16 +1,25 @@
-// Hardcoded tire catalog for the prototype.
+// The tire catalog, assembled from three sources in order of how real they are.
 //
 // This structure allows an easy swap to a real pricing source later without
 // refactoring consumers: everything downstream reads name, size, price,
 // inStock, category and description, none of which assume where a row came from.
 //
-// The original six entries are kept verbatim, ids included, because the
-// verification scripts and the demo walkthrough depend on them: 215/60R16 has a
-// clean tire and an out-of-stock one, and 265/70R16 carries the off-road tire
-// that triggers owner review. Everything after them is generated coverage, so a
-// customer checking the demo against the tires actually on their car usually
-// finds their size.
+//   1. SEED_TIRES      -- the original six, kept verbatim.
+//   2. scraped-tires   -- real tires from giga-tires.com, for the sizes we have
+//                         actually scraped. See scripts/scrape-tires.mjs.
+//   3. generated       -- invented coverage for every other plausible size.
+//
+// Real rows displace generated ones for the sizes they cover, so where we have
+// been to the supplier the customer sees tires that exist at prices someone
+// charges, and everywhere else they still see something rather than a dead end.
+//
+// The seeds survive both, ids included, because the verification scripts and
+// the demo walkthrough select them by name: 215/60R16 has a clean tire and an
+// out-of-stock one, and 265/70R16 carries the off-road tire that triggers owner
+// review. Both of those sizes are also scraped, so dropping seeds in favour of
+// real rows would quietly break .forge/dead-end-audit.mjs.
 
+import SCRAPED from './scraped-tires.json' with { type: 'json' }
 import { FITMENT_DIAMETERS, FITMENT_RATIOS, FITMENT_WIDTHS } from './fitment.js'
 
 /** The seed tires. Do not renumber or rename: scripts select these by name. */
@@ -79,10 +88,52 @@ const priceFor = (base, size) => {
 
 const slug = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
+/**
+ * What KMT charges over the supplier's listed price.
+ *
+ * PLACEHOLDER -- this is not Ken's number. The scraped prices are what
+ * giga-tires charges a walk-up customer online, which is neither Ken's cost nor
+ * what he should quote for a tire someone drives to you and fits at the
+ * roadside. It is a single constant precisely so it is one edit once the real
+ * margin is known, and so nobody mistakes the scraped figure for the quote.
+ *
+ * The mobile service fee is separate and lives in src/pricing.js.
+ */
+export const SUPPLIER_MARKUP = 1.35
+
+const atMarkup = (supplierPrice) =>
+  Math.round(supplierPrice * SUPPLIER_MARKUP * 100) / 100
+
+/** Sizes we have real tires for. Generated rows step aside for these. */
+const SCRAPED_SIZES = new Set(SCRAPED.tires.map(tire => tire.size))
+
+/**
+ * Real rows, reduced to the same shape as every other row.
+ *
+ * The snapshot's `source` block (SKU, stock count, list price, product URL) is
+ * deliberately dropped here: it is there so a human reviewing the JSON can
+ * trace a row back to its page, and nothing in the app should start depending
+ * on fields that only some rows have.
+ */
+const scrapedTires = SCRAPED.tires.map(tire => ({
+  id: tire.id,
+  name: tire.name,
+  size: tire.size,
+  price: atMarkup(tire.price),
+  inStock: tire.inStock,
+  category: tire.category,
+  description: tire.description,
+}))
+
 function generateTires() {
   const generated = []
 
   for (const size of COVERED_SIZES) {
+    // Where we have been to the supplier, invented tires would sit alongside
+    // real ones in the same list at prices built from a different rule. The
+    // seeds are the deliberate exception, kept above.
+    if (SCRAPED_SIZES.has(size)) continue
+
     const parsed = parseSize(size)
     if (!parsed) continue
 
@@ -109,7 +160,10 @@ function generateTires() {
   return generated
 }
 
-export const TIRE_CATALOG = [...SEED_TIRES, ...generateTires()]
+export const TIRE_CATALOG = [...SEED_TIRES, ...scrapedTires, ...generateTires()]
+
+/** When the real rows were pulled, for anything that wants to show staleness. */
+export const SCRAPED_AT = SCRAPED.scrapedAt
 
 /**
  * Get all available tires from the catalog
