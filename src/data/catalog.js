@@ -21,7 +21,7 @@
 
 import SCRAPED from './scraped-tires.json' with { type: 'json' }
 import { FITMENT_DIAMETERS, FITMENT_RATIOS, FITMENT_WIDTHS } from './fitment.js'
-import { retailPrice } from '../markup.js'
+import { quotedPrice } from '../markup.js'
 
 /** The seed tires. Do not renumber or rename: scripts select these by name. */
 const SEED_TIRES = [
@@ -89,9 +89,6 @@ const priceFor = (base, size) => {
 
 const slug = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-/** Sizes we have real tires for. Generated rows step aside for these. */
-const SCRAPED_SIZES = new Set(SCRAPED.tires.map(tire => tire.size))
-
 /**
  * Real rows, reduced to the same shape as every other row.
  *
@@ -100,29 +97,62 @@ const SCRAPED_SIZES = new Set(SCRAPED.tires.map(tire => tire.size))
  * trace a row back to its page, and nothing in the app should start depending
  * on fields that only some rows have.
  */
-const scrapedTires = SCRAPED.tires
-  .map(tire => ({
-    id: tire.id,
-    name: tire.name,
-    size: tire.size,
+/**
+ * Real rows, priced for a given owner configuration.
+ *
+ * `offers` is keyed by the snapshot's tire id, which is also the owner
+ * backend's `supplier.id` -- it seeds from this same file and validates the
+ * `giga-` prefix, so the two agree by construction rather than by convention.
+ *
+ * With no offers passed, which is the case until the backend is wired up,
+ * every tire is priced by markup and offered. That is exactly what the catalog
+ * did before any of this existed.
+ */
+function scrapedTiresFor({ settings, offers } = {}) {
+  const rows = []
+
+  for (const tire of SCRAPED.tires) {
     // The snapshot holds what the supplier charges. What KMT charges is
     // markup's business, and the customer never sees the former.
-    price: retailPrice(tire.price, tire),
-    inStock: tire.inStock,
-    category: tire.category,
-    description: tire.description,
-  }))
-  // A row markup cannot price is dropped rather than shown at cost.
-  .filter(tire => tire.price !== null)
+    const { price, offered } = quotedPrice({
+      supplierPrice: tire.price,
+      offer: offers?.[tire.id],
+      tire,
+      settings,
+    })
 
-function generateTires() {
+    // No usable price, or a tire the owner has deselected. Either way it is
+    // not something a customer can be offered.
+    if (price === null || !offered) continue
+
+    rows.push({
+      id: tire.id,
+      name: tire.name,
+      size: tire.size,
+      price,
+      inStock: tire.inStock,
+      category: tire.category,
+      description: tire.description,
+    })
+  }
+
+  return rows
+}
+
+/**
+ * `coveredSizes` is the sizes that ended up with real rows, not the sizes the
+ * snapshot happens to contain. Those differ once the owner deselects tires: a
+ * size he empties gets its generated coverage back rather than becoming a dead
+ * end, which is the invariant the fitment selector depends on.
+ */
+function generateTires(coveredSizes = new Set()) {
   const generated = []
 
   for (const size of COVERED_SIZES) {
-    // Where we have been to the supplier, invented tires would sit alongside
-    // real ones in the same list at prices built from a different rule. The
-    // seeds are the deliberate exception, kept above.
-    if (SCRAPED_SIZES.has(size)) continue
+    // Where we have real tires, invented ones would sit alongside them in the
+    // same list at prices built from a different rule. The seeds are the
+    // deliberate exception, kept above.
+    if (coveredSizes.has(size)) continue
 
     const parsed = parseSize(size)
     if (!parsed) continue
@@ -150,7 +180,33 @@ function generateTires() {
   return generated
 }
 
-export const TIRE_CATALOG = [...SEED_TIRES, ...scrapedTires, ...generateTires()]
+/**
+ * The catalog, for a given owner configuration.
+ *
+ *   buildCatalog()                      -- markup prices everything (today)
+ *   buildCatalog({ settings, offers })  -- the owner's rule and his overrides
+ *
+ * `settings` is the markup rule (see DEFAULT_MARKUP_SETTINGS) and `offers` is
+ * an object keyed by tire id holding `{ priceCents, enabled }`, which is the
+ * shape the owner backend's inventory endpoint already returns.
+ *
+ * A function rather than a constant because those inputs arrive at runtime,
+ * over the network, after this module has loaded. Prices cannot be baked in at
+ * import time and still reflect what the owner set thirty seconds ago.
+ */
+export function buildCatalog(options = {}) {
+  const scraped = scrapedTiresFor(options)
+  const coveredSizes = new Set(scraped.map(tire => tire.size))
+  return [...SEED_TIRES, ...scraped, ...generateTires(coveredSizes)]
+}
+
+/**
+ * The default catalog: markup prices, no owner overrides.
+ *
+ * This is what every existing caller reads, and it is unchanged by any of the
+ * above until something passes real settings to buildCatalog.
+ */
+export const TIRE_CATALOG = buildCatalog()
 
 /** When the real rows were pulled, for anything that wants to show staleness. */
 export const SCRAPED_AT = SCRAPED.scrapedAt
