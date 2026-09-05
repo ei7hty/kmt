@@ -1,0 +1,182 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import './OwnerInventory.css'
+
+const dollars = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+const dateLabel = value => value ? new Date(value).toLocaleString() : 'Never refreshed'
+
+async function api(path, options = {}) {
+  const response = await fetch(`/api/owner/${path}`, {
+    ...options, headers: { 'Content-Type': 'application/json', ...options.headers },
+  })
+  const type = response.headers.get('content-type') || ''
+  if (!type.includes('application/json')) throw new Error('The owner backend is not connected. Start the owner server to load inventory.')
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.error || 'The request could not be completed.')
+  return data
+}
+
+function SupplierLink({ url }) {
+  let allowed = false
+  try {
+    const parsed = new URL(url)
+    allowed = parsed.protocol === 'https:' && ['giga-tires.com', 'www.giga-tires.com'].includes(parsed.hostname)
+  } catch { /* Missing supplier URL. */ }
+  return allowed ? <a href={url} target="_blank" rel="noreferrer">View on Giga Tires ↗</a> : null
+}
+
+function TireOffer({ tire, onSaved }) {
+  const [price, setPrice] = useState(tire.offer.priceCents == null ? '' : (tire.offer.priceCents / 100).toFixed(2))
+  const [enabled, setEnabled] = useState(tire.offer.enabled)
+  const [notes, setNotes] = useState(tire.offer.notes)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const stock = tire.source?.stock
+  const stockLabel = !tire.supplierActive ? 'No longer listed' : stock == null ? 'Stock unconfirmed' : !tire.inStock || stock === 0 ? 'Out of stock' : `${stock.toLocaleString()} in stock`
+  const isAvailable = tire.supplierActive && tire.inStock && stock > 0
+  const parsedPrice = /^\d+(\.\d{1,2})?$/.test(price) ? Math.round(Number(price) * 100) : null
+  const spread = parsedPrice == null ? null : parsedPrice - Math.round(tire.price * 100)
+
+  async function save(event) {
+    event.preventDefault()
+    setError('')
+    if ((price !== '' && (parsedPrice == null || parsedPrice <= 0)) || (enabled && parsedPrice == null)) {
+      setError('Enter a positive KMT price with up to two decimal places.'); return
+    }
+    setSaving(true)
+    try {
+      const offer = await api(`offers/${encodeURIComponent(tire.id)}`, {
+        method: 'PUT', body: JSON.stringify({ priceCents: parsedPrice, enabled, notes, version: tire.offer.version }),
+      })
+      onSaved(tire.id, offer)
+    } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return <article className={`oi-tire ${tire.offer.enabled ? 'oi-tire-offered' : ''}`}>
+    <div className="oi-tire-main">
+      <div className="oi-tire-tags"><span>{tire.size}</span><span className={isAvailable ? 'oi-stock' : 'oi-attention'}>{stockLabel}</span></div>
+      <h2>{tire.name}</h2>
+      <p className="oi-description">{tire.description}</p>
+      <dl className="oi-specs">
+        <div><dt>Giga price / tire</dt><dd>{dollars(Math.round(tire.price * 100))}</dd></div>
+        <div><dt>Giga list price</dt><dd>{tire.source?.listPrice == null ? 'Not provided' : dollars(Math.round(tire.source.listPrice * 100))}</dd></div>
+        <div><dt>Category</dt><dd>{tire.category}</dd></div>
+        <div><dt>Segment</dt><dd>{tire.source?.segment || 'Not provided'}</dd></div>
+      </dl>
+      <details><summary>Supplier details</summary><dl className="oi-source">
+        <div><dt>SKU</dt><dd>{tire.source?.sku}</dd></div>
+        <div><dt>Last seen</dt><dd>{dateLabel(tire.lastSeen)}</dd></div>
+        <div><dt>Listing</dt><dd><SupplierLink url={tire.source?.url} /></dd></div>
+      </dl><details><summary>All imported fields</summary><pre>{JSON.stringify({ id: tire.id, name: tire.name, size: tire.size, price: tire.price, inStock: tire.inStock, category: tire.category, description: tire.description, source: tire.source }, null, 2)}</pre></details></details>
+    </div>
+    <form className="oi-offer" onSubmit={save}>
+      <p className="oi-kicker">KMT OFFER</p>
+      <label className="oi-check"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} disabled={saving} />Offer this tire</label>
+      <label htmlFor={`price-${tire.id}`}>Your price per tire ($)</label>
+      <input id={`price-${tire.id}`} value={price} onChange={e => setPrice(e.target.value)} inputMode="decimal" placeholder="Set your price" disabled={saving} />
+      <p className={spread != null && spread < 0 ? 'oi-attention oi-spread' : 'oi-spread'}>{spread == null ? 'Set independently from Giga’s price.' : `${dollars(spread)} ${spread < 0 ? 'below' : 'above'} Giga’s listed price`.replace('-$', '$')}</p>
+      <label htmlFor={`notes-${tire.id}`}>Owner notes</label>
+      <textarea id={`notes-${tire.id}`} value={notes} onChange={e => setNotes(e.target.value)} maxLength={2000} rows={2} placeholder="Why this tire, pricing notes…" disabled={saving} />
+      <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save offer'}</button>
+      {error && <p role="alert" className="oi-error">{error}</p>}
+      {tire.offer.enabled && !isAvailable && <p className="oi-attention">Selected by KMT, but supplier availability needs review.</p>}
+    </form>
+  </article>
+}
+
+export default function OwnerInventory({ navigate }) {
+  const [data, setData] = useState(null)
+  const [search, setSearch] = useState('')
+  const [size, setSize] = useState('')
+  const [filter, setFilter] = useState('all')
+  const [page, setPage] = useState(1)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const sequence = useRef(0)
+  const invalidate = useCallback(() => { sequence.current++ }, [])
+  const jobRunning = data?.summary.job?.status === 'running'
+
+  const load = useCallback(async () => {
+    const request = ++sequence.current
+    setLoading(true)
+    try {
+      const result = await api(`inventory?${new URLSearchParams({ search, size, filter, page })}`)
+      if (request !== sequence.current) return
+      setData(result); setError('')
+    } catch (err) { if (request === sequence.current) setError(err.message) }
+    finally { if (request === sequence.current) setLoading(false) }
+  }, [search, size, filter, page])
+
+  useEffect(() => {
+    const timer = setTimeout(load, 200)
+    return () => { clearTimeout(timer); invalidate() }
+  }, [load, invalidate])
+
+  useEffect(() => {
+    if (!jobRunning) return
+    const timer = setInterval(load, 2000)
+    return () => clearInterval(timer)
+  }, [jobRunning, load])
+
+  async function refresh() {
+    setBusy(true); setError(''); setNotice('')
+    try {
+      await api('refresh', { method: 'POST', body: JSON.stringify({ sizes: size ? [size] : data.summary.sizes }) })
+      await load()
+    } catch (err) { setError(err.message) }
+    finally { setBusy(false) }
+  }
+
+  async function cancel() {
+    setBusy(true)
+    try {
+      const result = await api('refresh/cancel', { method: 'POST', body: '{}' })
+      setNotice(result.message)
+    } catch (err) { setError(err.message) }
+    finally { setBusy(false) }
+  }
+
+  function saved(id, offer) {
+    invalidate()
+    setData(previous => ({ ...previous, items: previous.items.map(tire => tire.id === id ? { ...tire, offer } : tire),
+      summary: { ...previous.summary, offeredCount: previous.summary.offeredCount + Number(offer.enabled) - Number(previous.items.find(t => t.id === id).offer.enabled) } }))
+    setNotice('Offer saved. Your selection and price are stored in the owner database.')
+  }
+
+  const summary = data?.summary
+  const job = summary?.job
+  const coverage = summary?.coverage.find(item => item.size === size)
+  return <div className="oi-shell">
+    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}>KMT<span>.</span></button><span>OWNER WORKSPACE</span><button className="oi-button" onClick={() => navigate('/owner/quotes')}>Quote requests →</button></nav>
+    <main className="oi-content">
+      <header className="oi-heading"><div><p className="oi-kicker">YOUR INVENTORY. YOUR PRICES.</p><h1>Build your tire offering</h1><p>Explore Giga Tires, choose what you want to offer, and set your price.</p></div><span className="oi-owner-badge">Owner only · local workspace</span></header>
+      <div className="oi-metrics">
+        <div><strong>{summary?.supplierCount ?? '—'}</strong><span>Supplier tires saved</span></div>
+        <div><strong>{summary?.offeredCount ?? '—'}</strong><span>Chosen for KMT</span></div>
+        <div><strong>{summary ? `${summary.fullSizeCount} / ${summary.sizes.length}` : '—'}</strong><span>Sizes fully refreshed</span></div>
+      </div>
+      <section className="oi-refresh" aria-label="Supplier refresh">
+        <div><h2>Supplier inventory</h2><p>{summary?.importedSizeCount ? `${summary.importedSizeCount} sizes started from a limited snapshot. ` : ''}Refresh reads every results page for the selected size. All-size refreshes can take a while and open a browser on this computer.</p><p className="oi-muted">Supplier prices and stock are last-seen listings, not guaranteed quotes. Your saved KMT prices stay under your control.</p></div>
+        <div className="oi-refresh-actions"><button className="oi-button oi-primary" onClick={refresh} disabled={!data || busy || jobRunning}>{size ? `Refresh ${size}` : `Refresh all ${summary?.sizes.length ?? ''} sizes`}</button>{jobRunning && <button className="oi-button" onClick={cancel} disabled={busy}>Stop refresh</button>}</div>
+      </section>
+      {job && <div className={`oi-job ${['failed', 'interrupted'].includes(job.status) ? 'oi-attention' : ''}`} role="status"><strong>{job.status.toUpperCase()}</strong><span>{job.message}</span><span>{job.completed} / {job.sizes.length} sizes · {job.tiresRead} tires · {job.pagesRead} pages</span>{job.failed?.length > 0 && <span>Earlier saved inventory and offers are preserved. Choose the failed size to retry.</span>}</div>}
+      <div className="oi-filters">
+        <label>Search tires or SKU<input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Brand, model, supplier SKU…" /></label>
+        <label>Tire size<select aria-label="Tire size" value={size} onChange={e => { setSize(e.target.value); setPage(1) }}><option value="">All KMT sizes</option>{summary?.sizes.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label>Show<select aria-label="Show tires" value={filter} onChange={e => { setFilter(e.target.value); setPage(1) }}><option value="all">All supplier tires</option><option value="offered">Chosen for KMT</option><option value="unselected">Not yet chosen</option><option value="available">Supplier in stock</option></select></label>
+        <button className="oi-button" onClick={load} disabled={loading}>Reload inventory</button>
+      </div>
+      {size && <p className="oi-coverage">{size}: {coverage ? `${coverage.completeness === 'full' ? 'Full refresh' : coverage.completeness === 'snapshot' ? 'Limited snapshot' : 'Not refreshed'} · ${dateLabel(coverage.last_success)}` : 'Not refreshed yet. Select Refresh above to fetch its tires.'}{coverage?.error && ` · Last attempt failed: ${coverage.error}`}</p>}
+      {error && <div className="oi-error oi-notice" role="alert">{error}</div>}
+      {notice && <div className="oi-notice" role="status">{notice}</div>}
+      <div className="oi-results-heading"><p>{data ? `${data.total} matching tires` : 'Loading inventory…'}</p><span>{loading ? 'Updating…' : 'Selections are saved for the owner; customer catalog comes later.'}</span></div>
+      <div className="oi-results" aria-busy={loading}>
+        {data?.items.map(tire => <TireOffer key={`${tire.id}:${tire.offer.version}`} tire={tire} onSaved={saved} />)}
+        {data && !data.items.length && <div className="oi-empty"><h2>No tires to show yet</h2><p>{size && !coverage ? 'Refresh this size to load supplier inventory.' : 'Try another search or filter, or refresh a size to add supplier inventory.'}</p></div>}
+      </div>
+      {data && data.total > data.pageSize && <nav className="oi-pagination" aria-label="Inventory pages"><button className="oi-button" disabled={data.page <= 1 || loading} onClick={() => setPage(data.page - 1)}>← Previous</button><span>Page {data.page} of {Math.ceil(data.total / data.pageSize)}</span><button className="oi-button" disabled={data.page * data.pageSize >= data.total || loading} onClick={() => setPage(data.page + 1)}>Next →</button></nav>}
+    </main>
+  </div>
+}

@@ -117,6 +117,8 @@ async function main() {
     // 2. Owner review: navigate via visible nav button (not URL typing).
     await page.click('button:has-text("Owner Review")');
     await page.waitForURL('**/owner');
+    await page.getByRole('button', { name: 'Quote requests' }).click();
+    await page.waitForURL('**/owner/quotes');
 
     const exceptionBadge = await page.locator('text=Owner review required').first().isVisible().catch(() => false);
     if (exceptionBadge) {
@@ -259,6 +261,8 @@ async function main() {
     });
     await page.click('button:has-text("Owner Review")');
     await page.waitForURL('**/owner');
+    await page.getByRole('button', { name: 'Quote requests' }).click();
+    await page.waitForURL('**/owner/quotes');
     const rejectVisible = await page.locator('button:has-text("Reject")').first().isVisible().catch(() => false);
     if (rejectVisible) {
       await page.click('button:has-text("Reject")');

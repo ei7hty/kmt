@@ -4,6 +4,7 @@ import { getAllTires } from './data/catalog'
 import { FITMENT_DIAMETERS, FITMENT_RATIOS, FITMENT_WIDTHS } from './data/fitment'
 import { getAllQuotes, getAllRequests, saveQuote, saveRequest, updateQuoteStatus } from './store'
 import './App.css'
+import OwnerInventory from './owner/OwnerInventory.jsx'
 
 /**
  * Sidewall artwork for the size selector, one per stage.
@@ -180,7 +181,9 @@ function App() {
     }
   }
 
-  if (route === '/owner') {
+  if (route === '/owner') return <OwnerInventory navigate={navigate} />
+
+  if (route === '/owner/quotes') {
     const requests = getAllRequests()
     const quotes = getAllQuotes()
     const handleQuoteStatus = (quoteId, status) => {
@@ -191,7 +194,7 @@ function App() {
       <div className="app-shell owner-shell">
         <nav className="internal-nav">
           <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
-          <div className="internal-nav-links"><button className="btn btn-neutral" onClick={() => navigate('/')}>← Back to Customer Flow</button></div>
+          <div className="internal-nav-links"><button className="btn btn-neutral" onClick={() => navigate('/owner')}>← Inventory</button><button className="btn btn-neutral" onClick={() => navigate('/')}>Back to Customer Flow</button></div>
         </nav>
         <div className="owner-content">
           <p className="eyebrow">OWNER</p>
