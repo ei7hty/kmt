@@ -17,7 +17,10 @@ export function calculateDraftQuote(request, catalog = null) {
     if (!tire.inStock) {
       exceptionReasons.push('Selected tire is out of stock')
     }
-    if (tire.id === 'tire-5') {
+    // Matched on category, not on a specific id. This was `tire.id === 'tire-5'`,
+    // which was right when the catalog held six rows and silently wrong the
+    // moment a second off-road tire existed.
+    if (tire.category === 'off-road') {
       exceptionReasons.push('Off-road tire requires owner review')
     }
   }
