@@ -1,0 +1,61 @@
+# Fly.io deployment for the owner workspace.
+#
+# The Dockerfile is host-agnostic; this file is the Fly-shaped half of it. It
+# does not lock anything in -- delete it and the same image still runs on
+# Render, Railway or `docker run`.
+#
+# Change `app` to whatever name `fly launch` gives you, or run
+# `fly launch --name kmt --no-deploy` to claim this one.
+
+app = "kmt"
+primary_region = "ewr"          # Secaucus NJ, nearest Fly region to Everett MA.
+
+[build]
+  # No builder or buildpack: Fly builds the Dockerfile in the repo root.
+
+[env]
+  PORT = "8080"
+  KMT_OWNER_DB = "/data/owner.sqlite"
+
+# The database. Without this mount the SQLite file lives in the container's
+# own filesystem and every offer, price and markup rule disappears on the next
+# deploy -- which looks exactly like the app working until the first redeploy.
+#
+# Create it once before the first deploy:
+#   fly volumes create kmt_data --region ewr --size 1
+[[mounts]]
+  source = "kmt_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+  # "Constantly" is the whole point, so the scale-to-zero defaults are off.
+  #
+  # auto_stop_machines would suspend the machine when idle, which is cheaper and
+  # wrong here: a suspended machine cannot hold a refresh job, and the owner
+  # would meet a cold start every time he opens the screen. min_machines_running
+  # keeps one alive.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  # Do NOT raise this. A Fly volume attaches to one machine, so a second machine
+  # gets a second, empty database and the two silently diverge -- one owner
+  # saving prices into a copy the other never sees. SQLite on a volume is a
+  # single-machine design. If this ever needs more than one machine, move to
+  # Postgres first.
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 400
+
+[[vm]]
+  size = "shared-cpu-1x"
+
+  # 1GB rather than the 256MB default, because a supplier refresh launches
+  # Chromium under Xvfb. Serving and pricing would fit in far less; the browser
+  # is what sets the floor, and an OOM mid-refresh kills the machine rather than
+  # failing the job cleanly.
+  memory = "1gb"

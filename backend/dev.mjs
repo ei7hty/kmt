@@ -6,6 +6,7 @@ import { createServer as createViteServer } from 'vite'
 import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
+import { PageImporter } from './import.mjs'
 import { createApi } from './api.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -14,7 +15,7 @@ mkdirSync(path.dirname(filename), { recursive: true })
 const inventory = new Inventory(filename, TIRE_CATALOG.map(tire => tire.size))
 inventory.importSnapshot(JSON.parse(readFileSync(path.join(root, 'src/data/scraped-tires.json'), 'utf8')))
 const refresher = new Refresher(inventory)
-const api = createApi(inventory, refresher)
+const api = createApi(inventory, refresher, new PageImporter(inventory))
 const port = Number(process.env.KMT_OWNER_PORT || 4180)
 const vite = await createViteServer({ root, server: {
   middlewareMode: true,

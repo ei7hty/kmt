@@ -1,0 +1,86 @@
+# Deploy main to Fly.
+#
+# The checks run first and the deploy only happens if they pass. Fly's generated
+# workflow deploys on every push with no verification at all, which for this
+# repo means a broken build reaches the URL the client opens on their phone.
+#
+# Nothing here can deploy from a branch or a pull request: `on.push.branches` is
+# main only, and pull requests get the checks without the deploy. That matters
+# more than usual here, because several agents push branches to this repo.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # One deploy at a time, and a newer push supersedes a queued one. Not
+  # cancel-in-progress: interrupting a half-finished deploy is worse than
+  # letting it land and replacing it.
+  group: fly-deploy
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Tests, lint and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # node:sqlite is why this is 24 and not 20. The backend will not
+          # import on anything earlier.
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: node --test backend/owner.test.mjs
+      - run: npx eslint src backend
+      - run: npm run build
+
+  deploy:
+    name: Deploy to Fly
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only --ha=false
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # The browser audits are the project's actual contract, and they only mean
+  # anything against a real deployment -- this build passed every local check
+  # once and 404'd in production on a missing SPA rewrite. Running them after
+  # the deploy does not prevent a bad release, but it does mean nobody has to
+  # remember to check, and a failure here is the signal to roll back.
+  verify:
+    name: Audit the deployed site
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Wait for the new release to answer
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null https://kmt.fly.dev/; then exit 0; fi
+            sleep 5
+          done
+          echo "kmt.fly.dev did not respond within 150s"; exit 1
+      - run: node .forge/dead-end-audit.mjs
+        env:
+          AUDIT_BASE: https://kmt.fly.dev
+      - run: node .forge/request-flow-check.mjs
+        env:
+          AUDIT_BASE: https://kmt.fly.dev
+      - run: node .forge/responsive-check.mjs
+        env:
+          AUDIT_BASE: https://kmt.fly.dev
