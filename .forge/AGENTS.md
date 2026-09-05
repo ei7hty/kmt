@@ -40,13 +40,12 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| `scraper-catalog-updater` | unknown | `scripts/`, `src/data/scraped-tires.json` | 2026-09-05 |
-| `owner-inventory-backend` | Codex | owner/inventory backend | 2026-09-05 |
-| `codex/refine-order-flow` | Codex | order flow UI | 2026-09-05 |
+| `owner-inventory-backend` | Codex | owner / inventory backend | 2026-09-05 |
 
-Seeded from `git worktree list` and `git branch` on 2026-09-05, not from the
-agents themselves — correct your own row if it is wrong, and remove it when you
-are done.
+`scraper-catalog-updater` and `codex/refine-order-flow` were merged into `main`
+on 2026-09-05 and their rows removed. If you are still working on either, branch
+again from current `main` rather than continuing on the old branch — both are
+now behind it.
 
 ---
 
