@@ -35,7 +35,9 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: node --test backend/owner.test.mjs
+      # Every backend test file, not one named file: a new suite that CI does not
+      # run is a suite that passes locally and guards nothing.
+      - run: node --test backend/*.test.mjs
       - run: npx eslint src backend
       - run: npm run build
       - run: npx playwright install --with-deps chromium

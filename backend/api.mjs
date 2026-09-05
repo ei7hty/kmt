@@ -35,9 +35,26 @@ const IMPORT_ORIGINS = new Set(['https://www.giga-tires.com', 'https://giga-tire
  */
 export const PUBLIC_API_PATHS = new Set(['/api/catalog'])
 
+/**
+ * Public request paths, which a customer reaches without signing in.
+ *
+ * A prefix rather than a list of ids, because a request path carries one. Still
+ * closed by method: GET for reading a request, and POST only for the two calls
+ * a customer makes -- submitting, and paying an approved quote. Everything else
+ * under the prefix, including anything added later, stays behind the session.
+ */
+const PUBLIC_REQUEST_PREFIX = '/api/requests'
+const PUBLIC_POST_PATHS = [/^\/api\/requests$/, /^\/api\/requests\/[^/]+\/pay$/]
+
 /** Whether this request is one of the public calls, by path and by method. */
 export function isPublicApiCall(method, pathname) {
-  return method === 'GET' && PUBLIC_API_PATHS.has(pathname)
+  if (method === 'GET') {
+    return PUBLIC_API_PATHS.has(pathname) ||
+      pathname === PUBLIC_REQUEST_PREFIX ||
+      (pathname.startsWith(PUBLIC_REQUEST_PREFIX + '/') && !pathname.endsWith('/pay'))
+  }
+  if (method === 'POST') return PUBLIC_POST_PATHS.some(pattern => pattern.test(pathname))
+  return false
 }
 
 /**
@@ -52,7 +69,11 @@ export function isPublicApiCall(method, pathname) {
 export function createCatalogApi(inventory) {
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
-    if (!isPublicApiCall(request.method, url.pathname)) return false
+    // Its own path, not "any public path". isPublicApiCall answers a different
+    // question -- may this be reached without a session -- and using it here
+    // made this handler answer every route later added to that list: a POST to
+    // /api/requests came back as the catalog.
+    if (request.method !== 'GET' || url.pathname !== '/api/catalog') return false
 
     try {
       response.writeHead(200, {
@@ -68,6 +89,67 @@ export function createCatalogApi(inventory) {
       response.end(JSON.stringify({ error: 'Could not load the catalog.' }))
     }
     return true
+  }
+}
+
+/**
+ * The customer's own requests and quotes.
+ *
+ * Its own handler, for the reason createCatalogApi is: createApi serves a
+ * signed-in owner, with CORS for the import page and a same-origin check on
+ * everything else, and a public route hanging off it would inherit every future
+ * change to those rules.
+ *
+ * Nothing here lists anything without a customer key or a request id. A key
+ * that does not match is answered exactly as a request that does not exist,
+ * because "not yours" tells the asker the request is real.
+ */
+export function createRequestsApi(quotes) {
+  return async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (!url.pathname.startsWith('/api/requests')) return false
+
+    const send = (status, value) => {
+      response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+      response.end(JSON.stringify(value))
+    }
+
+    try {
+      if (request.method === 'POST' && url.pathname === '/api/requests') {
+        send(201, quotes.submit(await readJsonBody(request)))
+        return true
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/requests') {
+        const customer = url.searchParams.get('customer')
+        if (!customer) throw new InputError('Pass the customer key this browser was given.')
+        send(200, { requests: quotes.listForCustomer(customer) })
+        return true
+      }
+
+      const payMatch = url.pathname.match(/^\/api\/requests\/([^/]+)\/pay$/)
+      if (request.method === 'POST' && payMatch) {
+        const body = await readJsonBody(request)
+        send(200, quotes.pay(decodeURIComponent(payMatch[1]), body?.customerKey))
+        return true
+      }
+
+      const oneMatch = url.pathname.match(/^\/api\/requests\/([^/]+)$/)
+      if (request.method === 'GET' && oneMatch) {
+        const found = quotes.get(decodeURIComponent(oneMatch[1]))
+        if (!found) throw new InputError('No such request.', 404)
+        send(200, found)
+        return true
+      }
+
+      throw new InputError('No such request endpoint.', 404)
+    } catch (error) {
+      if (!error.status) console.error(error)
+      send(error.status || 500, {
+        error: error.status ? error.message : 'Could not complete the request. Nothing was changed.',
+      })
+      return true
+    }
   }
 }
 
