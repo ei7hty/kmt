@@ -1,5 +1,11 @@
 # KMT Tire Quoting
 
+> **Working alongside other agents?** Read `.forge/AGENTS.md` first. Several
+> agents share this repository and cannot message each other, so the protocol
+> for claiming work, staying out of each other's commits, and verifying changes
+> lives there.
+
+
 <!-- Maintained by forge and by you. Edit freely: the agent reads this before it plans. -->
 
 ## What this is
