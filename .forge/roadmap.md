@@ -60,3 +60,52 @@ Two things are pulled forward ahead of "build features," on purpose:
   deploy + on-device check. This is last because polishing a screen before
   its neighbors exist is wasted effort -- the responsive and dead-end audits
   are cheapest done once, against the finished flow.
+
+---
+
+# Phase 2 — UI refinement
+
+One milestone, because this is a single outcome rather than a sequence of
+capabilities. Nothing here adds behaviour; every task changes how the product
+looks and then proves it did not change what it does.
+
+## Now
+
+- **m7 — App looks like one product across every screen.** The order inside
+  this milestone matters more than usual, because a styling pass done in the
+  wrong sequence gets redone.
+
+  **t17 extracts the shared classes first**, and everything else depends on it.
+  Phase 1 produced a branded customer flow and three screens leaning on
+  Tailwind defaults with dark-theme overrides bolted on. Restyling those
+  screens one at a time would invent three slightly different versions of the
+  same card, button and heading — the exact inconsistency this phase exists to
+  remove. Pulling the vocabulary out once means the later tasks are applying a
+  system rather than each making up their own.
+
+  **t18 redesigns /owner**, and t19–t21 hang off it. This is the only screen
+  getting a genuine redesign rather than a reuse pass: it is what has to sell
+  the concept to the shop owner, since it is the part that saves him time, and
+  it currently looks like a different application. t20 (/status, plus the
+  numbered stepper the customer already knows from the tire-results mockup) and
+  t21 (/confirmation) come after because they reuse what t18 settles.
+
+  **t19 is separated from t18 on purpose.** Restyling the owner screen is
+  exactly when the exception state stops being visually distinct — the risk is
+  that a consistent dark card treatment flattens "needs attention" into looking
+  like every other row. R9 is a requirement, not a detail, so it gets its own
+  check rather than being assumed.
+
+  **t22 and t23 are the verification pair**, reusing the scripts Phase 1 left
+  behind rather than new ones: `responsive-check.mjs` for overflow at phone and
+  desktop widths, `dead-end-audit.mjs` to prove no behaviour regressed. A
+  styling pass is precisely the kind of change that silently breaks a click
+  path, and R13 says behaviour must not change, so the audit is the evidence.
+
+  **t24 deploys and checks on a real phone**, last, for the same reason it was
+  last in Phase 1: the flow passing locally and failing in production is a
+  thing that has already happened once on this project.
+
+## Later
+
+Nothing scheduled. Phase 3 scope is not yet decided.
