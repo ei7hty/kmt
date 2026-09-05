@@ -203,3 +203,61 @@ are written down here rather than turned into tasks:
    `inStock`/`category` off whatever catalog array it's given, generated or
    real, and no new exception rule is added speculatively.
 </content>
+
+---
+
+# Phase 4 -- The owner reviews real requests from any device
+
+Phase 3 finished (m8, 28/28 tasks): the customer is quoted from the owner's
+real inventory, deployed and proven on the live site. The last thing standing
+between this and a product two people can use is that requests and quotes
+still live in the customer's browser (`src/store.js`, `localStorage`). On the
+deployed site the owner cannot see a request unless he is holding the phone it
+was made on. Phase 4 (**m9**) moves that state into the backend that already
+holds the inventory. It was open question 2 in the phase 3 plan and the owner
+has answered it.
+
+## Why this sequence inside m9
+
+**t29 (the backend owns requests and quotes) goes first and is the largest
+task**, because everything else is a client of it. It includes drafting the
+quote server-side: the server composes the same catalog the customer was shown
+(`catalogFromLiveRows` over `inventory.catalog()`) and runs the existing
+`calculateDraftQuote` over it, so the rules do not change and there is still
+only one pricing implementation. It also settles how a customer gets back to
+their own request without an account (an unguessable id and a per-browser key),
+which is a contract the frontend must not have to guess at.
+
+**t30 (owner endpoints) is separate from t29** for the same reason t26 was
+separate from t27: the owner side has its own access rule (session-gated when
+hosted, open locally) and its own tests, and a bug in either side should be
+provable in isolation.
+
+**t31 (the frontend switches over) is one task, not four**, because the four
+routes share one store module and swapping it under them is a single change
+that either works everywhere or nowhere. It is also where R21 is enforced:
+the `localStorage` store goes, the per-browser key stays, and a failed submit
+becomes a visible state with a phone number rather than a local quote.
+
+**t32 (verification against the real server) has to follow t31 and precede
+deployment**, and it is a task rather than a chore because it changes the
+project's contract. Once submit needs the backend, the gate's `vite preview`
+can no longer complete the flow. The audits move to running against
+`backend/server.mjs` with a temporary database and sign in at the owner step,
+locally and in CI. The counts will change and are re-recorded.
+
+**t33 (deploy and prove it between two devices) is last**, as deployment has
+been in every phase, and this time the proof is the point of the phase: a
+request made on one phone, reviewed on another device, paid on the first.
+
+## Now
+
+- **m9 -- The owner reviews real requests from any device.** t29 -> t30 -> t31
+  -> t32 -> t33.
+
+## Later
+
+- Notifications to owner and customer, once the owner picks a channel.
+- Owner edits the drafted total before approving, if the owner wants it.
+- Real payment processing.
+- A "done" state for requests, before the list grows past a screen.

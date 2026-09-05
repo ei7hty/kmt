@@ -186,3 +186,71 @@ primary action (red) or a success state (green).
   Phase 2 may ship to a new deployment URL and no task effort goes into making URLs
   stable across phases.
 </content>
+
+---
+
+## Phase 3 -- Real inventory reaches the customer (done)
+
+Between phase 2 and phase 3 a real owner backend landed (`backend/`, SQLite via
+`node:sqlite`): the owner curates supplier inventory scraped from giga-tires.com
+at `/owner`, sets his own price per tire, and a placeholder markup rule prices
+the rest. Phase 3 (m8, t25-t28) wired that inventory to the customer: `/` asks
+`GET /api/catalog` first and composes the owner's rows into the static catalog,
+falling back to the static catalog alone if the backend is unreachable.
+
+Two statements elsewhere in this file are now history rather than fact:
+hosting is one container on Fly.io (https://kmt.fly.dev), deployed from CI on
+every push to `main`, and it runs the owner backend, so production exercises
+the live catalog path. Vercel only redirects there.
+
+## Phase 4 -- The owner reviews real requests from any device
+
+### What this phase is
+
+Phase 3 made the tires real. The requests and quotes are still a browser demo:
+`src/store.js` keeps them in `localStorage`, so the owner can only review a
+request from the same browser the customer submitted it in. On the deployed
+site that means the product's central promise -- a customer asks, the owner
+reviews, the customer pays -- cannot happen between two people. Phase 4 moves
+requests and quotes into the backend that already holds the inventory, so a
+request made on a customer's phone appears on the owner's screen, wherever he
+is, and his decision reaches the customer the same way.
+
+Everything else stays as it is. The exception rules in `src/pricing.js` do not
+change; they run server-side over the same catalog the customer was shown.
+Payment stays fake and always succeeds, now recorded in the backend. There is
+still no login for customers.
+
+### What changes for each person
+
+- **Customer** submits at `/` as today. The draft quote comes back from the
+  server. `/status` shows the requests made from that phone, without a login,
+  and a link carrying a request's id opens that request from any device. If the
+  shop cannot be reached when submitting, the customer sees that plainly, with
+  the phone number, rather than a quote nobody will ever review.
+- **Owner** opens `/owner/quotes` from any device, signs in when hosted (the
+  same gate as `/owner`), and sees every request with its draft, approves or
+  rejects, and sees the customer pay.
+
+### Where things stand (replaces the phase 1 "faked vs. real" table)
+
+| Area | After phase 4 |
+|---|---|
+| Tire catalog and pricing | Real: owner inventory, owner prices, markup fallback. The markup rate is still a placeholder pending the owner's number. |
+| Requests and draft quotes | Real: stored in the backend, drafted server-side by the existing rules. |
+| Owner review | Real: any device, behind the owner password when hosted. |
+| Payment | Fake: always succeeds, recorded server-side. Real processing is a later phase. |
+| Notifications | None. The owner has to look at the screen. A later phase. |
+| Customer accounts | None, by design. Access is by the request id and a per-browser key. |
+| Scheduling, dispatch | Out of scope, as in every phase so far. |
+
+### Explicitly not in scope for phase 4
+
+- Real payment processing.
+- Any notification (SMS, email, push) to either party.
+- Customer accounts, passwords or login.
+- Editing the drafted price on the owner screen before approval. Listed as an
+  open question because it is probably the next real need, not because it is
+  hard.
+- Migrating requests that exist today in someone's `localStorage`. They are
+  demo data and are abandoned.

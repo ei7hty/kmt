@@ -58,6 +58,13 @@
       "description": "A separate effort already built a real owner backend (SQLite: supplier inventory, owner-set prices/offers, a markup fallback rule) at /owner, reachable via node backend/dev.mjs. It was deliberately scoped as \"customer catalog integration is a separate, deliberate step\" (see .forge/owner-backend.md) and never wired up: the customer flow at / and the quote engine in pricing.js still read the fully-generated static catalog (src/data/catalog.js's buildCatalog() with no options), and requests/quotes still live in localStorage (src/store.js), untouched by the backend. This milestone closes that gap: when the real backend is running, a customer sees and gets quoted the tires the owner actually chose to offer, at the prices he actually set (falling back to markup where he has not priced a tire), and falls back to today's generated catalog when the backend is not reachable (e.g. the static Vercel deployment). No changes to the quote/request storage mechanism, the exception rules, or payment in this milestone -- those are flagged as open questions in roadmap.md because they need an owner decision, not assumed here.",
       "status": "done",
       "order": 7
+    },
+    {
+      "id": "m9",
+      "title": "The owner reviews real requests from any device",
+      "description": "Phase 4 outcome: a request made on a customer's phone is stored by the backend, drafted server-side by the existing rules, reviewed by the owner at /owner/quotes from any device behind the owner sign-in when hosted, and its approval and (fake) payment are visible to both sides from their own devices. The localStorage request/quote store is retired; only a per-browser customer key remains in the browser. R17-R22.",
+      "status": "planned",
+      "order": 8
     }
   ],
   "tasks": [
@@ -536,8 +543,77 @@
       ],
       "createdAt": "2026-09-05T17:47:19.725Z",
       "updatedAt": "2026-09-05T21:04:10.904Z"
+    },
+    {
+      "id": "t29",
+      "title": "Backend owns requests and quotes, and drafts the quote server-side",
+      "description": "Add requests and quotes to the existing SQLite database in backend/inventory.mjs (or a sibling module it composes, e.g. backend/quotes.mjs, if inventory.mjs is getting long -- keep it to one database file and one migration style). Request rows hold what the form submits today (vehicleInfo, tireSelection, location, date, locationType, serviceZip, locationNotes), a random 128-bit id from node:crypto, the per-browser customer key that submitted it, and timestamps. Quote rows hold what saveQuote stores today (requestId, lineItems, total, exception, exceptionReasons, status draft/approved/rejected/paid, timestamps) plus a version for optimistic updates like offers. Draft the quote on the server: compose the same catalog the customer was shown with catalogFromLiveRows(inventory.catalog()) from src/data/catalog.js and run calculateDraftQuote from src/pricing.js over it, unchanged, the way the backend already imports src/markup.js. Public endpoints, added to the GET-only allow-list pattern in backend/api.mjs but as their own handler (like createCatalogApi, not inside createApi): POST /api/requests {customerKey, ...form fields} -> 201 {request, quote}; GET /api/requests?customer=<key> -> that key's requests with quotes, newest first; GET /api/requests/:id -> one request with its quote, by id alone; POST /api/requests/:id/pay {customerKey} -> marks the quote paid if it is approved and the key matches. Validate every field the way saveOffer does; reject unknown tire ids against the composed catalog; never return another customer's rows. Mount the handler in both backend/dev.mjs and backend/server.mjs, and extend isPublicApiCall so these paths need no owner session (a prefix rule for /api/requests, still GET-or-listed-POST only). Tests in backend/owner.test.mjs or a new backend/quotes.test.mjs run by the same node --test command: a submit stores both rows and returns the same total and exception state the frontend computes today for the same input (compare against calculateDraftQuote directly); an out-of-stock or off-road tire produces an exception; a wrong customer key cannot list or pay; an unknown id is 404; paying a draft (not yet approved) is refused; no owner session is needed for any of these and the owner endpoints still 401 without one.",
+      "milestoneId": "m9",
+      "status": "todo",
+      "priority": "medium",
+      "dependsOn": [],
+      "notes": [],
+      "createdAt": "2026-09-05T21:22:39.887Z",
+      "updatedAt": "2026-09-05T21:22:39.887Z"
+    },
+    {
+      "id": "t30",
+      "title": "Owner endpoints to list, approve and reject quotes",
+      "description": "Under /api/owner/, session-gated like the rest of createApi: GET /api/owner/requests -> every request with its quote, newest first, with the same fields the owner screen shows today (vehicle, tire name and size resolved from the catalog the quote was drafted against, location, date, draft total, exception reasons, status). POST /api/owner/quotes/:id/approve and /reject with {version}; a stale version returns 409 like PUT /api/owner/offers/:id, and approving or rejecting anything but a draft is refused. Do not add price editing; it is an open question for the owner in requirements.md. Tests: approve moves draft to approved and the customer's GET /api/requests/:id sees it; reject likewise; 401 without a session on the hosted server; 409 on a stale version; the customer-facing endpoints from t29 are unchanged by this task (re-run their tests).",
+      "milestoneId": "m9",
+      "status": "todo",
+      "priority": "medium",
+      "dependsOn": [
+        "t29"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-05T21:22:39.887Z",
+      "updatedAt": "2026-09-05T21:22:39.887Z"
+    },
+    {
+      "id": "t31",
+      "title": "The four routes read and write the backend; the browser store is retired",
+      "description": "Replace the localStorage implementation in src/store.js with an API client that keeps the call sites small: saveRequest posts to /api/requests (the server drafts the quote, so CustomerRequest.jsx no longer calls calculateDraftQuote or saveQuote itself), getAllRequests/getAllQuotes for the customer become one call to /api/requests?customer=<key>, updateQuoteStatus('paid') becomes POST /api/requests/:id/pay, and the owner screen's list/approve/reject call the t30 endpoints. The per-browser customer key is generated once with crypto.randomUUID() and kept in localStorage under its own name; nothing else is stored there, and the old kmt_store key is removed on first load. Failure handling follows the phase 3 loader's rule for detection (content-type before parse, non-2xx is a failure) but NOT its rule for recovery: a failed submit shows a clear message with the shop's phone number and a retry, and never drafts a quote locally (R21). /owner/quotes gets the same sign-in gate OwnerInventory.jsx already has; extract SignIn into src/owner/SignIn.jsx rather than copying it. /status accepts ?request=<id> to show one request from any device, and otherwise lists the device's requests. Keep the catalog fallback from phase 3 untouched: browsing works with the backend down, only submit needs it. Loading states in the existing style. No change to src/pricing.js beyond what t29 needed, none to the exception rules, none to routes or CSS beyond the new failure and loading states. Verify against node backend/dev.mjs: submit from one browser profile, approve from another (owner), pay from the first, and confirm each step is visible to the other side after at most one reload; then confirm the submit-failure state with the backend stopped. The audits will not pass against a plain preview after this task; run them against the real server per t32's method, and record the counts you got in the PR body.",
+      "milestoneId": "m9",
+      "status": "todo",
+      "priority": "medium",
+      "dependsOn": [
+        "t29",
+        "t30"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-05T21:22:39.887Z",
+      "updatedAt": "2026-09-05T21:22:39.887Z"
+    },
+    {
+      "id": "t32",
+      "title": "The browser audits run against the real server, locally and in the CI gate",
+      "description": "Change the three audit scripts (.forge/dead-end-audit.mjs, request-flow-check.mjs, responsive-check.mjs) and the CI gate so they run against backend/server.mjs serving the built dist/, not vite preview: in the workflow's check job, after npm run build, start node backend/server.mjs with KMT_OWNER_DB pointing at a temp file, KMT_OWNER_PASSWORD set to a throwaway value, PORT 4173, bound to 127.0.0.1, using the reachable-start form already in the workflow (node directly, $! captured, trap on EXIT), wait for it as the preview is waited for today, then run the audits with AUDIT_BASE and the same KMT_OWNER_PASSWORD in the environment. In the scripts, at the owner step, if a sign-in form appears, fill the password from the environment and continue; locally against backend/dev.mjs no form appears and nothing changes. Give each script a fresh customer context per viewport so runs do not see each other's requests. Update .forge/AGENTS.md's verification contract and hygiene note and .forge/conventions.md (which still says the audits run against vite preview) with the new command and the new counts; the numbers will differ from 36 / 26 / 8 and the new baseline is recorded, not the old one held. Prove the gate is real: open a PR with a deliberate one-line break in the submit path, watch the check fail at the audit step, then revert it in the same PR before it is merged, and say so in the PR body.",
+      "milestoneId": "m9",
+      "status": "todo",
+      "priority": "medium",
+      "dependsOn": [
+        "t31"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-05T21:22:39.887Z",
+      "updatedAt": "2026-09-05T21:22:39.887Z"
+    },
+    {
+      "id": "t33",
+      "title": "Deploy through CI and prove the flow between two devices on the public site",
+      "description": "Merge to main, let CI deploy, and confirm the post-deploy audit job passed on its own. Then the proof the phase exists for: on a real phone, submit a request at https://kmt.fly.dev for a tire in a scraped size; on a different device, sign in at /owner/quotes, see that request with its draft, and approve it; back on the phone, open /status, see it approved, pay, and reach /confirmation; then see it paid on the owner device. Also open the request by its link (/status?request=<id>) on the second device without the phone's key. Record each step as its own line with the device it was done on. Note in the PR body that requests previously stored in browsers' localStorage are gone by design. Close m9.",
+      "milestoneId": "m9",
+      "status": "todo",
+      "priority": "medium",
+      "dependsOn": [
+        "t32"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-05T21:22:39.887Z",
+      "updatedAt": "2026-09-05T21:22:39.887Z"
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T21:04:51.226Z"
+  "updatedAt": "2026-09-05T21:22:39.887Z"
 }
