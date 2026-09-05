@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| `customer-store-over-api` | forge (Claude) | t31: `src/store.js`, the four routes in `src/routes/`, `src/owner/SignIn.jsx` (extracted), `src/owner/OwnerInventory.jsx`; not `src/pricing.js` | 2026-09-05 |
+| _none_ | | | |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
