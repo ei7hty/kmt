@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   check:
-    name: Tests, lint and build
+    name: Tests, lint, build and audits
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -38,6 +38,46 @@ jobs:
       - run: node --test backend/owner.test.mjs
       - run: npx eslint src backend
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+
+      # The click paths, gated before merge rather than only after deploy.
+      #
+      # These also run post-deploy, and that run is not redundant: only it
+      # proves the SPA fallback on the real host, which is a server config this
+      # preview cannot exercise. What this one catches is a change that breaks a
+      # click path, which previously passed its PR, merged, deployed, and only
+      # then failed -- with main already broken.
+      #
+      # `vite preview` serves the built frontend and nothing else, so /owner
+      # reports that its backend is not connected. That is fine for these three:
+      # none of them need the owner API, and the dead-end audit reaches the
+      # quote list by clicking through from /, not by loading /owner directly.
+      #
+      # AUDIT_BASE is set explicitly because the three scripts default to three
+      # different ports (4179, 4183, 4173). Leave it unset and they quietly
+      # audit whatever else is listening, which fails in both directions: a
+      # false red, or a false green against a stale server.
+      - name: Audit the built frontend
+        env:
+          AUDIT_BASE: http://localhost:4173
+        run: |
+          npx vite preview --port 4173 &
+          preview=$!
+          trap 'kill $preview 2>/dev/null || true' EXIT
+
+          # stderr is dropped because the first attempts legitimately fail while
+          # the server boots, and "connection refused" in the log reads like a
+          # fault rather than the wait working. A real failure to start is
+          # caught by the counter below.
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://localhost:4173/ 2>/dev/null && break
+            if [ "$i" = "30" ]; then echo "preview did not start in 60s"; exit 1; fi
+            sleep 2
+          done
+
+          node .forge/dead-end-audit.mjs
+          node .forge/request-flow-check.mjs
+          node .forge/responsive-check.mjs
 
   deploy:
     name: Deploy to Fly

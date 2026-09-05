@@ -107,10 +107,16 @@ anything else -- `BASE`, `B` -- or nothing, and they silently audit whatever is
 on that port instead of erroring. That produces false failures *and* false
 passes; see the notes below. Always set `AUDIT_BASE`.
 
-GitHub Actions runs the backend tests, lint and build on every push to `main`
-and on every pull request, then deploys `main` to https://kmt.fly.dev and runs
-the three browser audits against the live site. Nothing deploys from any other
-branch.
+GitHub Actions runs the backend tests, lint, build **and the three browser
+audits** on every push to `main` and on every pull request -- the audits against
+a `vite preview` of the build. It then deploys `main` to https://kmt.fly.dev and
+runs the audits a second time against the live site. Nothing deploys from any
+other branch.
+
+The second run is not redundant: only it exercises the SPA fallback on the real
+host, which is server configuration a preview cannot test. What the first run
+buys is that a change breaking a click path fails **before** it merges, instead
+of passing its PR and only failing once main is already deployed.
 
 **Run the dead-end audit against the live URL before calling a deploy good.**
 This build has passed every local check and 404'd in production: a missing SPA
