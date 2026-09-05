@@ -181,6 +181,31 @@ on a VPS. The only requirements are a persistent volume and a process that stays
 running -- serverless platforms satisfy neither, which is why Vercel cannot host
 this half.
 
+### Known: the machine stops every five minutes
+
+As of 2026-09-05 the Fly org is still treated as a trial, and machines are force
+stopped after exactly 5m0s of uptime:
+
+```
+Trial machine stopping. To run for longer than 5m0s,
+add a credit card by visiting https://fly.io/trial.
+```
+
+This is not a configuration fault. `fly.toml` sets `auto_stop_machines = false`
+with `min_machines_running = 1`, and the machine itself reports `autostop:
+false` -- Fly overrides both for billing. A card was added and the limit was
+still firing afterwards, so it needs resolving in the Fly dashboard rather than
+in this repo.
+
+What it costs meanwhile: `kmt.fly.dev` cold-starts on the first request after
+each idle period (a few seconds), and any long-running work can be killed
+partway. A multi-page supplier refresh is the obvious casualty -- it applies a
+size only when every page has arrived, so an interrupted one changes nothing
+rather than half-writing, but it will need running again.
+
+Check with `fly logs -a kmt | grep "Trial machine"`. No matches means it is
+fixed.
+
 ### What the password does and does not cover
 
 It guards the data that is actually on the server: supplier costs, offers and
@@ -195,8 +220,9 @@ own login, replace it rather than growing it.
 
 ### Importing from the owner's browser
 
-The server's Refresh button may be refused by the supplier's WAF from a
-datacenter. The alternative runs on the owner's own connection.
+Server-side refresh is the normal route and was tested working from Fly (see
+below). This is the fallback for the day it stops being: it runs on the owner's
+own connection and needs no server access to the supplier at all.
 
 A page on kmt.fly.dev cannot fetch giga-tires: cross-origin requests come back
 as an empty 202 with no `Access-Control-Allow-Origin`. Verified, not assumed.
@@ -234,11 +260,23 @@ machine with no screen. `KMT_CHROMIUM_PATH` and `KMT_CHROMIUM_NO_SANDBOX` point
 Playwright at the system Chromium and drop the sandbox, which is required when
 running as root in a container; both are unset locally and change nothing there.
 
-**This part is unproven from a datacenter.** The WAF weighs IP reputation as
-well as browser fingerprint, and cloud ranges get more scrutiny than a home
-connection. Headful under Xvfb is the best honest attempt; if refreshes come
-back blocked, the fallback is to run `npm run scrape-tires` from a machine on a
-residential connection and treat the hosted server as serving-only. Do not
+**Tested from the datacenter on 2026-09-05 and it works.** Run on the Fly
+machine in `ewr`, the headful-under-Xvfb fetcher returned a full listing page --
+801KB, ten product cards, price data present. The concern was that the WAF
+weighs IP reputation as well as browser fingerprint and would refuse a cloud
+range; on this evidence it does not. Server-side refresh is the normal route,
+not a hopeful one.
+
+Reproduce it with:
+
+```bash
+fly ssh console -a kmt -C "sh -c 'xvfb-run -a node /tmp/probe.mjs'"
+```
+
+That is one observation, not a guarantee: IP reputation can change, and a WAF
+that accepts you today can challenge you tomorrow. If refreshes start coming
+back blocked, the fallback is the browser import above, which runs on the
+owner's own connection and needs no server access to the supplier at all. Do not
 respond by adding stealth plugins or residential proxies -- that is evading the
 supplier's bot detection rather than being a well-behaved client.
 
