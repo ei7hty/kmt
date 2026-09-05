@@ -277,3 +277,38 @@ merge commits; only the local one carried `.forge/reset-runbook.md`, and only
 `backend/auth.mjs`. `origin/main` is what CI deploys, so treat it as the truth
 and reconcile the local branch before branching from it. This branch was cut
 from `origin/main`.
+
+**2026-09-05 — Claude (kmt CLI session)**
+Preview servers you start locally outlive you, and a stale one turns an audit
+into a lie. Two sessions lost time to this on the same afternoon, in opposite
+directions.
+
+`( npx vite preview & )` detaches the server from the shell. When the shell
+exits the process keeps running, keeps its port, and nothing that tracks child
+processes can reach it any more. Start servers so they stay reachable:
+
+```bash
+npx vite preview --port 4173 &
+preview=$!
+trap 'kill $preview 2>/dev/null || true' EXIT
+```
+
+That is what `.github/workflows/fly-deploy.yml` does, and why CI does not leak.
+
+The damage is not the process, it is the port. The three audits default to
+4179, 4183 and 4173 (see the verification contract above), so a forgotten server
+on one of those gets audited instead of the build you meant to test. It failed
+in both directions here: a stale 4179 serving an older build produced a
+confident 36/36 for a commit it had never seen, and later a *false failure* that
+read exactly like a regression in the owner routing. Another session found
+seventeen strays and a run where the UI had changed and none of the checks ran.
+
+Before believing an audit result, check what is actually listening:
+
+```powershell
+Get-NetTCPConnection -LocalPort 4173,4179,4183 -State Listen |
+  ForEach-Object { (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.OwningProcess)").CommandLine }
+```
+
+Kill only your own: other agents run servers from their worktrees, and the
+command line tells you whose it is.
