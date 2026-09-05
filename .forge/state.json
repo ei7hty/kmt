@@ -51,6 +51,13 @@
       "description": "Phase 2 outcome: a person tapping through /, /owner, /status, and /confirmation experiences one consistently branded product, not a polished customer flow bolted onto default-Tailwind internal screens. No functional/behavioral change from Phase 1 (R1-R7 unchanged). Verified with the same mobile-first-then-desktop screenshot pattern used in Phase 1, plus a re-run of the existing dead-end audit to confirm no behavior regressed.",
       "status": "done",
       "order": 6
+    },
+    {
+      "id": "m8",
+      "title": "m8 — Customer quotes are priced from the owner's real inventory, not the static demo catalog",
+      "description": "A separate effort already built a real owner backend (SQLite: supplier inventory, owner-set prices/offers, a markup fallback rule) at /owner, reachable via node backend/dev.mjs. It was deliberately scoped as \"customer catalog integration is a separate, deliberate step\" (see .forge/owner-backend.md) and never wired up: the customer flow at / and the quote engine in pricing.js still read the fully-generated static catalog (src/data/catalog.js's buildCatalog() with no options), and requests/quotes still live in localStorage (src/store.js), untouched by the backend. This milestone closes that gap: when the real backend is running, a customer sees and gets quoted the tires the owner actually chose to offer, at the prices he actually set (falling back to markup where he has not priced a tire), and falls back to today's generated catalog when the backend is not reachable (e.g. the static Vercel deployment). No changes to the quote/request storage mechanism, the exception rules, or payment in this milestone -- those are flagged as open questions in roadmap.md because they need an owner decision, not assumed here.",
+      "status": "planned",
+      "order": 7
     }
   ],
   "tasks": [
@@ -462,8 +469,61 @@
       ],
       "createdAt": "2026-09-05T12:15:08.507Z",
       "updatedAt": "2026-09-05T14:46:06.075Z"
+    },
+    {
+      "id": "t25",
+      "title": "Split src/App.jsx into per-route modules with no behavior change",
+      "description": "src/App.jsx is a single ~23KB file holding all four routes (/, /owner/quotes, /status, /confirmation) plus the customer wizard state, flagged in .forge/AGENTS.md as the reason multiple agents have exhausted their context editing it. Every later task in this milestone touches the customer route's tire-loading logic, so do this first while the diff is behavior-only and easy to verify. Extract each route into its own component file (e.g. src/routes/CustomerRequest.jsx, src/routes/QuoteRequests.jsx, src/routes/Status.jsx, src/routes/Confirmation.jsx), keeping shared state (navigate, ownerVersion, storage-event listener) in App.jsx or a small shared hook. No new dependency (still no router library, per the existing decision). Verify: npm run build, npm run lint, node .forge/dead-end-audit.mjs and node .forge/responsive-check.mjs against vite preview all pass with the same counts as before the split (36 and 8 checks respectively).",
+      "milestoneId": "m8",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [],
+      "createdAt": "2026-09-05T17:47:08.299Z",
+      "updatedAt": "2026-09-05T17:47:08.299Z"
+    },
+    {
+      "id": "t26",
+      "title": "Add a customer-safe catalog endpoint to the owner backend",
+      "description": "Add GET /api/catalog to backend/api.mjs (or a small new module it calls into), backed by a new Inventory method that returns every offered, priced tire across all sizes -- unpaginated, unlike inventory.list() -- in exactly the shape src/data/catalog.js's buildCatalog() already produces: {id, name, size, price, inStock, category, description}. Reuse markup.js's quotedPrice (already imported by inventory.mjs) so owner price overrides markup exactly as it does in the owner workspace, and exclude any tire where offer.enabled is false or price resolves to null. Do not expose SKU, notes, list price, or supplier URL. Verify with new tests in backend/owner.test.mjs: an owner-priced tire appears at the owner's price; an unpriced tire with a markup rate set appears at the marked-up price; a disabled tire and one with no usable price are both absent; the response shape matches what src/data/catalog.js's buildCatalog() rows already carry field-for-field.",
+      "milestoneId": "m8",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [],
+      "createdAt": "2026-09-05T17:47:08.307Z",
+      "updatedAt": "2026-09-05T17:47:08.307Z"
+    },
+    {
+      "id": "t27",
+      "title": "Wire the customer flow to fetch the live catalog, with fallback to the static one",
+      "description": "In the customer route (after t25's split), replace the direct getAllTires() call with a loader that tries GET /api/catalog first and falls back to the existing static buildCatalog()/getAllTires() result on any network error, non-2xx, or non-JSON response (same failure detection pattern OwnerInventory.jsx already uses for its own api() helper). Show a brief loading state consistent with existing patterns; once resolved, the rest of the wizard (fitment selector, tire list, submit) works unchanged against whichever tire array loaded. No change to src/pricing.js or src/store.js in this task -- pricing still runs over whichever catalog array was loaded, exactly as calculateDraftQuote already accepts a catalog argument. Verify: with backend/dev.mjs running and an owner price/markup set, the customer sees that tire at that price; with the backend stopped (plain npm run dev / vite preview), the customer flow behaves exactly as today (dead-end audit and responsive check both pass unchanged) -- confirming the fallback, not just the happy path.",
+      "milestoneId": "m8",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t25",
+        "t26"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-05T17:47:19.719Z",
+      "updatedAt": "2026-09-05T17:47:19.719Z"
+    },
+    {
+      "id": "t28",
+      "title": "Deploy and verify catalog fallback on the public URL, then spot-check live-backend mode locally",
+      "description": "Deploy the updated frontend to Vercel and confirm on a real phone that the customer flow still works end to end exactly as before (the deployed environment has no owner backend, so this proves the fallback path in production, not the live-backend path). Separately, with backend/dev.mjs running locally, run node .forge/dead-end-audit.mjs and node .forge/responsive-check.mjs against it (AUDIT_BASE=http://127.0.0.1:4180, per .forge/owner-backend.md) to confirm the full flow -- including a tire the owner priced or disabled -- still has no dead end and no overflow. Record both results; do not claim the live-backend path works from the deployed check alone.",
+      "milestoneId": "m8",
+      "status": "todo",
+      "priority": "medium",
+      "dependsOn": [
+        "t27"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-05T17:47:19.725Z",
+      "updatedAt": "2026-09-05T17:47:19.725Z"
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T14:46:06.075Z"
+  "updatedAt": "2026-09-05T17:47:19.725Z"
 }
