@@ -153,7 +153,7 @@ export function createRequestsApi(quotes) {
   }
 }
 
-export function createApi(inventory, refresher, importer = null) {
+export function createApi(inventory, refresher, importer = null, quotes = null) {
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
     if (!url.pathname.startsWith('/api/owner/')) return false
@@ -204,7 +204,18 @@ export function createApi(inventory, refresher, importer = null) {
         send(200, importer.addPage(await readJsonBody(request, IMPORT_BODY_LIMIT)))
         return true
       }
-      if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
+      // The owner's side of the requests customers submit. Inside createApi
+      // rather than beside it, because these are exactly what that handler is
+      // for: routes that require the owner session.
+      if (request.method === 'GET' && url.pathname === '/api/owner/requests') {
+        if (!quotes) throw new InputError('Owner endpoint not found', 404)
+        send(200, { requests: quotes.listForOwner() })
+      } else if (request.method === 'POST' && /^\/api\/owner\/quotes\/[^/]+\/(approve|reject)$/.test(url.pathname)) {
+        if (!quotes) throw new InputError('Owner endpoint not found', 404)
+        const [, id, action] = url.pathname.match(/^\/api\/owner\/quotes\/([^/]+)\/(approve|reject)$/)
+        const body = await readJsonBody(request)
+        send(200, quotes.decide(decodeURIComponent(id), action === 'approve' ? 'approved' : 'rejected', body?.version))
+      } else if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
         send(200, { ...inventory.list(Object.fromEntries(url.searchParams)), summary: inventory.summary() })
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/')) {
         const id = decodeURIComponent(url.pathname.slice('/api/owner/offers/'.length))
