@@ -358,3 +358,16 @@ listed. And `--dry-run` asks the server, so it reports against what that
 server holds, not against the tracked file. The CLI test in
 `backend/owner.test.mjs` spawns the real script against a password-gated
 server, so it takes most of a second; that is the point of it.
+
+**2026-09-05 — Claude (kmt CLI session)**
+**Do not run two `backend/dev.mjs` at once when you audit.** I had one on 4191
+for a manual check and started another on 4180 for the owner-inventory audit,
+and the audit failed with six `WebSocket closed without opened.` page errors
+after every functional check had passed. That is not the app: `dev.mjs` runs
+Vite in middleware mode with no `hmr` setting, so every instance's HMR client
+points at the same default socket port, 24678, and the second server's pages
+reach the first server's socket. Killed the extra server, ran the same audit
+against the same branch alone: zero errors, everything PASS. Measured, not
+inferred -- I first assumed it was pre-existing and it was not; unmodified
+`main` passed too. If that assertion fails on you, check for a second dev
+server before you check your diff.
