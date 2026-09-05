@@ -244,13 +244,26 @@ still no login for customers.
 | Customer accounts | None, by design. Access is by the request id and a per-browser key. |
 | Scheduling, dispatch | Out of scope, as in every phase so far. |
 
+### Direction from the client, 2026-09-05
+
+This is being built for a client as the real service, not a demo to react to.
+Product calls that were listed as open questions are decided in favour of
+building the real thing; the frontend can be reshaped later and does not need
+sign-off per screen. The phase 1 "faked versus real" framing is retired: from
+here on, a faked step is a gap with a task against it, not a design choice.
+
+Phase 4 therefore has two milestones. **m9** (t29-t33) puts requests and quotes
+in the backend. **m10** (t34-t38) makes the quote a real exchange between two
+people: the customer leaves a name and a mobile number, the owner can change
+the price before sending, both are told by text message when something
+happens, and a request has an end.
+
 ### Explicitly not in scope for phase 4
 
-- Real payment processing.
-- Any notification (SMS, email, push) to either party.
-- Customer accounts, passwords or login.
-- Editing the drafted price on the owner screen before approval. Listed as an
-  open question because it is probably the next real need, not because it is
-  hard.
+- Real payment processing. The fake step stays until a processor is chosen;
+  it is the first item of phase 5.
+- Customer accounts, passwords or login. Access stays by request link and
+  per-browser key; a phone number is contact, not identity.
+- Scheduling, dispatch, routing.
 - Migrating requests that exist today in someone's `localStorage`. They are
   demo data and are abandoned.

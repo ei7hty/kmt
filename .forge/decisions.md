@@ -56,3 +56,18 @@ The product has never asked a customer to log in and the roadside case argues ag
 Until phase 4 the gate audited a `vite preview`, which serves only the built frontend, and that was enough because the whole customer flow lived in the browser. Once a request is stored by the backend, a preview cannot complete the flow, and an audit that cannot complete the flow proves nothing. The audits therefore start `backend/server.mjs` with the built `dist/`, a temporary database and a known password, and sign in at the owner step. This is more faithful, not just necessary: the gate now tests the thing that is deployed.
 
 **Rejected:** Keeping the preview-based gate and letting the post-deploy run be the only real test. That was the exact gap the phase 3 compose bug fell through, and it would have shipped a broken customer flow through a green check. Also rejected: a test-only mode in the frontend that bypasses the backend, because it would mean the gate tests code paths production never runs.
+
+## 2026-09-05 — The three phase 4 open questions are answered "build it", on the client's direction
+The client's representative said this is to be as close to the real service as possible, that product calls of this kind do not need per-item approval, and that the frontend can be changed later. So the owner can adjust a quote before sending, requests have a lifecycle with a done state, and both parties are told by text message. The "faked versus real" framing from phase 1 is retired: a faked step is now a gap with a task, not a design choice. The one remaining fake, payment, is the first item of phase 5 because it needs a processor account the client has to open.
+
+**Rejected:** Waiting on the owner for each question separately, which is what the phase 4 plan first proposed; the client's direction covers them. Also rejected: building notifications by email first because it needs no account. The customer is on a roadside and the owner texts today; SMS is the channel that matches the business, and the outbox fallback means the code does not wait on the account.
+
+## 2026-09-05 — SMS through a provider's REST API behind a one-module seam with an outbox fallback, not an SDK
+Texts are sent by one small server module that calls the provider's HTTP API with `fetch` and credentials from the environment. When no provider is configured, the same module writes each message to an outbox table that the owner screen shows, so every flow and every test runs without an account and a message can be read before a real one is ever sent. The provider is named in configuration, and swapping it is a change to that module alone.
+
+**Rejected:** The provider's SDK, which is a dependency for one HTTP call and a credential-handling surface the project does not need. Also rejected: sending from the browser, which would put the credential in the frontend. Also rejected: a queue or worker for sending; at this volume a synchronous send with the failure recorded in the outbox is enough, and a queue is infrastructure to add when a message is actually lost.
+
+## 2026-09-05 — A phone number is contact, not identity
+Collecting a mobile number does not create an account or a login. Access to a request stays by its unguessable id or the per-browser key from m9. The number is used to reach the customer and for nothing else, the customer agrees to that on the form, and it is never shown to another customer.
+
+**Rejected:** Looking requests up by phone number, which turns the number into a password and would need verification by code to be safe. Deferred, not rejected: a one-time code sent to the number to recover a request from a different phone, if customers turn out to need it.

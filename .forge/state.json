@@ -65,6 +65,13 @@
       "description": "Phase 4 outcome: a request made on a customer's phone is stored by the backend, drafted server-side by the existing rules, reviewed by the owner at /owner/quotes from any device behind the owner sign-in when hosted, and its approval and (fake) payment are visible to both sides from their own devices. The localStorage request/quote store is retired; only a per-browser customer key remains in the browser. R17-R22.",
       "status": "planned",
       "order": 8
+    },
+    {
+      "id": "m10",
+      "title": "The quote is a real exchange between two people",
+      "description": "Second phase 4 milestone, after m9. The request carries a name and mobile number; the owner can adjust the price and add lines and a note before sending; both parties are told by text message when a request arrives, a quote is sent, a payment lands and a job is done; a request has a lifecycle with an end, and the owner list is usable once real requests arrive. SMS goes through a provider behind a one-module seam with an outbox fallback so nothing waits on the account. R23-R28.",
+      "status": "planned",
+      "order": 9
     }
   ],
   "tasks": [
@@ -612,8 +619,78 @@
       "notes": [],
       "createdAt": "2026-09-05T21:22:39.887Z",
       "updatedAt": "2026-09-05T21:22:39.887Z"
+    },
+    {
+      "id": "t34",
+      "title": "The request carries a name, a mobile number and an optional email",
+      "description": "Add customerName (required), customerPhone (required, US mobile; accept the ways people type it and store E.164, +1XXXXXXXXXX, validated server-side in backend/quotes.mjs the way other fields are), and customerEmail (optional, syntactically checked) to the request. Collect them at the service-details step in src/components/RequestDetails.jsx / the customer route, under a short 'How do we reach you?' heading, with autoComplete name/tel/email so phones fill them in one tap, inline validation in the existing style, and the consent line from R26 as a required checkbox: 'Text me about this quote' with one sentence saying it is about this request only. Store consent (boolean and timestamp) on the request. Show name and phone (tel: link) and email on the owner's request card in the quote-review screen; never return them from the customer-facing endpoints to anyone but the holder of that request's key or id (they are the customer's own details, so returning them to that holder is fine). Update .forge/request-flow-check.mjs and the dead-end audit to fill the new fields and tick consent, and record the new counts. Tests: a submit without name, phone or consent is refused with a field-specific message; a phone typed as (617) 410-8319 is stored as +16174108319; the owner list shows the contact; another customer's key cannot read it.",
+      "milestoneId": "m10",
+      "status": "todo",
+      "priority": "medium",
+      "dependsOn": [
+        "t33"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-05T21:52:40.692Z",
+      "updatedAt": "2026-09-05T21:52:40.692Z"
+    },
+    {
+      "id": "t35",
+      "title": "The owner adjusts the quote before sending, and the draft is kept",
+      "description": "Backend: quotes gain an editable 'sent' version alongside the draft: lineItems (each with description, quantity, unitPrice), a customer note, and a total computed server-side from the lines, never trusted from the client. PUT /api/owner/quotes/:id {lineItems, note, version} under the session gate saves an adjustment on a draft (409 on a stale version; refused on anything but a draft). Approve & Send sends whatever the current lines are; the original draft lineItems and total are kept in their own columns and never overwritten. Frontend, /owner/quotes: each draft's lines become editable in place (unit price, quantity, remove), an 'Add line' with description and amount, and a note field; the total updates as they type; Approve & Send uses the adjusted numbers and the exception banner stays until sent. /status and /confirmation show the sent total and the note. src/pricing.js is unchanged: it still drafts; adjusting is a separate, owner-only operation. Tests: adjustment changes the sent total and not the draft; a total sent from the client is ignored in favour of the computed one; approving after adjusting sends the adjusted total to the customer endpoint; adjusting a sent or paid quote is refused.",
+      "milestoneId": "m10",
+      "status": "todo",
+      "priority": "medium",
+      "dependsOn": [
+        "t34"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-05T21:52:40.692Z",
+      "updatedAt": "2026-09-05T21:52:40.692Z"
+    },
+    {
+      "id": "t36",
+      "title": "A request has an end, and the owner list is usable with real requests in it",
+      "description": "Statuses become: draft, sent (was approved), paid, done, rejected, cancelled. Owner endpoints: POST /api/owner/quotes/:id/done (only from paid) and /cancel (from draft or sent, with an optional reason the customer sees); customer endpoint: POST /api/requests/:id/cancel with the key, only before payment. Keep the old 'approved' value readable so nothing already stored breaks; write 'sent' from now on. Owner list, GET /api/owner/requests?view=open|attention|awaiting|paid|closed, default open (draft, sent, paid), newest first, with counts per view; the screen gets those filters in the existing style and shows open by default. The /status stepper gains the done state and shows rejected or cancelled plainly with the reason. Nothing is deleted. Tests for every transition, allowed and refused, and for the view filters.",
+      "milestoneId": "m10",
+      "status": "todo",
+      "priority": "medium",
+      "dependsOn": [
+        "t35"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-05T21:52:40.692Z",
+      "updatedAt": "2026-09-05T21:52:40.692Z"
+    },
+    {
+      "id": "t37",
+      "title": "Text messages to the owner and the customer, through a provider behind a seam with an outbox",
+      "description": "One module, backend/sms.mjs: send({to, body}) that, when SMS_PROVIDER=twilio and the credentials are set (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM), POSTs to the provider's Messages REST endpoint with fetch and basic auth, no SDK; and when unset, writes the message to an outbox table with status 'unsent'. Every send, real or not, is recorded in the outbox (to, body, status sent/failed/unsent, provider id, error, timestamp); a provider failure is recorded, logged, and never breaks the request that triggered it. Messages, each short and each carrying one link: to the owner (KMT_OWNER_PHONE) on a new request, with the link to /owner/quotes; to the customer when the quote is sent, with /status?request=<id> and the total; to the customer when payment is recorded; to the customer when the job is marked done. Public URL for links from KMT_PUBLIC_URL (https://kmt.fly.dev). Owner screen: an 'Outbox' panel (session-gated endpoint GET /api/owner/outbox) listing recent messages with status, so the flow is verifiable with no account and a failed send is visible. Document the variables in .forge/owner-backend.md's configuration table and README's environment table. Tests use the outbox only: each event produces exactly one message to the right number with the right link; a failing provider marks the message failed and the triggering request still succeeds; no message is sent to a customer who did not consent (t34) -- refuse the request at submit rather than silently not texting.",
+      "milestoneId": "m10",
+      "status": "todo",
+      "priority": "medium",
+      "dependsOn": [
+        "t36"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-05T21:52:40.692Z",
+      "updatedAt": "2026-09-05T21:52:40.692Z"
+    },
+    {
+      "id": "t38",
+      "title": "Deploy, configure the provider, and prove the exchange with real texts on two phones",
+      "description": "Merge to main, let CI deploy, and confirm the post-deploy audit job on its own. The client opens the SMS provider account and sets the secrets on Fly (fly secrets set, values never in the repo or the PR); until then, prove every step with the outbox on the live site. Then with the provider configured: on phone A, submit a request with phone A's number; phone B (owner) receives the text, opens the link, signs in, adjusts a line, adds a note, sends; phone A receives the text, opens the link, sees the adjusted total and note, pays; phone A receives the receipt; phone B marks the job done; phone A receives the final text; the owner list shows the request under closed. Record each step as its own line with the device. Close m10.",
+      "milestoneId": "m10",
+      "status": "todo",
+      "priority": "medium",
+      "dependsOn": [
+        "t37"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-05T21:52:40.692Z",
+      "updatedAt": "2026-09-05T21:52:40.692Z"
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T21:22:39.887Z"
+  "updatedAt": "2026-09-05T21:52:40.692Z"
 }
