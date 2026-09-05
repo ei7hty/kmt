@@ -136,6 +136,33 @@ docker run -p 8080:8080 -v kmt-data:/data \
   -e KMT_OWNER_PASSWORD=... -e KMT_SESSION_SECRET=... kmt-owner
 ```
 
+#### Fly, specifically
+
+`fly.toml` is committed and tuned for this app. Volume first, secrets second,
+deploy last -- a deploy without the volume looks fine until the next one wipes
+the database.
+
+```bash
+fly launch --no-deploy              # claim the app name, keep the committed fly.toml
+fly volumes create kmt_data --region bos --size 1
+fly secrets set KMT_OWNER_PASSWORD='...' KMT_SESSION_SECRET="$(openssl rand -hex 32)"
+fly deploy
+```
+
+Three settings in `fly.toml` are load-bearing and explained in its comments:
+`auto_stop_machines = false` and `min_machines_running = 1` (a suspended machine
+cannot hold a refresh job), `memory = "1gb"` (Chromium, not the server, sets the
+floor), and the standing warning never to run more than one machine -- a Fly
+volume attaches to one machine, so a second gets a second empty database and the
+two diverge silently.
+
+After the first deploy, set `KMT_ALLOWED_HOSTS` to the app's hostname if you
+want the Host check enforced:
+
+```bash
+fly secrets set KMT_ALLOWED_HOSTS=kmt-owner.fly.dev
+```
+
 Any container host takes it from there: Fly (`fly launch`, add a volume mounted
 at `/data`), Render (Docker service plus a persistent disk), Railway, or Docker
 on a VPS. The only requirements are a persistent volume and a process that stays
