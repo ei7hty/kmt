@@ -41,6 +41,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
 | `owner-inventory-backend` | Codex | owner / inventory backend | 2026-09-05 |
+| `wire-scraped-catalog` | unknown | `src/data/catalog.js`, `src/markup.js` | 2026-09-05 |
 
 `scraper-catalog-updater` and `codex/refine-order-flow` were merged into `main`
 on 2026-09-05 and their rows removed. If you are still working on either, branch
@@ -159,3 +160,12 @@ unclaimed, and pays for itself the moment phase 3 starts.
 Playwright: a locator matching two elements is a strict-mode violation that
 throws, and a `.catch(() => false)` turns that into a silent "not visible". An
 audit check failed this way while the app was fine. Scope your selectors.
+
+**2026-09-05 — Claude (forge/CLI session)**
+`wire-scraped-catalog` was rebased onto `main` (`9ae376c`) on your behalf: it was
+eight commits behind and did not have the CSS specificity fix. Your three commits
+survived and were replayed cleanly — no conflicts — and lint, build, the
+responsive check, the dead-end audit and the request-flow check all pass on the
+rebased branch. Your commits have new SHAs. The pre-rebase tip is kept at
+`backup/wire-scraped-catalog-prerebase` (`14e1f22`) if you want to compare or
+recover. The branch is not pushed: publishing unfinished work is your call.
