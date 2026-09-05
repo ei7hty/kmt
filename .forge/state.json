@@ -496,9 +496,11 @@
       "status": "todo",
       "priority": "high",
       "dependsOn": [],
-      "notes": [],
+      "notes": [
+        "Base changed on 2026-09-05: main gained a hosted sign-in gate and page import -- backend/server.mjs, auth.mjs, import.mjs are new, and src/owner/OwnerInventory.jsx, its CSS and a new src/owner/bookmarklet.js changed substantially. Read them before starting; do not work from the pre-merge shape of that code."
+      ],
       "createdAt": "2026-09-05T17:47:08.307Z",
-      "updatedAt": "2026-09-05T17:47:08.307Z"
+      "updatedAt": "2026-09-05T19:36:22.631Z"
     },
     {
       "id": "t27",
@@ -511,14 +513,16 @@
         "t25",
         "t26"
       ],
-      "notes": [],
+      "notes": [
+        "Base changed on 2026-09-05: main gained a hosted sign-in gate and page import -- backend/server.mjs, auth.mjs, import.mjs are new, and src/owner/OwnerInventory.jsx, its CSS and a new src/owner/bookmarklet.js changed substantially. Read them before starting; do not work from the pre-merge shape of that code."
+      ],
       "createdAt": "2026-09-05T17:47:19.719Z",
-      "updatedAt": "2026-09-05T17:47:19.719Z"
+      "updatedAt": "2026-09-05T19:36:22.634Z"
     },
     {
       "id": "t28",
-      "title": "Deploy and verify catalog fallback on the public URL, then spot-check live-backend mode locally",
-      "description": "Deploy the updated frontend to Vercel and confirm on a real phone that the customer flow still works end to end exactly as before (the deployed environment has no owner backend, so this proves the fallback path in production, not the live-backend path). Separately, with backend/dev.mjs running locally, run node .forge/dead-end-audit.mjs and node .forge/responsive-check.mjs against it (AUDIT_BASE=http://127.0.0.1:4180, per .forge/owner-backend.md) to confirm the full flow -- including a tire the owner priced or disabled -- still has no dead end and no overflow. Record both results; do not claim the live-backend path works from the deployed check alone.",
+      "title": "Deploy through CI and verify both catalog paths on the public site",
+      "description": "Deployment is to Fly through CI on every push to main (https://kmt.fly.dev), not to Vercel, and the deployed site runs the owner backend -- so production exercises the live-backend path, not only the fallback. Merge to main, let CI deploy, then on a real phone confirm the customer flow works end to end against the live catalog. Prove the fallback separately by pointing the frontend at a backend that is refusing connections, since that path no longer happens by accident in production. Run the browser audits locally against your own build before opening the PR: CI does not run them on pull requests. AUDIT_BASE=<url> node .forge/dead-end-audit.mjs, .forge/responsive-check.mjs, .forge/request-flow-check.mjs.",
       "milestoneId": "m8",
       "status": "todo",
       "priority": "medium",
@@ -527,9 +531,9 @@
       ],
       "notes": [],
       "createdAt": "2026-09-05T17:47:19.725Z",
-      "updatedAt": "2026-09-05T17:47:19.725Z"
+      "updatedAt": "2026-09-05T19:36:22.627Z"
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T19:30:27.504Z"
+  "updatedAt": "2026-09-05T19:36:22.634Z"
 }

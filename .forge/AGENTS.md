@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `forge/phase-3` | forge (Claude) | `src/App.jsx`, `src/routes/`, phase 3 of `.forge/state.json`; t26-t27 will touch `backend/api.mjs` and the customer route | 2026-09-05 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their

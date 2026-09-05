@@ -22,7 +22,13 @@ React + Vite + Tailwind, plus a Node backend under `backend/` (SQLite via
   that lints and builds can still dead-end a click path.
 - The Tailwind vocabulary is extracted and shared. Do not invent a second
   version of an existing card, button or heading.
-- Deployment is part of done, not a follow-up: Vercel, checked on a real phone.
+- Deployment is part of done, not a follow-up. It goes to Fly through CI on
+  every push to `main` -- https://kmt.fly.dev -- and the deployed site runs the
+  owner backend, so production exercises the live path and not just the demo
+  fallback. Check it on a real phone.
+- CI does not run the browser audits on pull requests. Run them yourself against
+  your own build before opening one: `dead-end-audit.mjs`, `responsive-check.mjs`
+  and `request-flow-check.mjs`, with `AUDIT_BASE` pointed at your preview.
 - Supplier prices are last-seen listings, never guaranteed quotes, and an owner
   price always overrides what markup proposes.
 - This repository is shared with other agents. Read `.forge/AGENTS.md` before
