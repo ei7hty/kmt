@@ -98,11 +98,19 @@ three above; on its own it is the least interesting number here.
 - **Confirm the outbox rows exist before building on them.** Everything above
   about the outbox was established by *reading* `api.mjs`, `server.mjs` and
   `outbox.mjs` — it is a code-reading claim, not a measurement. Nobody has
-  looked at a real database and seen a `quote-sent` row. Query one early and
-  check the rows are there in the shape this document assumes, because if they
-  are not, the two headline metrics are unbuildable and everything after them
-  is wasted. **This is the assumption most likely to be wrong, and it is
-  cheapest to test first.**
+  looked at a real database and seen a `quote-sent` row. **This is the
+  assumption most likely to be wrong, and it is cheapest to test first.**
+
+  **Actual rows, on a server that has taken a real request — not the schema.**
+  Confirming the table exists satisfies nothing. `backend/inquiries.mjs` is the
+  case to keep in mind: a complete, tested module imported by nothing but its
+  own test file — not by `server.mjs`, `dev.mjs` or `api.mjs` — so every line
+  reads correctly and its table is never created in production at all. A
+  `sqlite_master` query would have agreed with the code and both would have
+  been describing something that does not run.
+
+  If the rows are not there in the shape this document assumes, **that is a
+  finding that stops the build, not something to work around.**
 - **Prove it against a fixture, not against production.** The product owner's
   note, and the right one: it is a read-only report, so build a database with a
   known shape where the answers are known in advance and assert on them.
