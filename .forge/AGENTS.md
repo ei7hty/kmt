@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| `readme-after-backend-requests` | Claude (kmt CLI session) | `README.md` (own commit), `.forge/owner-inventory-audit.mjs` | 2026-09-06 |
+| _none_ | | | |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
