@@ -377,6 +377,38 @@ test('omitting shippingPerTire on a save keeps whatever was already stored', t =
   assert.equal(saved.shippingPerTire, 8, 'rate-only saves do not touch shipping')
 })
 
+test('a rate-only save must not ratify a defaulted shipping figure as a decision (owner-agent scrutiny finding 3, LIVE)', t => {
+  // The bug that already fired in production: saveMarkup stamps a single
+  // flat isPlaceholder: false across the whole returned object, directly
+  // above the fallback (the sibling test above) that substitutes the
+  // stored or default shippingPerTire when the caller omits it. A save
+  // that only ever meant to change the rate comes back saying shipping
+  // was chosen too, when it was defaulted.
+  //
+  // Asserted against shippingPerTireIsPlaceholder, following the naming
+  // already established one function over in savePricingSettings
+  // (mobileServiceFeeIsPlaceholder / disposalFeeIsPlaceholder are flat
+  // top-level booleans, not nested .isPlaceholder objects) -- not a field
+  // that exists on saveMarkup's return value yet, so this fails until
+  // BUG FIXER's fix adds per-field tracking. If the actual fix names the
+  // field differently, update this assertion to match the real contract;
+  // the invariant it protects (a field a save never touched keeps its own
+  // placeholder flag) does not change either way.
+  // Shipping must never have been touched -- if a prior save had actually
+  // chosen 8, carrying that choice forward through a later rate-only save
+  // is correct, not the bug (that is the sibling test above). The live
+  // defect only exists on shipping's very first defaulted appearance: Ken
+  // has never named a figure, and a rate-only save still stamps it decided.
+  const db = setup(t)
+  const rateOnly = db.saveMarkup({ rate: 1.6 })
+  assert.equal(rateOnly.shippingPerTire, DEFAULT_MARKUP_SETTINGS.shippingPerTire, 'never chosen, so still the shared default')
+  assert.equal(
+    rateOnly.shippingPerTireIsPlaceholder, true,
+    'a save that never sent shippingPerTire, and where nobody had chosen one before, must not report it as a ' +
+    'decision -- this is the exact shape of the live defect: a defaulted value reading as Ken\'s own choice',
+  )
+})
+
 test('shipping rejects a negative cost or an unreasonable one', t => {
   const db = setup(t)
   for (const shippingPerTire of [-1, 201, Number.NaN, Infinity, 'eight']) {
