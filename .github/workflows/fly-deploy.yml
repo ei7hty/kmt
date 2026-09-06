@@ -16,10 +16,20 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # One deploy at a time, and a newer push supersedes a queued one. Not
-  # cancel-in-progress: interrupting a half-finished deploy is worse than
-  # letting it land and replacing it.
-  group: fly-deploy
+  # Keyed by ref, which the first version of this was not -- and that cost a
+  # day. A bare `fly-deploy` puts every run in the repository into one queue, so
+  # a pull-request push from any of the agents working here supersedes a queued
+  # run on main and vice versa. Six runs were cancelled that way in one
+  # afternoon: both gate runs on a PR, main's own run twice, and one that was
+  # misread as main being red when it had simply never started.
+  #
+  # Per ref, the intent survives and the collateral stops: successive pushes to
+  # main still supersede each other, a branch still supersedes its own earlier
+  # run, and no branch can cancel main.
+  #
+  # cancel-in-progress stays false: interrupting a half-finished deploy is worse
+  # than letting it land and replacing it.
+  group: fly-deploy-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
