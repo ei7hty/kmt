@@ -35,8 +35,9 @@ exist.
 ## What a removal request does: redaction, not deletion
 
 A customer's removal request is honoured by **redacting name, email,
-phone, the service address (`location`), and the access notes
-(`locationNotes`)** -- while the quote record stays intact: its line
+phone, the service address (`location`), the access notes
+(`locationNotes`), and the special instructions (`customerNotes`, the
+"Anything else I should know?" field)** -- while the quote record stays intact: its line
 items, total, status, version, and timestamps are untouched. The ledger
 stays true; the way to reach that customer, and where they were found,
 does not.
@@ -82,7 +83,7 @@ Not a schema change, and not `migrate()`'s concern. The redacted fields
 live inside `requests.payload`, a JSON blob in a column that already
 exists -- redaction is `UPDATE requests SET payload=?, updated_at=? WHERE
 id=?` with the parsed JSON's `customerName`/`customerEmail`/
-`customerPhone`/`location`/`locationNotes` overwritten to a redacted
+`customerPhone`/`location`/`locationNotes`/`customerNotes` overwritten to a redacted
 marker (not deleted from the object entirely, so a reader can tell "this
 was redacted" apart from "this was never collected"). Belongs as a method
 on `Quotes`, next to `shapeRow` which is the one place a stored row
