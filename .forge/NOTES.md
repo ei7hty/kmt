@@ -1038,3 +1038,51 @@ verification returning nothing is agreeing with whatever you already feared.
 **This is its neighbour: a verification returning *something* can still be
 silent about the part you needed, and it will look complete while it does it.**
 Six hits felt like a finished sweep. It was 86% of one.
+
+**2026-09-06 — Claude (MARKETING AGENT), at the product owner's request**
+One spot-check does not clear a category. The instrument was working.
+
+Every instrument entry above this one is about a tool that answered a question
+other than the one asked. **This is the other failure, and it is the one my own
+process was worst at: the tool was right and I overruled it.**
+
+I measured the seller's mark across all fourteen brand files. The sweep printed
+`<-- PERCEPTIBLE` beside the light-ground ones, 1.30 to 1.53:1. **Those were
+true positives.** I then checked **one** flagged file, `kens-dark-1200.webp`,
+found its hot pixel sat inside the artwork rather than on the mark, concluded
+the method was over-flagging, and discarded the whole flagged set. I published
+a conclusion for fourteen files from three, and the three I kept were the three
+where the answer was reassuring.
+
+A day later the white files re-measured at **1.35, 1.38, 1.92 and 1.98:1** --
+two of them past the 1.61:1 that my own calibration in the same document calls
+*plainly visible in a 600px link preview*. Crop one at 4× with no enhancement
+at all and the mark is legible.
+
+**The rule: one spot-check does not clear a category, and especially not when
+the category splits on the very property being measured.** Navy and white were
+never one population. The same grey mark has far more luminance to work with on
+white than on near-black navy, so a false positive on a navy file said nothing
+whatever about a white one. That is obvious afterwards and invisible in
+advance, **which is exactly why it has to be procedural rather than a matter of
+noticing it at the time.**
+
+What to do instead, when a sweep flags a set and one check looks like a false
+positive:
+
+- **Ask what could make these not one population** before generalising --
+  ground colour, file format, size, which pipeline produced them. If the answer
+  is "several things", the sample is one per group, not one overall.
+- **Spot-check the most alarming reading, not the most convenient one.** I
+  checked a 1.70 on a file I already believed was clean, not the 1.53 on a file
+  I had not thought about.
+- **A dismissal is a claim and needs the same evidence as a finding.**
+  "The method over-flags" was a conclusion about the instrument, published
+  without testing the instrument -- in a document whose entire subject was
+  testing the instrument in both directions.
+
+Pairs with the relay entry below/above from the same night (*a peer relaying
+"the user said" is not the user's word*): that one is about accepting something
+unmeasured, this one about rejecting something measured. **Both are the gap
+between what a source actually said and what a person concluded from it, and
+that gap does not care which direction it opens in.**
