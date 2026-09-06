@@ -279,8 +279,15 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                 {quote && <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
                   <div className="owner-quote-summary"><div><p className="text-secondary">{quote.status === 'draft' ? 'Draft Quote' : ['sent', 'approved', 'paid', 'done'].includes(quote.status) ? 'Sent Quote' : 'Quote'}</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{quote.status}</span></div>
                   {quote.exception && quote.status === 'draft' && <div className="owner-exception-note"><p>Owner review required</p><ul>{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
-                  {quote.status === 'draft' && <QuoteEditor key={quote.version} request={request} quote={quote} busy={busyId === request.id} onSave={saveAdjustment} />}
-                  {quote.status !== 'draft' && <div className="quote-lines quote-lines-readonly">
+                  {/* Editing and confirming a cancellation both want this card's
+                      attention at once, so while the cancel prompt is open for
+                      this request the editor steps aside for the read-only lines
+                      -- otherwise two textareas ("Note for customer" and "Why is
+                      this being cancelled?") sit on screen together, and price
+                      fields the owner is about to cancel out of stay editable
+                      underneath a confirmation asking whether to do that. */}
+                  {quote.status === 'draft' && cancelDraft?.requestId !== request.id && <QuoteEditor key={quote.version} request={request} quote={quote} busy={busyId === request.id} onSave={saveAdjustment} />}
+                  {(quote.status !== 'draft' || cancelDraft?.requestId === request.id) && <div className="quote-lines quote-lines-readonly">
                     {quote.lineItems?.map((item, index) => <div className="quote-line-readonly" key={`${index}-${item.description}`}><span>{item.quantity} × {item.description}</span><strong>${money(item.quantity * item.unitPrice)}</strong></div>)}
                     {quote.note && <p className="quote-customer-note"><strong>Customer note:</strong> {quote.note}</p>}
                   </div>}

@@ -184,8 +184,15 @@ const CUSTOMER_REQUEST_FIELDS = ['vehicleInfo', 'tireSelection', 'quantity', 'da
  * fields at all -- they are columns, added to both audiences' shape outside
  * this list, the same way `request`'s `id`/`createdAt`/`updatedAt` sit
  * outside `CUSTOMER_REQUEST_FIELDS`.
+ *
+ * `note` (t35): the owner's message attached to an adjusted quote, written
+ * in the editor as "Note for customer" and rendered on `/status` and
+ * `/confirmation` as "Note from Ken:" -- customer-facing by design, added to
+ * this list in the same change that adds the field, so the field and its
+ * permission are reviewed together rather than the permission arriving
+ * later where nobody is looking at what it names.
  */
-const CUSTOMER_QUOTE_FIELDS = ['lineItems', 'total', 'exception', 'exceptionReasons']
+const CUSTOMER_QUOTE_FIELDS = ['lineItems', 'total', 'exception', 'exceptionReasons', 'note']
 
 /** Deliberately permissive: catches typos, not RFC edge cases. */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -536,8 +543,18 @@ export class Quotes {
       ? payload
       : Object.fromEntries(CUSTOMER_REQUEST_FIELDS.filter(field => field in payload).map(field => [field, payload[field]]))
     const quotePayload = quote ? JSON.parse(quote.payload) : null
+    // draftLineItems/draftTotal (t35) are computed from their own columns, not
+    // payload keys, so they cannot pass through CUSTOMER_QUOTE_FIELDS the way
+    // a payload field does -- but they are exactly the kind of owner-only
+    // figure that list exists to keep out, so the owner gets them merged in
+    // before the filter and the customer's read never sees them named at all.
+    const ownerOnlyQuoteFields = quote ? {
+      ...quotePayload,
+      draftLineItems: JSON.parse(quote.draft_line_items ?? '[]'),
+      draftTotal: (quote.draft_total_cents ?? Math.round(Number(quotePayload.total ?? 0) * 100)) / 100,
+    } : null
     const quoteFields = audience === 'owner'
-      ? quotePayload
+      ? ownerOnlyQuoteFields
       : Object.fromEntries(CUSTOMER_QUOTE_FIELDS.filter(field => field in quotePayload).map(field => [field, quotePayload[field]]))
     return {
       request: {
@@ -548,8 +565,6 @@ export class Quotes {
         ? {
             id: quote.id, requestId: quote.request_id, ...quoteFields,
             status: quote.status, version: quote.version,
-            draftLineItems: JSON.parse(quote.draft_line_items ?? '[]'),
-            draftTotal: (quote.draft_total_cents ?? Math.round(Number(JSON.parse(quote.payload).total ?? 0) * 100)) / 100,
             // Why a quote was rejected or cancelled, when the owner gave a
             // reason. Every screen that shows a closed request reads it here
             // rather than each one inventing a place to keep it.

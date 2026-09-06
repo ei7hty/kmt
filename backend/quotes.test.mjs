@@ -107,6 +107,12 @@ test('approving after an adjustment sends the adjusted numbers', async t => {
   assert.equal(sent.quote.total, 275.5)
   assert.equal(sent.quote.note, 'Ready when you are.')
   assert.equal(sent.quote.draftTotal, original.quote.total)
+
+  // note is in CUSTOMER_QUOTE_FIELDS by design (customer-facing, "Note from Ken:"
+  // on /status and /confirmation) -- the customer's own read must carry it too,
+  // not just the owner's.
+  const customerRead = quotes.get(original.request.id)
+  assert.equal(customerRead.quote.note, 'Ready when you are.')
 })
 
 test('only a current draft can be adjusted', async t => {
@@ -131,6 +137,28 @@ test('quote adjustment validates every line and the note', async t => {
   assert.throws(() => adjust([{ description: 'Tire', quantity: 0, unitPrice: 1 }]), /quantity/)
   assert.throws(() => adjust([{ description: 'Tire', quantity: 1, unitPrice: 1.001 }]), /two decimal places/)
   assert.throws(() => quotes.adjust(original.request.id, { lineItems: [{ description: 'Tire', quantity: 1, unitPrice: 1 }], note: 'x'.repeat(1001), version: original.quote.version }), /note is too long/)
+})
+
+test('the original draft is an owner-only figure: a customer read never carries draftLineItems or draftTotal', async t => {
+  const { quotes } = setup(t)
+  const original = quotes.submit(form())
+  quotes.adjust(original.request.id, {
+    lineItems: [{ description: 'Discounted job', quantity: 1, unitPrice: 40 }],
+    version: original.quote.version,
+  })
+
+  // The owner's own read still carries both, so the editor can show what changed.
+  const ownerRead = quotes.get(original.request.id, 'owner')
+  assert.ok(Array.isArray(ownerRead.quote.draftLineItems) && ownerRead.quote.draftLineItems.length > 0)
+  assert.equal(typeof ownerRead.quote.draftTotal, 'number')
+
+  // The customer's read -- the default, and what GET /api/requests/:id answers to
+  // anyone holding the link (R19) -- must not carry the owner's pre-adjustment
+  // figures. Same failure shape #65 fixed for `request`'s contact fields: a field
+  // added to the quote payload otherwise reaches a link designed to be shared.
+  const customerRead = quotes.get(original.request.id)
+  assert.equal('draftLineItems' in customerRead.quote, false, 'draftLineItems must not reach the customer shape')
+  assert.equal('draftTotal' in customerRead.quote, false, 'draftTotal must not reach the customer shape')
 })
 
 test('calculateDraftQuote multiplies the tire line by quantity and leaves the fee alone', () => {
