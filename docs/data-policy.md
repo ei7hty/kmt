@@ -162,3 +162,42 @@ two are never confused: redaction answers "forget this customer's contact
 details," a reset answers "start the database over," and a pending removal
 request is not a reason to reach for the second when the first is what was
 asked.
+
+## Inquiries (t65): a second personal-data table, redacted by its own id
+
+`inquiries` (`backend/inquiries.mjs`) holds the short "more than tires" form:
+name, a phone or email, what they need, the vehicle if it matters. It is not
+a request's sibling -- no `request_id`, nothing else in the database points
+at it -- so it carries its own copy of this policy rather than inheriting
+the requests/quotes one above.
+
+**Personal:** `name` and `contact` identify a specific person, the same
+claim `requests`' name/email/phone make. **Not personal, and untouched by a
+removal request:** `vehicle_info` and `message`, for the same reason
+`requests.vehicleInfo` survives redaction there -- they are what the
+inquiry is *about*, not how to reach the person who sent it, and Ken needs
+both if the same person calls back. `INQUIRY_PERSONAL_FIELDS`, exported
+from `inquiries.mjs`, names the first two so an implementation reads the
+list from one place rather than re-deciding it.
+
+**The mechanism, for whoever implements it** (not written yet -- neither
+`requests` nor `outbox`'s redaction is implemented in code today either;
+see above): `UPDATE inquiries SET name=?, contact=?, updated_at=? WHERE
+id=?`, the redacted marker overwriting real columns rather than a JSON
+key, since this table was given typed columns instead of a `payload` blob
+from the start (see `inquiries.mjs`'s header for why). Idempotent for the
+same reason the requests mechanism must be: redacting an already-redacted
+row should be a no-op read straight off the row, not a state tracked
+anywhere else.
+
+**No status, no category.** An inquiry has no workflow column and no
+CHECK-constrained taxonomy, the same decision and the same reasoning as
+outbox's unconstrained `type` in #157: whether an inquiry needs a
+new/contacted/closed workflow, or a category of "more than tires" work, is
+`POST /api/inquiries` and the owner screen's question to answer once they
+exist, not a guess to constrain today. If either is added later, it is a
+schema change made when the vocabulary is real, the same as any other
+widening under `.forge/owner-backend.md`'s migration contract -- and since
+`inquiries` needs no `migrate()` of its own (a brand-new table has no prior
+rows in any deployed shape to reconcile), that future change would be the
+first time this table needs one.
