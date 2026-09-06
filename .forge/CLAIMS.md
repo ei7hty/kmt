@@ -9,10 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| m13-inventory-summary | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md (docs only) | 2026-09-06 |
-| m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
 | t63-text-controls | BUG FIXER (local_8ba9f198) | rebase PR #210 onto current main, conflicts in src/components/RequestDetails.jsx and src/routes/CustomerRequest.jsx | 2026-09-06 |
-| release-m13-claims | TEMP REPO AGENT (local_b2ab10bb) | .forge/CLAIMS.md (rebase, releasing two merged rows) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
