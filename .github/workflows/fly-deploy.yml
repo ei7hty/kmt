@@ -141,9 +141,141 @@ jobs:
           node .forge/request-flow-check.mjs
           node .forge/responsive-check.mjs
 
+  # Does the image build, boot, and reach its data?
+  #
+  # Nothing else in this repository answers that. `flyctl deploy --remote-only`
+  # builds and releases in one step, so before this job the first time anyone
+  # ran a changed image was in production -- on the single machine that holds
+  # the customer database and does not auto-restart. "Deploy it and watch" was
+  # the only verification available for a Dockerfile change.
+  #
+  # It is also the gate for a failure this repository has now hit twice in one
+  # day, caught both times by a person rather than a check: a .dockerignore rule
+  # that excludes something the app reads at boot. The container starts, serves,
+  # answers a health check, and has an empty catalog. Every test passes. That is
+  # why this job asserts the catalog and not only health -- health alone sails
+  # straight through it.
+  image:
+    name: The image builds and boots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The whole history, because the step below diffs against the base.
+          fetch-depth: 0
+
+      # A docker build on a documentation change is cost with no return, so the
+      # heavy steps are skipped rather than the job. A job that skips would take
+      # `deploy` with it -- a skipped dependency skips its dependents -- and
+      # every docs merge would stop deploying. So this job always runs and
+      # always succeeds; it is the steps that are conditional.
+      #
+      # When it cannot tell what changed, it builds. A needless build costs four
+      # minutes; a skipped one ships an image nobody ran.
+      - name: Decide whether this change can affect the image
+        id: scope
+        run: |
+          paths='^(Dockerfile|\.dockerignore|fly\.toml|package-lock\.json|package\.json|backend/|src/data/|\.github/workflows/)'
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base='${{ github.event.pull_request.base.sha }}'
+          else
+            base='${{ github.event.before }}'
+          fi
+
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "no usable base ref; building rather than guessing"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "$base" "${{ github.sha }}")"
+          echo "changed files:"; echo "$changed"
+          if echo "$changed" | grep -Eq "$paths"; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "nothing here can affect the image"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Built from the repository root with the real .dockerignore in play. That
+      # is the point: the failure this catches is a file wrongly excluded from
+      # the build context, which is invisible unless the context is the real one.
+      - name: Build the image
+        if: steps.scope.outputs.build == 'true'
+        run: docker build -t kmt-gate .
+
+      # Booted the way Fly boots it: a volume at /data, the database inside it,
+      # a throwaway password. If the image ever cannot write there -- which is
+      # exactly what dropping to a non-root user without changing /data
+      # ownership would cause (#87) -- this is where it surfaces, as a red job
+      # instead of a machine that will not start.
+      - name: Boot it and prove it can serve
+        if: steps.scope.outputs.build == 'true'
+        run: |
+          docker volume create kmt-gate-data
+          docker run -d --name kmt-gate \
+            -e KMT_OWNER_PASSWORD=gate-only-password-not-a-secret \
+            -e KMT_SESSION_SECRET=gate-only-session-secret \
+            -e KMT_OWNER_DB=/data/gate.sqlite \
+            -e PORT=8080 \
+            -v kmt-gate-data:/data \
+            -p 8099:8080 \
+            kmt-gate
+
+          # Polled, not slept: the first boot runs the migration and the seed,
+          # and both are silent, so their duration is not something to guess at.
+          ready=false
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://localhost:8099/api/health 2>/dev/null; then
+              ready=true; break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != "true" ]; then
+            echo "FAIL: the container never became healthy in 120s"
+            exit 1
+          fi
+
+          health="$(curl -fsS http://localhost:8099/api/health)"
+          echo "health: $health"
+          echo "$health" | grep -q '"ok":true' || { echo "FAIL: health did not report ok"; exit 1; }
+
+          # The load-bearing assertion. /api/health proves the process can read
+          # its database; it says nothing about whether the image contains the
+          # files the app needs. The catalog is seeded at boot from
+          # src/data/scraped-tires.json, so an empty one means that file did not
+          # reach the image -- the .dockerignore failure, which looks like the
+          # app working right up until a customer tries to buy a tire.
+          #
+          # It therefore depends on the seed running from that path. If seeding
+          # ever moves, this assertion moves with it.
+          tires="$(curl -fsS http://localhost:8099/api/catalog | jq '.tires | length')"
+          echo "catalog rows: $tires"
+          if [ "$tires" -lt 1 ]; then
+            echo "FAIL: the image boots and serves an empty catalog."
+            echo "The usual cause is a .dockerignore rule excluding src/data/."
+            exit 1
+          fi
+
+      # A container that dies at boot leaves nothing else to read.
+      - name: What the container said
+        if: failure() && steps.scope.outputs.build == 'true'
+        run: docker logs kmt-gate 2>&1 | tail -50
+
+      - name: Clean up
+        if: always() && steps.scope.outputs.build == 'true'
+        run: |
+          docker rm -f kmt-gate 2>/dev/null || true
+          docker volume rm kmt-gate-data 2>/dev/null || true
+
   deploy:
     name: Deploy to Fly
-    needs: check
+    # Both, so an image that cannot boot stops the release. A Docker Hub hiccup
+    # blocking a good deploy is the cost; a retry clears that, and nothing
+    # clears an image already on the one machine that cannot open /data.
+    needs: [check, image]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
