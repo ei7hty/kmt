@@ -158,3 +158,22 @@ not work in flight; each is its owner's to remove.
 Post-deploy read-only (#42); email instead of SMS for m10 (#33); the m10
 answers (#30); the migration split (in the migration PR's body; add it to
 `decisions.md` when it merges).
+
+## The repo agent's handoff, verbatim
+
+1. Main is e086760, green: check, deploy and the deployed-site check all passed, and kmt.fly.dev is serving it.
+2. One PR open: #55 (t36, request-lifecycle), open-and-pending. Its first commit is the schema migration that rebuilds the quotes table. Merge IS deploy and the migration runs on first boot, so the volume snapshot happens before the merge, not after; re-deploying an older commit restores code and not data. It needs main merged in first, because it predates #53, which touched quotes.mjs and QuoteRequests.jsx.
+3. Nothing else is open. #45 was closed as superseded by #56, which is merged. CLAIMS.md is empty and no worktree of mine remains.
+4. Audit baseline is 42 dead-end / 34 request-flow / 8 responsive / 19 deployed-site / 6 owner-inventory, but do not carry those numbers anywhere. Each script owns EXPECTED_CHECKS and fails on a mismatch in either direction; AGENTS.md now names none, on purpose.
+5. `.forge/owner-inventory-audit.mjs` is real but UNGATED: the workflow never runs it. I merged #54 on my own run of that script, not on its badge. Adding it to the check job is unclaimed.
+6. Cancelled is not failed and is not passed. The concurrency group cancels queued runs, and "no checks reported" means every run was cancelled. I merged twice on that mistake (#35, #42). Read `.conclusion`, never the tick.
+7. Every PR comes from the single GitHub login `ei7hty`, so authors are identifiable only by branch, task id, and who messages you. The "Author: <sidebar title>" line in PR bodies started today and is not yet in AGENTS.md.
+8. Cross-session messages arrive stale. Several today told me to do work already done, in both directions. Check repo state before acting on any queue instruction, including mine.
+9. There is no branch protection: private repo on a free plan, the API answers 403. The gate is convention and the person merging is the rest of it.
+10. The no-self-merge rule has NO docs-only exception, deliberately. I wrote #56 and did not merge it; the lead did. I declined to write the exception I would have been the beneficiary of. Whether one should exist is the lead's to decide, and the reasoning is that the beneficiary should not be its author.
+11. Production holds real data: request f80ada13..., paid. Never point the flow audits at it: they submit, approve and pay. Only deployed-site-check is read-only, which is why the live-URL instruction in AGENTS.md now names it.
+12. Legacy contact fields come back `null` from production but are `undefined` in #53's test. The guard is a truthiness check so both pass; tightening it to `!== undefined` would pass the suite and break every legacy row. SWE-S AGENT 1 will extend the test after the pause.
+13. Registered worktrees on merged branches are not work in flight; each is its owner's to remove with `scripts/worktree.mjs`. Removal refuses while any process holds the directory, which is correct behaviour and not a fault.
+14. Never `rm -rf` a worktree whose node_modules is a junction; unlink it first (`cmd rmdir`). It destroyed the shared install once. Node's lstat reports a junction as a symlink; Python's `islink` does not, so tools disagree about what it is.
+15. Unclaimed in the repo agent's lane: fold the check and verify job definitions into one with two targets; add a fixture to the gate that sets an owner price and delists a tire, with assertions the customer sees both; add the owner-inventory audit to the check job.
+
