@@ -41,6 +41,25 @@ inferring from behaviour.
 | `KMT_MAIL_SMTP_HOST` / `_USER` / `_PASSWORD` | mail is outbox-only; nothing sends | SMTP is configured (see below) |
 | `KMT_MAIL_FROM`, `KMT_OWNER_EMAIL` | fine while no SMTP variable is set | required once any is |
 
+**Two of these no longer need `flyctl` at all.** The running server now answers
+both as headers, which is faster than a secrets list and proves what actually
+resolved rather than what was set:
+
+```bash
+curl -sI https://kensmobiletire.com/ | grep -i '^x-kmt-'
+```
+
+```
+x-kmt-release: 71cd81a
+x-kmt-service-area: on
+```
+
+Measured 2026-09-06: the service-area check is **on**, so a customer outside the
+radius is refused at submit. `KMT_SERVICE_RADIUS_MILES` is present and set, which
+is why the "absent means enforcing" row below is now about a state this
+deployment is no longer in -- it stays because it is still true of any
+deployment where the secret is missing.
+
 **A digest is not a value.** `secrets list` shows that a secret exists, not what
 it resolves to -- so it can prove a step has been done, and cannot prove what it
 was set to. `KMT_SERVICE_RADIUS_MILES` is the case that matters: present, it may
@@ -591,8 +610,20 @@ discover the steps that are wrong while nothing is lost, and every instruction
 below is written to be checked rather than believed.
 
 It restores to a **new volume and a throwaway machine**. Nothing in this
-procedure touches the live volume, and no step of it is reversible-by-accident:
-a restore creates a new volume rather than overwriting one.
+procedure touches the live volume: a restore creates a new volume rather than
+overwriting one.
+
+**That guarantee is about the volume, and it is not a guarantee about the app.**
+It was written as the whole safety story and read that way, and on 2026-09-06 the
+drill was run with the throwaway machine inside the production app -- which this
+section did not forbid because it did not say which app to use. A Fly app
+load-balances across its machines, so a machine that is not running the server
+can still be handed real customer traffic. One was, for about thirteen minutes,
+and the health monitor caught it: `no X-KMT-Release header`, because the request
+was answered by a machine that is not the app.
+
+Naming one hazard makes a reader stop looking for others. The volume was never
+at risk and production was still briefly degraded.
 
 1. **Pick a snapshot.**
 
@@ -614,7 +645,20 @@ a restore creates a new volume rather than overwriting one.
    A new volume, deliberately named so nobody mistakes it for the live one.
 
 3. **Get the file off it and onto your machine**, using a temporary machine with
-   that volume mounted. Fly's exact invocation for a one-off machine changes
+   that volume mounted -- **in a separate Fly app, never in `kmt`.**
+
+   **This is the step that degraded production once.** A machine created with
+   `-a kmt` joins that app's routing pool the moment it exists, whatever it is
+   running. Fly balances customer requests across it, and a machine running
+   `sleep 900` answers them without the app: no release header, no site. Nothing
+   about mounting a restored volume requires being inside the app that serves
+   customers.
+
+   So create the restore machine in an app of its own -- `kmt-restore`, made for
+   the drill and destroyed with it -- and mount the restored volume there. If a
+   separate app is genuinely impossible, the machine must be prevented from
+   taking traffic before it is created, not after; a machine that is already in
+   the pool has already been routed to. Fly's exact invocation for a one-off machine changes
    between `flyctl` versions, so read `flyctl machine run --help` rather than
    trusting a command written here months earlier. What you need is a container
    with `kmt_restore_test` mounted at `/data` and a shell.
