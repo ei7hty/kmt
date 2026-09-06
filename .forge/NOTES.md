@@ -443,7 +443,7 @@ could confirm; the other three are LEAD BACKEND DEV's own measurements,
 recorded as theirs.
 
 **The sharpest one, confirmed by reading `backend/quotes.test.mjs`:**
-`serve()` there (line 371) is a hand-written mirror of `server.mjs`'s
+`serve()` there (line 454) is a hand-written mirror of `server.mjs`'s
 pipeline, not an import of it. Any pre-dispatch change to `server.mjs` --
 routing order, a new guard before the handlers run -- has to be mirrored
 there by hand too, or the suite is testing the mirror and not the real
