@@ -128,6 +128,17 @@ jobs:
           # newest-commit version PASSED while five shipping commits sat
           # undelivered; the oldest-commit version fires at 2096s. This is the
           # age of the debt, not the age of the last thing added to it.
+          #
+          # Why 30 minutes, measured rather than guessed. QA timed four real
+          # end-to-end deploys: 3m45s and 3m56s unloaded, 6m52s and 7m42s under
+          # the queue contention of the concurrency storm. So a single deploy is
+          # 4-8 minutes. The threshold is not that number, though: deploys run
+          # serially in one concurrency group, so four shipping merges in quick
+          # succession legitimately leave the OLDEST waiting through all four --
+          # around half an hour at the loaded rate, with nothing wrong. 30
+          # minutes is chosen to sit above that, not above one deploy. Tighten
+          # it only with a measurement of the queue, not of a single run: a
+          # monitor that fires during a normal backlog is one somebody mutes.
           oldest="$(git log --format=%ct "${header}..HEAD" -- $SHIP | tail -1)"
           age=$(( $(date +%s) - oldest ))
           echo "undelivered commits that reach the image:"
