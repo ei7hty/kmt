@@ -16,6 +16,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | product-record-reconcile | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/state.json, .forge/sprint-live.md, .forge/roadmap.md, .forge/decisions.md (product record only: task/milestone status verified against merged code, t57-t66 entered, m13 added, stage gates marked, two product rulings appended; no code, no audit scripts) | 2026-09-06 |
 | growth-front-door | GROWTH/MARKETING (local_d80272eb) | index.html (head only: meta description + LocalBusiness JSON-LD), docs/brand.md (correct it if its watermark claim is stale), public/brand/ (read-only verification), and the audit script whose EXPECTED_CHECKS moves if a head check is added | 2026-09-06 |
 | release-header-check | QA ENGINEER (local_1fa1cb9a) | .forge/deployed-site-check.mjs (X-KMT-Release shape check, read-only) | 2026-09-06 |
+| customer-quote-fields | JUNIOR BACK END DEV (local_0b9989ef) | backend/quotes.mjs (shapeRow's quote half), backend/quotes.test.mjs (t35 prerequisite: CUSTOMER_QUOTE_FIELDS allow-list, mirrors CUSTOMER_REQUEST_FIELDS/#65; separate PR, lands before t35) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
