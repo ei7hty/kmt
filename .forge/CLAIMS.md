@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| service-area | LEAD BACKEND DEV | scripts/cut-zip-centroids.mjs, backend/data/zip-centroids.json, backend/service-area.mjs and its test, .forge/owner-backend.md (t48 part one, #95) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
