@@ -11,7 +11,7 @@
 .min-h-screen {
   min-height: 100svh;
   color: var(--text);
-  background: radial-gradient(circle at 50% -10%, #16303c 0, var(--bg) 42rem) !important;
+  background: radial-gradient(circle at 50% -10%, #171717 0, var(--bg) 42rem) !important;
 }
 
 .min-h-screen > nav {
@@ -59,7 +59,7 @@
   padding: 34px !important;
   border: 1px solid var(--border);
   border-radius: 4px !important;
-  background: linear-gradient(145deg, rgba(22, 48, 60, 0.96), rgba(13, 27, 36, 0.96)) !important;
+  background: linear-gradient(145deg, rgba(23, 23, 23, 0.96), rgba(8, 8, 8, 0.96)) !important;
   box-shadow: var(--shadow);
   text-align: left;
 }
@@ -82,7 +82,7 @@
 .min-h-screen label {
   display: block;
   margin-bottom: 7px;
-  color: #c9d3d9;
+  color: #dedee3;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 1px;
@@ -92,9 +92,9 @@
 :where(.min-h-screen) input,
 :where(.min-h-screen) select {
   width: 100%;
-  border: 1px solid #27404d;
+  border: 1px solid #3e3e42;
   border-radius: 3px;
-  background: #0d1b24;
+  background: #080808;
   color: var(--text-h);
   padding: 13px 14px;
   outline: none;
@@ -178,8 +178,8 @@
 /* Customer-facing KMT home and ordering experience */
 .customer-shell {
   overflow: hidden;
-  background: #0d1b24 !important;
-  color: #c9d3d9;
+  background: #080808 !important;
+  color: #dedee3;
 }
 
 .customer-shell > .site-nav {
@@ -191,7 +191,7 @@
   max-width: none;
   margin: 0 !important;
   padding: 13px clamp(18px, 4vw, 54px);
-  border-bottom: 1px solid #16303c;
+  border-bottom: 1px solid #171717;
   background: rgba(13, 27, 36, 0.94);
 }
 
@@ -251,7 +251,7 @@
   border-bottom: 2px solid transparent !important;
   border-radius: 0 !important;
   background: transparent !important;
-  color: #c9d3d9 !important;
+  color: #dedee3 !important;
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.6px;
@@ -282,7 +282,7 @@
   grid-template-columns: minmax(360px, 0.82fr) minmax(420px, 1.18fr);
   min-height: 480px;
   isolation: isolate;
-  background: radial-gradient(ellipse at 82% 44%, #1d3745 0, #122430 28%, #0d1b24 65%);
+  background: radial-gradient(ellipse at 82% 44%, #303033 0, #121212 28%, #080808 65%);
 }
 
 .hero-section::after {
@@ -291,8 +291,8 @@
   inset: 0;
   content: '';
   opacity: 0.18;
-  background: repeating-linear-gradient(112deg, transparent 0 18px, #7d8e98 19px 20px, transparent 21px 40px);
-  mask-image: linear-gradient(90deg, #0d1b24, transparent 68%);
+  background: repeating-linear-gradient(112deg, transparent 0 18px, #909094 19px 20px, transparent 21px 40px);
+  mask-image: linear-gradient(90deg, #080808, transparent 68%);
 }
 
 .hero-copy {
@@ -326,7 +326,7 @@
 
 .hero-lede {
   margin-top: 24px;
-  color: #c9d3d9;
+  color: #dedee3;
   font-size: 16px;
   font-weight: 800;
   line-height: 1.55;
@@ -362,7 +362,7 @@
   position: relative;
   min-height: 480px;
   overflow: hidden;
-  background: linear-gradient(140deg, transparent 3%, rgba(0, 0, 0, 0.22)), linear-gradient(20deg, #122430 20%, #27404d 50%, #122430 78%);
+  background: linear-gradient(140deg, transparent 3%, rgba(0, 0, 0, 0.22)), linear-gradient(20deg, #121212 20%, #3e3e42 50%, #121212 78%);
   clip-path: polygon(12% 0, 100% 0, 100% 100%, 0 100%);
 }
 
@@ -372,7 +372,7 @@
   left: 50%;
   width: min(58%, 330px);
   aspect-ratio: 1;
-  border: 8px solid #0d1b24;
+  border: 8px solid #080808;
   border-radius: 50%;
   object-fit: cover;
   box-shadow: 0 24px 45px rgba(0, 0, 0, 0.65), 0 0 0 2px var(--accent);
@@ -396,19 +396,19 @@
   margin: -1px auto 0;
   padding: 20px clamp(24px, 5vw, 72px);
   border: 1px solid var(--accent);
-  background: #0d1b24;
+  background: #080808;
 }
 
 .service-strip > div {
   display: flex;
   align-items: center;
   gap: 14px;
-  border-right: 1px solid #27404d;
+  border-right: 1px solid #3e3e42;
 }
 
 .service-strip > div:last-child { border-right: 0; }
 .service-strip strong { color: var(--accent-text); font-size: 27px; }
-.service-strip span { display: grid; gap: 3px; color: #96a6b0; font-size: 12px; }
+.service-strip span { display: grid; gap: 3px; color: #a3a3ab; font-size: 12px; }
 .service-strip b { color: #f3f3f3; font-size: 12px; letter-spacing: 0.5px; }
 
 .order-section {
@@ -432,7 +432,7 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 0;
   margin: 38px 0 18px;
-  border-block: 1px solid #1d3745;
+  border-block: 1px solid #303033;
 }
 
 .order-step {
@@ -446,67 +446,67 @@
   text-transform: uppercase;
 }
 
-.order-step:not(:last-child)::after { position: absolute; top: 50%; right: 0; width: 1px; height: 24px; background: #1d3745; content: ''; transform: translateY(-50%); }
-.order-step span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #34505e; border-radius: 50%; font-weight: 900; }
+.order-step:not(:last-child)::after { position: absolute; top: 50%; right: 0; width: 1px; height: 24px; background: #303033; content: ''; transform: translateY(-50%); }
+.order-step span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #56565c; border-radius: 50%; font-weight: 900; }
 .order-step.current { color: #f3f3f3; }
 .order-step.current span { border-color: var(--accent); background: var(--accent-solid); color: #fff; }
-.order-step.complete { color: #b3c0c8; }
+.order-step.complete { color: #c4c4ca; }
 .order-step.complete span { border-color: #4eaf68; color: #5ed47b; }
 
 .order-form { margin-top: 0 !important; }
-.step-panel { padding: 30px; border: 1px solid #1d3745; border-radius: 4px; background: linear-gradient(145deg, #122430, #0d1b24); }
+.step-panel { padding: 30px; border: 1px solid #303033; border-radius: 4px; background: linear-gradient(145deg, #121212, #080808); }
 .step-panel h3 { margin: 0; color: #f4f4f4; font-family: var(--heading); font-size: clamp(1.8rem, 4vw, 2.9rem); letter-spacing: 0.5px; text-transform: uppercase; }
 .panel-note { margin-top: 7px; color: var(--muted); font-size: 14px; }
 .size-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
-.size-card { display: flex; flex-direction: column; align-items: flex-start; min-height: 132px; padding: 18px !important; border: 1px solid #27404d !important; border-radius: 3px !important; background: #122430 !important; color: #fff !important; text-align: left; }
+.size-card { display: flex; flex-direction: column; align-items: flex-start; min-height: 132px; padding: 18px !important; border: 1px solid #3e3e42 !important; border-radius: 3px !important; background: #121212 !important; color: #fff !important; text-align: left; }
 .size-card:hover, .size-card.selected { border-color: var(--accent) !important; background: var(--accent-bg) !important; transform: translateY(-2px); }
 .size-icon { color: var(--accent-text); font-size: 27px; }
 .size-card strong { margin-top: 14px; font-family: var(--mono); font-size: 17px; }
 .size-card small { margin-top: 4px; color: var(--muted); font-size: 11px; }
-.fitment-modal { overflow: hidden; border: 1px solid #16303c; border-radius: 5px; background: #f8f8f8; color: #16303c; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38); }
+.fitment-modal { overflow: hidden; border: 1px solid #171717; border-radius: 5px; background: #f8f8f8; color: #171717; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38); }
 .fitment-heading { display: flex; align-items: center; gap: 10px; padding: 20px 22px 12px; }
-.fitment-heading h3 { margin: 0; color: #122430; font-family: var(--sans); font-size: 24px; font-weight: 800; letter-spacing: -0.4px; text-transform: none; }
+.fitment-heading h3 { margin: 0; color: #121212; font-family: var(--sans); font-size: 24px; font-weight: 800; letter-spacing: -0.4px; text-transform: none; }
 .fitment-wheel { display: grid; place-items: center; width: 27px; height: 27px; border: 2px solid #c41118; border-radius: 50%; color: #c41118; font-size: 17px; }
-.fitment-close { margin-left: auto; padding: 0 !important; border: 0 !important; background: transparent !important; color: #16303c !important; font-family: var(--sans); font-size: 31px; font-weight: 300; line-height: 1; }
+.fitment-close { margin-left: auto; padding: 0 !important; border: 0 !important; background: transparent !important; color: #171717 !important; font-family: var(--sans); font-size: 31px; font-weight: 300; line-height: 1; }
 .fitment-close:hover { background: transparent !important; transform: none !important; }
 .fitment-progress { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 16px 16px 0; }
-.fitment-progress-item { position: relative; display: grid; justify-items: center; gap: 8px; color: #27404d; font-size: 13px; }
-.fitment-progress-item::after { position: absolute; z-index: 0; top: 29px; left: 0; right: 0; height: 10px; content: ''; background: #c9d3d9; }
+.fitment-progress-item { position: relative; display: grid; justify-items: center; gap: 8px; color: #3e3e42; font-size: 13px; }
+.fitment-progress-item::after { position: absolute; z-index: 0; top: 29px; left: 0; right: 0; height: 10px; content: ''; background: #dedee3; }
 .fitment-progress-item:first-child::after { left: 50%; }
 .fitment-progress-item:last-child::after { right: 50%; }
-.fitment-progress-item span { position: relative; z-index: 1; width: 8px; height: 8px; border-radius: 50%; background: #5c7382; }
+.fitment-progress-item span { position: relative; z-index: 1; width: 8px; height: 8px; border-radius: 50%; background: #77777a; }
 .fitment-progress-item.active { color: #c41118; font-weight: 800; }
 .fitment-progress-item.active span { background: #ef4b54; box-shadow: 0 0 0 1px #ef4b54; }
-.fitment-progress-item.active::after { background: linear-gradient(90deg, #f09ba0 0 52%, #c9d3d9 52%); }
+.fitment-progress-item.active::after { background: linear-gradient(90deg, #f09ba0 0 52%, #dedee3 52%); }
 .fitment-visual { position: relative; height: 172px; margin-top: 12px; overflow: hidden; background: linear-gradient(180deg, #fff, #f1f1f1); }
 /* Fixed height with object-fit rather than width:100%/height:auto: the three
    guides have different aspect ratios, so an auto height would make the panel
    jump every time the stage advances. Transparency plus the light panel means
    the letterboxing is invisible. */
 .fitment-guide { display: block; box-sizing: border-box; width: 100%; height: 100%; padding: 14px 18px 0; object-fit: contain; object-position: center bottom; }
-.fitment-back { margin: 0 16px; padding: 10px 0 !important; border: 0 !important; background: transparent !important; color: #34505e !important; font-size: 13px; }
+.fitment-back { margin: 0 16px; padding: 10px 0 !important; border: 0 !important; background: transparent !important; color: #56565c !important; font-size: 13px; }
 .fitment-back:hover { background: transparent !important; color: #ef4b54 !important; transform: none !important; }
 .fitment-back:disabled { visibility: hidden; }
 .fitment-controls { position: relative; z-index: 2; margin: -1px 16px 0; padding: 16px 0 0; background: #f8f8f8; }
 .fitment-zip { display: grid; gap: 8px; padding: 12px 0 22px; }
-.fitment-zip label { color: #27404d; font-size: 12px; font-weight: 800; }
-.fitment-zip input { border: 1px solid #96a6b0 !important; border-radius: 6px !important; background: #fff !important; color: #16303c !important; }
-.fitment-search { display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid #96a6b0; border-radius: 6px; background: #fff; }
-.fitment-search span { color: #34505e; font-size: 25px; transform: rotate(-20deg); }
-.fitment-search input { min-width: 0; border: 0 !important; background: transparent !important; color: #16303c !important; font-size: 14px; }
+.fitment-zip label { color: #3e3e42; font-size: 12px; font-weight: 800; }
+.fitment-zip input { border: 1px solid #a3a3ab !important; border-radius: 6px !important; background: #fff !important; color: #171717 !important; }
+.fitment-search { display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid #a3a3ab; border-radius: 6px; background: #fff; }
+.fitment-search span { color: #56565c; font-size: 25px; transform: rotate(-20deg); }
+.fitment-search input { min-width: 0; border: 0 !important; background: transparent !important; color: #171717 !important; font-size: 14px; }
 .fitment-search input:focus { box-shadow: none !important; }
 .fitment-options { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; max-height: 252px; overflow-y: auto; padding: 16px 0 8px; }
-.fitment-option { min-height: 48px; padding: 10px 6px !important; border: 1px solid #c9d3d9 !important; border-radius: 5px !important; background: #fff !important; color: #27404d !important; font-family: var(--sans); font-size: 14px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08); }
+.fitment-option { min-height: 48px; padding: 10px 6px !important; border: 1px solid #dedee3 !important; border-radius: 5px !important; background: #fff !important; color: #3e3e42 !important; font-family: var(--sans); font-size: 14px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08); }
 .fitment-option:hover { border-color: #ef4b54 !important; background: #fff1f2 !important; color: #d9323c !important; transform: translateY(-1px); }
-.fitment-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 18px 16px; color: #34505e; font-size: 12px; }
+.fitment-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 18px 16px; color: #56565c; font-size: 12px; }
 .fitment-footer .primary-action { min-width: 175px; margin-top: 0; }
 .fitment-footer .primary-action:disabled { cursor: not-allowed; opacity: 0.45; }
 .back-action { padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent-text) !important; font-size: 12px; }
 .tire-options { display: grid; gap: 10px; margin-top: 25px; }
-.tire-option { display: grid; grid-template-columns: 66px 1fr auto; align-items: center; gap: 15px; padding: 13px !important; border: 1px solid #1d3745 !important; border-radius: 3px !important; background: #122430 !important; color: #fff !important; text-align: left; }
+.tire-option { display: grid; grid-template-columns: 66px 1fr auto; align-items: center; gap: 15px; padding: 13px !important; border: 1px solid #303033 !important; border-radius: 3px !important; background: #121212 !important; color: #fff !important; text-align: left; }
 .tire-option:hover, .tire-option.selected { border-color: var(--accent) !important; background: var(--accent-bg) !important; transform: none; }
 .tire-option:disabled { cursor: not-allowed; opacity: 0.4; }
-.tire-art { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; border: 9px solid #1d3745; outline: 2px solid #5c7382; color: #0d1b24; background: radial-gradient(circle, #5c7382 0 9%, #16303c 10% 26%, #7d8e98 27% 31%, #122430 32% 100%); font-size: 0; }
+.tire-art { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; border: 9px solid #303033; outline: 2px solid #77777a; color: #080808; background: radial-gradient(circle, #77777a 0 9%, #171717 10% 26%, #909094 27% 31%, #121212 32% 100%); font-size: 0; }
 .tire-info { display: grid; gap: 3px; }
 .tire-info strong { font-size: 15px; }
 .tire-info small { color: var(--muted); font-size: 11px; }
@@ -515,13 +515,13 @@
 .tire-option > b i { color: var(--muted); font-family: var(--sans); font-size: 10px; font-style: normal; font-weight: 400; }
 .vehicle-inline, .service-fields { display: grid; gap: 8px; margin-top: 26px; }
 .service-fields { grid-template-columns: 1.5fr 1fr; gap: 15px; }
-.vehicle-inline label, .service-fields label { display: block; color: #c9d3d9; font-size: 11px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
-:where(.customer-shell) input { border-color: #27404d; background: #0d1b24; }
-.order-summary-line { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; padding: 13px 0; border-block: 1px solid #1d3745; color: #96a6b0; font-size: 13px; }
+.vehicle-inline label, .service-fields label { display: block; color: #dedee3; font-size: 11px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
+:where(.customer-shell) input { border-color: #3e3e42; background: #080808; }
+.order-summary-line { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; padding: 13px 0; border-block: 1px solid #303033; color: #a3a3ab; font-size: 13px; }
 .order-summary-line b { color: #f1f1f1; }
 .step-error { margin-top: 16px; color: #ff7077; font-size: 13px; }
 .success-message { margin-top: 16px; padding: 16px; border: 1px solid #3ca75b; background: rgba(60, 167, 91, 0.1); color: #71df8b; }
-.site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #1d3745; color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
+.site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #303033; color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
 /* A text-only control, but a full-height one: it was 12px tall, which is not
    a touch target for anyone, let alone at a roadside (#85). */
 /* The privacy notice's link at the foot of every screen (t50): text-only,
@@ -545,7 +545,7 @@
   .hero-logo { width: 180px; }
   .hero-visual-label { right: 50%; bottom: 12px; transform: translateX(50%); white-space: nowrap; }
   .service-strip { grid-template-columns: 1fr; padding: 18px 24px; }
-  .service-strip > div { border-right: 0; border-bottom: 1px solid #1d3745; padding: 10px 0; }
+  .service-strip > div { border-right: 0; border-bottom: 1px solid #303033; padding: 10px 0; }
   .service-strip > div:last-child { border-bottom: 0; }
   .order-section { padding: 55px 16px; }
   .size-grid { grid-template-columns: repeat(2, 1fr); }
@@ -584,7 +584,7 @@
 .app-shell {
   min-height: 100svh;
   color: var(--text);
-  background: radial-gradient(circle at 50% -10%, #16303c 0, var(--bg) 42rem);
+  background: radial-gradient(circle at 50% -10%, #171717 0, var(--bg) 42rem);
 }
 
 /* Simple internal top bar: KMT wordmark + route-appropriate nav links.
@@ -633,7 +633,7 @@
   padding: 30px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: linear-gradient(145deg, rgba(22, 48, 60, 0.96), rgba(13, 27, 36, 0.96));
+  background: linear-gradient(145deg, rgba(23, 23, 23, 0.96), rgba(8, 8, 8, 0.96));
   box-shadow: var(--shadow);
   text-align: left;
 }
@@ -641,7 +641,7 @@
 /* Exception variant: amber, distinct from brand red and success green (R9). */
 .panel-exception {
   border-color: rgba(245, 158, 11, 0.55);
-  background: linear-gradient(145deg, rgba(58, 44, 10, 0.55), rgba(13, 27, 36, 0.96));
+  background: linear-gradient(145deg, rgba(58, 44, 10, 0.55), rgba(8, 8, 8, 0.96));
 }
 
 /* Heading/eyebrow/secondary text, generalized for card content. */
@@ -717,19 +717,19 @@
 
 .btn-neutral {
   border-color: var(--border);
-  background: #16303c;
-  color: #c9d3d9;
+  background: #171717;
+  color: #dedee3;
 }
 
 .btn-neutral:hover {
-  background: #16303c;
+  background: #171717;
 }
 
 /* Owner screen layout built on the shared components above. */
 .owner-shell {
   min-height: 100svh;
   color: var(--text);
-  background: radial-gradient(circle at 50% -10%, #16303c 0, var(--bg) 42rem);
+  background: radial-gradient(circle at 50% -10%, #171717 0, var(--bg) 42rem);
 }
 
 .owner-content {
@@ -1180,7 +1180,7 @@
   gap: 12px;
   margin: 22px 0;
   padding: 18px 0;
-  border-block: 1px solid #16303c;
+  border-block: 1px solid #171717;
   text-align: left;
 }
 
@@ -1227,7 +1227,7 @@
 
 .tire-empty-body {
   margin: 0 0 18px;
-  color: #96a6b0;
+  color: #a3a3ab;
   font-size: 14px;
 }
 
@@ -1248,28 +1248,28 @@
    ------------------------------------------------------------------------ */
 
 .hero-section {
-  background: radial-gradient(ellipse at 82% 44%, #24435400 0, #1d3745 0, #122430 30%, var(--bg) 66%);
+  background: radial-gradient(ellipse at 82% 44%, #30303300 0, #303033 0, #121212 30%, var(--bg) 66%);
 }
 
 .hero-section::after {
   opacity: 0.14;
-  background: repeating-linear-gradient(112deg, transparent 0 18px, #96a6b0 19px 20px, transparent 21px 40px);
+  background: repeating-linear-gradient(112deg, transparent 0 18px, #a3a3ab 19px 20px, transparent 21px 40px);
 }
 
 .hero-visual {
-  background: linear-gradient(140deg, transparent 3%, rgba(0, 0, 0, 0.28)), linear-gradient(20deg, #122430 20%, #34505e 50%, #16303c 78%);
+  background: linear-gradient(140deg, transparent 3%, rgba(0, 0, 0, 0.28)), linear-gradient(20deg, #121212 20%, #56565c 50%, #171717 78%);
 }
 
 /* Chrome headline: the logo's silver lettering as a sheen across the page
    headline. Solid light text is the colour the browser computes and the
-   fallback where text clipping is unsupported; the darkest stop, #a9b3bb,
+   fallback where text clipping is unsupported; the darkest stop, #ababab,
    reads at 6.8:1 on the navy, well past the 3:1 large text needs. */
 .hero-copy h1,
 .section-heading h2,
 .owner-heading,
 .confirmation-heading,
 .oi-heading h1 {
-  color: #eef1f3;
+  color: #f0f0f0;
 }
 
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
@@ -1440,12 +1440,31 @@
 
 /* The size search's empty state: a sentence and a way back, never a blank
    list. On the light modal, so the dark text tokens of that panel. */
-.fitment-empty { display: grid; gap: 10px; justify-items: start; padding: 14px 4px 6px; color: #16303c; font-size: 14px; line-height: 1.5; }
+.fitment-empty { display: grid; gap: 10px; justify-items: start; padding: 14px 4px 6px; color: #171717; font-size: 14px; line-height: 1.5; }
 .fitment-empty p { margin: 0; }
-.fitment-clear { min-height: 44px; padding: 10px 16px !important; border: 1px solid #34505e !important; border-radius: 6px !important; background: #fff !important; color: #16303c !important; font-size: 13px; font-weight: 800; }
-.fitment-clear:hover { background: #e8edf0 !important; }
+.fitment-clear { min-height: 44px; padding: 10px 16px !important; border: 1px solid #56565c !important; border-radius: 6px !important; background: #fff !important; color: #171717 !important; font-size: 13px; font-weight: 800; }
+.fitment-clear:hover { background: #ebebeb !important; }
 
 /* The tire list's paging control: the next page's size in the label, and how
    much of the list is still folded under it. */
 .tire-show-more { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-height: 44px; margin-top: 14px; }
 .tire-show-more small { font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); }
+
+/* The brand band (t61). The logo files carry their ground baked in, measured
+   at rgb(13, 28, 35) in every corner of every file, so on the black ground
+   the logo would show as a faint rectangle. The nav and the hero keep that
+   exact colour as a deliberate band, the logo sits on it with no shadow and
+   no radius to give it an edge, and everything below is the original black,
+   white and red. These come last so they win over the base and phone-width
+   hero rules above. */
+.site-nav, .internal-nav { background: #0d1c23; border-bottom-color: #1d3745; }
+.oi-nav { background: #0d1c23; border-bottom: 1px solid #1d3745; }
+.hero-section { background: radial-gradient(ellipse at 82% 44%, #1d3745 0, #122430 28%, #0d1c23 65%); }
+.hero-section::after { mask-image: linear-gradient(90deg, #0d1c23, transparent 68%); }
+.hero-visual { background: #0d1c23; }
+.hero-logo { border: 0; border-radius: 0; box-shadow: none; }
+.brand-mark img { border-radius: 0; }
+@media (max-width: 760px) {
+  .hero-section { background: radial-gradient(ellipse at 82% 44%, #24435400 0, #1d3745 0, #122430 30%, #0d1c23 66%); }
+  .hero-visual { background: #0d1c23; }
+}

@@ -102,3 +102,7 @@ The line passes when the title matches `list_sessions`, the SHA equals
 include every file in the row above, the phrase is present, and the claims
 table is clear. One corrective message names the exact deviation; a second
 failure stops the sequence and goes to the reporting line.
+
+## Lane handoffs written at spin-down
+
+- `lead-ui-engineer-lane.md`: the UI lane, written 2026-09-06 by the outgoing LEAD UI ENGINEER for the next UI engineer. Read it before any component: the palette's history (navy in #145, back to black, white and red in t61, and what survived on purpose), the two-token red with its numbers, the logo band, the CSS traps, the audit coupling, and what is in flight.
