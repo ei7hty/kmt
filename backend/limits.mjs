@@ -69,6 +69,7 @@ export const LIMITS = {
    * write into a third-party log because they submitted twice too often.
    */
   submitPerEmail: { max: 30, windowMs: 24 * 3600_000, private: true },
+  inquiriesPerContact: { max: 10, windowMs: 24 * 3600_000, private: true },
   /**
    * Wrong passwords from one address before the delay starts, and how it grows.
    * Per address, never per account: a lock on the account would let anyone

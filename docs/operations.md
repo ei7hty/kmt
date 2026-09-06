@@ -741,26 +741,14 @@ merged, #206 wired `mail.mjs` to write outbox rows on submit, on quote-sent,
 and on payment -- the outbox is not empty the way it was when this section was
 first written). Everything below applies to those three unconditionally.
 
-**`inquiries` is not one of them yet, whatever the rest of this document
-implies.** The module and its tests are on main, but nothing imports them:
+`inquiries` is live too. Confirm the wiring rather than trusting this line:
 
 ```bash
 grep -n "Inquiries" backend/server.mjs backend/dev.mjs backend/api.mjs
 ```
 
-returns nothing today, so the table is never created and every command below
-that names `inquiries` answers `no such table` until t65 wires it up. Read
-that as this line being accurate, not as a broken database -- and note there
-is nothing to redact there either, because with no table there is nowhere for
-an inquiry to have been stored. Run the grep before you believe either way;
-a command that finds nothing looks identical to a command that did not run,
-so satisfy yourself it works by grepping `Quotes` the same way first, which
-must return lines.
-
-**When t65 lands, this paragraph is what needs deleting**: move `inquiries`
-back into the sentence above and remove this exception in the same pull
-request that wires the module up. A correction that outlives the thing it
-corrected is the failure this paragraph exists to fix.
+This must return the live imports and handlers; as a positive control,
+grepping `Quotes` the same files must return lines too.
 
 If a future schema change ever drops one of these tables, a query against it
 fails loudly with `no such table` rather than silently skipping -- that

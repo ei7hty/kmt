@@ -9,6 +9,7 @@ import Status from './routes/Status.jsx'
 import Confirmation from './routes/Confirmation.jsx'
 import NotFound from './routes/NotFound.jsx'
 import Privacy from './routes/Privacy.jsx'
+import Inquiry from './routes/Inquiry.jsx'
 
 /**
  * The pathname as the route switch sees it: trailing slashes dropped, so
@@ -70,6 +71,7 @@ function App() {
   }
 
   if (route === '/privacy') return <Privacy navigate={navigate} />
+  if (route === '/inquiry') return <Inquiry navigate={navigate} />
 
   if (route === '/') return <CustomerRequest navigate={navigate} />
 

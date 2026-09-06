@@ -63,7 +63,7 @@ test('the inquiries table arrives on a deployed database without disturbing exis
     assert.equal(reopened.prepare("SELECT value FROM metadata WHERE key='seeded'").get().value, '{"at":"2026-09-06"}')
     assert.equal(reopened.prepare('SELECT count(*) AS n FROM inquiries').get().n, 0)
     const columns = reopened.prepare('PRAGMA table_info(inquiries)').all().map(c => c.name)
-    assert.deepEqual(columns, ['id', 'name', 'contact', 'vehicle_info', 'message', 'created_at', 'updated_at'])
+    assert.deepEqual(columns, ['id', 'name', 'contact', 'vehicle_info', 'message', 'status', 'created_at', 'updated_at'])
   } finally {
     reopened.close()
   }

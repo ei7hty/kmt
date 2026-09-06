@@ -1526,6 +1526,12 @@
 .hero-visual { background: #0d1c23; }
 .hero-logo { border: 0; border-radius: 0; box-shadow: none; }
 .brand-mark img { border-radius: 0; }
+.inquiry-page { max-width: 720px; }
+.inquiry-form { display: grid; gap: 16px; }
+.inquiry-form label { display: grid; gap: 7px; color: var(--text-h); font-weight: 700; }
+.inquiry-form input, .inquiry-form textarea { width: 100%; box-sizing: border-box; min-height: 44px; padding: 10px; border: 1px solid var(--border); border-radius: 3px; background: #fff; color: #171717; font: inherit; }
+.inquiry-form textarea { min-height: 120px; resize: vertical; }
+.inquiry-received { display: grid; gap: 14px; }
 @media (max-width: 760px) {
   .hero-section { background: radial-gradient(ellipse at 82% 44%, #24435400 0, #1d3745 0, #122430 30%, #0d1c23 66%); }
   .hero-visual { background: #0d1c23; }

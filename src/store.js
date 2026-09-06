@@ -88,6 +88,11 @@ export async function submitRequest(request) {
   })
 }
 
+/** A non-tire service message is deliberately separate from a quote request. */
+export async function submitInquiry(inquiry) {
+  return call('/api/inquiries', { method: 'POST', body: JSON.stringify(inquiry) })
+}
+
 /** Everything this device has asked for, newest first. */
 export async function myRequests() {
   const data = await call(`/api/requests?customer=${encodeURIComponent(customerKey())}`)
