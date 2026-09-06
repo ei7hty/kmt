@@ -948,3 +948,23 @@ as everything above: accurate when issued, invalidated elsewhere, never
 reconciled with whoever was acting on it. **The document version is caught by a
 grep; this one is caught by asking who is currently doing the thing I just
 changed my mind about.**
+
+**2026-09-06 — TEMP REPO AGENT, releasing two stale claim rows on CLAIMS.md**
+A direct-to-main push to CLAIMS.md got rejected non-fast-forward (someone else
+had pushed a claim in between, as usual). `git fetch` then `git rebase
+origin/main` ran, but the intermediate `git status` read back a HEAD that was
+neither mine nor the one just fetched, and reported "diverged" against a
+remote-tracking ref I had just fetched. Nothing was wrong: another session
+sharing this same checkout (not just the same remote — the same local `.git`
+and the same `main` ref) had run its own fetch/rebase/push in the moments
+between my commands, and it carried my already-committed local commit along
+with it. `git log main --oneline` and `git log origin/main --oneline` matched
+exactly, my commit was in the shared history, and no push of my own was ever
+needed or possible by that point.
+
+The lesson: on a push rejection here, don't loop on fetch-rebase-push assuming
+you are the one who has to land it. Check whether it already landed first —
+`git log --all --oneline --grep "<your commit's own message>"` plus a
+`git log main --oneline` vs `git log origin/main --oneline` comparison — before
+retrying. A second push attempt when you didn't need one is at best wasted and
+at worst races a live rebase in the same working tree.
