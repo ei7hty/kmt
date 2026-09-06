@@ -3,6 +3,18 @@ import { expandTireList, openOwnerQuotes } from './audit-ui.mjs'
 import assert from 'node:assert/strict'
 
 const base = process.env.AUDIT_BASE || 'http://localhost:4183'
+
+/**
+ * How many checks a complete run performs, across both widths.
+ *
+ * The baseline lives here, in the thing that produces it, and nowhere in
+ * prose. When you add or remove a check, change this number in the same
+ * commit. The run fails if a different number of checks executed: fewer
+ * means checks stopped running -- the way an audit here once passed while
+ * asserting nothing -- and more means the baseline was not updated.
+ */
+const EXPECTED_CHECKS = 30
+
 const browser = await chromium.launch()
 let checks = 0
 try {
@@ -59,7 +71,18 @@ try {
     check(errors.length === 0, 'no browser runtime errors')
     await page.close()
   }
-  console.log(`${checks}/${checks} request flow checks passed`)
+  console.log(`${checks}/${EXPECTED_CHECKS} request flow checks passed`)
+  if (checks < EXPECTED_CHECKS) {
+    console.error(`FAIL: only ${checks} of ${EXPECTED_CHECKS} checks ran. A check that stopped running is not a check that passed.`)
+    process.exitCode = 1
+  } else if (checks > EXPECTED_CHECKS) {
+    console.error(`FAIL: ${checks} checks ran but EXPECTED_CHECKS is ${EXPECTED_CHECKS}. Update it in the same commit as the new check.`)
+    process.exitCode = 1
+  }
+} catch (error) {
+  // An assertion stops the run where it failed; say how far it got.
+  console.error(`FAIL after ${checks} of ${EXPECTED_CHECKS} checks: ${error.message.split('\n')[0]}`)
+  process.exitCode = 1
 } finally {
   await browser.close()
 }

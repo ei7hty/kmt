@@ -85,12 +85,20 @@ Nothing is done until these pass. Run them; do not assume them.
 ```bash
 npm run build
 npx eslint src backend
-node --test backend/*.test.mjs       # 52 tests: owner (34) and quotes (18)
-node .forge/responsive-check.mjs     # 8 checks, overflow at 375px and 1280px
-node .forge/dead-end-audit.mjs       # 36 checks across the full click path
-node .forge/request-flow-check.mjs   # 26 checks across the request flow
+node --test backend/*.test.mjs         # every backend suite
+node .forge/dead-end-audit.mjs         # the full click path, both viewports
+node .forge/request-flow-check.mjs     # the request flow, both widths
+node .forge/responsive-check.mjs       # overflow on every screen at 375px and 1280px
+node .forge/deployed-site-check.mjs    # read-only, against a deployed URL
 node .forge/owner-inventory-audit.mjs  # needs the owner server running
 ```
+
+Each of the four audit scripts carries its own `EXPECTED_CHECKS` at the top,
+prints it on its last line, and fails the run when a different number of
+checks executed. The numbers live there and nowhere in prose: fewer checks than
+expected means something stopped running, more means the baseline was not
+updated, and either fails on the spot instead of being noticed in a document
+later. When you add or remove a check, change the constant in the same commit.
 
 Start the app with `node backend/dev.mjs` (http://127.0.0.1:4180), not
 `npm run preview` -- preview serves the built frontend only, so `/owner` shows
