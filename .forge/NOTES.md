@@ -639,3 +639,23 @@ entries above: **a tool that answers *something* is not the same as a
 tool that answers *your* question**, and a stale server answering wrong
 looks identical to your server being broken until you check whose
 process it actually is.
+
+**2026-09-06 -- Claude (repo agent), on `gh run view` itself answering stale**
+
+Same family as the entry above, one layer up: the tool you'd reach for to
+check whether a deploy is actually happening can itself lag. Mid-deploy,
+`gh run view <id> --json status` returned `"queued"` on one call, sandwiched
+between two calls seconds apart that both correctly showed `"in_progress"` --
+same run, same id, no intervening event. The run-level `status` field is a
+summary GitHub computes and can trail the truth by a beat; it is not the
+run.
+
+`gh run view <id> --json jobs` did not lag the same way: at the exact moment
+the top-level status read `"queued"`, the per-job breakdown showed all three
+real jobs already `completed`/`success`. When a run's own summary status
+looks stale, contradicts a call made seconds earlier, or just seems wrong
+given what else is known, read the jobs, not the summary -- the same
+correction as reading `.conclusion` instead of trusting a green tick, and
+reading each audit's own count line instead of the pass/fail badge. Every
+one of these is the same lesson from a different instrument: **a status
+field is a claim about the thing, not the thing.**
