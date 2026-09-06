@@ -40,10 +40,12 @@ rollback in `docs/operations.md`, except the first, which is a decision.
    2026-09-06", and the user has since told the OWNER AGENT to use Resend;
    neither instruction can be dated against the other, and the user has been
    asked. A domain is verified for a specific sender, never "for sending".
-   **Standing hazard until the decision:** `docs/operations.md:1040-1049`
-   tells the operator to delete the `rsend` CNAME and hunt an apex TXT, and
-   those are the records that make Resend work today. Nobody executes any
-   DNS row until the provider is decided and that table is corrected.
+   The hazard that table carried (`docs/operations.md:1040-1049` told the
+   operator to delete the `rsend` CNAME and hunt an apex TXT, the very
+   records that make Resend work) is closed by #278 at `4f2d728`: a STOP
+   warning above the rows, verified from an independent resolver, rather
+   than a rewrite, because a rewrite would bake in an answer nobody has
+   given. Nobody executes any DNS row until the provider is decided.
 2. **t38, turning email on**, sized by the decision. The mailer on `main` is
    a generic SMTP adapter (`backend/mail.mjs:53-70`) and the outbox row is
    written for every event whether or not mail goes out (`backend/api.mjs`
@@ -84,6 +86,14 @@ with a flat at hour six reloads once and then looks for a number to call,
 and t63 replaced calling with a text they cannot tap from the email. Certain
 harm, every customer, every message, two lines of fix. One backend PR with a
 template test asserting the two hrefs. (CSM, confirmed by the PM.)
+
+Items 1, 2 and 3 are one defect seen from three ends and land together, as
+one moment in the product: the reason branch of the declined email can never
+be non-blank until Reject asks for a reason (item 2), the anchors (item 1)
+are what make the email's way back a tap, and the copy (item 3) is what the
+customer reads when there is still no reason. Sequenced apart, the first two
+land and the third describes a state that has changed underneath it, which
+is what happened to `t62-voice.md` part F today.
 
 **2. Reject gets a confirmation and a reason box.** Today Reject is one tap,
 no confirm, no reason field; the reject route passes only the version and
@@ -225,17 +235,26 @@ at hour zero by a tap that works, not by a timer.
 - **The owner approval gate is untouchable.**
 - **Measure before claiming.** Every "how many" above has a source.
 
-## Owners, without new sessions (a proposal for the PROJECT MANAGER's sequencing)
+## Owners are the PROJECT MANAGER's
 
-| item | session that owns the claim and the report |
-| --- | --- |
-| the provider decision, t38's secrets, the four cutover steps | the user; the QA TESTER reads both inboxes and the outbox and records Gate 4 |
-| 1 the email anchors, 2's reject route, 7's save path, 8's backend | LEAD BACKEND DEV |
-| 2's confirm and reason box, 3, 4's copy and collapsed editor, 10 | JUNIOR FRONT END DEV with LEAD UI ENGINEER as first reader; LEAD UI takes 6's box and 9's buttons |
-| 7's migration, 9's routes, second reads on `quotes.mjs` | DB ADMIN |
-| 5 the issue sweep; every merge, one at a time, watched to green | the repo agent |
-| audits for reject-with-reason, search and the bulk action; `EXPECTED_CHECKS` | QA ENGINEER |
-| the acceptance walk of each item as a person at 375 before it is called done; the week-one numbers; two verifications before week one: that the duplicate size-and-name ruling landed (175 of 5,976 pairs), and whether the QA TESTER's Parts B and C actually ran, since the PM's record says Part B ran on production and the CSM's says it did not | CUSTOMER SUCCESS MANAGER |
+Who does what is the PROJECT MANAGER's, from live sessions, under the rule
+of no new sessions: subagents under an existing session, the spawning
+session holding the claim and the report. The planner's first draft named
+sessions the user had already stood down, which is the roster-staleness
+failure `state.json` produced this morning; it is not repeated here. The
+PM's sequencing at the time of writing: item 1 to JUNIOR BACKEND DEV; item 2
+to BUGFIXER, who built Cancel's `asks` component in #264; items 3 and 4 to
+whoever holds the UI lane, or as subagents under an existing session; item
+5 to TEMP REPO AGENT, who holds the merge seat, with KMT-F REPO AGENT on the
+structural half when routed; items 6 onward staffed only after Gate 3.
+Constant regardless of staffing: the user does the user-gated list; the QA
+TESTER reads both inboxes and the outbox and records Gate 4; QA ENGINEER
+owns the audits and `EXPECTED_CHECKS` for reject-with-reason, search and
+the bulk action; the CSM owns the acceptance walk and the week-one numbers,
+plus two verifications before week one: that the duplicate size-and-name
+ruling landed (175 of 5,976 pairs), and whether the QA TESTER's Parts B and
+C actually ran, since the PM's record says Part B ran on production and the
+CSM's says it did not.
 
 ## Definition of done
 
@@ -264,10 +283,10 @@ the CSM's, and they need a session holding that role awake; the CSM's own
 session was spun down before tonight's brief woke it. If no session holds
 the role, the definition of done silently degrades to "the audits pass",
 which is what tonight's worst findings survived. So: the OWNER AGENT has put
-the session question to the user; until it is answered, the QA TESTER
-(`local_af51bbb2`) walks by the same method and the CSM reads the week-one
-numbers when it is next awake. Whoever walks, writes the line in
-`HANDOFF.md`; an item without the line is not done.
+the session question to the user, and whichever way it is decided, if no
+session holds the CSM role the walk is run by whoever the PROJECT MANAGER
+names, using the method in `.forge/roles/owner-portal-analyst.md` and the
+item list above; an item with no walk written in `HANDOFF.md` is not done.
 
 ## What this document does not decide
 
