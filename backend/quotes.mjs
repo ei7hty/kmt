@@ -817,17 +817,26 @@ export class Quotes {
   /**
    * The customer calling their own request off, before they pay for it.
    *
-   * Keyed the way pay() is, and refused the same way: a wrong key is answered
-   * "no such request" rather than "not yours", because the second sentence
-   * confirms the request exists. No version either, for the same reason pay()
-   * takes none -- the customer has one screen showing one request of their own,
-   * and there is no second window of theirs for a stale view to come from.
+   * Authorised by `id` alone, the same as reading it (R19: holding the id is
+   * the access) -- not by a `customerKey` match. That check used to require
+   * the browser that submitted, which sounds like a second factor and is not
+   * one: a browser with no key yet (a different device, a private window, or
+   * iOS's seven-day localStorage clear -- #97) sends a freshly generated key
+   * that was never going to match anything, so the check refused every
+   * legitimate customer opening the emailed link from a new device (#284)
+   * and no attacker who did not already have the id, which the id's own 128
+   * bits already excluded. No version either, for the same reason pay() takes
+   * none -- the customer has one screen showing one request of their own, and
+   * there is no second window of theirs for a stale view to come from.
+   *
+   * Accepted trade, ruled explicitly rather than left as an oversight:
+   * cancelling is destructive-ish, and holding the id is now sufficient to do
+   * it. It is reversible by texting Ken, the id lives only in the customer's
+   * own inbox, and the alternative is that a real customer cannot cancel from
+   * their phone at all. Paying carries no equivalent downside -- the amount
+   * is fixed and already quoted, so a stranger paying it is not an attack.
    */
-  cancelByCustomer(id, customerKey, reason) {
-    const key = cleanCustomerKey(customerKey)
-    const stored = this.keyFor(id)
-    if (stored === null || stored !== key) throw new InputError('No such request.', 404)
-
+  cancelByCustomer(id, reason) {
     const found = this.get(id)
     if (!found?.quote) throw new InputError('No such request.', 404)
     if (found.quote.status === 'cancelled') return found
@@ -842,24 +851,22 @@ export class Quotes {
     })
   }
 
-  keyFor(id) {
-    return this.db.prepare('SELECT customer_key FROM requests WHERE id=?').get(id)?.customer_key ?? null
-  }
-
   /**
    * Mark an approved quote paid.
+   *
+   * Authorised by `id` alone, the same reasoning as `cancelByCustomer` above
+   * (#284, #97): a `customerKey` match refused every customer opening the
+   * emailed link from a device that never submitted, and stopped no one who
+   * did not already hold the id. Payment carries no downside symmetrical to
+   * cancel's -- the amount is fixed and already quoted, so someone else
+   * paying it is not an attack worth guarding against.
    *
    * Payment is still the fake step that always succeeds, but the result is
    * recorded here so both sides see it from their own devices. A draft cannot
    * be paid: that would be a customer paying a price the owner has not agreed
-   * to. A wrong key is answered "no such request" rather than "not yours",
-   * because the second sentence confirms the request exists.
+   * to.
    */
-  pay(id, customerKey) {
-    const key = cleanCustomerKey(customerKey)
-    const stored = this.keyFor(id)
-    if (stored === null || stored !== key) throw new InputError('No such request.', 404)
-
+  pay(id) {
     const found = this.get(id)
     if (!found?.quote) throw new InputError('No such request.', 404)
     if (found.quote.status === 'paid') return found

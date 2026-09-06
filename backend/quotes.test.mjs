@@ -149,7 +149,7 @@ test('only a current draft can be adjusted', async t => {
   assert.throws(() => quotes.adjust(original.request.id, input), error => error.status === 409 && /changed in another window/.test(error.message))
   const sent = quotes.decide(original.request.id, 'sent', adjusted.quote.version)
   assert.throws(() => quotes.adjust(original.request.id, { ...input, version: sent.quote.version }), error => error.status === 409 && /already sent/.test(error.message))
-  const paid = quotes.pay(original.request.id, KEY)
+  const paid = quotes.pay(original.request.id)
   assert.throws(() => quotes.adjust(original.request.id, { ...input, version: paid.quote.version }), error => error.status === 409 && /already paid/.test(error.message))
 })
 
@@ -472,7 +472,7 @@ test('a request read by id is the customer shape: no name, email, phone or locat
   // Every customer-facing write answers the same shape: it all reads through get().
   for (const field of OWNER_ONLY) assert.equal(submitted.request[field], undefined, `submit: ${field}`)
   quotes.decide(submitted.request.id, 'sent', 1)
-  const paid = quotes.pay(submitted.request.id, KEY)
+  const paid = quotes.pay(submitted.request.id)
   for (const field of OWNER_ONLY) assert.equal(paid.request[field], undefined, `pay: ${field}`)
 })
 
@@ -521,26 +521,45 @@ test('a browser sees its own requests and nobody else', async t => {
   assert.notEqual(theirs[0].request.id, mine.request.id)
 })
 
-test('paying needs the key that submitted, and a quote the owner has approved', async t => {
+test('paying needs the id alone, and a quote the owner has approved (#284: not the submitting browser\'s key)', async t => {
   const { quotes } = setup(t)
   const { request } = quotes.submit(form())
 
   // A draft is not payable: that would be paying a price nobody agreed to.
-  assert.throws(() => quotes.pay(request.id, KEY), /not been approved/)
+  assert.throws(() => quotes.pay(request.id), /not been approved/)
 
   // Approve it the way t30's endpoint will, by moving the row.
   quotes.db.prepare('UPDATE quotes SET status=? WHERE request_id=?').run('approved', request.id)
 
-  // Someone else's key is answered as though the request does not exist.
-  assert.throws(() => quotes.pay(request.id, OTHER_KEY), /No such request/)
-  assert.throws(() => quotes.pay('0'.repeat(32), KEY), /No such request/)
+  // The id is the access (R19), the same as reading it -- no key check to route around.
+  assert.throws(() => quotes.pay('0'.repeat(32)), /No such request/)
 
-  const paid = quotes.pay(request.id, KEY)
+  const paid = quotes.pay(request.id)
   assert.equal(paid.quote.status, 'paid')
   assert.equal(paid.quote.version, 2, 'the version moves, for the optimistic updates t30 needs')
 
   // Paying twice is the same answer, not an error and not a second charge.
-  assert.equal(quotes.pay(request.id, KEY).quote.status, 'paid')
+  assert.equal(quotes.pay(request.id).quote.status, 'paid')
+})
+
+test('#284: opening the emailed link on a device that never submitted can still pay and cancel', async t => {
+  // The exact failure the issue described: a customer submits on their phone
+  // (customerKey() writes a key to that browser's localStorage), then opens
+  // the same emailed link on a laptop, where customerKey() has nothing
+  // stored and generates a brand-new random one -- OTHER_KEY stands in for
+  // that freshly-generated key here, never sent by the submitting device and
+  // never known to it.
+  const { quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+  quotes.decide(request.id, 'sent', quote.version)
+
+  // Neither call is told any key at all -- the id from the link is the whole access.
+  const paid = quotes.pay(request.id)
+  assert.equal(paid.quote.status, 'paid', 'a device that never submitted can still complete the payment')
+
+  const { request: other } = quotes.submit(form({ vehicleInfo: 'to cancel from elsewhere' }))
+  const cancelled = quotes.cancelByCustomer(other.id)
+  assert.equal(cancelled.quote.status, 'cancelled', 'and cancel the same way')
 })
 
 /* --------------------------------------------------- rate limits (t45, #63) */
@@ -696,11 +715,11 @@ test('a customer with no session can submit, read and pay; the owner API still c
   assert.equal((await fetch(`${base}/api/requests`)).status, 400, 'no key, no listing')
   assert.equal((await fetch(`${base}/api/requests/${'0'.repeat(32)}`)).status, 404)
 
-  // Paying: refused as a draft, refused with the wrong key, accepted once approved.
-  assert.equal((await post(base, `/api/requests/${request.id}/pay`, { customerKey: KEY })).status, 409)
+  // Paying: refused as a draft, accepted once approved, from any device (#284) --
+  // no customerKey needed or checked; the id is the access, same as reading it.
+  assert.equal((await post(base, `/api/requests/${request.id}/pay`, {})).status, 409)
   quotes.db.prepare('UPDATE quotes SET status=? WHERE request_id=?').run('approved', request.id)
-  assert.equal((await post(base, `/api/requests/${request.id}/pay`, { customerKey: OTHER_KEY })).status, 404)
-  const paid = await post(base, `/api/requests/${request.id}/pay`, { customerKey: KEY })
+  const paid = await post(base, `/api/requests/${request.id}/pay`, {})
   assert.equal(paid.status, 200)
   assert.equal((await paid.json()).quote.status, 'paid')
 
@@ -957,7 +976,7 @@ test('only a draft can be decided', async t => {
     error => error.status === 409 && /already sent/.test(error.message),
   )
 
-  quotes.pay(request.id, KEY)
+  quotes.pay(request.id)
   const paid = quotes.get(request.id)
   assert.throws(
     () => quotes.decide(request.id, 'rejected', paid.quote.version),
@@ -1030,7 +1049,7 @@ function walkTo(quotes, status, overrides = {}) {
   if (status === 'rejected') return quotes.decide(request.id, 'rejected', quote.version)
   const sent = quotes.decide(request.id, 'sent', quote.version)
   if (status === 'sent') return sent
-  const paid = quotes.pay(request.id, overrides.customerKey ?? KEY)
+  const paid = quotes.pay(request.id)
   if (status === 'paid') return paid
   if (status === 'done') return quotes.finish(request.id, paid.quote.version)
   throw new Error(`walkTo does not know how to reach ${status}`)
@@ -1112,22 +1131,22 @@ test('nothing is deleted: a cancelled request is still there to read', async t =
   assert.equal(quotes.listForOwner().length, 1)
 })
 
-test('a customer can call off their own request, and only their own', async t => {
+test('a customer can call off their own request, by id alone, from any device (#284)', async t => {
   const { quotes } = setup(t)
 
   const row = walkTo(quotes, 'sent')
   assert.throws(
-    () => quotes.cancelByCustomer(row.request.id, OTHER_KEY),
+    () => quotes.cancelByCustomer('0'.repeat(32)),
     error => error.status === 404 && /No such request/.test(error.message),
-    'a wrong key is answered as though the request does not exist',
+    'an id nobody holds is answered as though the request does not exist',
   )
   assert.equal(quotes.get(row.request.id).quote.status, 'sent', 'and nothing moved')
 
-  const cancelled = quotes.cancelByCustomer(row.request.id, KEY, 'sold the car')
+  const cancelled = quotes.cancelByCustomer(row.request.id, 'sold the car')
   assert.equal(cancelled.quote.status, 'cancelled')
   assert.equal(cancelled.quote.reason, 'sold the car')
   // Asking twice is the same answer, not an error: a phone that lost the reply.
-  assert.equal(quotes.cancelByCustomer(row.request.id, KEY).quote.status, 'cancelled')
+  assert.equal(quotes.cancelByCustomer(row.request.id).quote.status, 'cancelled')
 })
 
 test('a customer cannot call off what they have already paid for', async t => {
@@ -1135,13 +1154,13 @@ test('a customer cannot call off what they have already paid for', async t => {
   const paid = walkTo(quotes, 'paid')
 
   assert.throws(
-    () => quotes.cancelByCustomer(paid.request.id, KEY),
+    () => quotes.cancelByCustomer(paid.request.id),
     error => error.status === 409 && /been paid for/.test(error.message),
   )
   assert.equal(quotes.get(paid.request.id).quote.status, 'paid')
 
   const done = walkTo(quotes, 'done')
-  assert.throws(() => quotes.cancelByCustomer(done.request.id, KEY),
+  assert.throws(() => quotes.cancelByCustomer(done.request.id),
     error => error.status === 409 && /been paid for/.test(error.message))
 })
 
@@ -1158,7 +1177,7 @@ test('a quote approved before this change is still payable and still readable', 
   assert.equal(quotes.viewForOwner('awaiting').requests.length, 1, 'it waits with the sent ones')
   assert.equal(quotes.viewForOwner('open').requests.length, 1, 'and it is open, not closed')
 
-  const paid = quotes.pay(request.id, KEY)
+  const paid = quotes.pay(request.id)
   assert.equal(paid.quote.status, 'paid')
   assert.equal(quotes.finish(request.id, paid.quote.version).quote.status, 'done',
     'and it can be closed the day this lands')
@@ -1230,12 +1249,11 @@ test('the lifecycle over HTTP: the owner acts with a session, the customer with 
   assert.equal(view.requests.length, 2)
   assert.equal(view.counts.closed, 2)
 
-  // And the customer cancelling their own, with no session at all.
+  // And the customer cancelling their own, with no session at all, by id
+  // alone -- from any device, no customerKey needed (#284).
   const mine = walkTo(quotes, 'sent', { vehicleInfo: 'mine to cancel' })
-  assert.equal((await post(base, `/api/requests/${mine.request.id}/cancel`,
-    { customerKey: OTHER_KEY })).status, 404)
-  const own = await post(base, `/api/requests/${mine.request.id}/cancel`,
-    { customerKey: KEY, reason: 'changed my mind' })
+  assert.equal((await post(base, `/api/requests/${'0'.repeat(32)}/cancel`, {})).status, 404)
+  const own = await post(base, `/api/requests/${mine.request.id}/cancel`, { reason: 'changed my mind' })
   assert.equal(own.status, 200)
   assert.equal((await own.json()).quote.reason, 'changed my mind')
 })

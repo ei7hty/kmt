@@ -310,7 +310,7 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
       if (request.method === 'POST' && payMatch) {
         const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
         if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
-        const paid = quotes.pay(decodeURIComponent(payMatch[1]), body?.customerKey)
+        const paid = quotes.pay(decodeURIComponent(payMatch[1]))
         send(200, paid)
         if (mailer && paid?.quote?.status === 'paid') mailer.after('payment-recorded', paid.request.id)
         return true
@@ -320,7 +320,7 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
       if (request.method === 'POST' && cancelMatch) {
         const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
         if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
-        send(200, quotes.cancelByCustomer(decodeURIComponent(cancelMatch[1]), body?.customerKey, body?.reason))
+        send(200, quotes.cancelByCustomer(decodeURIComponent(cancelMatch[1]), body?.reason))
         return true
       }
 
