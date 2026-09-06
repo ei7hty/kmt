@@ -37,7 +37,7 @@ import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
-import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiArea, isPublicApiCall, readJsonBody } from './api.mjs'
+import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { Quotes } from './quotes.mjs'
 import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
@@ -165,7 +165,7 @@ const server = createServer(async (request, response) => {
 
       // A path no handler knows is nobody's, and nobody's is 404: the sign-in
       // message below is for the owner's area, not for a typo in a link.
-      if (!importCall && !isKnownApiArea(request.method, url.pathname)) {
+      if (!importCall && !isKnownApiPath(url.pathname)) {
         response.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
         response.end(JSON.stringify({ error: 'No such endpoint.' }))
         return
