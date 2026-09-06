@@ -250,7 +250,7 @@ node --test backend/*.test.mjs
 ```
 
 ```bash
-npx eslint src backend
+npx eslint .
 ```
 
 ```bash

@@ -63,6 +63,24 @@ try {
   process.exit(1)
 }
 
+// The host names are checked here too, before the database is opened. A
+// canonical name the allow-list refuses would be a healthy-looking outage
+// (site.mjs says why this is a crash instead), and the cutover sets both by
+// secret with a restart each time: a wrong secret should fail on the first
+// lines of the log before anything touches the volume, which is what the
+// runbook tells the operator to expect.
+const allowedHosts = (process.env.KMT_ALLOWED_HOSTS || '')
+  .split(',').map(value => value.trim()).filter(Boolean)
+// The one switch for the domain cutover: set it and every other name answers
+// 301 to this one. site.mjs says what is exempt and why.
+const canonicalHost = (process.env.KMT_CANONICAL_HOST || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
+try {
+  assertCanonicalIsAllowed({ canonicalHost, allowedHosts })
+} catch (error) {
+  console.error(error.message)
+  process.exit(1)
+}
+
 const dbPath = process.env.KMT_OWNER_DB || path.join(root, 'backend/data/owner.sqlite')
 mkdirSync(path.dirname(dbPath), { recursive: true })
 
@@ -89,19 +107,6 @@ const requestsApi = createRequestsApi(quotes, { limiter: new RateLimiter() })
 
 const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'
-const allowedHosts = (process.env.KMT_ALLOWED_HOSTS || '')
-  .split(',').map(value => value.trim()).filter(Boolean)
-// The one switch for the domain cutover: set it and every other name answers
-// 301 to this one. site.mjs says what is exempt and why.
-const canonicalHost = (process.env.KMT_CANONICAL_HOST || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
-// A canonical name the allow-list refuses would be a healthy-looking outage;
-// site.mjs says why this is a crash instead.
-try {
-  assertCanonicalIsAllowed({ canonicalHost, allowedHosts })
-} catch (error) {
-  console.error(error.message)
-  process.exit(1)
-}
 // The commit this image was built from, answered on every response as
 // X-KMT-Release when the image says (KMT_RELEASE, baked in by the Dockerfile).
 const release = readRelease()

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import './OwnerInventory.css'
+import { PrivacyFooter } from '../routes/Privacy.jsx'
 
 /**
  * The owner's sign-in gate, shared by both owner screens.
@@ -67,5 +68,6 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace', 
         {error && <p role="alert" className="oi-error">{error}</p>}
       </form>
     </main>
+    <PrivacyFooter navigate={navigate} />
   </div>
 }

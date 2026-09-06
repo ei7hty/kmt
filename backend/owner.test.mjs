@@ -591,7 +591,7 @@ test('page import will not mix two different reads of a listing', t => {
   assert.equal(db.list().total, 1, 'and nothing reached the database meanwhile')
 })
 
-test('import tokens cannot be swapped for session tokens', t => {
+test('import tokens cannot be swapped for session tokens', () => {
   const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'secret-one' }
   const config = readAuthConfig(env)
   const auth = createAuth(config)
@@ -968,7 +968,7 @@ test('the scraper records what it read, and only a full read counts as complete'
   assert.deepEqual(Object.keys(replaced.coverage), [SIZE], '--replace drops the untouched size and its record')
 })
 
-test('a confirmed-empty size keeps its record on a run that does not touch it', async t => {
+test('a confirmed-empty size keeps its record on a run that does not touch it', async () => {
   // A genuinely empty size (read in full, nothing there) has no tire to ride
   // along on. Keying the carry-forward off carried tires, as an earlier
   // version did, silently dropped every such size's record the moment a
@@ -994,7 +994,7 @@ test('a confirmed-empty size keeps its record on a run that does not touch it', 
   assert.equal(next.tires.some(t => t.size === emptySize), false, 'with no tires manufactured for it')
 })
 
-test('the minimum interval between sizes holds on a run of empties, not just hits', async t => {
+test('the minimum interval between sizes holds on a run of empties, not just hits', async () => {
   // The trap this guards against: before #129, an empty size took ~20s to
   // conclude, which paced requests as a side effect. #129 made empties fast,
   // and removed that pacing on exactly the runs that are mostly empty. If
@@ -1020,7 +1020,7 @@ test('the minimum interval between sizes holds on a run of empties, not just hit
   }
 })
 
-test('a 429 stops the whole run immediately, not a per-size failure to log and continue', async t => {
+test('a 429 stops the whole run immediately, not a per-size failure to log and continue', async () => {
   const { scrapeAll } = await import('../scripts/scrape-tires.mjs')
   const { RateLimitedError } = await import('../scripts/browser-fetch.mjs')
   const sizes = ['165/70R15', '165/75R15', '175/70R15']
