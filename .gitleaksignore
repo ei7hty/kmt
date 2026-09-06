@@ -1,0 +1,15 @@
+# Fingerprints of confirmed false positives, one per line, each with why.
+# gitleaks.yml's "Report exclusions" step announces this file's presence and
+# contents on every run, so an exclusion here is visible, not silent.
+
+# backend/quotes.test.mjs line 11, the module-level KEY constant. A test
+# fixture for this app's own customer_key concept (an opaque per-customer
+# access token this app defines and issues itself, per decisions.md's "no
+# accounts, no listing without one"), not a credential to any external
+# service. Deliberately not quoting the literal value here -- gitleaks scans
+# this file too, and an earlier version of this comment reproduced it,
+# which promptly became a second finding pointing at this file. The value
+# itself is a hand-typed run of sequential hex-digit pairs, which is its own
+# tell that it was written as a plausible-looking placeholder, not generated
+# as a real secret.
+9bda60a80d141347ce821b82e721785f41aca5eb:backend/quotes.test.mjs:generic-api-key:11
