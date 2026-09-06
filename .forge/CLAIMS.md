@@ -16,6 +16,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | owner-inventory-supplier-link-tap-target | BUG FIXER (local_8ba9f198) | src/owner/OwnerInventory.jsx (supplier link only), src/owner/OwnerInventory.css (covering here for TERRA/#245, not taking the lane) | 2026-09-06 |
 | doc-staleness-note | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/NOTES.md, one appended entry (the three stale-record instances of 2026-09-06 and a detection proposal). At the PROJECT MANAGER's request. | 2026-09-06 |
 | service-area-observability | QA ENGINEER (local_1fa1cb9a) | backend/site.mjs (securityHeaders/applySecurityHeaders: add X-KMT-Service-Area on/off, no parameters), backend/server.mjs (wire the existing serviceArea object through, read nothing new), backend/site.test.mjs, .forge/deployed-site-check.mjs (the check that reads it) | 2026-09-06 |
+| brand-radius-why | GROWTH/MARKETING (local_d80272eb) | docs/brand.md (docs only, one sentence: why the listing radius and the enforcement radius are independent) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
