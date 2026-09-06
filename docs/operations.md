@@ -650,12 +650,14 @@ point this procedure is the thing being replaced, not a reference for it.
 costs seconds, and it is the difference between one problem and two if a typed
 `WHERE` clause is wrong. See "Taking a snapshot by hand," above.
 
-**Everything below runs against a live table only if that table exists.**
-`requests` and `quotes` are live today. `outbox` (#157) and `inquiries` (#205)
-are not yet merged as of this writing -- running a query against a table name
-that does not exist yet fails with `no such table`, loudly, which is the
-correct failure. Check which of the three blocks below apply before running
-any of them.
+**`requests`, `quotes`, `outbox` and `inquiries` are all live tables today**
+(#157 and #205 merged, #206 wired `mail.mjs` to write outbox rows on submit,
+on quote-sent, and on payment -- the outbox is not empty the way it was when
+this section was first written). Everything below applies to all four; there
+is no longer a "check which blocks apply" step. If a future schema change
+ever drops one of these tables, a query against it fails loudly with
+`no such table` rather than silently skipping -- that failure is correct,
+not a sign this procedure is out of date.
 
 ### 1. Find what you have
 
@@ -691,11 +693,10 @@ flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, status FRO
 flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, type, status FROM outbox WHERE request_id='<request-id>';\""
 ```
 
-(the second line only once `outbox` exists.) An inquiry is not attached to a
-request at all -- there is no `request_id` to search by, because an inquiry
-was never about a tire. If the person also submitted the "more than tires"
-form, you need its own id or a name/contact search the same shape as above,
-against `inquiries` directly, once it exists.
+An inquiry is not attached to a request at all -- there is no `request_id` to
+search by, because an inquiry was never about a tire. If the person also
+submitted the "more than tires" form, you need its own id or a name/contact
+search the same shape as above, against `inquiries` directly.
 
 ### 2. Redact exactly what `docs/data-policy.md` promises -- no more, no less
 
@@ -713,10 +714,12 @@ between R27 and this section, that reading is worth a ruling from the PM or
 the lead rather than either DB ADMIN or DEV OPS deciding it in a doc.
 
 **What gets blanked:** `requests.payload`'s `customerName`, `customerEmail`,
-`customerPhone`, `location` and `locationNotes`; `outbox`'s `to_address`,
-`to_name`, and inside its `data` the same personal keys
-(`OUTBOX_PERSONAL_DATA_KEYS` in `backend/outbox.mjs`); `inquiries`' `name` and
-`contact` (`INQUIRY_PERSONAL_FIELDS` in `backend/inquiries.mjs`).
+`customerPhone`, `location`, `locationNotes` and `customerNotes` (t64, "anything
+else I should know?" -- free text, and the field most likely to hold the
+actual thing someone wants gone); `outbox`'s `to_address`, `to_name`, and
+inside its `data` the same six personal keys (`OUTBOX_PERSONAL_DATA_KEYS` in
+`backend/outbox.mjs`); `inquiries`' `name` and `contact`
+(`INQUIRY_PERSONAL_FIELDS` in `backend/inquiries.mjs`).
 
 **What survives, on every table, and must not be touched:** `quotes` in full
 -- status, version, total, line items, both timestamps, all of it; on
@@ -742,16 +745,20 @@ row fixed by hand and a row redacted by code are not distinguishable from each
 other afterward.
 
 ```bash
-flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE requests SET payload = json_set(payload, '\$.customerName','[redacted]', '\$.customerEmail','[redacted]', '\$.customerPhone','[redacted]', '\$.location','[redacted]', '\$.locationNotes','[redacted]'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='<request-id>';\""
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE requests SET payload = json_set(payload, '\$.customerName','[redacted]', '\$.customerEmail','[redacted]', '\$.customerPhone','[redacted]', '\$.location','[redacted]', '\$.locationNotes','[redacted]', '\$.customerNotes','[redacted]'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='<request-id>';\""
 ```
 
-Once `outbox` exists, in the same visit:
+Then `outbox`, in the same visit -- every message mail.mjs recorded for this
+request carries the same six personal keys inside `data` that the request's
+own payload does (`backend/mail-templates.mjs`'s `baseData()` writes them
+under those exact names, matching `OUTBOX_PERSONAL_DATA_KEYS`), so this is
+not optional once `mail.mjs` has sent anything about the request:
 
 ```bash
-flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE outbox SET to_address='[redacted]', to_name='[redacted]', data = json_set(data, '\$.to_name','[redacted]', '\$.to_email','[redacted]', '\$.customerPhone','[redacted]', '\$.location','[redacted]', '\$.locationNotes','[redacted]'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE request_id='<request-id>';\""
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE outbox SET to_address='[redacted]', to_name='[redacted]', data = json_set(data, '\$.to_name','[redacted]', '\$.to_email','[redacted]', '\$.customerPhone','[redacted]', '\$.location','[redacted]', '\$.locationNotes','[redacted]', '\$.customerNotes','[redacted]'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE request_id='<request-id>';\""
 ```
 
-And for an inquiry, once `inquiries` exists, by its own id:
+And for an inquiry, by its own id:
 
 ```bash
 flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE inquiries SET name='[redacted]', contact='[redacted]', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='<inquiry-id>';\""
@@ -764,9 +771,10 @@ which matters if you are not sure whether last month's call was ever acted on.
 
 ### 3. Verify
 
-Read the row back -- the same `SELECT`s as step 1 -- and confirm the five
-fields now read `[redacted]` and nothing else moved: the quote's status, the
-outbox row's `type`, the inquiry's `vehicle_info`, all unchanged.
+Read the row back -- the same `SELECT`s as step 1 -- and confirm all six
+personal fields (`customerNotes` included) now read `[redacted]` and nothing
+else moved: the quote's status, the outbox row's `type`, the inquiry's
+`vehicle_info`, all unchanged.
 
 **Then check the customer's own access paths, not only the table.** The
 request is reachable by its 128-bit id at `GET /api/requests/<request-id>`
@@ -829,9 +837,13 @@ days for a Fly snapshot, whenever it is next replaced for a monthly copy
 someone kept encrypted. Neither an `UPDATE` nor a `VACUUM` against the live
 volume reaches back into a copy that already existed before the call came in.
 
-**Mail already sent** is the fourth boundary. Once `mail.mjs` exists and a
-message has actually left for the customer's own inbox, this procedure can
-redact KMT's record of having sent it -- it cannot recall the message itself.
+**Mail already sent** is the fourth boundary, and it is live now, not
+hypothetical: `mail.mjs` (#206) sends on submit, on quote-sent, and on
+payment. Once a message has actually left for the customer's own inbox --
+`status = 'sent'` on its outbox row, or check whether `KMT_MAIL_SMTP_HOST`
+is configured at all, since with no provider configured every row stays
+`queued` and never really left -- this procedure can redact KMT's record of
+having sent it; it cannot recall the message itself.
 
 Say all of this on the call if it comes up, in the terms above: reachable
 today, gone from the file only after a `VACUUM`, and out of every backup only
