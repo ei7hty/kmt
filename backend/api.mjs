@@ -68,6 +68,29 @@ const PUBLIC_POST_PATHS = [
 /** The action suffixes a GET must not answer, whatever else the prefix allows. */
 const REQUEST_ACTIONS = ['/pay', '/cancel']
 
+/**
+ * Whether an `/api/` path is one the server has any handler for.
+ *
+ * Every unmatched `/api/*` path used to answer 401 with the owner sign-in
+ * message, because the session gate ran before anything asked whether the
+ * path existed: a customer with a typo in a link was told to sign in to a
+ * workspace they do not have. The gate is for the owner's area; a path that
+ * is neither public nor under it is nobody's, and nobody's is 404. An
+ * unknown path under /api/owner/ still reads 401 when signed out, because
+ * saying which owner endpoints exist is the owner's business.
+ *
+ * By path, not by method: a public path asked with a method it does not
+ * take (a POST to the health check, a DELETE on a request) is still a real
+ * place, and the gate's 401 for it is what the baseline records and what
+ * keeps "does this endpoint exist" and "may you call it this way" apart.
+ */
+export function isKnownApiPath(pathname) {
+  return PUBLIC_API_PATHS.has(pathname) ||
+    pathname === PUBLIC_REQUEST_PREFIX ||
+    pathname.startsWith(PUBLIC_REQUEST_PREFIX + '/') ||
+    pathname.startsWith('/api/owner/')
+}
+
 /** Whether this request is one of the public calls, by path and by method. */
 export function isPublicApiCall(method, pathname) {
   if (method === 'GET') {
@@ -143,7 +166,11 @@ export function createCatalogApi(inventory) {
 export function isHostAllowed(hostname, pathname, allowedHosts) {
   if (pathname === '/api/health') return true
   if (!allowedHosts.length) return true
-  return allowedHosts.includes(hostname)
+  // Hostnames are case-insensitive. Browsers lowercase them, so no customer
+  // meets this; a hand-typed curl or a monitor could, and the redirect
+  // already compares without case.
+  const wanted = (hostname || '').toLowerCase()
+  return allowedHosts.some(host => host.toLowerCase() === wanted)
 }
 
 /**
