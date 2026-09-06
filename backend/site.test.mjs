@@ -10,6 +10,12 @@ test('a double slash is a path, not a server fault', () => {
   assert.equal(parseRequestUrl('//owner').url.pathname, '/owner')
   assert.equal(parseRequestUrl('///api/health').url.pathname, '/api/health')
   assert.equal(parseRequestUrl('/status?request=abc').url.search, '?request=abc')
+  // A doubled slash inside the path is the same link with a slip in it, not a
+  // path of its own: /api//catalog used to miss every handler and answer with
+  // the owner sign-in message.
+  assert.equal(parseRequestUrl('/api//catalog').url.pathname, '/api/catalog')
+  assert.equal(parseRequestUrl('/api/requests//abc').url.pathname, '/api/requests/abc')
+  assert.equal(parseRequestUrl('/status//?request=a//b').url.search, '?request=a//b', 'the query is not a path and is left alone')
   for (const raw of ['//', '//owner', '/']) assert.equal(parseRequestUrl(raw).malformed, false)
   // Something the parser still cannot read is not found, not a fault.
   const broken = parseRequestUrl('/%')

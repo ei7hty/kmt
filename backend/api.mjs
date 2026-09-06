@@ -68,6 +68,21 @@ const PUBLIC_POST_PATHS = [
 /** The action suffixes a GET must not answer, whatever else the prefix allows. */
 const REQUEST_ACTIONS = ['/pay', '/cancel']
 
+/**
+ * Whether an `/api/` path is one the server has any handler for.
+ *
+ * Every unmatched `/api/*` path used to answer 401 with the owner sign-in
+ * message, because the session gate ran before anything asked whether the
+ * path existed: a customer with a typo in a link was told to sign in to a
+ * workspace they do not have. The gate is for the owner's area; a path that
+ * is neither public nor under it is nobody's, and nobody's is 404. An
+ * unknown path under /api/owner/ still reads 401 when signed out, because
+ * saying which owner endpoints exist is the owner's business.
+ */
+export function isKnownApiArea(method, pathname) {
+  return isPublicApiCall(method, pathname) || pathname.startsWith('/api/owner/')
+}
+
 /** Whether this request is one of the public calls, by path and by method. */
 export function isPublicApiCall(method, pathname) {
   if (method === 'GET') {

@@ -37,7 +37,7 @@ import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
-import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isPublicApiCall, readJsonBody } from './api.mjs'
+import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiArea, isPublicApiCall, readJsonBody } from './api.mjs'
 import { Quotes } from './quotes.mjs'
 import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
@@ -162,6 +162,14 @@ const server = createServer(async (request, response) => {
       // signs in. Named in the allow-list in api.mjs rather than by relaxing
       // the check below, so every other route stays refused by default.
       const publicCall = isPublicApiCall(request.method, url.pathname)
+
+      // A path no handler knows is nobody's, and nobody's is 404: the sign-in
+      // message below is for the owner's area, not for a typo in a link.
+      if (!importCall && !isKnownApiArea(request.method, url.pathname)) {
+        response.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+        response.end(JSON.stringify({ error: 'No such endpoint.' }))
+        return
+      }
 
       if (!publicCall && !importCall && !auth.isAuthenticated(request)) {
         response.writeHead(401, { 'Content-Type': 'application/json' })

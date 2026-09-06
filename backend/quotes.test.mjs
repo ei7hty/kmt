@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Quotes } from './quotes.mjs'
-import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isPublicApiCall, readJsonBody } from './api.mjs'
+import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiArea, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
 import { PUBLIC_BODY_LIMIT, RateLimiter } from './limits.mjs'
 import { calculateDraftQuote } from '../src/pricing.js'
@@ -378,6 +378,11 @@ function serve(t, quotes, inventory, { limiter = null } = {}) {
     const url = new URL(request.url, 'http://localhost')
     if (await auth.handle(request, response, url, readJsonBody)) return
     if (url.pathname.startsWith('/api/')) {
+      if (!isKnownApiArea(request.method, url.pathname)) {
+        response.writeHead(404, { 'Content-Type': 'application/json' })
+        response.end(JSON.stringify({ error: 'No such endpoint.' }))
+        return
+      }
       if (!isPublicApiCall(request.method, url.pathname) && !auth.isAuthenticated(request)) {
         response.writeHead(401, { 'Content-Type': 'application/json' })
         response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' }))
@@ -461,6 +466,29 @@ test('the public rule opens the customer paths and nothing else', async t => {
   assert.equal(isPublicApiCall('POST', '/api/requests/abc123/approve'), false)
   assert.equal(isPublicApiCall('GET', '/api/owner/inventory'), false)
   assert.equal(isPublicApiCall('GET', '/api/requests/abc/pay'), false)
+})
+
+test('a path no handler knows is 404, not an invitation to sign in', async t => {
+  // Every unmatched /api/* path answered 401 with the owner sign-in message:
+  // a customer with a slip in a link was told to sign in to a workspace they
+  // do not have. Known areas: the public calls and the owner's; nothing else.
+  assert.equal(isKnownApiArea('GET', '/api/catalog'), true)
+  assert.equal(isKnownApiArea('POST', '/api/requests'), true)
+  assert.equal(isKnownApiArea('GET', '/api/owner/inventory'), true)
+  assert.equal(isKnownApiArea('GET', '/api/owner/nonsense'), true, 'the owner area is known even where the route is not; which routes exist is the owner\'s business')
+  assert.equal(isKnownApiArea('GET', '/api/nonsense'), false)
+  assert.equal(isKnownApiArea('GET', '/api/api/catalog'), false)
+  assert.equal(isKnownApiArea('DELETE', '/api/requests/abc'), false, 'a public path with a method it does not take is not a known call')
+
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory)
+  const nonsense = await fetch(`${base}/api/nonsense`)
+  assert.equal(nonsense.status, 404)
+  assert.deepEqual(await nonsense.json(), { error: 'No such endpoint.' })
+  const owner = await fetch(`${base}/api/owner/inventory`)
+  assert.equal(owner.status, 401, 'a real owner route without a session is still the sign-in answer')
+  assert.equal((await fetch(`${base}/api/owner/nonsense`)).status, 401)
+  assert.equal((await fetch(`${base}/api/catalog`)).status, 200)
 })
 
 test('the catalog handler answers the catalog and nothing else', async t => {

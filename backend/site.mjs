@@ -20,12 +20,15 @@ export const CANONICAL_EXEMPT = new Set(['/api/health'])
  *
  * `new URL('//', base)` reads `//` as a protocol-relative URL, threw, and
  * landed in the catch-all as a 500 to a customer who typed one slash too many
- * (#132). Leading slashes are collapsed first, so `//owner` is `/owner`; a
+ * (#132). Repeated slashes are collapsed first, wherever they are: `//owner`
+ * is `/owner`, and `/api//catalog` is `/api/catalog` rather than a path no
+ * handler knows, which used to fall through to the owner sign-in message. A
  * path that still does not parse is answered as not found rather than as a
  * server fault, because it is the link that is wrong, not the server.
  */
 export function parseRequestUrl(raw) {
-  const collapsed = String(raw || '/').replace(/^\/{2,}/, '/')
+  const [pathPart, ...rest] = String(raw || '/').split('?')
+  const collapsed = pathPart.replace(/\/{2,}/g, '/') + (rest.length ? '?' + rest.join('?') : '')
   try {
     return { url: new URL(collapsed, 'http://localhost'), malformed: false }
   } catch {
