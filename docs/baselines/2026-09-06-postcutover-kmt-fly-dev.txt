@@ -1,0 +1,155 @@
+# Baseline of https://kmt.fly.dev, 2026-09-06T23:13:29Z, read-only
+
+## TLS
+  issuer=C=US, O=Let's Encrypt, CN=YE1
+  subject=CN=*.fly.dev
+  notBefore=Aug 21 11:49:33 2026 GMT
+  notAfter=Nov 19 11:49:32 2026 GMT
+  X509v3 Subject Alternative Name: 
+      DNS:*.fly.dev
+  tls1.2: New, TLSv1.2, Cipher is ECDHE-ECDSA-AES256-GCM-SHA384
+  tls1.2: Protocol: TLSv1.2
+  tls1.3: New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+  tls1.3: Protocol: TLSv1.3
+
+## Redirects
+  http://kmt.fly.dev/            -> 301 https://kmt.fly.dev/
+  http://kmt.fly.dev/status      -> 301 https://kmt.fly.dev/status
+  https://www.kmt.fly.dev/ (if any) -> 000 no such host
+
+## Response headers, GET / (every header, verbatim)
+  HTTP/1.1 301 Moved Permanently
+  content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  x-content-type-options: nosniff
+  x-frame-options: DENY
+  referrer-policy: strict-origin-when-cross-origin
+  permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+  cross-origin-opener-policy: same-origin
+  strict-transport-security: max-age=31536000; includeSubDomains
+  x-kmt-release: f7c4d5c
+  x-kmt-service-area: on
+  location: https://kensmobiletire.com/
+  cache-control: no-store
+  date: Sun, 06 Sep 2026 23:13:37 GMT
+  connection: keep-alive
+  keep-alive: timeout=5
+  transfer-encoding: chunked
+  server: Fly/ec1a4f957c (2026-08-31)
+  via: 1.1 fly.io
+  fly-request-id: 01M1WFZBQFQJBK7M49CRR3AVGS-ewr
+
+## Security headers present on / (name only)
+  strict-transport-security: max-age=31536000; includeSubDomains
+  content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  x-content-type-options: nosniff
+  x-frame-options: DENY
+  referrer-policy: strict-origin-when-cross-origin
+  permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+  cross-origin-opener-policy: same-origin
+
+## Compression (GET with Accept-Encoding: br, gzip)
+  / -> downloaded=0 
+  /api/catalog -> downloaded=0 
+
+## Routes and status codes
+  /                                                301  
+  /status                                          301  
+  /owner                                           301  
+  /owner/quotes                                    301  
+  /owner/                                          301  
+  /nonsense-path                                   301  
+  /robots.txt                                      301  
+  /index.html                                      301  
+  /api/nope                                        301  
+  /api/health                                      200  application/json
+  /api/catalog                                     301  
+  /api/owner/session                               301  
+  /api/owner/inventory                             301  
+  /api/owner/requests                              301  
+  /api/owner/markup                                301  
+  /api/owner/import-token                          301  
+  /api/requests                                    301  
+  /api/requests/0123456789abcdef0123456789abcdef   301  
+  /brand/SOURCES.md                                301  
+  /brand/og-1200x630.jpg                           301  
+  /.env                                            301  
+  /backend/data/owner.sqlite                       301  
+  /package.json                                    301  
+
+## Method handling
+  HEAD /               -> 301
+  HEAD /api/health     -> 200
+  OPTIONS /api/owner/import (no Origin)      -> 301
+  OPTIONS /api/owner/import (Origin evil)    -> 301
+  OPTIONS /api/owner/import (Origin giga)    -> code=301 
+  TRACE /              -> 301
+
+## Bodies of the public JSON answers (shape, not values)
+  /api/health: {"ok":true}
+  /api/owner/session: 
+  /api/owner/inventory: 
+  /api/requests/<unknown id>: 
+  /api/requests (no key): 
+  /api/requests?customer=<key with no requests>: 
+<anonymous_script>:1
+
+
+SyntaxError: Unexpected end of JSON input
+    at JSON.parse (<anonymous>)
+    at Socket.<anonymous> ([eval]:1:70)
+    at Socket.emit (node:events:520:35)
+    at endReadableNT (node:internal/streams/readable:1729:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)
+
+Node.js v24.14.0
+
+## Asset caching
+  /brand/og-1200x630.jpg -> cache-control: no-store 
+   -> cache-control: no-store 
+
+## Fly (read-only)
+   Hostname │ kmt.fly.dev                               
+   Image    │ kmt:deployment-01M1WF45ARC6G4CYAH4FAV1T43 
+   PROCESS │ ID             │ VERSION │ REGION │ STATE   │ ROLE │ CHECKS             │ LAST UPDATED         
+   app     │ d89459da977e78 │ 171     │ ewr    │ started │      │ 1 total, 1 passing │ 2026-09-06T22:59:17Z 
+   health │ passing │ d89459da977e78 │ 14m30s ago   │ {"ok":true} 
+  secret: KMT_SESSION_SECRET
+  secret: KMT_OWNER_PASSWORD
+  secret: KMT_SERVICE_RADIUS_MILES
+  secret: KMT_MAIL_FROM
+  secret: KMT_MAIL_SMTP_HOST
+  secret: KMT_MAIL_SMTP_PASSWORD
+  secret: KMT_MAIL_SMTP_PORT
+  secret: KMT_MAIL_SMTP_USER
+  secret: KMT_OWNER_EMAIL
+  secret: KMT_OWNER_NAME
+  secret: KMT_ALLOWED_HOSTS
+  secret: KMT_CANONICAL_HOST
+  certs: HOSTNAME                       SOURCE     STATUS
+  certs: order.kensmobiletire.com       Fly        Issued
+  certs: kensmobiletire.com             Fly        Issued
+  certs: www.kensmobiletire.com         Fly        Issued
+
+## Notes (hand-added the same run, read-only; not produced by baseline.sh)
+
+State: POST-CUTOVER. Machine version 171, captured 2026-09-06T23:13:29Z.
+KMT_CANONICAL_HOST=kensmobiletire.com and KMT_ALLOWED_HOSTS covers all four
+names are both set; the flip landed ~23:00Z (v171). kmt.fly.dev now 301s to
+https://kensmobiletire.com/ on every route except /api/health (exempt, 200),
+which is why nearly every line in this capture reads 301 with an empty body.
+
+Compared against 2026-09-06-postheaders-precutover-kmt-fly-dev.txt (#184), which
+was meant to be the flip-only "before". CAVEAT: #184 was captured at 11:11Z /
+machine v104 -- about 67 machine versions before this flip. So the diff against
+it is NOT flip-only: it also carries the day's other backend work (the mail
+seam's KMT_MAIL_*/KMT_OWNER_* secrets, a new x-kmt-service-area header, a
+HEAD /api/health 401->200 fix, a catalog data refresh). It still cleanly proves
+the three things that matter -- the redirect is total, /api/health is exempt,
+and the six security headers + HSTS ride the 301 itself -- but it cannot
+separate the flip from the day's other deploys. A true flip-only before would
+have had to be captured minutes before the flip; #184 aged 12h first.
+
+Verification disposition: PASS. The sole cutover-attributable change is the
+canonical 301 (total, health-exempt, header-carrying, Cache-Control: no-store
+so rollback-safe). One unlisted mover, HEAD /api/health 401->200, is a benign
+intervening improvement (it moved on both hosts, so not flip-attributable).
