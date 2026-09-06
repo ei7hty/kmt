@@ -743,7 +743,8 @@ missed the row the public API actually reads.
 
 Then pull a copy off the machine (the same `.backup` and `sftp get` as "The
 monthly copy that leaves Fly," above) and run the read-only checker against
-it, from your own machine, the same way "Prove the file is sound" above does:
+it, from your own machine, the same way the restore drill's own
+integrity-check step does (see "The restore drill," above):
 
 ```bash
 node .forge/restore-integrity-check.mjs /path/to/owner-backup.sqlite
