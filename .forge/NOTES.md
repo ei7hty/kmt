@@ -770,6 +770,25 @@ answer a question it does not answer: these are unlicensed previews whatever
 they look like, so the obligation to swap them is a **licensing** matter.
 *"You cannot see it" is a good answer to the wrong question.*
 
+
+**A sixth arrived while this was being written, and it is a third shape.**
+`src/noindex.js` injects a `noindex` meta tag on five screens and its docblock
+calls it *"the other half, for a page a crawler already found through a link"*.
+Every one of those five paths is `Disallow`ed in `public/robots.txt`, so a
+compliant crawler never fetches them and never reads the tag -- and a URL found
+through a link is precisely the case it cannot serve. **The comment is not
+stale. It was never true.** There was no moment at which it described the
+system, so no re-measurement schedule would ever have caught it: the first
+reading is the only one, and it was wrong.
+
+So the six sort into three shapes, and the third is the one worth naming:
+**the record fell behind** (`state.json`, the tracker, `operations.md`); **the
+record was right and the reader drifted off it** (`brand.md`); **the record was
+wrong on the day it was written and nobody checked** (`noindex.js`). Drift has
+a detector in principle. A misread has an editing discipline. **The third has
+neither** -- only somebody going and looking at whether the mechanism does what
+the sentence says, once, at the moment it is written.
+
 **The four are one failure with two shapes.** In the first three the world
 moved and the record did not. In the fourth the record never moved and the
 reader drifted off it. Both are an assertion nobody re-measured; the only
