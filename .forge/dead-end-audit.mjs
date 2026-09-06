@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { expandTireList, freshPage, openOwnerQuotes, waitForStatus } from './audit-ui.mjs';
+import { cleanTireFor, expandTireList, freshPage, openOwnerQuotes, waitForStatus } from './audit-ui.mjs';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
 
@@ -101,11 +101,12 @@ async function submitRequest(page, { size, tireName, vehicle, location, date, cu
 
 /** A size whose matching tires include the off-road option, which forces owner review. */
 const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain' };
-/** A size and tire that should sail through without an exception. */
-const CLEAN_TIRE = { size: '215/60R16', tireName: 'All-Weather Standard' };
 
 async function main() {
   const browser = await chromium.launch();
+  // Resolved once, against whatever the server is actually offering right
+  // now, rather than a name typed into this file -- see cleanTireFor.
+  const CLEAN_TIRE = await cleanTireFor(BASE);
 
   for (const viewport of [
     { name: 'phone', width: 375, height: 812 },
