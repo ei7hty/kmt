@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { CATALOG_FIELDS } from './audit-ui.mjs';
 
 /**
  * What a deploy has to prove, without touching anything.
@@ -103,9 +104,6 @@ function reportCount() {
     console.log(`${skipped} of those are SKIP, not OK -- read them, they are not the same as a pass.`);
   }
 }
-
-/** The seven fields a customer's browser is built around, and nothing else. */
-const CATALOG_FIELDS = ['id', 'name', 'size', 'price', 'inStock', 'category', 'description'];
 
 /** A size the supplier snapshot covers, and one only the generator fills. */
 const SCRAPED_SIZE = '215/60R16';
