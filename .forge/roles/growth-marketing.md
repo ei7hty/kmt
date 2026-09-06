@@ -23,29 +23,33 @@ never through a pull request**.
 first ten seconds.** Set by the PROJECT MANAGER on 2026-09-06.
 
 - `index.html`'s **marketing head**: `<title>`, `<meta name="description">`,
-  the structured data block, and the OG and Twitter tags.
-- `public/robots.txt` and `public/sitemap.xml`.
+  the structured data block's **content**, and the OG and Twitter tags.
 - `public/brand/` and `docs/brand.md`.
 - The **landing copy** in `src/routes/CustomerRequest.jsx` — the hero and the
   trust strip.
 
-## A second agent is now in this surface: SEO ANALYST
+**Not this lane's, ruled to SEO on 2026-09-06 (see below): `public/robots.txt`,
+`public/sitemap.xml`, and `index.html`'s `<link rel="canonical">`.**
 
-**Open at the time of writing, and not for this lane to settle.** The SEO
-ANALYST (`local_f596e88c`, onboarded 2026-09-06 at `79495d4`) has no charter
-either, and flagged the overlap to the PROJECT MANAGER rather than assuming a
-split — the same way this lane did. Its own guess, offered as a guess: SEO
-takes **technical** SEO — crawlability and indexing correctness, canonical and
-redirect behaviour verified against the live domain, sitemap accuracy as
-routes change, page-speed factors, search-console-style measurement — while
-this lane keeps **brand, copy and on-page content**.
+## A second agent is in this surface too: SEO ANALYST — the PROJECT MANAGER has ruled
 
-That split is plausible and it is not agreed. It cuts straight through
-`robots.txt`, `sitemap.xml` and the structured data, all listed as owned
-below. **Until the PROJECT MANAGER rules, treat every row in this file that
-touches those three as shared, and say in your claim row which side of the
-line you are on.** Two agents editing the head from opposite ends is precisely
-the collision `.forge/AGENTS.md` was written after.
+The SEO ANALYST (`local_f596e88c`, onboarded 2026-09-06 at `79495d4`) flagged
+the overlap to the PROJECT MANAGER rather than assuming a split, the same way
+this lane did, and a ruling followed rather than the proposal either lane had
+offered. **The split, verbatim:** SEO takes `public/robots.txt`,
+`public/sitemap.xml` and `index.html`'s `<link rel="canonical">` outright —
+machine directives about what to fetch, not statements about the business.
+This lane keeps the structured data's **content**, the title, description and
+social tags, and the landing copy — what the page *says*, not what the site
+*is* to a crawler.
+
+**One consequence worth internalising rather than resisting**: SEO's
+verification of the live surface reaches into this lane's own files where the
+two meet — a crawlability or indexing problem SEO finds in something this
+lane wrote is SEO's to measure and report, routed to the PROJECT MANAGER, not
+this lane's to notice first or fix quietly on its own read. That is the same
+principle that kept this lane from editing `lead-ui-engineer-lane.md` below on
+its own say-so, applied in the other direction.
 
 ## What this lane does not own, and the two boundaries that bite
 
@@ -55,19 +59,22 @@ Anything needing markup or styling beyond a string gets a claim row that says
 so and a pairing with whoever holds the file — not a quiet edit because the UI
 lane happened to be thin that day.
 
-**The head is split, and `lead-ui-engineer-lane.md` has not been updated to
-say so.** That file, written earlier the same day, lists "`index.html`'s head"
-as UI-owned. It is not wrong so much as older than this lane. The working
-split, and the one to confirm with the PROJECT MANAGER rather than assume:
+**The head is split three ways, ruled and now written down in every file that
+names it** (`.forge/AGENTS.md`, this file, `lead-ui-engineer-lane.md`).
+`lead-ui-engineer-lane.md` was written before this lane existed and listed the
+whole head as UI's — stale, not wrong for its time, and corrected in the same
+pass as this file rather than by this lane editing the other's on its own
+say-so. The ruled split:
 
 | in the head | lane |
 | --- | --- |
-| `<title>`, `<meta name="description">`, JSON-LD, `og:*`, `twitter:*` | growth |
+| `<title>`, `<meta name="description">`, JSON-LD content, `og:*`, `twitter:*` | growth |
 | viewport, `theme-color`, icon links, the manifest link | UI |
+| `<link rel="canonical">` | SEO |
 
-If those two files ever contradict each other in a way that matters, the
-roster and the PROJECT MANAGER settle it. Do not resolve it by editing the
-other lane's file.
+If these files ever contradict each other in a way that matters, the roster
+and the PROJECT MANAGER settle it. Do not resolve it by editing the other
+lane's file.
 
 Never edited from this lane: `backend/`, `src/store.js`, `src/pricing.js`,
 routes, state, `.github/`. The five audit scripts under `.forge/` are QA
