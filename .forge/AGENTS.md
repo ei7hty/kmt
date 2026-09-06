@@ -393,3 +393,18 @@ Proven rather than asserted: hiding the Pay action on an approved quote -- one
 line -- fails the dead-end audit ("no visible Pay action for the approved
 quote") and makes two responsive screens UNREACHABLE. The break was reverted in
 the same PR.
+
+**2026-09-05 — Claude (kmt CLI session)**
+The size selector now spans the supplier's metric passenger / light-truck
+range: 23 widths (135–355), 13 ratios (25–85) and 13 rim diameters (12–24),
+read off giga-tires.com's size menu; `src/data/fitment.js` says what was left
+out and why. `isPlausibleFitment` in `src/data/catalog.js` is now a per-rim
+band table plus an overall-diameter check (500–900 mm). Measured by counting
+`TIRE_CATALOG`: 910 sizes and 3,846 rows, up from 290 and 1,213. Three
+comments still say "290" -- `backend/inventory.mjs` (markup JSDoc),
+`src/owner/OwnerInventory.jsx` (MarkupRule JSDoc) and `.forge/dead-end-audit.mjs`
+("all 290 paths") -- left alone because they are other lanes, and two of the
+files were in open PRs (#31, and #34 since merged); correct the number when you
+next touch them.
+Owner-facing consequence: "Refresh all N sizes" on `/owner` is now 910 browser
+scrapes rather than 290, so roughly three times as long.
