@@ -27,9 +27,9 @@ export const TYPES = {
  * file is a new name and the old one can be cached forever.
  *
  * `brand/` is different, and the difference is the whole point of this table.
- * public/brand/SOURCES.md says the watermarked placeholders will be replaced
- * by the licensed art "with the same names". The names do not change when the
- * bytes do, so `immutable` would pin the watermarked icons in every browser
+ * Brand files get reissued under the same names -- `docs/brand.md` carries the
+ * rule and the reason. The names do not change when the bytes do, so
+ * `immutable` would pin a superseded icon in every browser
  * and home-screen cache for a year. One day, then revalidate: the icons stop
  * being re-downloaded on every page view (they were, ~1 MB per visit, because
  * `no-cache` with no validator is a full fetch each time), and a replaced
