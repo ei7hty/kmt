@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { createServer } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import { TYPES, cachePolicy, createStaticHandler } from './static.mjs'
 
 /** A dist/ the shape Vite produces, plus the public/ files that matter here. */
@@ -127,11 +127,22 @@ test('the shipped robots.txt keeps the owner and customer screens out of search 
 
 test('only GET and HEAD reach the files; anything else is 405, not the app shell', async t => {
   const { base } = await serve(t)
-  for (const method of ['POST', 'PUT', 'DELETE', 'TRACE', 'OPTIONS']) {
-    const response = await fetch(`${base}/`, { method })
+  // node:http rather than fetch: fetch refuses to send TRACE at all, and TRACE
+  // answering 200 HTML is the exact finding this guards against.
+  const send = method => new Promise((resolve, reject) => {
+    const request = httpRequest(`${base}/`, { method }, response => {
+      let body = ''
+      response.on('data', chunk => { body += chunk })
+      response.on('end', () => resolve({ status: response.statusCode, allow: response.headers.allow, body }))
+    })
+    request.on('error', reject)
+    request.end()
+  })
+  for (const method of ['POST', 'PUT', 'DELETE', 'TRACE', 'OPTIONS', 'PATCH']) {
+    const response = await send(method)
     assert.equal(response.status, 405, `${method} /`)
-    assert.equal(response.headers.get('allow'), 'GET, HEAD')
-    assert.doesNotMatch(await response.text(), /id="root"/, `${method} does not get index.html`)
+    assert.equal(response.allow, 'GET, HEAD')
+    assert.doesNotMatch(response.body, /id="root"/, `${method} does not get index.html`)
   }
 })
 
