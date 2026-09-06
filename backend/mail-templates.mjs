@@ -1,4 +1,4 @@
-// The messages the shop sends, one per event (R25), as data plus a renderer.
+// The messages Ken sends, one per event (R25), as data plus a renderer.
 //
 // Each template does two things and keeps them apart. `data()` picks, from the
 // owner-audience request and its quote, exactly the fields the message is
@@ -15,6 +15,7 @@
 // when a template's data shape changes, so an old row says which shape it is.
 
 const MOBILE = 'Ken\'s Mobile Tire'
+const PHONE = '(617) 410-8319'
 
 export const MAIL_TYPES = ['request-received', 'request-arrived', 'quote-sent', 'payment-recorded', 'quote-declined']
 
@@ -63,7 +64,7 @@ function baseData({ request, quote, tire, origin, to, toName }) {
   }
 }
 
-const signoff = `\n\n${MOBILE}\nReply to this email and it reaches the shop.`
+const signoff = `\n\nText me at ${PHONE} if anything changes.\n\n— Ken\n${MOBILE}`
 
 export const TEMPLATES = {
   'request-received': {
@@ -71,8 +72,8 @@ export const TEMPLATES = {
     audience: 'customer',
     data: baseData,
     render: d => {
-      const text = `Hi ${d.to_name},\n\nWe have your request for ${d.quantity} × ${d.tireName}${d.tireSize ? ` (${d.tireSize})` : ''} on your ${d.vehicleInfo}, to be fitted at ${d.locationType?.toLowerCase() || 'your location'} on ${d.date}.\n\nKen reviews every request before anything is charged. You will get a second email with the quote itself. Until then, your request is here:\n${d.statusUrl}${signoff}`
-      return { subject: `We have your tire request, ${d.to_name}`, text, html: htmlOf(text) }
+      const text = `Hi ${d.to_name},\n\nGot your request for ${d.quantity} × ${d.tireName}${d.tireSize ? ` (${d.tireSize})` : ''} on your ${d.vehicleInfo}, to be fitted at ${d.locationType?.toLowerCase() || 'your location'} on ${d.date}.\n\nI'll look it over and send you a quote. Nothing is charged until I do. Your request is here:\n${d.statusUrl}${signoff}`
+      return { subject: `Got your tire request, ${d.to_name}`, text, html: htmlOf(text) }
     },
   },
   'request-arrived': {
@@ -90,7 +91,7 @@ export const TEMPLATES = {
     audience: 'customer',
     data: baseData,
     render: d => {
-      const text = `Hi ${d.to_name},\n\nYour quote is ready.\n\n${invoice(d.lines, d.total)}${d.note ? `\n\nA note from Ken:\n${d.note}` : ''}\n\nView it and pay here:\n${d.statusUrl}${signoff}`
+      const text = `Hi ${d.to_name},\n\nYour quote is ready.\n\n${invoice(d.lines, d.total)}${d.note ? `\n\nA note from me:\n${d.note}` : ''}\n\nView it and pay here:\n${d.statusUrl}${signoff}`
       return { subject: `Your quote from ${MOBILE}: ${money(d.total)}`, text, html: htmlOf(text) }
     },
   },
@@ -123,7 +124,7 @@ export const TEMPLATES = {
       const size = d.tireSize ? ` (${d.tireSize})` : ''
       const which = `${d.quantity} × ${d.tireName}${size} for ${d.date}`
       const line = d.reason ? `I can't take this one on: ${d.reason}.` : `I can't take this one on.`
-      const text = `Hi ${d.to_name},\n\nAbout your request for ${which}.\n\n${line} You haven't been charged. Text me at (617) 410-8319 if you'd like to talk it through.\n\n— Ken`
+      const text = `Hi ${d.to_name},\n\nAbout your request for ${which}.\n\n${line} You haven't been charged. Text me at ${PHONE} if you'd like to talk it through.\n\n— Ken`
       return { subject: `About your tire request${d.tireSize ? `, ${d.tireSize}` : ''}`, text, html: htmlOf(text) }
     },
   },
