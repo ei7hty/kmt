@@ -16,7 +16,13 @@ const otherSize = '225/50R17'
 const tire = (id = 'giga-a', overrides = {}) => ({ id, name: 'Test Touring', size: SIZE,
   price: 50, inStock: true, category: 'all-season', description: '95H BSW',
   source: { sku: id.slice(5), stock: 12, listPrice: 60, segment: 'Passenger', url: 'https://www.giga-tires.com/tires/test' }, ...overrides })
-const snapshot = tires => ({ source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE], tires })
+/** A complete read of every size present, unless a test says otherwise. */
+const fullRead = { limit: 0, pagesRead: 1, totalPages: 1, complete: true, scrapedAt: '2026-09-05T15:00:00Z' }
+const snapshot = (tires, coverage) => ({
+  source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE],
+  coverage: coverage ?? Object.fromEntries([...new Set(tires.map(t => t.size))].map(size => [size, fullRead])),
+  tires,
+})
 
 /** Minimal markup matching what parseListingPage looks for. */
 const pageHtml = (tires, totalPages = 1) => tires.map(t => `
@@ -760,4 +766,82 @@ test('scripts/import-tires.mjs pushes a snapshot file into a password-gated serv
   assert.equal(rows['giga-a'].price, 72)
   assert.equal(rows['giga-a'].offer.priceCents, 8999, 'the owner price survived the import')
   assert.equal(rows['giga-c'].size, otherSize)
+})
+
+test('a complete import is refused for a size the scraper did not read in full', t => {
+  // The tires a trimmed scrape does not mention are ones it did not fetch, not
+  // ones the supplier dropped. Retiring them would take tires off Ken's list.
+  const db = setup(t)
+  db.saveOffer('giga-a', offer())
+  const trimmed = snapshot([tire('giga-b')], { [SIZE]: { limit: 8, pagesRead: 1, totalPages: 3, complete: false } })
+  assert.throws(() => db.applySnapshot(trimmed, { complete: true }), { status: 400, message: /215\/60R16/ })
+  const unrecorded = { ...snapshot([tire('giga-b')]), coverage: undefined }
+  assert.throws(() => db.applySnapshot(unrecorded, { complete: true }), { status: 400, message: /215\/60R16/ })
+  assert.throws(() => db.applySnapshot({ ...snapshot([tire('giga-b')]), coverage: [] }), { status: 400 })
+  assert.equal(db.list().total, 1, 'nothing landed')
+  assert.equal(db.list().items[0].supplierActive, true, 'and nothing was retired')
+
+  // The same file is welcome as the partial view it is.
+  db.applySnapshot(trimmed)
+  assert.equal(db.list().total, 2)
+  assert.equal(db.list().items.every(row => row.supplierActive), true)
+})
+
+test('the scraper records what it read, and only a full read counts as complete', async t => {
+  const { buildSnapshot, sizeCoverage } = await import('../scripts/scrape-tires.mjs')
+  t.diagnostic('importing the scraper module must not start a scrape')
+
+  assert.equal(sizeCoverage({ limit: 0, pagesRead: 7, totalPages: 7 }).complete, true)
+  assert.equal(sizeCoverage({ limit: 8, pagesRead: 7, totalPages: 7 }).complete, false, 'a limit trims the list')
+  assert.equal(sizeCoverage({ limit: 0, pagesRead: 1, totalPages: 7 }).complete, false, 'so does stopping early')
+
+  const previous = snapshot([tire('giga-old', { size: otherSize })])
+  const { snapshot: next, carried } = buildSnapshot({
+    previous, tires: [tire('giga-b')], replace: false, scrapedAt: '2026-09-06T00:00:00Z',
+    coverage: { [SIZE]: sizeCoverage({ limit: 8, pagesRead: 1, totalPages: 3, scrapedAt: '2026-09-06T00:00:00Z' }) },
+  })
+  assert.deepEqual(next.sizes, [SIZE, otherSize])
+  assert.equal(next.coverage[SIZE].complete, false)
+  assert.deepEqual(next.coverage[otherSize], fullRead, 'a size this run did not touch keeps its record')
+  assert.equal(carried.length, 1)
+  assert.equal(next.tires.length, 2)
+
+  const replaced = buildSnapshot({ previous, tires: [tire('giga-b')], replace: true, coverage: { [SIZE]: fullRead } }).snapshot
+  assert.deepEqual(Object.keys(replaced.coverage), [SIZE], '--replace drops the untouched size and its record')
+})
+
+test('scripts/import-tires.mjs refuses --complete for a size that was not read in full', async t => {
+  const { execFile } = await import('node:child_process')
+  const { writeFileSync } = await import('node:fs')
+  const db = setup(t)
+  db.saveOffer('giga-a', offer())
+  const { base } = await gatedServer(t, db)
+  const folder = mkdtempSync(path.join(tmpdir(), 'kmt-import-complete-'))
+  t.after(() => rmSync(folder, { recursive: true, force: true }))
+  const script = path.resolve(import.meta.dirname, '../scripts/import-tires.mjs')
+  const run = (file, args) => new Promise(resolve => execFile(process.execPath, [script, file, '--to', base, ...args],
+    { env: { ...process.env, KMT_OWNER_PASSWORD: 'a-long-enough-password' } },
+    (error, stdout, stderr) => resolve({ code: error?.code ?? 0, stdout, stderr })))
+
+  const trimmed = path.join(folder, 'trimmed.json')
+  writeFileSync(trimmed, JSON.stringify(snapshot([tire('giga-b')], { [SIZE]: { limit: 8, pagesRead: 1, totalPages: 3, complete: false } })))
+  const refused = await run(trimmed, ['--complete'])
+  assert.equal(refused.code, 1)
+  assert.match(refused.stderr, /Refusing --complete: 215\/60R16 was scraped with --limit 8 over 1 of 3 pages/)
+  assert.equal(db.list().total, 1, 'nothing was sent')
+
+  const unrecorded = path.join(folder, 'old.json')
+  writeFileSync(unrecorded, JSON.stringify({ ...snapshot([tire('giga-b')]), coverage: undefined }))
+  const noRecord = await run(unrecorded, ['--complete'])
+  assert.equal(noRecord.code, 1)
+  assert.match(noRecord.stderr, /215\/60R16 has no coverage record/)
+
+  const full = path.join(folder, 'full.json')
+  writeFileSync(full, JSON.stringify(snapshot([tire('giga-b')])))
+  const done = await run(full, ['--complete'])
+  assert.equal(done.code, 0, done.stderr)
+  assert.match(done.stdout, /1 no longer listed/)
+  const rows = Object.fromEntries(db.list().items.map(row => [row.id, row]))
+  assert.equal(rows['giga-a'].supplierActive, false, 'a full read may retire')
+  assert.equal(rows['giga-a'].offer.enabled, true, 'with the owner offer kept')
 })
