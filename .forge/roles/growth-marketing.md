@@ -208,6 +208,18 @@ broken is the failure it exists to catch, one level down.
 - **Do not put provenance in a shipped HTML comment.** Everything in the head
   goes to the public web. This repo has already published its own asset
   provenance once, at `/brand/SOURCES.md`. Sources belong in `docs/`.
+- **Verify the structured data by parsing it, never by grepping for a
+  pattern.** The block ships pretty-printed, so it reads `"@type": "AutoRepair"`
+  with a space; a grep for `"@type":"AutoRepair"` returns zero, and zero reads
+  exactly like "the feature is not live". That has already nearly been
+  reported as a regression once, by the PROJECT MANAGER checking the live site
+  on the day it shipped. Fetch the page, pull the `application/ld+json` block
+  out, `JSON.parse` it, and assert on fields — which also catches the failure a
+  grep cannot see at all, a block present but malformed. Same family as the
+  `grep -P`, `dig` and empty-count entries in `NOTES.md`: **a verification that
+  returns nothing is agreeing with whatever you already feared, not
+  reporting.** The habit that catches it is to run the check once against a
+  case it must answer positively before trusting a negative from it.
 - Run the audits against `backend/server.mjs` serving the built `dist/`, a
   **fresh server and temp database per audit**: `NOTES.md` records ~14 submits
   per run against a cap of 30, so one server across three runs trips the
