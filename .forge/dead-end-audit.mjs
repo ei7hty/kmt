@@ -170,12 +170,15 @@ async function main() {
     }
 
     await page.click('button:has-text("Approve")');
-    await page.waitForTimeout(200);
 
-    const sentStatus = await page.locator('text=SENT').first().isVisible().catch(() => false);
-    if (sentStatus) {
+    // Approve is a network round trip. Wait for the status to appear rather than
+    // sleeping 200 ms and sampling once: that form turned the identical commit
+    // 598d4e2 red and then green in the gate at the phone viewport (#79). Same
+    // assertion, same count; only the observation waits now.
+    try {
+      await page.locator('text=SENT').first().waitFor({ state: 'visible', timeout: 5000 });
       ok('/owner: after clicking Approve, status visibly updates to SENT in place (no reload needed).');
-    } else {
+    } catch {
       fail('/owner: status did not visibly update to SENT after clicking Approve.');
     }
 
