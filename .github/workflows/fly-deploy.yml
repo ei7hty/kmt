@@ -13,15 +13,46 @@ on:
   push:
     branches: [main]
     # A run that ships nothing must not be allowed to evict a queued run that
-    # ships everything. CLAIMS.md changes several times an hour now that
-    # claim and release commits go straight to main (.forge/AGENTS.md), and
-    # each one is a push in this same concurrency group: it superseded #210's
-    # deploy 57 seconds after the merge, and the next run computed scope
-    # against that push, saw only CLAIMS.md, and correctly skipped -- so the
-    # real deploy was never retried, just silently lost. Named the exact
-    # path, not the directory: the audit scripts under .forge/ genuinely must
-    # run the gate, and a change to one of them still has to.
-    paths-ignore: ['.forge/CLAIMS.md']
+    # ships everything.
+    #
+    # THE RULE, so this list can be extended by reasoning rather than by
+    # pattern-matching what is already in it: a push to main that cannot ship
+    # has already been gated on its own pull request. Re-running it on push
+    # adds nothing but cost and eviction risk.
+    #
+    # What eviction means here, because it is worse than a wasted run. GitHub
+    # keeps exactly ONE pending run per concurrency group, so a newer queued
+    # run evicts the older pending one -- `cancel-in-progress: false` protects
+    # the run that is already executing, not the one waiting behind it. And a
+    # cancelled deploy is never retried: the next run computes scope from
+    # `github.event.before`, sees only its own push, and correctly skips. So
+    # the cancelled deploy is not delayed, it is forgotten. #210 was lost that
+    # way to a CLAIMS.md commit 57 seconds behind it, and #241 to a NOTES.md
+    # commit minutes later, both with green ticks over them the whole time.
+    #
+    # This is a DENY-list on purpose, and the direction matters. A `paths:`
+    # allow-list would fail toward silence: add a new shipping directory,
+    # forget to list it, and pushes touching only it never deploy -- this same
+    # bug, undetectable. A deny-list fails toward an extra run, which costs
+    # four minutes. Extend this list when a non-shipping tree starts churning;
+    # never convert it to an allow-list.
+    #
+    # NEVER a bare `**.md` or `**/*.md`, however tempting the generalisation
+    # looks. `public/` is in `ship_paths` below: the day someone tracks a
+    # markdown file there -- brand provenance, a licence note -- a blanket
+    # markdown pattern silently stops a SHIPPING file from triggering a
+    # deploy. That is this exact bug again, quieter, and aimed at the one
+    # directory whose contents reach customers. Name the documentation trees;
+    # do not name a file extension.
+    #
+    # `.forge/*.mjs` is deliberately absent: the audit scripts live there and
+    # a change to one of them genuinely must run the gate.
+    paths-ignore:
+      - '.forge/*.md'
+      - '.forge/roles/**'
+      - '.forge/state.json'
+      - 'docs/**'
+      - '*.md'
   pull_request:
   workflow_dispatch:
 
