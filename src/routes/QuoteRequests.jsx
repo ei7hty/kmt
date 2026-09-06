@@ -77,6 +77,13 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
   const [error, setError] = useState('')
   const [needsSignIn, setNeedsSignIn] = useState(false)
   const [busyId, setBusyId] = useState('')
+  // The reason box for the one action that asks something (cancel): which
+  // request it belongs to and what's typed so far. Not window.prompt (#78) --
+  // Playwright cannot drive a native prompt, so nothing had ever exercised
+  // this path, and the promise the text makes ("the customer will see it")
+  // has to stay visible at the point of typing, not live in a placeholder
+  // that vanishes on the first keystroke.
+  const [cancelDraft, setCancelDraft] = useState(null)
   const [linkedId] = useState(linkedRequestId)
   // 'open' (draft/sent/paid) and 'closed' (done/rejected/cancelled) between
   // them cover every request, so a linked id missing from 'open' -- the
@@ -122,16 +129,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
     return () => clearTimeout(timer)
   }, [load, ownerVersion])
 
-  async function act(request, quote, { action, asks }) {
-    // Cancelling is the one action with something to say, and the customer is
-    // the one who reads it. Nothing else asks, because nothing else needs to.
-    let reason = ''
-    if (asks) {
-      const answered = window.prompt('Why is this being cancelled? The customer will see it. Leave blank to say nothing.')
-      if (answered === null) return
-      reason = answered.trim()
-    }
-
+  async function runAction(request, quote, action, reason = '') {
     setBusyId(request.id)
     setError('')
     try {
@@ -144,6 +142,20 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
       setError(err.message)
       if (/reload/i.test(err.message)) await load()
     } finally { setBusyId('') }
+  }
+
+  /** Cancelling is the one action with something to say, and the customer is
+      the one who reads it. Nothing else asks, because nothing else needs to. */
+  function act(request, quote, { action, asks }) {
+    if (asks) { setCancelDraft({ requestId: request.id, action, reason: '' }); return }
+    runAction(request, quote, action)
+  }
+
+  function confirmCancel(request, quote) {
+    const reason = cancelDraft.reason.trim()
+    const action = cancelDraft.action
+    setCancelDraft(null)
+    runAction(request, quote, action, reason)
   }
 
   if (needsSignIn) {
@@ -230,7 +242,19 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                     {CLOSED_NOTE[quote.status]}{quote.reason ? ` ${quote.reason}` : ''}
                   </p>}
                   {ACTIONS[quote.status] && <div className="owner-actions">
-                    {ACTIONS[quote.status].map(item => (
+                    {cancelDraft?.requestId === request.id ? (
+                      <div className="owner-cancel-draft">
+                        <label htmlFor={`cancel-reason-${request.id}`}>Why is this being cancelled? <span className="optional">The customer will see this. Leave blank to say nothing.</span></label>
+                        <textarea id={`cancel-reason-${request.id}`} rows={2} value={cancelDraft.reason}
+                          onChange={event => setCancelDraft(draft => ({ ...draft, reason: event.target.value }))} />
+                        <div className="owner-cancel-draft-actions">
+                          <button type="button" className="btn btn-neutral" disabled={busyId === request.id} onClick={() => setCancelDraft(null)}>Back</button>
+                          <button type="button" className="btn btn-reject" disabled={busyId === request.id} onClick={() => confirmCancel(request, quote)}>
+                            {busyId === request.id ? 'Cancelling…' : 'Cancel request'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : ACTIONS[quote.status].map(item => (
                       <button key={item.action} className={item.className} disabled={busyId === request.id}
                         onClick={() => act(request, quote, item)}>
                         {busyId === request.id && item.busy ? item.busy : item.label}
