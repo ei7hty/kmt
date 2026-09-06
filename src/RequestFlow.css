@@ -77,7 +77,7 @@
   .order-section .location-choice { padding: 12px 9px; }
   .location-choice small { font-size: 10px; }
   .address-fields { grid-template-columns: minmax(0, 1fr); }
-  .address-fields > div:last-child { max-width: 160px; }
+  .address-fields .zip-field input { max-width: 160px; }
   .date-section { grid-template-columns: minmax(0, 1fr); }
   .date-shortcuts { padding-top: 4px; }
   .date-choice { flex: 1; text-align: center !important; }
