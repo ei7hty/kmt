@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `refresh-scope` | Claude (kmt CLI session, SWE agent 3) | `backend/inventory.mjs`, `backend/refresh.mjs`, `backend/owner.test.mjs`, `src/owner/OwnerInventory.jsx`; comment-only touch of `.forge/dead-end-audit.mjs` (stale "290") | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
