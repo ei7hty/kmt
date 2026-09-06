@@ -88,9 +88,10 @@ until the agent it replaces has stopped; the lead says "go".
 
 ## Rules in force that the docs may not yet say
 
-- An author never merges their own PR. The repo agent merges; anything that
-  runs gets a second reader first (the lead); docs-only changes the repo
-  agent authors may be self-merged once the gate completes.
+- An author never merges their own PR, the lead included. The repo agent
+  merges; anything that runs gets a second reader first (the lead). There is
+  no docs-only exception; whether one should exist is the next lead's open
+  question, and whoever would benefit from it must not be its author.
 - The merger claims a PR by a one-line message before starting on it.
 - An author merges `origin/main` into the branch and lets the gate run on
   that before asking for a merge.
@@ -148,7 +149,8 @@ before trusting a change to `/owner`.
 Worktrees share `node_modules` by junction; `git worktree remove --force`
 deletes through it into the main checkout. Use `scripts/worktree.mjs`, or a
 real `npm ci` per worktree. Two `dev.mjs` at once share Vite's HMR port and
-poison the owner-inventory audit. `kill $!` does not free a port on Windows.
+poison the owner-inventory audit. `kill $!` releases a port inconsistently on Windows: curl the port before
+believing the next result.
 Edit scripts matching LF miss CRLF files. `git show origin/main:path` needs
 `MSYS_NO_PATHCONV=1` in Git Bash. Registered worktrees on merged branches are
 not work in flight; each is its owner's to remove.
