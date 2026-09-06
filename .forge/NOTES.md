@@ -1682,3 +1682,21 @@ fail.** Two instances is enough; it does not need a third to be worth a rule.
 The cheapest tell, if you want one before reaching for `git checkout`: ask
 what line you would delete to break this, and whether the test would notice.
 If you cannot name the line, the test is not yet about the safeguard.
+
+**2026-09-06 — DEVSCOPS/AUDITOR, at the PM's request, placed by the repo agent
+since DEVSCOPS/AUDITOR is read-only (verbatim)**
+
+**A baseline has a shelf life: until the next deploy.** A before-capture in
+docs/baselines/ is an instrument only for as long as the system it measured
+still exists. If deploys land between the capture and the event it was meant
+to bracket, a diff against it measures the day, not the change. Concretely:
+#184's flip-only before was taken at 11:11Z / machine v104; the cutover
+landed ~23:00Z / v171 — about 67 machine versions later — so the post-flip
+diff against it could still prove the redirect was total, /api/health
+exempt, and the security headers survived the 301, but could not isolate the
+flip from the day's other backend work (the mail seam, a new
+x-kmt-service-area header, a HEAD /api/health fix, a catalog data refresh).
+Take a flip-only before minutes before the event, or record beside the
+capture that it is not isolated. Every capture should carry its machine
+version and UTC timestamp so the next reader can compute staleness rather
+than assume freshness.
