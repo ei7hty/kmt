@@ -137,8 +137,8 @@ that the next person to notice the gap finds the reason before they "fix" it.
 
 ## The brand assets, measured
 
-`docs/brand.md` said every file in `public/brand/` carries the seller's
-watermark. True — and it had been read as the watermark being *visible*, which
+`docs/brand.md` said every file in `public/brand/` carries a watermark.
+True — and it had been read as the watermark being *visible*, which
 it is not. Measured against the flat ground of each file that ships:
 **1.02:1** in `og-1200x630.jpg`, **1.03:1** in `kens-dark-1200.webp`, nothing
 detectable in `kens-dark-600.webp`, against the **3:1** at which WCAG 1.4.11
