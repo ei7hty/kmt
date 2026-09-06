@@ -32,13 +32,12 @@ dist-ssr
 # Local credentials for the owner workspace. Never commit.
 secrets/
 
-# Watermarked brand previews from the seller (DesignNoirCo), shown for
-# selection only and not licensed for use or distribution. Never commit them:
-# committing puts another party's watermarked work into history (a later
-# git rm does not remove it), and referencing one ships the watermark to a
-# customer. The licensed art lands in public/brand/ when the user delivers it,
-# and these three are replaced then. Matched by exact path so public/brand/
-# and the real assets are never blocked.
+# Source brand art, kept out of git on purpose. These are the originals the
+# shipped assets under public/brand/ were derived from, not files the site
+# serves. Committing one writes a large source image into history permanently
+# (a later git rm does not remove it), and referencing one from the app would
+# ship a source-quality file to a customer instead of the optimised asset.
+# Matched by exact path so public/brand/ and the real assets are never blocked.
 /public/Kens mobile tire logo.jpg
 /public/icm_fullxfull.681608358_isz0wre9asgk00wkwsgo.jpg
 /public/icm_fullxfull.685139857_m8dvmt2fkxwgo8gs4448.jpg
