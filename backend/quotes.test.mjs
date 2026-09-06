@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Quotes } from './quotes.mjs'
-import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isPublicApiCall, readJsonBody } from './api.mjs'
+import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
 import { calculateDraftQuote } from '../src/pricing.js'
 
@@ -779,4 +779,24 @@ test('the health handler answers its own path and nothing else', async t => {
     { writeHead: code => { status = code }, end: () => {} },
   )
   assert.equal(status, 405)
+})
+
+test('the Host guard refuses a strange host, and never the health check', async () => {
+  // KMT_ALLOWED_HOSTS is set in production, and the platform check arrives on
+  // the internal network with a Host header that is not the public hostname. A
+  // 403 there reads as an unhealthy machine in monitoring even though the check
+  // can no longer take the site out of the proxy.
+  const allowed = ['kmt.fly.dev']
+
+  assert.equal(isHostAllowed('kmt.fly.dev', '/', allowed), true)
+  assert.equal(isHostAllowed('evil.example.com', '/', allowed), false)
+  assert.equal(isHostAllowed('evil.example.com', '/api/catalog', allowed), false,
+    'the exemption is for the health path alone')
+
+  assert.equal(isHostAllowed('kmt.internal', '/api/health', allowed), true)
+  assert.equal(isHostAllowed('[fdaa:0:1::3]', '/api/health', allowed), true)
+  assert.equal(isHostAllowed('', '/api/health', allowed), true, 'no Host header at all is still the check')
+
+  // Unset means accept anything, which is what a local run does.
+  assert.equal(isHostAllowed('anything', '/', []), true)
 })

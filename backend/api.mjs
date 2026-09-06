@@ -115,6 +115,26 @@ export function createCatalogApi(inventory) {
 }
 
 /**
+ * May a request with this Host header be served?
+ *
+ * The rule itself is server.mjs's, but the decision lives here so it can be
+ * tested: server.mjs starts listening the moment it is imported, so nothing in
+ * the suite can reach a branch written inline there.
+ *
+ * `/api/health` is exempt. The platform's check reaches this process on the
+ * internal network, so its Host header is never the public hostname; refusing
+ * it would answer 403 to the one caller whose job is to say whether this
+ * machine is well, and monitoring would read a healthy machine as sick. The
+ * exemption is safe only because that endpoint discloses nothing but `ok` --
+ * anything reachable this way has to stay that boring.
+ */
+export function isHostAllowed(hostname, pathname, allowedHosts) {
+  if (pathname === '/api/health') return true
+  if (!allowedHosts.length) return true
+  return allowedHosts.includes(hostname)
+}
+
+/**
  * Is this machine actually serving?
  *
  * Its own handler, for the reason createCatalogApi is, and public for a reason
