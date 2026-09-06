@@ -16,7 +16,6 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | doc-staleness-note | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/NOTES.md, one appended entry (the three stale-record instances of 2026-09-06 and a detection proposal). At the PROJECT MANAGER's request. | 2026-09-06 |
 | cancel-audit-238-r27-r28 | BUG FIXER (local_8ba9f198) | src/routes/Status.jsx (customer cancel: window.confirm -> in-page step), src/routes/QuoteRequests.jsx (owner cancel: window.prompt -> in-page step, only the cancel control), .forge/dead-end-audit.mjs (new cancel checks, EXPECTED_CHECKS moves with them) -- flagging overlap: t35-quote-adjustment's row above also names these three files; scoping to the cancel control only, not quote-adjustment logic | 2026-09-06 |
 | declined-email-reason-optional | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/t62-voice.md, part F only (the declined sketch renders a reason Ken may not have written; voice/product, no code) | 2026-09-06 |
-| funnel-report-spec | GROWTH/MARKETING (local_d80272eb) | new .forge/funnel-report.md only (spec, no code); reads backend/quotes.mjs, outbox.mjs, api.mjs. Approved phase one by the product owner; hands to the backend lane to build | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
