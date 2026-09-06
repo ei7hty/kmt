@@ -13,7 +13,7 @@ const base = process.env.AUDIT_BASE || 'http://localhost:4183'
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 30
+const EXPECTED_CHECKS = 34
 
 const browser = await chromium.launch()
 let checks = 0
@@ -43,6 +43,7 @@ try {
     check(await page.locator('#serviceZip').inputValue() === '02149', 'earlier ZIP carries into service details')
     await page.getByRole('button', { name: 'Request my quote' }).click()
     check(await page.locator('#location').getAttribute('aria-invalid') === 'true' && await page.locator('#date').getAttribute('aria-invalid') === 'true', 'empty address and date get inline errors')
+    check(await page.locator('#customerName').getAttribute('aria-invalid') === 'true' && await page.locator('#customerEmail').getAttribute('aria-invalid') === 'true', 'empty name and email get inline errors')
     await page.getByRole('button', { name: 'Roadside', exact: false }).click()
     check(await page.getByLabel('Road, exit or nearby address').isVisible(), 'roadside option provides relevant address guidance')
     await page.locator('#location').fill('I-93 North, Exit 20, Boston')
@@ -54,6 +55,9 @@ try {
     await page.getByRole('button', { name: 'Continue to mobile service' }).click()
     check(await page.locator('#locationNotes').inputValue() === 'Blue sedan near the gas station', 'service details survive back navigation')
     check(await overflow(), 'service controls fit within viewport')
+    await page.locator('#customerName').fill('Jamie Rivera')
+    await page.locator('#customerEmail').fill('jamie@example.com')
+    await page.locator('#customerPhone').fill('(617) 410-8319')
     await page.locator('.step-panel').screenshot({ path: `.forge/shots/request-service-${width}.png` })
     await page.getByRole('button', { name: 'Request my quote' }).click()
     await page.waitForSelector('.success-message')
@@ -68,6 +72,7 @@ try {
     check(ownerText.includes('2020 Toyota Corolla'), 'owner sees the vehicle the customer entered')
     check(ownerText.includes('02149'), 'owner sees the ZIP the customer entered')
     check(ownerText.includes('Blue sedan'), 'owner sees the access instructions the customer entered')
+    check(ownerText.includes('Jamie Rivera') && ownerText.includes('jamie@example.com') && ownerText.includes('+16174108319'), 'owner sees the contact name, email and normalized phone the customer entered')
     check(errors.length === 0, 'no browser runtime errors')
     await page.close()
   }

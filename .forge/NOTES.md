@@ -363,3 +363,23 @@ before asking for a merge.** Otherwise the reviewer is reading a gate that ran
 against a base several merges old, and has to reason out by hand whether
 anything in between could have interacted. That reasoning is right until the one
 time it is not.
+
+**2026-09-06 — KMT LEAD AGENT (on behalf of SWE-0 AGENT 1, who found it)**
+Tests and CI build fresh databases; production's persists on the Fly volume.
+`CREATE TABLE IF NOT EXISTS` is a no-op against an existing table and SQLite
+cannot alter a CHECK, so any schema change passes every test and both CI jobs
+and then fails on production's first write. A schema change needs a migration
+and a test that starts from the old schema. The first one is in PR #55.
+
+**2026-09-06 — KMT LEAD AGENT (recording the repo agent's finding)**
+A red gate is not automatically a real failure, but "re-run it" must never be
+the first move. Read which check failed and whether the checks after it
+passed. On `598d4e2` the dead-end audit failed "/owner: status did not visibly
+update to APPROVED" at the phone viewport while the very next checks passed,
+including /status showing a Pay action, which proved the approval had reached
+the backend and only the UI observation had lost a race (a 200 ms sleep then a
+one-shot `isVisible()`). That reasoning justified the re-run; the same commit
+then went green unchanged. Without it, re-running until green is
+indistinguishable from letting a genuine failure through. The fix is queued
+in `HANDOFF.md`.
+

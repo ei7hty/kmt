@@ -101,7 +101,7 @@ export async function expandTireList(page) {
   if (await showAll.count()) await showAll.first().click()
 }
 
-export async function submitRequest(page, { base, size, tireName, vehicle, location, date, notes }) {
+export async function submitRequest(page, { base, size, tireName, vehicle, location, date, notes, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
   const [width, rest] = size.split('/')
   const [ratio, diameter] = rest.split('R')
   const step = { timeout: 15000 }
@@ -122,6 +122,8 @@ export async function submitRequest(page, { base, size, tireName, vehicle, locat
   await page.fill('#location', location, step)
   if (notes) await page.fill('#locationNotes', notes, step)
   await page.fill('#date', date, step)
+  await page.fill('#customerName', customerName, step)
+  await page.fill('#customerEmail', customerEmail, step)
   await page.click('button[type="submit"]', step)
 
   // The acknowledgement is the flow's own signal that the request landed.

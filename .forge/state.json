@@ -640,9 +640,11 @@
       "dependsOn": [
         "t33"
       ],
-      "notes": [],
+      "notes": [
+        "Opened as PR #53 (branch contact-fields), not yet merged -- leaving status as todo until the repo agent merges it. Coordinated with the session doing t36 in the same file (backend/quotes.mjs) before starting: this PR only touches cleanRequest/shapeRow's field list, not status/transition logic. Verified against backend/server.mjs serving the built branch (merged with origin/main first) with a throwaway database: node --test backend/*.test.mjs 57/57 pass (2 new), eslint clean, build clean, dead-end 42/42 (was 40, +1/viewport for the owner-card contact check), request-flow 34/34 (was 30, +2/viewport for inline-error and owner-contact-display checks), responsive 8/8 (unchanged)."
+      ],
       "createdAt": "2026-09-05T21:52:40.692Z",
-      "updatedAt": "2026-09-05T23:36:35.812Z"
+      "updatedAt": "2026-09-06T01:20:00.000Z"
     },
     {
       "id": "t35",

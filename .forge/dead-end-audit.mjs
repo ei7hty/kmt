@@ -12,7 +12,7 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 40;
+const EXPECTED_CHECKS = 42;
 
 let passed = 0;
 let failed = 0;
@@ -55,7 +55,7 @@ function reportCount() {
  *
  * @param size  Tire size as it appears in the catalog, e.g. '265/70R16'.
  */
-async function submitRequest(page, { size, tireName, vehicle, location, date }) {
+async function submitRequest(page, { size, tireName, vehicle, location, date, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
   const [width, rest] = size.split('/');
   const [ratio, diameter] = rest.split('R');
 
@@ -81,6 +81,8 @@ async function submitRequest(page, { size, tireName, vehicle, location, date }) 
     // Step 3: service details, then submit.
     await page.fill('#location', location, step);
     await page.fill('#date', date, step);
+    await page.fill('#customerName', customerName, step);
+    await page.fill('#customerEmail', customerEmail, step);
     await page.click('button[type="submit"]', step);
   } catch (error) {
     // This is exactly how the audit rotted the first time: the customer flow was
@@ -150,6 +152,13 @@ async function main() {
       ok('/owner: exception state renders distinctly (Owner review required + reasons).');
     } else {
       fail('/owner: exception state did not render as expected for the truck + off-road submission.');
+    }
+
+    const contactVisible = await page.locator(`a[href="mailto:jamie@example.com"]`).first().isVisible().catch(() => false);
+    if (contactVisible) {
+      ok('/owner: the request card shows the customer\'s contact email as a mailto link.');
+    } else {
+      fail('/owner: no visible contact email for the submitted request.');
     }
 
     const approveVisible = await page.locator('button:has-text("Approve")').first().isVisible().catch(() => false);
