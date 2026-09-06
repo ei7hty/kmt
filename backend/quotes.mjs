@@ -350,7 +350,9 @@ export class Quotes {
     // takes, so the card reads it like any other.
     const area = isServiceable(request.serviceZip, this.serviceArea)
     if (!area.serviceable) {
-      throw new InputError(`${area.message} Call us at ${SHOP_PHONE} and we will see what we can do.`)
+      // "Text", not "call": every customer-facing control promotes texting
+      // (t63), and the panel that shows this sentence carries the text button.
+      throw new InputError(`${area.message} Text us at ${SHOP_PHONE} and we will see what we can do.`)
     }
     // The distance rides with the request for the owner's card. It is not in
     // the customer shape: the customer knows where they are.

@@ -170,9 +170,9 @@ test('the ZIP is required and five digits; a ZIP+4 is read as its five', async t
 test('beyond the service area is refused with the distance and the phone number, and nothing is stored', async t => {
   const { quotes } = setup(t)
   // Defaults on: Malden, 100 miles. Bangor is about 200.
-  assert.throws(() => quotes.submit(form({ serviceZip: '04401' })), /about 200 miles from us, outside the 100 mile area we serve\. Call us at \(617\) 410-8319/)
+  assert.throws(() => quotes.submit(form({ serviceZip: '04401' })), /about 200 miles from us, outside the 100 mile area we serve\. Text us at \(617\) 410-8319/)
   // A ZIP nobody can place is refused the same way, with the number.
-  assert.throws(() => quotes.submit(form({ serviceZip: '99999' })), /do not recognise that ZIP code\. Call us at/)
+  assert.throws(() => quotes.submit(form({ serviceZip: '99999' })), /do not recognise that ZIP code\. Text us at/)
   assert.equal(quotes.listForOwner().length, 0, 'a refused request is not a request')
 })
 
