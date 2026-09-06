@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| harness-role | HARNESS AGENT (local_461155da) | `.forge/roles/harness-orchestrator.md`, `.forge/roles/onboarding-2026-09-06.md`, `.forge/roles/README.md` (row edits only) | 2026-09-06 05:53Z |
+| _none_ | | | |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
