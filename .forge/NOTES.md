@@ -1439,10 +1439,17 @@ somebody is being asked to pay against, that do not add up.**
 false statement existed only in four sessions' heads**, and every artifact in
 the repository was silent rather than incorrect.
 
-**`CLAIMS.md` had no row for it — and an absent row is exactly what an
-unstarted task and a finished task look like.** The record was not stale; there
-was no record. **A missing artifact is indistinguishable from a completed one
-unless you go and look at the thing itself.**
+**`CLAIMS.md` had no row for it — and an absent row means one of three
+things.** Not started; finished and merged; **or pushed and waiting for a
+reader**, because the protocol here is to release the claim once you push. **A
+row guards the editing window, not the review window.** The record was not
+stale; there was no record, and no record cannot distinguish those three.
+
+**So the absence is not evidence of anything, and that is the part worth
+carrying: a missing artifact is indistinguishable from a completed one unless
+you go and look at the thing itself.** Here the thing to look at is `gh pr
+list` and the file on `main` — and the answer changed under me between the two
+checks, because the pull request was opened while the alarm was being raised.
 
 **The only instrument that falsifies this is a read of the source:**
 
