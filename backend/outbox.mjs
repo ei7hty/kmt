@@ -26,8 +26,13 @@ import { InputError } from './inventory.mjs'
  * So a removal request redacts by `request_id` with a `WHERE` clause, no
  * text matching: `to_address`, `to_name`, and the personal keys inside
  * `data` (`to_name`, `to_email`, `customerPhone`, `location`,
- * `locationNotes`) replaced with the same marker the request's own
- * redaction uses, in the same transaction as that redaction. Everything
+ * `locationNotes`, `customerNotes`) replaced with the same marker the
+ * request's own redaction uses, in the same transaction as that redaction.
+ * `customerNotes` (t64, "anything else I should know?") is free text --
+ * the field most likely to hold the thing a removal request is actually
+ * about, a gate code or a note about where someone parks -- so it belongs
+ * on this list as surely as `locationNotes` does, not as an afterthought
+ * added once a customer asked. Everything
  * else -- `type`, `templateVersion`, the business fields inside `data`
  * (tire, size, quantity, unit price, lines, total, date, service ZIP,
  * request id, status), `status`, `providerId`, the timestamps -- survives:

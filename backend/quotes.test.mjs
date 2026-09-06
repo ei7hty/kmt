@@ -136,6 +136,22 @@ test('a request is required to carry the fields a quote needs', async t => {
   assert.throws(() => quotes.submit(form({ locationNotes: 'x'.repeat(1001) })), /too long/)
 })
 
+test('special instructions are stored for the owner, capped, optional, and never in the customer shape', async t => {
+  // t64: "Anything else I should know?". The first field added since t44
+  // made the customer shape a positive list, and the test of whether that
+  // held: nothing in CUSTOMER_REQUEST_FIELDS was edited to exclude it.
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form({ customerNotes: '  Gate code 4411, call when you arrive  ' }))
+  assert.equal(stored(quotes, request.id).customerNotes, 'Gate code 4411, call when you arrive', 'trimmed, on the owner row')
+  assert.equal('customerNotes' in quotes.get(request.id).request, false, 'not in the customer shape by id')
+  assert.equal('customerNotes' in quotes.listForCustomer(KEY)[0].request, false, 'nor in the customer list')
+
+  assert.equal(stored(quotes, quotes.submit(form()).request.id).customerNotes, '', 'optional: absent reads as empty')
+  assert.equal(stored(quotes, quotes.submit(form({ customerNotes: 'x'.repeat(500) })).request.id).customerNotes.length, 500, 'five hundred is allowed')
+  assert.throws(() => quotes.submit(form({ customerNotes: 'x'.repeat(501) })), /customerNotes is too long/)
+  assert.throws(() => quotes.submit(form({ customerNotes: 42 })), /customerNotes must be text/)
+})
+
 test('a name and email are required; the email is stored lower-cased and trimmed', async t => {
   const { quotes } = setup(t)
   assert.throws(() => quotes.submit(form({ customerName: '' })), /customerName is required/)
@@ -342,7 +358,7 @@ test('one browser key and one email address have limits of their own', async t =
   }
   const byEmail = await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'same@example.com' }))
   assert.equal(byEmail.status, 429)
-  assert.match((await byEmail.json()).error, /email address/)
+  assert.match((await byEmail.json()).error, /email address has been used for too many requests today. Text us instead./)
   assert.equal((await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'other@example.com' }))).status, 201, 'the key itself is fine')
 })
 

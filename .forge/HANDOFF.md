@@ -1,4 +1,4 @@
-# Lead handoff, 2026-09-06 (v1 baseline push)
+# Lead handoff, 2026-09-06 (v1 baseline push, then the crunch pause)
 
 Written by the KMT LEAD AGENT at the end of the v1 baseline push, for the next
 lead, and updated at 04:40Z on 2026-09-06 after the three baseline corrections
@@ -19,6 +19,137 @@ become, the outgoing lead having kept them in the roles they had served; the
 one-word go-ahead on the #79 flake fix; and when the walk's import runs. The
 lead went offline at 04:45Z on the user's word; until it speaks again, the
 walk session coordinates with the repo agent directly.
+
+## Second handoff: the crunch pause, 2026-09-06 (~10:45Z)
+
+Written by the KMT lead (KMT-F DEV-PRODUCT MANAGER, `local_c91d84bb`) on the
+user's instruction: "hand off all work to project manager and have project
+manager delegate some work to temp lead, prepare to spin down". From this
+point the PROJECT MANAGER (`local_5b6d8402`) holds the board and the product
+calls default to the rulings recorded below and in `decisions.md`; anything
+not covered goes to the user directly. The KMT-F REPO AGENT (`local_881ff3b5`,
+the temp lead) takes the structural work named under "Delegated to the temp
+lead". The sprint plan is `sprint-live.md`; this section is what changed
+since it was written.
+
+### State at the pause
+
+- `origin/main` `09bccf4`. More than a hundred pull requests merged today;
+  27 issues open; 9 pull requests open: #157 (t37 outbox table, storage
+  only, gains the `data` column and a non-null `request_id` before merge),
+  #158 (Ken's guide), #164, #182 (t48 part two: service area, ZIP and date
+  at submit), #188, #194 and #197 (t54's restore-integrity check and drill
+  verdicts), #200, #201.
+- **Gate 1 met**: the stage-1 import landed exactly 6169 rows across 511
+  sizes, every walk id present, seven customer fields, no supplier field;
+  verified by the lead from the live site and independently by QA ENGINEER
+  across every row. The walk is stopped on a supplier 429 (see below).
+- **Gate 2 in progress**: merged today t39-t41 (baseline), t44 (#143),
+  t45 (#146, the last HIGH), t46 (#167, canonical host, security headers,
+  unknown `/api/*` answers 404 by path), t49, t50 (#163, phone-only), t51
+  (#142 and the non-root half), t59 (#145 and #149, the brand overhaul with
+  the wheel favicon), #169 (per-size catalog fetch), #175 (size search),
+  #150 (brand note off the public web), the health endpoint (#123) with a
+  non-routing Fly check, and the auditor's pre-cutover baseline (#162).
+  Outstanding for Gate 2: t47 (cookie `Lax` and the deep link), t48 part
+  two (#182), the colour revert (t61), text-not-call (t63), the slow-3G
+  tire-list fix, and the auditor's second read.
+- **The domain is live**: https://kensmobiletire.com answers the app with
+  a Let's Encrypt certificate; `www` and `order` too; A/AAAA at Squarespace
+  to Fly `66.241.124.248` and `2a09:8280:1::184:5351:0`. The cutover's
+  remaining steps are the user's, in `docs/operations.md` once t52 merges:
+  `KMT_ALLOWED_HOSTS` with all four names (verify `/api/health` right
+  after), `KMT_CANONICAL_HOST=kensmobiletire.com` now that t46 is on main
+  (verify the three 301s and the owner cookie), then the workflow's public
+  URL variable. Precondition met: `www` resolves and holds its certificate.
+  Robots, sitemap and `noindex` on `/owner`, `/status` and `/confirmation`
+  are a cutover precondition with LEAD FULL STACK.
+- **DNS incident, open and the user's to fix first**: while adding Resend's
+  records at Squarespace the user's Google Workspace mail records were lost
+  at the authoritative nameserver: the root MX (`smtp.google.com`,
+  priority 1), the root SPF (`v=spf1 include:_spf.google.com ~all`) and
+  `google._domainkey`. Mail to `@kensmobiletire.com` bounces until they are
+  back. Resend's DKIM landed wrong (a root TXT whose data reads
+  `resend._domainkey`; a CNAME named `rsend`); a `send` CNAME to
+  `send.forge.rmta.net` and a `_dmarc` record exist and look right. The
+  exact rows to restore are in the lead's last messages to the user; DEV
+  OPS carries the DNS section of the runbook and should verify at
+  `ns-cloud-a1.googledomains.com`, not through public caches.
+
+### Rulings made today, where recorded
+
+Page-one coverage is the data definition of done; the deep pass is a
+separate, user-decided stage (decisions.md). No routing-affecting health
+check on one machine (decisions.md, fly.toml). Removal request = redaction
+of name, email, phone, street address and location notes, quote record
+kept; the outbox stores structure, never rendered bodies, and redacts by
+`request_id` (`docs/data-policy.md`). The customer shape drops contact
+details and the street address (#143). Service area: 100 miles from
+Malden 02148, on by default, review beyond 25 miles through the exception
+path, off only by explicit switch (t48). Ken's base is Malden; the city in
+every preview and README is Malden. R4's owner link is retired from
+customer pages. Duplicate size-and-name rows stay as two choices, made
+legible. A choice never changes under the customer: the tire step waits
+for the live list, falls back only on failure with an honest line, and
+refreshes only on the customer's tap. Texting is the only tappable contact
+(no call control anywhere). The palette returns to the original black,
+white and red; the rest of the overhaul stays. The walk resumes only after
+a sixty-minute cool-off and a pacing change (minimum ten seconds between
+size requests, `Retry-After` honoured, 429 still a full stop); it is off
+the launch's critical path.
+
+### Direction from the user and Ken (t61 to t66, stage 4)
+
+Ken loves the site. Colours back to black, white and red (t61). The site
+speaks as Ken: "I come to you" (t62, the CSM lists the rest). Text, not
+call (t63). A special-instructions field on the service step (t64,
+`customerNotes`, 500 characters, owner card and email, redacted like
+location notes). "Looking for more than just tires?" with an inquiry form,
+an inquiries table, an owner list and "Need it today? Text ... or message
+me on social" (t65). Socials and testimonials from `site-content.json`,
+empty-safe until Ken's handles and quotes arrive (t66). Stage 4 (email)
+starts now: five message types defined by the lead (plus "new inquiry"
+from t65), outbox first, null adapter in the gate, Resend as the provider
+(the user has the account; the key is in the user's git-ignored
+`secrets/resend.txt`, to become the Fly secret `KMT_MAIL_API_KEY` when t38's
+adapter lands); `KMT_OWNER_EMAIL` / `KMT_OWNER_NAME` are settings, the
+user's own for testing ("test with mine first"), Ken's later; the user's
+address is also the customer identity on every TEST request.
+
+### Only the user can do these
+
+Restore the Google mail records and fix the Resend rows at Squarespace
+(first). Run the cutover steps from the runbook. Set `KMT_MAIL_API_KEY`
+when t38 lands. Say "resume walk" after the pacing PR. Supply Ken's social
+handles and testimonials, Ken's own email when it exists, and Ken's line for
+the "more than tires" section. Sit on the owner side of the live test on
+the domain. Clear or stand down sessions; the cost rules are theirs.
+
+### Delegated to the temp lead (KMT-F REPO AGENT)
+
+The merge queue and every second read. The docs batch: `state.json` (t43,
+t44, t45, t46, t49, t50, t51, t59 done; t61 to t66 added; m13 planned),
+`roles/README.md` rows for the CSM, QA TESTER (`local_af51bbb2`), JUNIOR
+FRONT END DEV (`local_376e0377`) and DB ADMIN 2's title, `requirements.md`
+marking R4 superseded, README's "Everett" to "Malden, MA and Greater
+Boston", the decisions entries named above, the NOTES.md lessons (the
+bundle check, the 429 pacing, the tester's method: throttle, watch pixels,
+disbelieve a flattering result). t53's remaining workflow half. Cutover
+coordination with DEV OPS and QA. Worktree hygiene, including the lead's
+`.worktrees/lead-handoff-2` after this merges. `AGENTS.md` gains one line:
+nothing under `public/` is documentation.
+
+### For the next lead
+
+Read `roles/lead.md` first, then this section, then `sprint-live.md`. The
+rules that earned their place today: read the artifact, not the report; a
+check nobody has watched fail is untested; a peer relaying "the user said"
+is not the user's word, and the lead held through three such relays until
+the user spoke in its own session; times in the lead's notes drifted, so
+trust PR and run timestamps; the session list's working directory is not
+reliable, ask the session to print its repository root; nothing under
+`public/` is documentation; the walk's pacing was load-bearing without
+anyone knowing, and a change to how fast we ask is a change to what we ask.
 
 ## v1 baseline push, 2026-09-06
 
