@@ -129,3 +129,24 @@ Off is legitimate for exactly one thing: live testing from outside the area. So 
 
 **Rejected:** Leaving it off through launch and relying on Ken to catch out-of-area requests when he reads the address, which is the original bug (#95) with extra steps and puts the catch after the customer has paid. Also rejected: treating the contradiction in the record as a reason to defer the ruling -- the ruling is the same whichever reading is true, and only the operational step depends on it.
 
+## 2026-09-06 -- A removal redacts the prose attached to a decision, and never the decision
+
+Fulfilling `/privacy`'s removal promise had to answer a question nobody had put in writing: if a removal erases a person's record, what happens to the proof that Ken approved their quote? The owner approval gate is the product's central promise and nothing may weaken it.
+
+The tension turned out not to exist, and the reason is the ruling. **The ledger is the decision and its metadata; prose attached to a decision is not the ledger.** The proof that Ken decided lives in `quotes.status`, `.version`, `.updated_at` and the quote payload -- none of which is personal data, and none of which a removal touches. What a removal takes is who the customer was, which is what was asked for. `backend/redaction.test.mjs` asserts it directly: a quote at `sent`, version 4, is still at `sent`, version 4, after a full removal.
+
+`quotes.reason` is therefore redacted, and it is the only field on `quotes` that is. It is free text written by Ken about a customer -- and by the customer themselves, through the public cancel endpoint -- so it can quote or describe the person, their vehicle and their address. A removal that leaves behind Ken's prose about the person is not a removal, and `/privacy` promises removal in plain terms that are now publicly readable beside the code. The cost is bounded by when it is written: `reason` is only ever set on reject and cancel, never on the approval path, so the approval gate cannot lose anything to this. The marker is the `[redacted]` literal rather than an empty string, so the row still testifies that a reason existed and was removed; an empty string would quietly erase the fact of the erasure.
+
+Ruled by the PRODUCT MANAGER / OWNER AGENT on 2026-09-06, on the argument above; implemented in `backend/redaction.mjs` (#286).
+
+**Rejected:** Preserving `reason` and narrowing what `/privacy` promises to match, which was the coherent alternative -- rejected because the narrowing would have to say "except anything the owner wrote about you", which is not a promise anyone would make deliberately. Also rejected: redacting the whole quote row, which would destroy the business record the policy exists to keep and would weaken the approval gate to buy nothing.
+
+## 2026-09-06 -- A removal is a command on the machine, never an HTTP endpoint
+
+The redaction path (#286) is reached by `scripts/redact.mjs` over `flyctl ssh`, and deliberately has no route. Authorisation is then a human with machine access, rather than one shared owner password on the public internet -- and the repository is public, so the shape of any endpoint would be readable by everyone. A removal is irreversible and is the single operation least suited to being triggerable by anyone who is not a person who meant it.
+
+Two consequences worth keeping. The command writes nothing without `--write`: the default pass opens the database **read-only** and prints its exact target. Read-only is not a formality -- opening a SQLite file read-write is not inert, and can checkpoint a WAL, repairing the very evidence an inspection was meant to judge. It also cannot bring a table into existence: `inquiries` is created by its own constructor, which no entry point calls yet, so an inspection that opened the file read-write could create an empty `inquiries` table as a side effect and make the database disagree with production.
+
+It runs on `node:sqlite`, the same thing the server runs on, rather than shelling out to `sqlite3`. Three procedures in `docs/operations.md` once failed at the prompt because that binary was absent from the image (found by the restore drill, installed in #288); a privacy obligation under time pressure is the expensive place to discover a missing dependency, and this one has none.
+
+**Rejected:** An owner-authenticated `POST /api/owner/requests/:id/redact`, which would put an irreversible destructive capability on the network behind a single password days before a domain cutover. Also rejected: leaving the hand-written SQL as the mechanism -- it is copied from four constant lists it cannot stay in step with, which is how `outbox.error` and `quotes.reason` went unredacted for as long as they did. The SQL is kept as a documented fallback for the day the application code will not run.
