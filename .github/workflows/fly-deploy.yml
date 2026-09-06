@@ -50,6 +50,23 @@ jobs:
       - run: node --test backend/*.test.mjs
       - run: npx eslint src backend
       - run: npm run build
+
+      # The built bundle is public. Supplier data is not supposed to be in it.
+      #
+      # This ran red for real: the snapshot was imported straight into
+      # src/data/catalog.js's static fallback, so the deployed JS carried the
+      # supplier's SKU, stock count, list price and product URL for all 1083
+      # scraped tires, with the markup settings beside them -- the shop's cost
+      # base, published. Fixed in #110; this is what stops it coming back
+      # quietly, because nothing about that leak was visible in a diff.
+      #
+      # Placed here on purpose: after the build, because it reads dist/, and
+      # before the Playwright install, which is the slowest step in the job.
+      # A supplier-data regression fails in seconds instead of after a browser
+      # download and three audit runs, and nothing later in the job can change
+      # what the build already wrote.
+      - run: node .forge/bundle-leak-check.mjs
+
       - run: npx playwright install --with-deps chromium
 
       # The click paths, gated before merge rather than only after deploy.
