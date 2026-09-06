@@ -283,12 +283,46 @@ test('markup starts as the shared placeholder and survives being saved', t => {
   assert.equal(initial.updatedAt, null)
   assert.equal(db.summary().markup.rate, initial.rate, 'inventory summary carries it for the screen')
 
-  const saved = db.saveMarkup({ rate: 1.6 })
+  // Both fields decided together, the way OwnerInventory.jsx's one form
+  // always sends them: the aggregate flag clears only once neither is a
+  // guess (#finding-3 -- see the two tests below for a rate-only save).
+  const saved = db.saveMarkup({ rate: 1.6, shippingPerTire: 0 })
   assert.equal(saved.rate, 1.6)
-  assert.equal(saved.isPlaceholder, false, 'a saved rate is a decision, not a default')
+  assert.equal(saved.isPlaceholder, false, 'a saved rate and shipping together are a decision, not a default')
   assert.ok(saved.updatedAt)
   assert.equal(db.getMarkup().rate, 1.6)
   assert.equal(db.summary().markup.isPlaceholder, false)
+})
+
+test('a rate-only save decides the rate but leaves shipping exactly as undecided as it was (#finding-3)', t => {
+  const db = setup(t)
+  // The API's one caller today always sends both fields, but the method
+  // itself has always accepted rate alone (every caller before shipping
+  // existed did exactly this) -- and used to mark the whole rule decided
+  // regardless, silently promoting a never-set shipping default to Ken's own
+  // number. It no longer does.
+  const saved = db.saveMarkup({ rate: 1.6 })
+  assert.equal(saved.rate, 1.6)
+  assert.equal(saved.rateIsPlaceholder, false, 'the rate itself was named and validated')
+  assert.equal(saved.shippingPerTireIsPlaceholder, true, 'shipping was never named, so it is still a guess')
+  assert.equal(saved.isPlaceholder, true, 'the rule as a whole is still not fully decided')
+  assert.equal(saved.shippingPerTire, DEFAULT_MARKUP_SETTINGS.shippingPerTire, 'still the default, not invented')
+
+  // Naming shipping later, even at zero, finishes the decision.
+  const finished = db.saveMarkup({ rate: 1.6, shippingPerTire: 0 })
+  assert.equal(finished.shippingPerTireIsPlaceholder, false)
+  assert.equal(finished.isPlaceholder, false)
+})
+
+test('a record saved before per-field markup flags existed reads as fully decided or fully placeholder, matching what one flag could say at the time', t => {
+  const db = setup(t)
+  // setMeta bypasses saveMarkup entirely, standing in for a row this
+  // migration found already on disk.
+  db.setMeta('markup', { rate: 1.5, shippingPerTire: 5, isPlaceholder: false, updatedAt: '2026-01-01T00:00:00.000Z' })
+  const legacy = db.getMarkup()
+  assert.equal(legacy.rateIsPlaceholder, false)
+  assert.equal(legacy.shippingPerTireIsPlaceholder, false)
+  assert.equal(legacy.isPlaceholder, false)
 })
 
 test('markup rejects rates that would quote below cost or reprice by typo', t => {
@@ -402,6 +436,25 @@ test('turning disposal off is a real save, stored as null, not left as a stale a
   const off = db.savePricingSettings({ mobileServiceFee: 49.99, disposalFee: null, tax: null })
   assert.equal(off.disposalFee, null)
   assert.equal(db.getPricingSettings().disposalFee, null)
+  // Ken had already priced disposal once (a real fee above), so explicitly
+  // turning it back off is still a decision, not a guess reasserting itself.
+  assert.equal(off.disposalFeeIsPlaceholder, false)
+})
+
+test('setting only the mobile fee does not silently decide disposal (#finding-3)', t => {
+  const db = setup(t)
+  // The untouched form's disposal toggle defaults to off, so its very first
+  // submission -- meant only to set the mobile fee -- sends disposalFee:
+  // null the same way it would if Ken had actually looked at disposal and
+  // said no. Nothing in that payload tells the two apart; only the fact
+  // that disposal has never carried a real number does.
+  const saved = db.savePricingSettings({ mobileServiceFee: 55, disposalFee: null, tax: null })
+  assert.equal(saved.mobileServiceFeeIsPlaceholder, false, 'the fee itself was named and validated')
+  assert.equal(saved.disposalFeeIsPlaceholder, true, 'disposal was never given a real number, so it is still a guess')
+
+  // Naming a real fee later finishes that decision.
+  const priced = db.savePricingSettings({ mobileServiceFee: 55, disposalFee: 8, tax: null })
+  assert.equal(priced.disposalFeeIsPlaceholder, false)
 })
 
 test('pricing settings reject a fee, a disposal amount, or a tax shape that would misprice', t => {
