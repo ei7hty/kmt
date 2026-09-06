@@ -30,8 +30,12 @@ not through.
 The team cannot do any of these. Each is a command with its proof and its
 rollback in `docs/operations.md`, except the first, which is a decision.
 
-1. **The sending provider.** Not settled. Measured tonight with a positive
-   control on every query: Resend is verified (`resend._domainkey`, a 218
+1. **The sending provider: Resend**, settled by the user in the OWNER
+   AGENT's session after this plan was first written, with the from-address
+   `quote@kensmobiletire.com` on the verified domain, so t38 below is the
+   cheap branch and there is no interim sender. The record that led here,
+   kept because the runbook's repair table still has to be rewritten to
+   match it: measured tonight with a positive control on every query, Resend is verified (`resend._domainkey`, a 218
    character TXT; `v=spf1` on the `send` subdomain; the `send` and `rsend`
    CNAMEs resolving). Google Workspace is not: the root carries only a
    `google-site-verification` TXT and no `v=spf1`; `google._domainkey` is
