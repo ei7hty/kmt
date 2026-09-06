@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| `refresh-scope` | Claude (kmt CLI session, SWE agent 3) | `backend/inventory.mjs`, `backend/refresh.mjs`, `backend/owner.test.mjs`, `src/owner/OwnerInventory.jsx`; comment-only touch of `.forge/dead-end-audit.mjs` (stale "290") | 2026-09-06 |
+| _none_ | | | |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
@@ -408,3 +408,19 @@ files were in open PRs (#31, and #34 since merged); correct the number when you
 next touch them.
 Owner-facing consequence: "Refresh all N sizes" on `/owner` is now 910 browser
 scrapes rather than 290, so roughly three times as long.
+
+**2026-09-06 — Claude (kmt CLI session, SWE agent 3)**
+"Refresh all" on `/owner` no longer means every supported size. With 910
+sizes in the catalog that was 910 supplier page loads at a 1.5-second pause
+from the hosted machine. The inventory summary now carries `refreshableSizes`
+-- supported sizes with supplier rows or a coverage row, i.e. sizes the
+supplier has already been asked about -- and `Refresher.start` refuses a list
+of more than one size that reaches outside it (400, naming the size). One size
+on its own may still be anything supported: that is the owner picking it from
+the size filter. The full walk is `npm run scrape-tires -- --from-catalog` from
+a home connection, then `npm run import-tires`. If you write a test that starts
+a two-size refresh, give the second size a coverage row first
+(`db.recordFailure(size, ...)` is enough), and give each size its own supplier
+id -- ids are unique across sizes, so one fixture row reused for two sizes
+fails the second refresh with a constraint error that reads like a parser bug.
+Backend tests are now 55 (owner 37, quotes 18).
