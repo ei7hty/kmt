@@ -425,7 +425,11 @@ test('sessions are signed, expire, and cannot be forged', async t => {
   assert.equal(ok.status, 200)
   const cookie = ok.headers.getSetCookie()[0]
   assert.match(cookie, /HttpOnly/)
-  assert.match(cookie, /SameSite=Strict/)
+  // t47 (#89): Lax so a link in a notification email carries the session on
+  // a top-level navigation; Strict must be gone, not merely joined by Lax.
+  assert.match(cookie, /SameSite=Lax/)
+  assert.doesNotMatch(cookie, /SameSite=Strict/)
+  assert.equal((cookie.match(/SameSite=/g) || []).length, 1, 'exactly one SameSite attribute')
 
   const token = cookie.split(';')[0]
   assert.equal((await fetch(`${base}/anything`, { headers: { cookie: token } })).status, 200)

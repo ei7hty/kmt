@@ -182,7 +182,7 @@ const server = createServer(async (request, response) => {
 
     if (url.pathname.startsWith('/api/')) {
       // The import endpoint is reached from a giga-tires tab, so it carries a
-      // bearer token instead of the session cookie -- SameSite=Strict means the
+      // bearer token instead of the session cookie -- SameSite=Lax means the
       // cookie is deliberately not sent cross-site. Preflight carries neither.
       const importCall = url.pathname === '/api/owner/import' &&
         (request.method === 'OPTIONS' || auth.isImportAuthorized(request))

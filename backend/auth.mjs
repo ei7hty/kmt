@@ -206,7 +206,13 @@ export function createAuth(config, { sessions = memorySessionStore(), throttle =
     `${COOKIE}=${value}`,
     'Path=/',
     'HttpOnly',
-    'SameSite=Strict',
+    // Lax, not Strict (t47, #89): Strict withholds the cookie on every
+    // top-level navigation from another site, including the link in a mail
+    // client, so the owner tapping a notification landed on the sign-in
+    // screen every time while holding a valid session. Lax still withholds it
+    // on cross-site POST, which is the attack Strict was chosen against; the
+    // import endpoint keeps its bearer token for the same reason.
+    'SameSite=Lax',
     isSecure(request) ? 'Secure' : '',
     `Max-Age=${maxAgeSeconds}`,
   ].filter(Boolean).join('; ')
@@ -219,10 +225,11 @@ export function createAuth(config, { sessions = memorySessionStore(), throttle =
     /**
      * Bearer authorisation for posting supplier pages back.
      *
-     * A cookie cannot do this job: the session cookie is SameSite=Strict, so a
-     * request from a giga-tires page never carries it -- which is the point of
-     * Strict and worth keeping. A scoped bearer token travels instead, and can
-     * do nothing but import.
+     * A cookie cannot do this job: the session cookie is SameSite=Lax, which
+     * is sent on a top-level navigation from another site but never on a
+     * cross-site POST, so a request from a giga-tires page never carries it --
+     * which is the point and worth keeping. A scoped bearer token travels
+     * instead, and can do nothing but import.
      */
     isImportAuthorized: (request) => {
       const header = request.headers.authorization || ''
