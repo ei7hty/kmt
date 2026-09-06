@@ -13,8 +13,9 @@ public site (PR #50). The second milestone, **m10**, has its first task, t34
 contact fields, merged (PR #53) and the rest planned: t35 owner adjusts the
 quote, t36 lifecycle, t37 email, t38 proof between two inboxes.
 
-`main` at the pause: `e086760` (the #56 merge; this document lands on top of
-it), green through all three CI jobs. Merged in the final hour: #53 contact
+`main` at the pause: `598d4e2` (the #57 merge of this document), green through
+all three CI jobs on re-run; the first run of that commit lost the race
+described in queue item 5 and nothing else. Merged in the final hour: #53 contact
 fields (`1e0489c`), #54 size-filter checks (`fb19a0f`), #56 one description of
 the gate (`e086760`). #45 was closed as superseded by #56.
 
@@ -119,7 +120,21 @@ until the agent it replaces has stopped; the lead says "go".
    check and verify jobs into one definition with two targets; add a fixture
    step (one owner price, one delisted tire) before the flow audits; add the
    owner-inventory audit to the gate now that it reads `AUDIT_BASE`.
-5. Small follow-ups, any idle agent: comments in `scripts/worktree.mjs`
+5. **A flaky check in the gate, one call site, fix first.** The dead-end
+   audit's "/owner: status visibly updates to APPROVED after clicking Approve"
+   went red then green on the identical commit `598d4e2`, phone viewport, on
+   the night of the pause. Cause, `.forge/dead-end-audit.mjs` around line
+   171: `click`, `waitForTimeout(200)`, then `isVisible()`, which samples once
+   and does not wait; Approve is a network round trip. Fix: replace the sleep
+   and sample with `locator('text=APPROVED').first().waitFor({ state:
+   'visible', timeout: 5000 })` in a try/catch that calls the same `ok`/`fail`,
+   and delete the sleep. Same assertion, same count of 42, no race. The repo
+   agent grepped the other audits: the 200 ms sleep after Reject is followed
+   by real waits, and the 500 ms sleep in the deployed-site check is a layout
+   settle before a measurement; neither races. A flaky check teaches the
+   merger to re-run until green, which is the habit that lets a real failure
+   through, so this goes ahead of the other follow-ups.
+6. Small follow-ups, any idle agent: comments in `scripts/worktree.mjs`
    stating the two guards it relies on, and wrapping its `git worktree add`
    failure into the one-line `fail()`; a comment pair tying `compactSize` in
    `OwnerInventory.jsx` to `fitment.js`'s exclusion of other size grammars;
