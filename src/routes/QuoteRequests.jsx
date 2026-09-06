@@ -55,7 +55,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
   }
 
   if (needsSignIn) {
-    return <SignIn onSignedIn={load} navigate={navigate}
+    return <SignIn onSignedIn={load} navigate={navigate} from="quotes"
       what="This screen holds customers' requests: their vehicle, address and preferred date." />
   }
 

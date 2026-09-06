@@ -13,7 +13,12 @@ import './OwnerInventory.css'
  * already at the keyboard, and nothing there returns 401. This is what a hosted
  * owner sees.
  */
-export default function SignIn({ onSignedIn, navigate, what = 'this workspace' }) {
+export default function SignIn({ onSignedIn, navigate, what = 'this workspace', from = 'inventory' }) {
+  // Whichever owner screen this is not, so the nav always offers the other one.
+  const other = from === 'quotes'
+    ? { path: '/owner', label: 'Inventory →' }
+    : { path: '/owner/quotes', label: 'Quote requests →' }
+
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -38,9 +43,15 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace' }
   }
 
   return <div className="oi-shell">
+    {/* The way across stays on the page while the password is being asked for.
+        Both owner screens are gated now, so this is not a way around the
+        password -- it is a way not to be stranded on the one screen you did not
+        want. Dropping it left an owner on /owner with no route to the quote
+        list at all, which the dead-end audit caught. */}
     <nav className="oi-nav">
       <button className="oi-brand" onClick={() => navigate('/')}>KMT<span>.</span></button>
       <span>OWNER WORKSPACE</span>
+      <button className="oi-button" onClick={() => navigate(other.path)}>{other.label}</button>
     </nav>
     <main className="oi-content">
       <form className="oi-signin" onSubmit={submit}>

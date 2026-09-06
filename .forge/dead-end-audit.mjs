@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { freshPage, openOwnerQuotes } from './audit-ui.mjs';
+import { freshPage, openOwnerQuotes, waitForStatus } from './audit-ui.mjs';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
 
@@ -153,6 +153,7 @@ async function main() {
     await page.waitForURL(BASE + '/');
     await page.click('button:has-text("My Quote")');
     await page.waitForURL('**/status');
+    await waitForStatus(page);
 
     const payButtonVisible = await page.locator('button:has-text("Pay $")').first().isVisible().catch(() => false);
     if (payButtonVisible) {
@@ -197,6 +198,7 @@ async function main() {
     // confirm a *paid* quote still offers a visible way to reach the confirmation screen, rather
     // than stranding the tester with only a status label.
     await page.goto(BASE + '/status');
+    await waitForStatus(page);
     const viewConfirmationAfterReload = await page.locator('text=View confirmation').first().isVisible().catch(() => false);
     if (viewConfirmationAfterReload) {
       ok('/status (after reload): paid quote still shows a visible "View confirmation" action.');
@@ -266,6 +268,7 @@ async function main() {
       await page.waitForURL(BASE + '/');
       await page.click('button:has-text("My Quote")');
       await page.waitForURL('**/status');
+    await waitForStatus(page);
       const rejectedMsgVisible = await page.locator('text=This quote was declined').isVisible().catch(() => false);
       if (rejectedMsgVisible) {
         ok('/status: rejected quote shows a clear message explaining the outcome.');
