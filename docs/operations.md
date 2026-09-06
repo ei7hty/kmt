@@ -526,25 +526,66 @@ a restore creates a new volume rather than overwriting one.
    node .forge/restore-integrity-check.mjs /path/to/restored.sqlite
    ```
 
-   Fourteen checks, ending `14 OK, 0 FAIL -- 14 of 14 expected checks ran` and
-   a `SOUND:` line, exit code 0. Anything else is a `FAIL:` line and a
-   `NOT SOUND` verdict, exit non-zero. The row counts it prints vary per
-   restore, so they are counts to read rather than numbers to match.
-
-   It separates what it counts: `requests` and `quotes` are marked
-   **irreplaceable** -- nothing can reconstruct a customer's request -- while
-   the supplier tables are **rebuildable** from the scrape in the repository.
-   At 2am that distinction is the difference between a problem and an
-   inconvenience.
-
-   The script is PR #194 (DB ADMIN) and lands separately; until it does, this
-   step has no command and the drill stops at step 3.
-
    This is the step that turns "the file came back" into "the data is sound".
    It opens the database **read-only**, so it cannot repair the evidence it is
    judging -- opening a damaged SQLite file read-write can silently checkpoint
-   and fix it, after which every subsequent run passes and nobody learns
-   anything.
+   and fix it, after which every run passes and nobody learns anything.
+
+   A sound file looks like this. The row counts vary per restore, so they are
+   counts to read, not numbers to match:
+
+   ```
+   Restore-integrity check against /path/to/restored.sqlite
+   OK: /path/to/restored.sqlite exists
+   OK: opens as a SQLite database in read-only mode
+   PRAGMA user_version: 0
+   OK: PRAGMA integrity_check reports ok
+   OK: PRAGMA foreign_key_check reports no violations
+   OK: table supplier (rebuildable) is present with its expected columns and readable: N row(s)
+   OK: table offers (rebuildable) is present with its expected columns and readable: N row(s)
+   OK: table coverage (rebuildable) is present with its expected columns and readable: N row(s)
+   OK: table metadata (rebuildable) is present with its expected columns and readable: N row(s)
+   OK: table requests (irreplaceable) is present with its expected columns and readable: N row(s)
+   OK: table quotes (irreplaceable) is present with its expected columns and readable: N row(s)
+   OK: table owner_sessions (operational) is present with its expected columns and readable: N row(s)
+   OK: table outbox (operational) is present with its expected columns and readable: N row(s)
+   OK: quotes.status CHECK constraint includes every current status
+   OK: if metadata.seeded is set, the supplier table actually holds rows
+
+   14 OK, 0 OLDER SCHEMA, 0 FAIL -- 14 of 14 expected checks ran
+
+   SOUND: this file passed every check this script knows to run.
+   ```
+
+   **Three verdicts, and they mean three different next actions.** Read the
+   last line, or the exit code, and do the matching thing:
+
+   | verdict | exit | what it means | what you do |
+   | --- | --- | --- | --- |
+   | `SOUND` | 0 | every check passed | restore from this file |
+   | `OLDER SCHEMA` | 2 | **intact**, but written before a table or a constraint the current code has | restore it and let the app's own migration run before serving from it |
+   | `NOT SOUND` | 1 | corruption, a missing original table, a missing column, or the seeded-but-empty trap | do not serve from this file; find another copy |
+
+   **`OLDER SCHEMA` is not a failure and must not be treated as one.** Fly's
+   snapshots are kept five days, and this project has added tables and widened
+   constraints on consecutive days, so *every* restore is a file from a schema
+   in the past -- an intact one reporting `OLDER SCHEMA` is the normal case,
+   not the alarming one. It exists as its own verdict precisely so that
+   `NOT SOUND` keeps meaning "stop". A check that cried wolf here would be
+   worse than no check, because the one time it matters is the one time
+   somebody is frightened and in a hurry.
+
+   The two things it covers: a table added later (`owner_sessions`, `outbox`)
+   being absent, which `CREATE TABLE IF NOT EXISTS` recreates empty on the next
+   boot with nothing lost; and `quotes.status`'s CHECK predating t36's widening,
+   which `migrate()` rebuilds losslessly. A real `FAIL` alongside an
+   `OLDER SCHEMA` finding still wins the verdict and the exit code.
+
+   `PRAGMA user_version` is printed, not asserted -- nothing in this project has
+   ever set it, so it is `0` on every file today. It is there because it is the
+   fastest way to say which migration generation a file belongs to if that ever
+   changes, and because it answers the first question anyone asks when this
+   output is pasted into a message.
 
 5. **Record what happened**, in `.forge/HANDOFF.md`: the snapshot id and age,
    how long each step took, the check's output verbatim, and **every step whose
