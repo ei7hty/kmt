@@ -409,7 +409,7 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
         if (action === 'done') send(200, quotes.finish(id, body?.version))
         else if (action === 'cancel') send(200, quotes.cancel(id, body?.version, body?.reason))
         else {
-          const decided = quotes.decide(id, action === 'approve' ? 'sent' : 'rejected', body?.version)
+          const decided = quotes.decide(id, action === 'approve' ? 'sent' : 'rejected', body?.version, body?.reason)
           send(200, decided)
           // The quote itself, itemised, once the owner has sent it (R25).
           if (mailer && decided?.quote?.status === 'sent') mailer.after('quote-sent', decided.request.id)

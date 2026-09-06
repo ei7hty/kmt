@@ -882,6 +882,23 @@ test('rejecting moves a draft the same way', async t => {
   assert.equal(quotes.get(request.id).quote.status, 'rejected')
 })
 
+test('a decline carries the reason Ken typed (#78: decide() used to drop it silently)', async t => {
+  const { quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+
+  const decided = quotes.decide(request.id, 'rejected', quote.version, ' Out of stock by the time I checked ')
+  assert.equal(decided.quote.reason, 'Out of stock by the time I checked', 'trimmed, and actually stored')
+  assert.equal(quotes.get(request.id).quote.reason, 'Out of stock by the time I checked')
+
+  // Blank is a choice to say nothing, not a gap to fill with a guess.
+  const { request: blank, quote: blankQuote } = quotes.submit(form())
+  assert.equal(quotes.decide(blank.id, 'rejected', blankQuote.version, '   ').quote.reason, null)
+
+  // Approving never writes a reason, even if one somehow arrived with it.
+  const { request: approved, quote: approvedQuote } = quotes.submit(form())
+  assert.equal(quotes.decide(approved.id, 'sent', approvedQuote.version, 'should never land').quote.reason, null)
+})
+
 test('a stale version is refused rather than overwriting the newer decision', async t => {
   // Two owner windows, or a phone and a laptop. The second save must not
   // silently undo the first -- the same rule PUT /api/owner/offers/:id makes.

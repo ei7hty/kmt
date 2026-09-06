@@ -676,14 +676,19 @@ export class Quotes {
    * Only a draft can be decided. Re-approving an approved quote, or rejecting
    * one the customer has already paid, is not a decision -- it is a screen that
    * was looking at something out of date, which is what the version says.
+   *
+   * `reason` only ever reaches the row on a decline: sending a quote has
+   * nothing to explain, and `moveTo`'s COALESCE would otherwise let a stray
+   * value overwrite whatever a later close wrote.
    */
-  decide(id, decision, version) {
+  decide(id, decision, version, reason = null) {
     if (decision !== 'sent' && decision !== 'rejected') {
       throw new InputError('A quote is either sent to the customer or rejected.')
     }
     return this.moveTo(id, version, {
       to: decision,
       from: ['draft'],
+      reason: decision === 'rejected' ? cleanReason(reason) : null,
       refused: status => `This quote is already ${status}, so there is nothing to decide.`,
       audience: 'owner',
     })

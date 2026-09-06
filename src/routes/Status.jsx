@@ -24,6 +24,13 @@ const STAGE = { draft: 2, sent: 3, approved: 3, paid: 4, done: 4 }
 /** The statuses a customer can still call their own request off from. */
 const CANCELLABLE = ['draft', 'sent', 'approved']
 
+/**
+ * The status badge in Ken's words: he's declining a job, not rejecting the
+ * person who asked. The internal status name ('rejected', the database and
+ * API's own word) stays as it is -- this is only what the customer reads.
+ */
+const STATUS_LABEL = { rejected: 'declined' }
+
 function Status({ navigate }) {
   useNoIndex()
   const requested = new URLSearchParams(window.location.search).get('request')
@@ -142,18 +149,28 @@ function Status({ navigate }) {
                       </div>}
                       <div className="owner-quote-summary">
                         <div><p className="text-secondary">Your quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div>
-                        <span className="owner-quote-status">{quote.status}</span>
+                        <span className="owner-quote-status">{STATUS_LABEL[quote.status] ?? quote.status}</span>
                       </div>
                       {quote.status === 'draft' && <p className="status-note status-note-wait">This quote is awaiting owner review.</p>}
                       {(quote.status === 'sent' || quote.status === 'approved') && <div className="owner-actions"><button onClick={() => pay(request.id)} className="btn btn-primary" disabled={busyId === request.id}>{busyId === request.id ? 'Paying…' : `Pay $${quote.total.toFixed(2)}`}</button></div>}
                       {quote.status === 'paid' && <div className="status-paid"><p className="status-note status-note-ok">Payment received. Your service is confirmed.</p><button className="link-action" onClick={() => navigate(`/confirmation?request=${encodeURIComponent(request.id)}`)}>View confirmation →</button></div>}
                       {quote.status === 'done' && <div className="status-paid"><p className="status-note status-note-ok">Fitted. Thanks for choosing KMT.</p><button className="link-action" onClick={() => navigate(`/confirmation?request=${encodeURIComponent(request.id)}`)}>View confirmation →</button></div>}
-                      {quote.status === 'rejected' && <p className="status-note status-note-bad">
-                        This quote was declined.{quote.reason ? ` ${quote.reason}` : ''} Please submit a new request.
-                      </p>}
-                      {quote.status === 'cancelled' && <p className="status-note status-note-bad">
-                        This request was cancelled.{quote.reason ? ` ${quote.reason}` : ''} You have not been charged.
-                      </p>}
+                      {quote.status === 'rejected' && <div className="status-outcome">
+                        <p className="status-note status-note-bad">
+                          This quote was declined.{quote.reason ? ` ${quote.reason}` : ''} Please submit a new request.
+                        </p>
+                        <div className="tire-empty-actions">
+                          <a className="btn btn-primary" href={TEXT_HREF}>{TEXT_LABEL}</a>
+                        </div>
+                      </div>}
+                      {quote.status === 'cancelled' && <div className="status-outcome">
+                        <p className="status-note status-note-bad">
+                          This request was cancelled.{quote.reason ? ` ${quote.reason}` : ''} You have not been charged.
+                        </p>
+                        <div className="tire-empty-actions">
+                          <a className="btn btn-primary" href={TEXT_HREF}>{TEXT_LABEL}</a>
+                        </div>
+                      </div>}
                       {CANCELLABLE.includes(quote.status) && (
                         confirmingId === request.id ? (
                           <div className="cancel-confirm" role="alert">
