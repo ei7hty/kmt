@@ -11,6 +11,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | --- | --- | --- | --- |
 | m13-inventory-summary | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md (docs only) | 2026-09-06 |
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
+| `a11y-probe-clipped-text` | QA ENGINEER | `.forge/a11y-85-measure.mjs` (background-clip:text fill measurement, stale Show-all selector) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
