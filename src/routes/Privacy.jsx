@@ -31,6 +31,8 @@ function Privacy({ navigate }) {
           <p>To ask for your name, contact details and address to be removed, call <span className="privacy-number">(617) 410-8319</span>. The quote itself stays, as the record of what was sold.</p>
           <h2>Your status link</h2>
           <p>The link to your quote is private to whoever holds it. Anyone with the link can see the quote, so keep it to yourself.</p>
+          <h2>Analytics</h2>
+          <p>This page and the homepage use Google Analytics to count visits. It is never used on the page that shows your own request or receipt, or on Ken&apos;s review screen, and it is never linked to your name, email or phone number.</p>
         </div>
       </div>
       <PrivacyFooter navigate={navigate} />

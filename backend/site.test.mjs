@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { CANONICAL_EXEMPT, applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, isSecureRequest, parseRequestUrl, readRelease, securityHeaders } from './site.mjs'
+import { ANALYTICS_PATHS, applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, CANONICAL_EXEMPT, isSecureRequest, parseRequestUrl, readRelease, securityHeaders } from './site.mjs'
 
 test('the release is answered as a header when the image says which commit it is, and omitted otherwise', async t => {
   // A header, not the health body: /api/health stays exactly {"ok":true}.
@@ -52,6 +52,50 @@ test('the service-area check answers on or off as a header, and never its parame
   assert.equal((await fetch(base + '/')).headers.get('x-kmt-service-area'), 'on')
   assert.equal((await fetch(base + '/off')).headers.get('x-kmt-service-area'), 'off')
   assert.equal((await fetch(base + '/none')).headers.get('x-kmt-service-area'), null)
+})
+
+test('GA4 widens the CSP only on / and /privacy, never on a page carrying a customer\'s own request', async t => {
+  // The boundary itself, named so a route added to one and not the other is
+  // a visible mismatch rather than a typo two files apart.
+  assert.ok(ANALYTICS_PATHS.has('/'))
+  assert.ok(ANALYTICS_PATHS.has('/privacy'))
+  for (const path of ['/status', '/confirmation', '/owner', '/owner/quotes', '/owner/outbox', '/api/catalog', '']) {
+    assert.equal(ANALYTICS_PATHS.has(path), false, `${JSON.stringify(path)} must never get the relaxed policy`)
+  }
+
+  const strict = securityHeaders({ secure: false })['Content-Security-Policy']
+  const home = securityHeaders({ secure: false, pathname: '/' })['Content-Security-Policy']
+  const privacy = securityHeaders({ secure: false, pathname: '/privacy' })['Content-Security-Policy']
+  const status = securityHeaders({ secure: false, pathname: '/status' })['Content-Security-Policy']
+
+  for (const csp of [home, privacy]) {
+    assert.match(csp, /script-src 'self' https:\/\/www\.googletagmanager\.com/, 'GA\'s loader is allowed to run')
+    assert.match(csp, /connect-src 'self' https:\/\/\*\.google-analytics\.com/, 'GA is allowed to phone home')
+    assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/, 'widening for GA is not an excuse to widen anything else')
+  }
+  // No pathname (every caller before this feature, and every path outside
+  // the set) is the exact same string as before this feature existed.
+  assert.equal(status, strict, '/status keeps the untouched policy string, not a version with GA carved back out')
+  assert.doesNotMatch(strict, /googletagmanager|google-analytics/)
+
+  const server = createServer((request, response) => {
+    const { url } = parseRequestUrl(request.url)
+    applySecurityHeaders(request, response, { pathname: url.pathname })
+    response.writeHead(200, { 'Content-Type': 'text/html' })
+    response.end('<p>hi</p>')
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+
+  for (const path of ['/', '/privacy']) {
+    const csp = (await fetch(base + path)).headers.get('content-security-policy')
+    assert.match(csp, /googletagmanager\.com/, `${path} carries the relaxed policy over the wire`)
+  }
+  for (const path of ['/status', '/confirmation', '/owner', '/owner/quotes', '/owner/outbox']) {
+    const csp = (await fetch(base + path)).headers.get('content-security-policy')
+    assert.doesNotMatch(csp, /googletagmanager|google-analytics/, `${path} must answer the strict policy over the wire, not just in a unit test`)
+  }
 })
 
 test('a canonical name the allow-list refuses is a refusal to boot, not a healthy-looking outage', () => {
