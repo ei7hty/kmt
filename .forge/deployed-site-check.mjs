@@ -274,7 +274,7 @@ function traceRequest(url) {
   return new Promise((resolve, reject) => {
     const req = https.request(url, { method: 'TRACE' }, res => {
       res.resume();
-      res.on('end', () => resolve({ status: res.statusCode, allow: res.headers.allow || '' }));
+      res.on('end', () => resolve({ status: res.statusCode, allow: res.headers.allow || '', location: res.headers.location || '' }));
     });
     req.on('error', reject);
     req.end();
@@ -592,12 +592,20 @@ async function main() {
   }
 
   try {
-    const { status, allow } = await traceRequest(`${BASE}/`);
-    check(status === 405 && allow.includes('GET') && allow.includes('HEAD'),
-      'TRACE / answers 405 naming GET and HEAD as the allowed methods',
-      `got status ${status}, allow ${allow || 'none'}`);
+    // BASE is not always the canonical host -- the deploy pipeline points it
+    // at whichever domain the moment calls for, and one of the redirect
+    // hosts a moment ago was BASE's own default. A method restriction
+    // answered by a 301 elsewhere is not this check's concern; a redirect
+    // to the canonical host is the same "not directly serving TRACE" fact
+    // stated the other way, so it passes on the same evidence as the 405.
+    const { status, allow, location } = await traceRequest(`${BASE}/`);
+    const answersDirectly = status === 405 && allow.includes('GET') && allow.includes('HEAD');
+    const redirectsToCanonical = status === 301 && bareHost(location) === bareHost(CANONICAL_HOST);
+    check(answersDirectly || redirectsToCanonical,
+      'TRACE / answers 405 naming GET and HEAD as the allowed methods, or redirects to the host that does',
+      `got status ${status}, allow ${allow || 'none'}${location ? `, location ${location}` : ''}`);
   } catch (error) {
-    fail(`TRACE / answers 405 naming GET and HEAD as the allowed methods — ${describeFetchError(error)}`);
+    fail(`TRACE / answers 405 naming GET and HEAD as the allowed methods, or redirects to the host that does — ${describeFetchError(error)}`);
   }
 
   try {
