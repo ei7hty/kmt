@@ -71,7 +71,7 @@ const screens = [
     },
   },
   {
-    label: 'status (approved, payable)',
+    label: 'status (sent, payable)',
     path: '/status',
     async reach(page) {
       await submitRequest(page, {
@@ -82,7 +82,7 @@ const screens = [
       });
       await openOwnerQuotes(page);
       await page.click('button:has-text("Approve")');
-      await page.waitForSelector('text=APPROVED', { timeout: 15000 });
+      await page.waitForSelector('text=SENT', { timeout: 15000 });
       await page.click('button:has-text("Back to Customer Flow")');
       await page.waitForURL(BASE + '/');
       await page.click('button:has-text("My Quote")');

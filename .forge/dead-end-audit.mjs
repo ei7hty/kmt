@@ -162,11 +162,11 @@ async function main() {
     await page.click('button:has-text("Approve")');
     await page.waitForTimeout(200);
 
-    const approvedStatus = await page.locator('text=APPROVED').first().isVisible().catch(() => false);
-    if (approvedStatus) {
-      ok('/owner: after clicking Approve, status visibly updates to APPROVED in place (no reload needed).');
+    const sentStatus = await page.locator('text=SENT').first().isVisible().catch(() => false);
+    if (sentStatus) {
+      ok('/owner: after clicking Approve, status visibly updates to SENT in place (no reload needed).');
     } else {
-      fail('/owner: status did not visibly update to APPROVED after clicking Approve.');
+      fail('/owner: status did not visibly update to SENT after clicking Approve.');
     }
 
     const backButtonVisible = await page.locator('button:has-text("Back to Customer Flow")').isVisible();

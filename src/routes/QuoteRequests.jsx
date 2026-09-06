@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import SignIn from '../owner/SignIn.jsx'
-import { NeedsSignIn, decideQuote, ownerRequests } from '../store'
+import { NeedsSignIn, actOnQuote, ownerRequests } from '../store'
 
 /**
  * The owner's review screen, over the backend.
@@ -13,8 +13,45 @@ import { NeedsSignIn, decideQuote, ownerRequests } from '../store'
  * The tire is resolved by the server against the catalog the quote was drafted
  * over, so this screen no longer loads the catalog to name it.
  */
+
+/**
+ * The filters, in the order work moves through them.
+ *
+ * Labelled by what the owner would do next rather than by status, because that
+ * is what the tabs are for: "Needs you" is a decision to make, "With customer"
+ * is nothing to do but wait, "To fit" is a van to drive somewhere.
+ */
+const VIEWS = [
+  { key: 'open', label: 'Open' },
+  { key: 'attention', label: 'Needs you' },
+  { key: 'awaiting', label: 'With customer' },
+  { key: 'paid', label: 'To fit' },
+  { key: 'closed', label: 'Closed' },
+]
+
+/** What the screen offers to do with a request in each state. */
+const ACTIONS = {
+  draft: [
+    { action: 'approve', label: 'Approve & Send', busy: 'Sending…', className: 'btn btn-approve' },
+    { action: 'reject', label: 'Reject', className: 'btn btn-reject' },
+    { action: 'cancel', label: 'Cancel', className: 'btn btn-neutral', asks: true },
+  ],
+  sent: [{ action: 'cancel', label: 'Cancel', className: 'btn btn-neutral', asks: true }],
+  approved: [{ action: 'cancel', label: 'Cancel', className: 'btn btn-neutral', asks: true }],
+  paid: [{ action: 'done', label: 'Mark done', busy: 'Closing…', className: 'btn btn-approve' }],
+}
+
+/** What a closed request says about itself, before any reason it carries. */
+const CLOSED_NOTE = {
+  done: 'Fitted and closed.',
+  rejected: 'Rejected, so the customer was not charged.',
+  cancelled: 'Cancelled before payment.',
+}
+
 function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
+  const [view, setView] = useState('open')
   const [requests, setRequests] = useState([])
+  const [counts, setCounts] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [needsSignIn, setNeedsSignIn] = useState(false)
@@ -23,14 +60,16 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setRequests(await ownerRequests())
+      const data = await ownerRequests(view)
+      setRequests(data.requests)
+      setCounts(data.counts)
       setError('')
       setNeedsSignIn(false)
     } catch (err) {
       if (err instanceof NeedsSignIn) { setNeedsSignIn(true); setError('') }
       else setError(err.message)
     } finally { setLoading(false) }
-  }, [])
+  }, [view])
 
   // Scheduled rather than called in the effect body, the way OwnerInventory
   // does it: a synchronous setState here cascades a render.
@@ -39,11 +78,20 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
     return () => clearTimeout(timer)
   }, [load, ownerVersion])
 
-  async function decide(request, quote, decision) {
+  async function act(request, quote, { action, asks }) {
+    // Cancelling is the one action with something to say, and the customer is
+    // the one who reads it. Nothing else asks, because nothing else needs to.
+    let reason = ''
+    if (asks) {
+      const answered = window.prompt('Why is this being cancelled? The customer will see it. Leave blank to say nothing.')
+      if (answered === null) return
+      reason = answered.trim()
+    }
+
     setBusyId(request.id)
     setError('')
     try {
-      await decideQuote(request.id, decision, quote.version)
+      await actOnQuote(request.id, action, quote.version, reason)
       // Straight back to the server rather than patching the row here: the
       // version this screen holds is exactly what goes stale.
       await load()
@@ -59,6 +107,12 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
       what="This screen holds customers' requests: their vehicle, address and preferred date." />
   }
 
+  // What the owner is asked to do, whichever view they are looking at.
+  const waiting = counts.attention ?? 0
+  const summary = loading
+    ? 'Loading requests…'
+    : waiting === 1 ? '1 request waiting on you.' : `${waiting} requests waiting on you.`
+
   return (
     <div className="app-shell owner-shell">
       <nav className="internal-nav">
@@ -68,11 +122,20 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
       <div className="owner-content">
         <p className="eyebrow">OWNER</p>
         <h1 className="owner-heading">Quote Requests</h1>
-        <p className="text-secondary owner-subhead" role="status">
-          {loading ? 'Loading requests…' : requests.length === 1 ? '1 request waiting on you.' : `${requests.length} requests waiting on you.`}
-        </p>
+        <p className="text-secondary owner-subhead" role="status">{summary}</p>
+        {/* The count sits on every tab, so what needs a decision is visible
+            without first switching to the tab that would say so. */}
+        <div className="owner-views" role="tablist" aria-label="Which requests to show">
+          {VIEWS.map(({ key, label }) => (
+            <button key={key} role="tab" aria-selected={view === key}
+              className={view === key ? 'btn btn-neutral owner-view is-current' : 'btn btn-neutral owner-view'}
+              onClick={() => setView(key)}>
+              {label} <span className="owner-view-count">{counts[key] ?? 0}</span>
+            </button>
+          ))}
+        </div>
         {error && <div className="panel"><p className="status-note status-note-bad" role="alert">{error}</p><button className="btn btn-neutral" onClick={load}>Try again</button></div>}
-        {!loading && !error && requests.length === 0 ? <div className="panel"><p className="text-secondary">No requests yet. Go to the customer flow and submit a request.</p></div> : (
+        {!loading && !error && requests.length === 0 ? <div className="panel"><p className="text-secondary">{view === 'open' ? 'No open requests. Go to the customer flow and submit one.' : 'Nothing here right now.'}</p></div> : (
           <div className="owner-list">
             {requests.map(({ request, quote, tire }) => (
               <div key={request.id} className="panel owner-request">
@@ -85,11 +148,16 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                 {quote && <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
                   <div className="owner-quote-summary"><div><p className="text-secondary">Draft Quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{quote.status}</span></div>
                   {quote.exception && <div className="owner-exception-note"><p>Owner review required</p><ul>{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
-                  {quote.status === 'draft' && <div className="owner-actions">
-                    <button onClick={() => decide(request, quote, 'approved')} className="btn btn-approve" disabled={busyId === request.id}>
-                      {busyId === request.id ? 'Sending…' : 'Approve & Send'}
-                    </button>
-                    <button onClick={() => decide(request, quote, 'rejected')} className="btn btn-reject" disabled={busyId === request.id}>Reject</button>
+                  {CLOSED_NOTE[quote.status] && <p className="status-note status-note-wait">
+                    {CLOSED_NOTE[quote.status]}{quote.reason ? ` ${quote.reason}` : ''}
+                  </p>}
+                  {ACTIONS[quote.status] && <div className="owner-actions">
+                    {ACTIONS[quote.status].map(item => (
+                      <button key={item.action} className={item.className} disabled={busyId === request.id}
+                        onClick={() => act(request, quote, item)}>
+                        {busyId === request.id && item.busy ? item.busy : item.label}
+                      </button>
+                    ))}
                   </div>}
                 </div>}
               </div>
