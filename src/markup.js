@@ -8,9 +8,14 @@
  *   2. Otherwise a markup rule applied to the supplier's price, which proposes
  *      a number so a tire nobody has touched still has a price.
  *
- * Markup proposes, the owner disposes. The rule exists because there are 290
- * sizes and pricing each tire by hand is not a thing anyone will finish; the
- * override exists because a rule will always be wrong about some tire.
+ * Markup proposes, the owner disposes. The rule exists because there are 910
+ * sizes -- src/data/catalog.js's own count, measured by counting
+ * TIRE_CATALOG, not restated by hand here -- and pricing each tire
+ * individually is not a thing anyone will finish; the override exists
+ * because a rule will always be wrong about some tire. This number moves
+ * every time the fitment bands change; re-measure rather than copy the last
+ * one written down (#72 -- this sentence read 290 for a catalogue that had
+ * already grown past 900).
  *
  * Nothing here reaches out for its own settings. Callers pass them in, so the
  * catalog can be rebuilt for whatever the owner has configured without this
