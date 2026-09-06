@@ -17,6 +17,56 @@ true yesterday is the most convincing way to be wrong today.
 
 ---
 
+## Preflight: which steps have already run
+
+**Run this before any step in this document, and before concluding anything from
+the site's behaviour.**
+
+```bash
+flyctl secrets list -a kmt
+```
+
+Every switch in this file is a secret, so one command shows which steps have
+already been done. It is faster than reading logs, needs no deploy, writes
+nothing, and it answered in seconds a question that three sessions spent an hour
+inferring from behaviour.
+
+| secret | absent means | present means |
+| --- | --- | --- |
+| `KMT_OWNER_PASSWORD` | the server refuses to boot | the owner can sign in |
+| `KMT_SESSION_SECRET` | a random one per boot, so sessions die on restart | sessions survive a restart |
+| `KMT_SERVICE_RADIUS_MILES` | **the service-area check is ENFORCING** at base 02148, 100 mi, 25 mi review | it is set to something -- read the boot line for which |
+| `KMT_ALLOWED_HOSTS` | **Step 1 has not been done**; any Host is accepted | Step 1 has been done |
+| `KMT_CANONICAL_HOST` | **Step 2 has not been done**; the redirect is dormant | the flip is live |
+| `KMT_MAIL_SMTP_HOST` / `_USER` / `_PASSWORD` | mail is outbox-only; nothing sends | SMTP is configured (see below) |
+| `KMT_MAIL_FROM`, `KMT_OWNER_EMAIL` | fine while no SMTP variable is set | required once any is |
+
+**A digest is not a value.** `secrets list` shows that a secret exists, not what
+it resolves to -- so it can prove a step has been done, and cannot prove what it
+was set to. `KMT_SERVICE_RADIUS_MILES` is the case that matters: present, it may
+be `off` or a number of miles, and only the boot line says which:
+
+```
+service-area check OFF: accepting every ZIP
+service-area check ON: base 02148, radius 100 mi, review beyond 25 mi
+```
+
+Presence and resolution are two different questions and each needs its own
+evidence. Both were used to settle this on 2026-09-06: the secret was listed as
+Deployed, and three boot lines across three deploys all read `OFF`.
+
+**The service-area row is the one to read carefully, because it fails closed.**
+Nothing set means customers beyond 100 miles are refused at submit -- and a
+refused customer does not come back to say so. Absence of that secret is not a
+quiet default; it is the check running.
+
+**Mail refuses a half-configuration rather than half-sending.** `configured` is
+true if **any** of `KMT_MAIL_SMTP_HOST`, `_USER` or `_PASSWORD` is set, and from
+that moment `KMT_MAIL_FROM` and `KMT_OWNER_EMAIL` are required or the server
+refuses to boot, naming the missing one. `_USER` and `_PASSWORD` must also be set
+together or neither. So a partial mail setup cannot start and quietly send from
+the wrong address; it stops, the way a missing owner password does.
+
 ## What is already done
 
 DNS at Squarespace, and certificates issued for the apex, `www` and `order`:
