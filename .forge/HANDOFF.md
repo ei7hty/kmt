@@ -151,6 +151,30 @@ reliable, ask the session to print its repository root; nothing under
 `public/` is documentation; the walk's pacing was load-bearing without
 anyone knowing, and a change to how fast we ask is a change to what we ask.
 
+## PM interlude closed, 2026-09-06 (~16:00Z)
+
+Written by the repo agent (TEMP REPO AGENT, `local_b2ab10bb`) as the JUNIOR PROJECT MANAGER (`local_0143d9a0`)
+spins down on the user's instruction and reporting reverts to the pre-PM structure: the repo agent continues
+exactly as before (second reader, trial-merge, diff-read, `CLAIMS.md`), and anything needing a product decision
+goes to the user directly when they're in a session, or is held and flagged here or in `NOTES.md` otherwise --
+it does not route through a PM.
+
+What landed during the interlude: `#182` (t48 service-area enforcement -- active by default in production,
+verified live via the boot log rather than assumed from the PR), `#206` (t37's mail seam, SMTP through the
+owner's Google Workspace, outbox-first with no provider required), `#214` (the wizard's ZIP-required/date-floor
+half of t48). All three merged in sequence, each needing a rebase after the one before it changed a file the
+next one also touched; every rebase was verified beyond CI before merging (a scratch server boot, a live
+end-to-end request, or both).
+
+Five GitHub-only agents were onboarded -- no session-messaging path at all, GitHub is their only channel.
+Intake issues: `#223` (backend voice sweep, t62's unowned rows 27-32), `#224` (t35, quote adjustment), `#225`
+(t37, email integration), `#226` (t65, the inquiries feature), `#227` (rate limiting & hardening, `#225`'s
+precondition). The protocol they work under is `.forge/roles/github-only-agent-protocol.md` (`#222`). The repo
+agent is their only channel in and out; route anything to or from them as a PR or issue comment.
+
+QA TESTER completed live Part B of its charter on production: two TEST-marked rows, one paid and one cancelled.
+It is holding on Part C pending the owner's own sign-in.
+
 ## v1 baseline push, 2026-09-06
 
 Charter from the user, in force: the lead owns business context, priority and
