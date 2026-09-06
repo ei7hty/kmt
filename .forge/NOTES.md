@@ -766,8 +766,9 @@ it had not.
 
 **So the record was accurate and the belief drawn from it was false**, because
 it stated one thing and was read as two. And the belief was being used to
-answer a question it does not answer: these are unlicensed previews whatever
-they look like, so the obligation to swap them is a **licensing** matter.
+answer a question it does not answer: whether these preview files may ship
+at all turns on their licensing terms, not on whether the watermark can be
+seen — and the licensing terms are not settled here, in either direction.
 *"You cannot see it" is a good answer to the wrong question.*
 
 
@@ -968,3 +969,35 @@ you are the one who has to land it. Check whether it already landed first —
 `git log main --oneline` vs `git log origin/main --oneline` comparison — before
 retrying. A second push attempt when you didn't need one is at best wasted and
 at worst races a live rebase in the same working tree.
+
+**2026-09-06 — DEVSCOPS/AUDITOR, a reference entry at the PM's request (drafted
+by DEVSCOPS/AUDITOR, verified against the code and corrected by the PM, placed
+here by the repo agent since DEVSCOPS/AUDITOR is read-only)**
+
+**Public repo does not weaken owner-auth security (Kerckhoffs).** The
+repository is public (since 2026-09-06; the reason is not recorded here). That
+does not make owner sign-in easier to break. The password check is a
+constant-time decoy compare (`backend/auth.mjs:77-87`): on a length mismatch it
+runs `timingSafeEqual(left, left)` against the attacker's *own* input and
+returns false, and on equal lengths it runs a normal `timingSafeEqual` — so
+both branches cost time proportional to the attacker's input length, never the
+stored password's, and the real password's length does not leak. (It does not
+pad; a reader grepping for padding finds none and should stop here.) Session
+ids are 128 random bits stored server-side in `owner_sessions`; the cookie is
+HMAC(secret, `purpose:expires:id`), and forging one needs the secret (a Fly
+secret, or per-boot random) plus a live id already in the store. Reading this
+code gains an attacker nothing — a correct cryptographic design is not
+weakened by being understood. Publication did not move exploitability, with
+two named exceptions, both reconnaissance-cost and not exploitability:
+`docs/operations.md` now advertises that a single shared password guards
+customer PII (the mitigation until #290 is that password's entropy), and
+`scripts/giga-tires.mjs:19` names the scrape host (`www.giga-tires.com`) that
+#87's supplier-compromise chain would target. Re-litigate the "public code is
+inherently less safe" instinct against this entry before spending review
+cycles on it.
+
+A related, separate precision lesson from the same night belongs beside the
+brand-file ignore rule rather than here (see the `.gitignore` history around
+PR #309): a green `git check-ignore` against a file's old path stood as
+"covered" while the file's actual current path matched nothing — check the
+path you mean to ask about, not the one that used to be true.
