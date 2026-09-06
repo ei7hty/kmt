@@ -4,6 +4,7 @@ import { useNoIndex } from '../noindex.js'
 import { NeedsSignIn, actOnQuote, ownerRequests } from '../store'
 import { signOut } from '../owner/session.js'
 import { exactTime, timeAgo } from '../owner/timeAgo.js'
+import { PrivacyFooter } from './Privacy.jsx'
 
 /** A stored US number, +16174108319, as a person reads it: (617) 410-8319. Anything else as stored. */
 const formatPhone = (phone) => {
@@ -169,6 +170,17 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                 {request.createdAt && <p className="owner-request-age" title={exactTime(request.createdAt)}>Submitted {timeAgo(request.createdAt)}</p>}
                 <dl className="owner-details">
                   <div><dt>Tire:</dt> <dd>{tire?.name ? `${tireLine ? `${tireLine.quantity} × ` : ''}${tire.name} · ${tire.size}` : `${tire?.id ?? request.tireSelection} (no longer in the catalog)`}</dd></div>
+                  {/* #105: what the supplier last showed for this tire, read off the
+                      supplier row rather than the customer catalog, so Ken approves
+                      against stock as it was seen, not as the catalog assumes. The
+                      zero-stock warning is a separate line, by design. */}
+                  {tire && tire.supplierActive !== null && tire.supplierActive !== undefined && (
+                    <div className="owner-request-supplier" data-stock={tire.supplierStock ?? ''}><dt>Supplier:</dt> <dd>
+                      {tire.supplierActive === false
+                        ? <>No longer lists this tire{tire.supplierLastSeen && <> · last seen <span title={exactTime(tire.supplierLastSeen)}>{timeAgo(tire.supplierLastSeen)}</span></>}</>
+                        : <>{tire.supplierStock === null || tire.supplierStock === undefined ? 'stock not shown' : `${tire.supplierStock} in stock`}{tire.supplierLastSeen && <> · seen <span title={exactTime(tire.supplierLastSeen)}>{timeAgo(tire.supplierLastSeen)}</span></>}</>}
+                    </dd></div>
+                  )}
                   <div><dt>Location:</dt> <dd>{request.location}</dd></div>
                   <div><dt>Preferred Date:</dt> <dd>{request.date}</dd></div>
                   <div><dt>Contact:</dt> <dd>{request.customerEmail ? <>{request.customerName} · <a href={`mailto:${request.customerEmail}`}>{request.customerEmail}</a>{request.customerPhone && <> · <a href={`tel:${request.customerPhone}`}>{formatPhone(request.customerPhone)}</a></>}</> : <span className="text-secondary">No contact on file (submitted before this was collected)</span>}</dd></div>
@@ -194,6 +206,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
           </div>
         )}
       </div>
+      <PrivacyFooter navigate={navigate} />
     </div>
   )
 }
