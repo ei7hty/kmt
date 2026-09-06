@@ -50,7 +50,7 @@ rest.
 | --- | --- | --- | --- |
 | `mobileServiceFee` | amount, per visit | today's `49.99`, `isPlaceholder: true` | Already charged; today it is a constant in `src/pricing.js:3`. This change moves it, it does not introduce it. **Per visit, not per tire** — that is settled and the current code comment says why. |
 | `disposalFee` | amount, per tire | `null`, off | **Opt-in by the customer.** See below. |
-| `shipping` | amount | `null`, off | **Ambiguous until the user answers — see the open question.** |
+| ~~`shipping`~~ | — | — | **Not here.** Resolved by the user: it is Ken's cost, so it belongs in the markup settings, not the quote. See "Shipping" below. |
 | `tax` | `{ rate, appliesTo }` | `null`, off | **Ships disabled. Not a placeholder — absent.** See below. |
 
 **Amounts are integer cents in storage**, the way `offers.priceCents`
@@ -104,28 +104,81 @@ chooses**, which means it cannot live in settings alone:
 default is not an opt-in, and a fee that appears without the customer having
 chosen it is the thing #94 was opened about.
 
-## The open question the user needs to answer
+## Shipping — resolved: Ken's cost, inside the tire price
 
-**Is `shipping` what Ken pays, or what the customer pays?**
+**The user's ruling: shipping is what Ken pays, folded into the tire cost
+along with markup. The customer never sees a shipping line.**
 
-The instruction says a scraper will pull the data eventually. Scraping
-giga-tires would yield **the supplier's shipping cost** — which is Ken's cost
-basis, not a customer charge. Those are different features:
+So it is **not** a quote setting and does not belong in this document's table.
+It belongs in `src/markup.js`, which exists precisely to be "the boundary
+between what the supplier charges and what KMT charges."
 
-- **If it is Ken's cost:** it belongs with `src/markup.js`, as an input to
-  the price the markup rule proposes. It never appears on a customer's quote.
-  The customer sees one tire price that already covers it.
-- **If it is a customer charge:** it is another `lineItems` entry like
-  disposal, and the customer sees "Shipping" on their quote.
+**That module was built for this.** Its own header lists the rules it expects
+to grow — a rate per category, tiers by cost, a minimum margin, a floor that
+never quotes below cost — and says: *"Each of those becomes another field
+here and another step in `retailPrice`. Adding one should not require
+touching a caller."* Shipping is one more of those, and the first to arrive.
 
-**These want different code and give the customer a different experience, so
-this is not a detail to settle during implementation.** The setting is shaped
-to allow either; the default is off until the user says which.
+### The formula, and the one decision inside it
 
-**My recommendation, for what it is worth: Ken's cost.** A mobile tire
-service that quotes an all-in price and then adds shipping reads like a
-different kind of business, and the scraper framing points at supplier data.
-But it is the user's call and the plan does not assume it.
+Today `retailPrice` is `supplierPrice × rate`. It becomes:
+
+```
+retailPrice = (supplierPrice + shippingPerTire) × rate
+```
+
+**Shipping goes inside the multiplier, not outside it** — the markup applies
+to landed cost, because landed cost is what the tire actually cost Ken to
+have in his hand. Marking up goods and passing shipping through at cost is
+the other option and it is the wrong one here: it would mean Ken earns
+nothing on the money he fronted to get the tire to Malden.
+
+**A useful side effect worth noting.** `markup.js` already criticises its own
+flat multiplier — *"adds $12 to a $34 tire and $60 to a $170 one, which is
+backwards."* A per-tire shipping cost is an **absolute** amount added before
+the multiplier, so it pushes cheap tires up proportionally more than
+expensive ones. That is a small step toward the tiering the module says it
+wants, arriving as a side effect rather than a redesign.
+
+### Where it lives, and the seam that already exists
+
+`shippingPerTire` becomes a field in the markup settings beside `rate`,
+owner-editable through the existing `GET`/`PUT /api/owner/markup`, carrying
+its own `isPlaceholder` until Ken sets it. **Dummy value now**, per the
+user's instruction, and visibly ours until replaced.
+
+**The per-tire seam is already in the signature.**
+`retailPrice(supplierPrice, tire = {}, settings)` takes a `tire` argument
+that **nothing currently reads**. When the scraper supplies real per-tire
+shipping, it is read from there and the flat setting becomes the fallback for
+tires that have none. **No caller changes, exactly as the module intended.**
+
+**The owner's own price still wins outright.** If Ken has priced a tire, that
+price is the price — shipping does not get added to it. Markup proposes, the
+owner disposes, unchanged.
+
+### The scraper, planned honestly
+
+`scripts/giga-tires.mjs` captures `source: { sku, stock, listPrice, segment,
+url }`. **No shipping field.** Adding one means a new key in the snapshot
+shape, which flows through `import-tires.mjs` and the supplier table the same
+way the others do.
+
+**But the first task is not "pull shipping" — it is "find out whether
+shipping is a per-tire number at all."** Supplier shipping is commonly
+**order-level and destination-dependent**: a cart total, free over a
+threshold, varying by how many tires ship together and where they go. If that
+is what giga-tires publishes, then a per-tire field is the wrong shape and
+the honest answer is a configured average rather than a scraped figure.
+
+**So the scraper task is scoped as a question first.** Read what the site
+actually shows for shipping on a listing and in a cart, and report the shape.
+**The flat setting stands either way** — that is why it is being built first,
+and it is what makes this safe to ship before the answer exists.
+
+This is the same discipline the walk used: *page-one coverage is the data
+definition of done, and the deep pass is a separate decision with its cost
+attached.*
 
 ## What ships inert, and why that matters
 
