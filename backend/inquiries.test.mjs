@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { InputError } from './inventory.mjs'
 import { Inquiries, INQUIRY_PERSONAL_FIELDS } from './inquiries.mjs'
+import { cleanInquiry } from './inquiries-api.mjs'
 
 function withTmpDir(fn) {
   const dir = mkdtempSync(path.join(tmpdir(), 'kmt-inquiries-'))
@@ -137,6 +138,13 @@ test('each required field is validated, and the message names which one failed',
   assert.doesNotThrow(() => inquiries.create({ ...valid, contact: '555-019-2231' }))
   db.close()
 }))
+
+test('the public inquiry shape normalizes the contact before it becomes a limiter key', () => {
+  assert.deepEqual(cleanInquiry({ name: ' Ana ', contact: '(617) 410-8319', vehicleInfo: ' ', message: ' Brake help ' }), {
+    name: 'Ana', contact: '+16174108319', vehicleInfo: null, message: 'Brake help',
+  })
+  assert.throws(() => cleanInquiry({ name: 'Ana', contact: 'not contact', message: 'Help' }), InputError)
+})
 
 test('list() answers oldest first and breaks a same-millisecond tie by rowid, the outbox.test.mjs lesson applied here from the start', () => withTmpDir(dir => {
   const db = new DatabaseSync(deployedDatabase(dir))
