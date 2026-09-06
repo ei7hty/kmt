@@ -3,6 +3,7 @@ import SignIn from '../owner/SignIn.jsx'
 import { NeedsSignIn, actOnQuote, ownerRequests } from '../store'
 import { signOut } from '../owner/session.js'
 import { exactTime, timeAgo } from '../owner/timeAgo.js'
+import { PrivacyFooter } from './Privacy.jsx'
 
 /** A stored US number, +16174108319, as a person reads it: (617) 410-8319. Anything else as stored. */
 const formatPhone = (phone) => {
@@ -192,6 +193,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
           </div>
         )}
       </div>
+      <PrivacyFooter navigate={navigate} />
     </div>
   )
 }
