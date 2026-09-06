@@ -454,36 +454,54 @@ async function main() {
   // matters here: this one exists to catch a state rare enough that it will
   // be read far more often than it ever fires.
   const bareHost = (value) => value.replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
-  const flipConfigured = Boolean(process.env.KMT_CANONICAL_HOST);
-  const auditBaseIsCanonical = bareHost(BASE) === bareHost(CANONICAL_HOST);
 
+  // Whether the flip is live is not a question this script can ask its own
+  // environment: KMT_CANONICAL_HOST is a Fly secret, set on the server this
+  // script audits, never on whatever runs the script -- a CI runner, a
+  // laptop, anything. Reading process.env.KMT_CANONICAL_HOST here always
+  // reads this process's own environment, which can never be the answer,
+  // and it was false in every run this file ever made, including runs
+  // against a production that was correctly flipped at the time (found by
+  // DEV OPS, 2026-09-06: the redirect checks read SKIP and the closing
+  // banner read OPEN two minutes after all three hosts were measured
+  // redirecting correctly). Production can answer this about itself: a
+  // host that 301s to the canonical is the flip, observed rather than
+  // inferred, the same way X-KMT-Release and X-KMT-Service-Area answer
+  // questions no environment variable available here ever could.
+  const redirectResults = [];
   for (const host of REDIRECT_HOSTS) {
-    const label = `${host} redirects to the canonical host (${CANONICAL_HOST})`;
-    if (!flipConfigured) {
-      // AUDIT_BASE pointing at the canonical host does not by itself mean the
-      // official cutover is under way: this file gets run by hand against
-      // the new domain routinely, ahead of t52, and every one of those runs
-      // would otherwise read as a live misconfiguration. The check cannot
-      // pass before the flip by construction either way, so SKIP is the
-      // honest state regardless of which host AUDIT_BASE names -- the
-      // real risk this guard exists for is the *official* verify job
-      // running with AUDIT_BASE flipped and the backend not, and that job
-      // reads this exact line same as anyone, so nothing is lost: it is
-      // still visible, just not a hard failure for a state a human check
-      // reaches on its own all the time.
-      skip(label, auditBaseIsCanonical
-        ? 'AUDIT_BASE points at the canonical host but KMT_CANONICAL_HOST is not set on the server'
-        : 'KMT_CANONICAL_HOST not set yet');
-      continue;
-    }
     try {
       const response = await fetch(`https://${host}/`, { redirect: 'manual' });
       const location = response.headers.get('location') || '';
       const redirectsToCanonical = response.status === 301 && bareHost(location) === bareHost(CANONICAL_HOST);
-      check(redirectsToCanonical, label,
-        `got status ${response.status}${location ? `, location ${location}` : ', no location header'}`);
+      redirectResults.push({ host, redirectsToCanonical, status: response.status, location, error: null });
     } catch (error) {
+      redirectResults.push({ host, redirectsToCanonical: false, status: null, location: '', error });
+    }
+  }
+  // One switch moves every host together (KMT_CANONICAL_HOST is a single
+  // server-wide setting), so "some redirect, some don't" is never the flip
+  // caught mid-rollout -- it is one host broken while the rest are fine,
+  // and that is a real failure, not the pre-flip state this file stays
+  // quiet about.
+  const flipLive = redirectResults.some(result => result.redirectsToCanonical);
+
+  for (const { host, redirectsToCanonical, status, location, error } of redirectResults) {
+    const label = `${host} redirects to the canonical host (${CANONICAL_HOST})`;
+    if (error) {
       fail(`${label} — ${describeFetchError(error)}`);
+    } else if (redirectsToCanonical) {
+      ok(label);
+    } else if (!flipLive) {
+      // This file gets run by hand against the new domain routinely, ahead
+      // of the official cutover, and every one of those runs would
+      // otherwise read as a live misconfiguration. The check cannot pass
+      // before the flip regardless of which host AUDIT_BASE names, so SKIP
+      // is the honest state -- verified against what every other host in
+      // this same run actually did, not assumed from an unreachable secret.
+      skip(label, 'none of the redirect hosts show the flip live yet');
+    } else {
+      fail(`${label} — got status ${status}${location ? `, location ${location}` : ', no location header'}, but another redirect host in this same run does show the flip live`);
     }
   }
 
@@ -686,12 +704,14 @@ async function main() {
   // for a day before anyone acted on them. This is not "not applicable" --
   // it is an unfinished cutover step with a known fix and a known order.
   // Printed after reportCount() on purpose, same reason that function is:
-  // last is the line a reader actually lands on.
-  if (!flipConfigured) {
+  // last is the line a reader actually lands on. Keyed off flipLive, the
+  // observed result above, not a guess at which secret is missing: this
+  // script cannot see KMT_CANONICAL_HOST and must not claim to.
+  if (!flipLive) {
     console.log(
-      `\nOPEN: KMT_CANONICAL_HOST is not set. Until it is, ${[CANONICAL_HOST, ...REDIRECT_HOSTS].join(', ')} ` +
+      `\nOPEN: none of ${REDIRECT_HOSTS.join(', ')} redirect to the canonical host yet. Until one does, ${[CANONICAL_HOST, ...REDIRECT_HOSTS].join(', ')} ` +
       'all serve identical content with no redirect between them -- four crawlable copies of one site, ' +
-      'not a missing feature. Fix is docs/operations.md Step 2 -- but only after Step 1 ' +
+      'not a missing feature. Fix is docs/operations.md Step 2 (KMT_CANONICAL_HOST) -- but only after Step 1 ' +
       '(KMT_ALLOWED_HOSTS) has shipped, or the flip 403s every visitor.'
     );
   }
