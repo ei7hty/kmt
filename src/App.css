@@ -554,9 +554,15 @@
   .fitment-heading h3 { font-size: 20px; }
   .fitment-progress { padding-inline: 10px; }
   .fitment-progress-item { font-size: 11px; }
-  .fitment-visual { height: 140px; }
-  .fitment-guide { padding: 10px 12px 0; }
-  .fitment-options { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  /* The illustration at its own shape. The artwork is a wide strip of
+     sidewall (about 4.6:1), and a fixed 140px band showed it as a slice
+     along the bottom with dead space above; now it is as wide as the panel
+     allows and exactly as tall as that makes it. */
+  .fitment-visual { height: auto; }
+  .fitment-guide { height: auto; padding: 10px 0 0; }
+  /* Every width on screen. Three columns of 23 is eight rows, and the only
+     cue that five of them sat behind a scroll was a half-cut fifth row. */
+  .fitment-options { grid-template-columns: repeat(3, 1fr); gap: 8px; max-height: none; overflow: visible; }
   .fitment-footer { align-items: flex-start; flex-direction: column; }
   .fitment-footer .primary-action { width: 100%; }
   .tire-option { grid-template-columns: 48px 1fr; }
