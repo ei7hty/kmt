@@ -3,14 +3,29 @@
 @tailwind utilities;
 
 :root {
-  --text: #b9b9bc;
+  /* The ground is the original near-black (t61: black, white and red);
+     panels and borders step up from it in neutral greys. The logo's navy
+     appears only on the nav and hero band, where the logo sits. Measured
+     against these on #85, in t59 and again in t61. */
+  --text: #c3c3c6;
   --text-h: #f5f5f5;
+  --muted: #a3a3ab;
   --bg: #080808;
+  --bg-deep: #030303;
   --panel: #121212;
   --panel-soft: #171717;
-  --border: #303033;
+  --border: #3e3e42;
+  /* Chrome, for the page headline and the logo only: the logo's silver
+     lettering, as a vertical sheen. Never on body text. */
+  --chrome: linear-gradient(180deg, #ffffff 0%, #e6e6e6 38%, #ababab 52%, #f4f4f4 100%);
   --accent: #ed1c24;
   --accent-dark: #b80e14;
+  /* White text on the brand red is 4.38:1, under AA's 4.5. Fills that carry
+     white text use this darker red (5.18:1); red text on the ground uses the
+     lighter one below (7.8:1 on --bg, 5.5:1 on the lightest card). Brand red stays
+     for borders, rings and decoration, where contrast is not read. See #85. */
+  --accent-solid: #d9121a;
+  --accent-text: #ff6b72;
   --accent-bg: rgba(237, 28, 36, 0.12);
   --accent-border: rgba(237, 28, 36, 0.8);
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.38);

@@ -391,3 +391,174 @@ the patterns matched quoted JSON keys. The author rewrote it on bare `key:`
 markers and showed both results, and #114 wired it in only after that. Before
 a gate step ships, run it once on a build it must reject and quote the failing
 output in the pull request.
+
+**2026-09-06 — Claude (scraper/import lane)**
+A behaviour can be load-bearing without anyone knowing it is there. #81 fixed
+a real problem -- an empty size took ~20 seconds for the fetcher to give up
+on, indistinguishable in the log from a real block -- by recognizing the
+supplier's own "not available" text and returning in ~1.7 seconds instead.
+Correct fix, on its own terms: it made the tool faster and more honest about
+what it had actually read. What nobody had written down, because nobody had
+noticed it, is that the 20-second wait was also the only thing pacing
+requests on a run of mostly-empty sizes. Remove the slow failure and you
+remove the accidental rate limit riding on top of it. The very next real walk
+took a `429` after 44 back-to-back empties at the new, unthrottled rate.
+
+The gate could not have caught this. Nothing about it is wrong in a unit
+test, in eslint, or in a build -- it is only wrong on someone else's server,
+under a load pattern the test suite has no way to produce. So the lesson is
+not "test more" -- it is: **a change to how fast we ask is a change to what
+we ask**, and it needs to be reviewed as one, deliberately, even when the
+diff that caused it was about something else entirely (here, honesty about
+empty results). If a fix changes how long an operation takes, ask what was
+depending on the old timing before shipping the new one.
+
+**2026-09-06 — LEAD BACKEND DEV (t48 part two)**
+The three audits share one email address, and the server caps submissions per
+address at 30 a day in process memory (#63). One gate run uses about 14, so a
+second full run against the same server, plus a few curls, trips the cap: the
+symptom is "no visible submission acknowledgement" partway through the second
+run and a `rate limit: submitPerEmail refused` line in the server log. Restart
+the server between local runs; the gate boots a fresh one per run, so CI never
+meets this.
+
+**2026-09-06 — JUNIOR FRONT END DEV (session local_376e0377)**
+A second instance of the specificity trap at the top of this file, from the
+other direction: a rule scoped to a container outranks a semantic class.
+`.owner-details dd { color: var(--text-h) }` painted the #105 zero-stock
+warning in the heading white even though its `dd` carried
+`.status-note-wait`, because `(0,1,1)` beats `(0,1,0)` whatever the source
+order. The screenshot looked like a line in a card and would have passed a
+glance; only a `getComputedStyle` readout in the check script said the
+colour was wrong. Two habits follow. Give a status colour a selector at
+least as specific as the layout it sits in, and have any check that
+asserts a colour read the computed style, never the stylesheet. Same
+family as the day's `<details>` finding: the file does not say what the
+browser does.
+
+**2026-09-06 — DB ADMIN, incoming repo agent (on behalf of LEAD BACKEND DEV, relayed via the PM -- their handoff, not directly verified against a live run by me except where noted)**
+Six things the outgoing lane knew that were in no file. Read `quotes.get`,
+`api.mjs` and the audit headers directly before writing the three that a grep
+could confirm; the other three are LEAD BACKEND DEV's own measurements,
+recorded as theirs.
+
+**The sharpest one, confirmed by reading `backend/quotes.test.mjs`:**
+`serve()` there (line 454) is a hand-written mirror of `server.mjs`'s
+pipeline, not an import of it. Any pre-dispatch change to `server.mjs` --
+routing order, a new guard before the handlers run -- has to be mirrored
+there by hand too, or the suite is testing the mirror and not the real
+pipeline. That is exactly how `GET /api//catalog` passed its tests and then
+failed under a real `curl`: the mirror answered one way, `server.mjs`
+another, and only one of them ran in the suite. See
+`kmt-server-test-helper-mirrors-pipeline` in the maintainer's own memory --
+this is that same finding, now in the file everyone shares rather than in
+one person's memory alone.
+
+**Customer shape vs. owner shape, confirmed by reading `Quotes.get` in
+`backend/quotes.mjs`:** `get(id, audience = 'customer')` is the one method
+every read goes through, and the second argument decides what a caller sees.
+`submit()`, `pay()` and the customer's own cancel all answer the customer
+shape by default; `decide()`/`finish()`/`cancel()` (the owner's verbs) pass
+`'owner'` explicitly. Any new template, card or panel that reads a
+customer's name, email, phone or address must call `quotes.get(id, 'owner')`
+-- the default silently returns the shape with those fields stripped or
+redacted for a customer's own eyes, and a caller that forgets the second
+argument gets no error, just quietly wrong data.
+
+**`HEAD /api/catalog` answers 401 on purpose, confirmed by reading
+`isPublicApiCall` in `backend/api.mjs` (line 99 plus its comment):** HEAD is
+public *only* for `/api/health` -- `if (method === 'HEAD') return pathname
+=== '/api/health'` -- so a HEAD on any other public GET path, `/api/catalog`
+included, still requires a session and answers 401. The comment beside it
+says why: "nothing HEADs a JSON data endpoint, so `/api/catalog` stays
+GET-only on purpose." Do not let a future tidying pass make this consistent
+with `/api/health`'s exemption -- the inconsistency is the design, not an
+oversight.
+
+**Browser globals reached from Node stay an error, confirmed by reading the
+five audit scripts' headers:** `.forge/a11y-85-measure.mjs`,
+`deployed-site-check.mjs`, `owner-inventory-audit.mjs`,
+`request-flow-check.mjs` and `responsive-check.mjs` each carry a `/* global
+... */` comment naming exactly the browser identifiers (`document`,
+`window`, `getComputedStyle`, `innerWidth`, ...) used inside a
+`page.evaluate`/locator-evaluate callback, which runs in the browser and not
+in the Node process eslint is actually linting. Deliberately not added to
+`.forge`'s eslint config as a blanket browser-globals allowance: if a
+browser identifier is ever referenced *outside* one of those callbacks --
+reached from Node by mistake -- eslint still catches it as undefined. Scope
+a new `/* global */` line to the file that needs it, never widen the config.
+
+**GitHub occasionally creates no `pull_request` check run for a push here
+(LEAD BACKEND DEV's observation, not independently reproduced by me).** When
+a PR shows no gate run at all rather than a red or green one, the recovery
+is `gh workflow run fly-deploy.yml --ref <branch>` -- same check job runs,
+and deploy stays gated to `main` regardless, so dispatching it manually
+carries no deploy risk. Expect to meet this as the merger: "no checks
+reported" here can mean either the concurrency-cancellation trap already in
+this file, or this.
+
+**The audits' shared test address hits its own rate limit on a second full
+run against one already-up server (LEAD BACKEND DEV's measurement: 14
+submits per run against a cap of 30, so a third run in the same process
+would trip it).** The pre-merge gate never sees this, because it boots a
+fresh server per run and the limiter's state dies with the process. Anyone
+running the audits repeatedly against a server they left running --
+locally, or against a hosted throwaway -- can hit it after two full passes;
+read a submit failure there as the cap, not a regression, before chasing it
+as one.
+
+**2026-09-06 — Claude (DEV OPS/INFRASTRUCTURE, writing t52)**
+A tool that is not installed answers nothing, and nothing reads as "no".
+
+`dig` is not on this machine. It does not print "command not found" in a way a
+pipeline notices -- in a `$(...)` it yields an empty string, and
+`for i in $(seq 1 10); do dig +short www.kensmobiletire.com; done` prints ten
+blank lines. That is indistinguishable from a name that does not resolve, which
+is exactly what it was read as: `www` was reported as flapping on 2026-09-06,
+the cutover runbook nearly shipped with a precondition built on it, and
+`Resolve-DnsName` then answered eight times out of eight with no failures.
+
+Same family as the `grep -P` entry above, and as the empty-count reads further
+up: **a verification that returns nothing is agreeing with whatever you already
+feared, not reporting.** The habit that catches all three is to run the tool
+once against a case it must answer positively -- resolve a name you know is
+good, grep for a string you know is there -- before trusting a negative from it.
+
+For DNS on this machine, use PowerShell, which fails loudly:
+
+```powershell
+1..8 | ForEach-Object {
+  try { (Resolve-DnsName www.kensmobiletire.com -ErrorAction Stop |
+         Where-Object {$_.IPAddress}).IPAddress -join ',' }
+  catch { "FAILED: $($_.Exception.Message)" }
+  Start-Sleep -Milliseconds 400
+}
+```
+
+`nslookup` also works and shows the CNAME chain. Neither is `dig`; do not
+translate a `dig` recipe from a web page and assume it ran.
+
+
+**2026-09-06 — Claude (DEV OPS/INFRASTRUCTURE)**
+A handoff is a snapshot, and its state claims decay faster than its reasoning.
+
+Two sessions changed seats today and the handover chain carried two claims that
+were true when written and false when read: that `X-KMT-Release` emitted nothing
+in production and its SHA truncation was unsettled, when the `--build-arg` was
+already in both places and production was serving `x-kmt-release: 2fdf08d`; and
+that #157 needed `customerNotes` adding to `OUTBOX_PERSONAL_DATA_KEYS`, when the
+key and a test asserting the exact array were already in the diff. Neither cost
+anything, because both were caught by someone opening the file instead of
+trusting the note -- the same habit as the `grep -P`, `dig` and `jq` entries,
+pointed at a teammate's report rather than at a tool.
+
+I wrote the first one. It is worth saying that plainly: warning someone about
+stale reports in the same message that contains one is the ordinary failure
+here, not an unusual one. Nobody re-reads what they are confident about.
+
+So write a handoff in two parts and label them. **Intent** -- why a stale-looking
+row stays in a table, why a verdict exists, why a number is what it is -- keeps
+indefinitely and is the part only the author has. **State** -- what has merged,
+what is deployed, what is still open -- is a measurement with a timestamp, and
+the receiver should re-measure anything they are about to act on. Naming which
+is which costs a line and tells the reader where scepticism is owed.

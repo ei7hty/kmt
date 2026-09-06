@@ -1,4 +1,5 @@
 import { InputError } from './inventory.mjs'
+import { PUBLIC_BODY_LIMIT, clientIp, refuse } from './limits.mjs'
 
 /**
  * Exported as `readJsonBody` so the auth routes parse request bodies the same
@@ -67,8 +68,35 @@ const PUBLIC_POST_PATHS = [
 /** The action suffixes a GET must not answer, whatever else the prefix allows. */
 const REQUEST_ACTIONS = ['/pay', '/cancel']
 
+/**
+ * Whether an `/api/` path is one the server has any handler for.
+ *
+ * Every unmatched `/api/*` path used to answer 401 with the owner sign-in
+ * message, because the session gate ran before anything asked whether the
+ * path existed: a customer with a typo in a link was told to sign in to a
+ * workspace they do not have. The gate is for the owner's area; a path that
+ * is neither public nor under it is nobody's, and nobody's is 404. An
+ * unknown path under /api/owner/ still reads 401 when signed out, because
+ * saying which owner endpoints exist is the owner's business.
+ *
+ * By path, not by method: a public path asked with a method it does not
+ * take (a POST to the health check, a DELETE on a request) is still a real
+ * place, and the gate's 401 for it is what the baseline records and what
+ * keeps "does this endpoint exist" and "may you call it this way" apart.
+ */
+export function isKnownApiPath(pathname) {
+  return PUBLIC_API_PATHS.has(pathname) ||
+    pathname === PUBLIC_REQUEST_PREFIX ||
+    pathname.startsWith(PUBLIC_REQUEST_PREFIX + '/') ||
+    pathname.startsWith('/api/owner/')
+}
+
 /** Whether this request is one of the public calls, by path and by method. */
 export function isPublicApiCall(method, pathname) {
+  // HEAD is public for the health check alone: uptime tools send it, and it
+  // is what the platform's own check would read as. Nothing HEADs a JSON
+  // data endpoint, so /api/catalog stays GET-only on purpose.
+  if (method === 'HEAD') return pathname === '/api/health'
   if (method === 'GET') {
     return PUBLIC_API_PATHS.has(pathname) ||
       pathname === PUBLIC_REQUEST_PREFIX ||
@@ -87,6 +115,18 @@ export function isPublicApiCall(method, pathname) {
  * same-origin check on everything else, and hanging a public route off it
  * would mean every future change to those rules silently applies to the
  * public one too.
+ *
+ * Cached for five minutes (#84): the cost of this endpoint was never SQLite's
+ * query time -- measured on a table sized for tonight's import, the full
+ * catalog is tens of milliseconds -- it is the size of the response, sent
+ * uncached on every visit. A price the owner just saved can be up to five
+ * minutes stale on someone's screen; the draft it produces is server-computed
+ * from the live row at submit time regardless (src/pricing.js never trusts a
+ * client-supplied price), so a stale display corrects itself the moment a
+ * quote is actually drafted. `?size=<size>` narrows the response to one size,
+ * for the customer flow to fetch after a size is chosen rather than the whole
+ * catalog on first paint; omitting it answers everything, unchanged, for the
+ * audits and anything else that still wants the full list.
  */
 export function createCatalogApi(inventory) {
   return async (request, response) => {
@@ -98,13 +138,12 @@ export function createCatalogApi(inventory) {
     if (request.method !== 'GET' || url.pathname !== '/api/catalog') return false
 
     try {
+      const size = url.searchParams.get('size') || ''
       response.writeHead(200, {
         'Content-Type': 'application/json',
-        // Prices change the moment the owner saves one. A cached catalog quotes
-        // a price he has already changed his mind about.
-        'Cache-Control': 'no-store',
+        'Cache-Control': 'public, max-age=300',
       })
-      response.end(JSON.stringify({ tires: inventory.catalog() }))
+      response.end(JSON.stringify({ tires: inventory.catalog({ size }) }))
     } catch (error) {
       console.error(error)
       response.writeHead(500, { 'Content-Type': 'application/json' })
@@ -131,7 +170,11 @@ export function createCatalogApi(inventory) {
 export function isHostAllowed(hostname, pathname, allowedHosts) {
   if (pathname === '/api/health') return true
   if (!allowedHosts.length) return true
-  return allowedHosts.includes(hostname)
+  // Hostnames are case-insensitive. Browsers lowercase them, so no customer
+  // meets this; a hand-typed curl or a monitor could, and the redirect
+  // already compares without case.
+  const wanted = (hostname || '').toLowerCase()
+  return allowedHosts.some(host => host.toLowerCase() === wanted)
 }
 
 /**
@@ -158,9 +201,13 @@ export function createHealthApi(inventory) {
     const url = new URL(request.url, 'http://localhost')
     if (url.pathname !== '/api/health') return false
     // Answered here rather than falling through: a POST to this path must not
-    // reach another handler, and 405 says which part was wrong.
-    if (request.method !== 'GET') {
-      response.writeHead(405, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Allow: 'GET' })
+    // reach another handler, and 405 says which part was wrong. HEAD is what
+    // uptime tools send, and it answers the same status with no body: the
+    // baseline recorded HEAD as 401 and a monitor reading that sees a healthy
+    // machine as refusing.
+    const head = request.method === 'HEAD'
+    if (request.method !== 'GET' && !head) {
+      response.writeHead(405, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Allow: 'GET, HEAD' })
       response.end(JSON.stringify({ ok: false, error: 'Health is a GET.' }))
       return true
     }
@@ -168,13 +215,13 @@ export function createHealthApi(inventory) {
     try {
       inventory.db.prepare('SELECT 1 FROM sqlite_master LIMIT 1').get()
       response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-      response.end(JSON.stringify({ ok: true }))
+      response.end(head ? undefined : JSON.stringify({ ok: true }))
     } catch (error) {
       // Logged, because this is the one endpoint whose failure nobody is
       // watching a screen for.
       console.error('health check failed:', error.message)
       response.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-      response.end(JSON.stringify({ ok: false }))
+      response.end(head ? undefined : JSON.stringify({ ok: false }))
     }
     return true
   }
@@ -191,8 +238,30 @@ export function createHealthApi(inventory) {
  * Nothing here lists anything without a customer key or a request id. A key
  * that does not match is answered exactly as a request that does not exist,
  * because "not yours" tells the asker the request is real.
+ *
+ * The three POSTs are the only public writes, so they are the ones limited
+ * (#63): per address before the body is read, per browser key once it is, and
+ * a submission per email address in a day, which is the cap that matters the
+ * day the email seam sends. A refusal is a 429 with the wait named, before
+ * anything is stored. Reads are not limited: they cost a lookup and disclose
+ * nothing without the id or the key. Without a limiter, as in most tests,
+ * nothing is counted.
  */
-export function createRequestsApi(quotes) {
+export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}) {
+  /** Count one hit; answer 429 and return true if it was over. */
+  const over = (response, rule, id, message) => {
+    if (!limiter || !id) return false
+    const taken = limiter.take(rule, id)
+    if (taken.allowed) return false
+    refuse(response, taken.retryAfterSeconds, message)
+    return true
+  }
+  const TOO_MANY = 'Too many requests from this connection. Wait a few minutes and try again.'
+  const TOO_MANY_KEY = 'Too many requests from this browser. Wait a few minutes and try again.'
+  const TOO_MANY_EMAIL = 'That email address has been used for too many requests today. Text us instead.'
+  const keyOf = body => (typeof body?.customerKey === 'string' ? body.customerKey.trim().toLowerCase() : '')
+  const emailOf = body => (typeof body?.customerEmail === 'string' ? body.customerEmail.trim().toLowerCase() : '')
+
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
     if (!url.pathname.startsWith('/api/requests')) return false
@@ -203,8 +272,23 @@ export function createRequestsApi(quotes) {
     }
 
     try {
+      if (request.method === 'POST' && isPublicApiCall('POST', url.pathname)) {
+        if (over(response, 'publicPerIp', clientIp(request), TOO_MANY)) return true
+      }
+
       if (request.method === 'POST' && url.pathname === '/api/requests') {
-        send(201, quotes.submit(await readJsonBody(request)))
+        const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
+        if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
+        if (over(response, 'submitPerEmail', emailOf(body), TOO_MANY_EMAIL)) return true
+        const submitted = quotes.submit(body)
+        send(201, submitted)
+        // After the answer, never before it, and never awaited: the customer's
+        // acknowledgement and the owner's alert go out on the seam in mail.mjs,
+        // and a provider outage is a failed outbox row, not a failed submit.
+        if (mailer) {
+          mailer.after('request-received', submitted.request.id)
+          mailer.after('request-arrived', submitted.request.id)
+        }
         return true
       }
 
@@ -217,14 +301,18 @@ export function createRequestsApi(quotes) {
 
       const payMatch = url.pathname.match(/^\/api\/requests\/([^/]+)\/pay$/)
       if (request.method === 'POST' && payMatch) {
-        const body = await readJsonBody(request)
-        send(200, quotes.pay(decodeURIComponent(payMatch[1]), body?.customerKey))
+        const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
+        if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
+        const paid = quotes.pay(decodeURIComponent(payMatch[1]), body?.customerKey)
+        send(200, paid)
+        if (mailer && paid?.quote?.status === 'paid') mailer.after('payment-recorded', paid.request.id)
         return true
       }
 
       const cancelMatch = url.pathname.match(/^\/api\/requests\/([^/]+)\/cancel$/)
       if (request.method === 'POST' && cancelMatch) {
-        const body = await readJsonBody(request)
+        const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
+        if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
         send(200, quotes.cancelByCustomer(decodeURIComponent(cancelMatch[1]), body?.customerKey, body?.reason))
         return true
       }
@@ -248,7 +336,7 @@ export function createRequestsApi(quotes) {
   }
 }
 
-export function createApi(inventory, refresher, importer = null, quotes = null) {
+export function createApi(inventory, refresher, importer = null, quotes = null, { mailer = null } = {}) {
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
     if (!url.pathname.startsWith('/api/owner/')) return false
@@ -315,7 +403,18 @@ export function createApi(inventory, refresher, importer = null, quotes = null) 
         // line only says which one the owner asked for.
         if (action === 'done') send(200, quotes.finish(id, body?.version))
         else if (action === 'cancel') send(200, quotes.cancel(id, body?.version, body?.reason))
-        else send(200, quotes.decide(id, action === 'approve' ? 'sent' : 'rejected', body?.version))
+        else {
+          const decided = quotes.decide(id, action === 'approve' ? 'sent' : 'rejected', body?.version)
+          send(200, decided)
+          // The quote itself, itemised, once the owner has sent it (R25).
+          if (mailer && decided?.quote?.status === 'sent') mailer.after('quote-sent', decided.request.id)
+        }
+      } else if (request.method === 'GET' && url.pathname === '/api/owner/outbox') {
+        // What was sent, or would have been, about every request: the outbox
+        // the owner screen shows (R25). Session-gated like everything here.
+        if (!mailer) throw new InputError('Owner endpoint not found', 404)
+        const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 50))
+        send(200, { provider: mailer.adapter.name, messages: mailer.outbox.list({ limit }) })
       } else if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
         send(200, { ...inventory.list(Object.fromEntries(url.searchParams)), summary: inventory.summary() })
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/')) {

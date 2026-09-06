@@ -2,14 +2,21 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
-import { Quotes } from './quotes.mjs'
-import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isPublicApiCall, readJsonBody } from './api.mjs'
+import { Quotes, todayInServiceArea } from './quotes.mjs'
+import { readServiceAreaConfig } from './service-area.mjs'
+import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
+import { PUBLIC_BODY_LIMIT, RateLimiter } from './limits.mjs'
+import { parseRequestUrl } from './site.mjs'
 import { calculateDraftQuote } from '../src/pricing.js'
 
 const SIZE = '215/60R16'
 const KEY = 'a1b2c3d4e5f60718'
 const OTHER_KEY = '00112233445566ff'
+
+/** A preferred date that is always ahead of today, so the fixture never goes stale. */
+const daysAhead = days => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10)
+const SOON = daysAhead(30)
 
 const tire = (id = 'giga-a', overrides = {}) => ({
   id, name: 'Test Touring', size: SIZE, price: 50, inStock: true,
@@ -35,7 +42,7 @@ const form = (overrides = {}) => ({
   tireSelection: 'giga-a',
   quantity: 4,
   location: '456 Demo Ave',
-  date: '2026-09-10',
+  date: SOON,
   locationType: 'home',
   serviceZip: '02149',
   locationNotes: 'Driveway',
@@ -132,6 +139,84 @@ test('a request is required to carry the fields a quote needs', async t => {
   assert.throws(() => quotes.submit(form({ location: '   ' })), /location is required/)
   assert.throws(() => quotes.submit(form({ customerKey: 'not-a-key' })), /customer key/)
   assert.throws(() => quotes.submit(form({ locationNotes: 'x'.repeat(1001) })), /too long/)
+})
+
+/* ------------------------------------------- where and when (t48, #95, #70) */
+
+test('the preferred date is a real calendar day, today or later, judged where the van is', async t => {
+  const { inventory } = setup(t)
+  // Stand at a fixed day so the boundary is exact, whatever today really is.
+  const quotes = new Quotes(inventory, { today: () => '2026-09-06' })
+  assert.throws(() => quotes.submit(form({ date: '2026-09-05' })), /today or a later date/)
+  assert.equal(stored(quotes, quotes.submit(form({ date: '2026-09-06' })).request.id).date, '2026-09-06', 'today is fine')
+  assert.equal(stored(quotes, quotes.submit(form({ date: '2026-12-25' })).request.id).date, '2026-12-25')
+  for (const bad of ['June 1', '06/01/2026', '2026-6-1', '2026-06-31', '2026-13-01', '20260601', '']) {
+    assert.throws(() => quotes.submit(form({ date: bad })), /YYYY-MM-DD|not on the calendar|date is required/, `${JSON.stringify(bad)} is refused`)
+  }
+  // The calendar is Massachusetts's: late evening there is not yet tomorrow.
+  const lateEvening = new Date('2026-09-07T03:30:00Z') // 11:30pm on the 6th in Boston
+  assert.equal(todayInServiceArea(lateEvening), '2026-09-06')
+})
+
+test('the ZIP is required and five digits; a ZIP+4 is read as its five', async t => {
+  const { quotes } = setup(t)
+  assert.throws(() => quotes.submit(form({ serviceZip: '' })), /five-digit ZIP/)
+  assert.throws(() => quotes.submit(form({ serviceZip: '2149' })), /five-digit ZIP/)
+  assert.throws(() => quotes.submit(form({ serviceZip: 'Everett' })), /five-digit ZIP/)
+  assert.equal(stored(quotes, quotes.submit(form({ serviceZip: '02149-1234' })).request.id).serviceZip, '02149')
+  assert.equal(stored(quotes, quotes.submit(form({ serviceZip: ' 02149 ' })).request.id).serviceZip, '02149')
+})
+
+test('beyond the service area is refused with the distance and the phone number, and nothing is stored', async t => {
+  const { quotes } = setup(t)
+  // Defaults on: Malden, 100 miles. Bangor is about 200.
+  assert.throws(() => quotes.submit(form({ serviceZip: '04401' })), /about 200 miles from us, outside the 100 mile area we serve\. Text us at \(617\) 410-8319/)
+  // A ZIP nobody can place is refused the same way, with the number.
+  assert.throws(() => quotes.submit(form({ serviceZip: '99999' })), /do not recognise that ZIP code\. Text us at/)
+  assert.equal(quotes.listForOwner().length, 0, 'a refused request is not a request')
+})
+
+test('inside the radius but past the review distance goes through with the miles as a reason for the owner', async t => {
+  const { quotes } = setup(t)
+  // Worcester, about 40 miles: accepted, flagged, and the owner sees how far.
+  const { request, quote } = quotes.submit(form({ serviceZip: '01608' }))
+  assert.equal(quote.exception, true)
+  assert.ok(quote.exceptionReasons.some(reason => /Service address is about 40 miles from base, beyond the 25 mile review distance/.test(reason)),
+    `the reason names the miles: ${quote.exceptionReasons.join(' | ')}`)
+  const owner = quotes.listForOwner().find(row => row.request.id === request.id)
+  assert.equal(owner.request.serviceMiles, 40, 'the owner row carries the distance for the card')
+  assert.equal('serviceMiles' in quotes.get(request.id).request, false, 'the customer shape does not')
+
+  // Close by: no reason added, and a clean tire stays a clean quote.
+  const near = quotes.submit(form({ serviceZip: '02149' }))
+  assert.equal(near.quote.exception, false)
+  assert.equal(quotes.listForOwner().find(row => row.request.id === near.request.id).request.serviceMiles, 2)
+})
+
+test('with the check switched off every known ZIP is accepted and the owner still sees the miles', async t => {
+  const { inventory } = setup(t)
+  const quotes = new Quotes(inventory, { serviceArea: readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: 'off' }) })
+  const { request, quote } = quotes.submit(form({ serviceZip: '04401' }))
+  assert.equal(quote.exception, true, 'still past the review distance, so still flagged')
+  assert.ok(quote.exceptionReasons.some(reason => /about 200 miles/.test(reason)))
+  assert.equal(quotes.listForOwner().find(row => row.request.id === request.id).request.serviceMiles, 200)
+  assert.throws(() => quotes.submit(form({ serviceZip: '99999' })), /do not recognise/, 'unknown is still unknown')
+})
+
+test('special instructions are stored for the owner, capped, optional, and never in the customer shape', async t => {
+  // t64: "Anything else I should know?". The first field added since t44
+  // made the customer shape a positive list, and the test of whether that
+  // held: nothing in CUSTOMER_REQUEST_FIELDS was edited to exclude it.
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form({ customerNotes: '  Gate code 4411, call when you arrive  ' }))
+  assert.equal(stored(quotes, request.id).customerNotes, 'Gate code 4411, call when you arrive', 'trimmed, on the owner row')
+  assert.equal('customerNotes' in quotes.get(request.id).request, false, 'not in the customer shape by id')
+  assert.equal('customerNotes' in quotes.listForCustomer(KEY)[0].request, false, 'nor in the customer list')
+
+  assert.equal(stored(quotes, quotes.submit(form()).request.id).customerNotes, '', 'optional: absent reads as empty')
+  assert.equal(stored(quotes, quotes.submit(form({ customerNotes: 'x'.repeat(500) })).request.id).customerNotes.length, 500, 'five hundred is allowed')
+  assert.throws(() => quotes.submit(form({ customerNotes: 'x'.repeat(501) })), /customerNotes is too long/)
+  assert.throws(() => quotes.submit(form({ customerNotes: 42 })), /customerNotes must be text/)
 })
 
 test('a name and email are required; the email is stored lower-cased and trimmed', async t => {
@@ -283,6 +368,80 @@ test('paying needs the key that submitted, and a quote the owner has approved', 
   assert.equal(quotes.pay(request.id, KEY).quote.status, 'paid')
 })
 
+/* --------------------------------------------------- rate limits (t45, #63) */
+
+/** Small windows, so a test can reach them in a handful of calls. */
+const smallRules = {
+  publicPerIp: { max: 4, windowMs: 60_000 },
+  publicPerKey: { max: 2, windowMs: 60_000 },
+  submitPerEmail: { max: 3, windowMs: 60_000 },
+}
+
+test('public writes from one address are refused past the limit, with the wait named, and reads are not', async t => {
+  const { inventory, quotes } = setup(t)
+  const logged = []
+  const limiter = new RateLimiter({ rules: smallRules, log: line => logged.push(line) })
+  const base = await serve(t, quotes, inventory, { limiter })
+
+  // Four allowed: each with its own key and email, so only the address counts.
+  for (let i = 0; i < 4; i++) {
+    const created = await post(base, '/api/requests', form({ customerKey: `0000000000000${String(i).padStart(3, '0')}`, customerEmail: `c${i}@example.com` }))
+    assert.equal(created.status, 201, `submission ${i + 1} is under the limit`)
+  }
+  const fifth = await post(base, '/api/requests', form({ customerKey: '00000000000000ff', customerEmail: 'c9@example.com' }))
+  assert.equal(fifth.status, 429)
+  assert.equal(fifth.headers.get('retry-after'), '60')
+  assert.match((await fifth.json()).error, /Too many requests from this connection/)
+  assert.equal(quotes.listForOwner().length, 4, 'the refused one was never stored')
+  assert.ok(logged.some(line => /publicPerIp refused/.test(line)), 'the refusal is logged')
+
+  // Pay and cancel share the address window: both are refused now too.
+  const id = quotes.listForOwner()[0].request.id
+  assert.equal((await post(base, `/api/requests/${id}/pay`, { customerKey: KEY })).status, 429)
+  assert.equal((await post(base, `/api/requests/${id}/cancel`, { customerKey: KEY })).status, 429)
+
+  // Reads are not counted: the status screen keeps working for everyone.
+  assert.equal((await fetch(`${base}/api/requests/${id}`)).status, 200)
+  assert.equal((await fetch(`${base}/api/requests?customer=${KEY}`)).status, 200)
+  assert.equal((await fetch(`${base}/api/catalog`)).status, 200)
+})
+
+test('one browser key and one email address have limits of their own', async t => {
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory, { limiter: new RateLimiter({ rules: { ...smallRules, publicPerIp: { max: 100, windowMs: 60_000 } }, log: () => {} }) })
+
+  // Two from one key, then the third from that key is refused while a different key still gets through.
+  assert.equal((await post(base, '/api/requests', form({ customerEmail: 'a@example.com' }))).status, 201)
+  assert.equal((await post(base, '/api/requests', form({ customerEmail: 'b@example.com' }))).status, 201)
+  const byKey = await post(base, '/api/requests', form({ customerEmail: 'c@example.com' }))
+  assert.equal(byKey.status, 429)
+  assert.match((await byKey.json()).error, /this browser/)
+  assert.equal((await post(base, '/api/requests', form({ customerKey: OTHER_KEY, customerEmail: 'd@example.com' }))).status, 201)
+
+  // Three naming one address, then the fourth is refused whichever key sends it.
+  const keys = ['0000000000000001', '0000000000000002', '0000000000000003', '0000000000000004']
+  for (const key of keys.slice(0, 3)) {
+    assert.equal((await post(base, '/api/requests', form({ customerKey: key, customerEmail: 'Same@Example.com' }))).status, 201)
+  }
+  const byEmail = await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'same@example.com' }))
+  assert.equal(byEmail.status, 429)
+  assert.match((await byEmail.json()).error, /email address has been used for too many requests today. Text us instead./)
+  assert.equal((await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'other@example.com' }))).status, 201, 'the key itself is fine')
+})
+
+test('a public body past the ceiling is refused before it is parsed, and the health check is never counted', async t => {
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory, { limiter: new RateLimiter({ rules: smallRules, log: () => {} }) })
+
+  const oversized = await post(base, '/api/requests', form({ locationNotes: 'x'.repeat(PUBLIC_BODY_LIMIT) }))
+  assert.equal(oversized.status, 413)
+  assert.equal(quotes.listForOwner().length, 0)
+
+  // Fly reads /api/health every fifteen seconds; a limiter that counted it
+  // would mark the machine unhealthy. Many more than any window allows, all 200.
+  for (let i = 0; i < 20; i++) assert.equal((await fetch(`${base}/api/health`)).status, 200)
+})
+
 test('an id that does not exist reads as nothing, not as someone else', async t => {
   const { quotes } = setup(t)
   assert.equal(quotes.get('0'.repeat(32)), null)
@@ -292,17 +451,24 @@ test('an id that does not exist reads as nothing, not as someone else', async t 
 /* ------------------------------------------------------------------- HTTP */
 
 /** A server shaped like server.mjs: the same gate, the same handlers. */
-function serve(t, quotes, inventory) {
+function serve(t, quotes, inventory, { limiter = null } = {}) {
   const auth = createAuth(readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password' }))
-  const requestsApi = createRequestsApi(quotes)
+  const requestsApi = createRequestsApi(quotes, { limiter })
   const catalogApi = createCatalogApi(inventory)
   const healthApi = createHealthApi(inventory)
   const ownerApi = createApi(inventory, { start: () => ({}), cancel: () => ({}) }, null, quotes)
 
   const server = createServer(async (request, response) => {
-    const url = new URL(request.url, 'http://localhost')
+    // As server.mjs does: the collapsed path is the one every handler sees.
+    const { url } = parseRequestUrl(request.url)
+    request.url = url.pathname + url.search
     if (await auth.handle(request, response, url, readJsonBody)) return
     if (url.pathname.startsWith('/api/')) {
+      if (!isKnownApiPath(url.pathname)) {
+        response.writeHead(404, { 'Content-Type': 'application/json' })
+        response.end(JSON.stringify({ error: 'No such endpoint.' }))
+        return
+      }
       if (!isPublicApiCall(request.method, url.pathname) && !auth.isAuthenticated(request)) {
         response.writeHead(401, { 'Content-Type': 'application/json' })
         response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' }))
@@ -368,7 +534,7 @@ test('a customer with no session can submit, read and pay; the owner API still c
   assert.equal((await fetch(`${base}/api/owner/markup`)).status, 401)
 })
 
-test('the public rule opens the customer paths and nothing else', async t => {
+test('the public rule opens the customer paths and nothing else', async () => {
   // The allow-list is a prefix, so this pins what the prefix does and does not
   // reach -- a route added under it later stays behind the session by default.
   assert.equal(isPublicApiCall('GET', '/api/catalog'), true)
@@ -380,12 +546,48 @@ test('the public rule opens the customer paths and nothing else', async t => {
 
   assert.equal(isPublicApiCall('POST', '/api/catalog'), false)
   assert.equal(isPublicApiCall('POST', '/api/health'), false)
+  assert.equal(isPublicApiCall('HEAD', '/api/health'), true, 'uptime tools HEAD the health check')
+  assert.equal(isPublicApiCall('HEAD', '/api/catalog'), false, 'nothing HEADs a JSON data endpoint; left GET-only on purpose')
+  assert.equal(isPublicApiCall('HEAD', '/api/requests'), false)
   assert.equal(isPublicApiCall('GET', '/api/owner/health'), false)
   assert.equal(isPublicApiCall('DELETE', '/api/requests/abc123'), false)
   assert.equal(isPublicApiCall('POST', '/api/requests/abc123'), false)
   assert.equal(isPublicApiCall('POST', '/api/requests/abc123/approve'), false)
   assert.equal(isPublicApiCall('GET', '/api/owner/inventory'), false)
   assert.equal(isPublicApiCall('GET', '/api/requests/abc/pay'), false)
+})
+
+test('a path no handler knows is 404, not an invitation to sign in', async t => {
+  // Every unmatched /api/* path answered 401 with the owner sign-in message:
+  // a customer with a slip in a link was told to sign in to a workspace they
+  // do not have. Known areas: the public calls and the owner's; nothing else.
+  assert.equal(isKnownApiPath('/api/catalog'), true)
+  assert.equal(isKnownApiPath('/api/health'), true)
+  assert.equal(isKnownApiPath('/api/requests'), true)
+  assert.equal(isKnownApiPath('/api/requests/abc/pay'), true)
+  assert.equal(isKnownApiPath('/api/owner/inventory'), true)
+  assert.equal(isKnownApiPath('/api/owner/nonsense'), true, 'the owner area is known even where the route is not; which routes exist is the owner\'s business')
+  assert.equal(isKnownApiPath('/api/nonsense'), false)
+  assert.equal(isKnownApiPath('/api/api/catalog'), false)
+  assert.equal(isKnownApiPath('/api/requestsx'), false, 'a prefix match is on the segment, not the string')
+  assert.equal(isKnownApiPath('/api/owner'), false, 'the owner area is under /api/owner/, not the bare name')
+
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory)
+  const nonsense = await fetch(`${base}/api/nonsense`)
+  assert.equal(nonsense.status, 404)
+  assert.deepEqual(await nonsense.json(), { error: 'No such endpoint.' })
+  const owner = await fetch(`${base}/api/owner/inventory`)
+  assert.equal(owner.status, 401, 'a real owner route without a session is still the sign-in answer')
+  assert.equal((await fetch(`${base}/api/owner/nonsense`)).status, 401)
+  assert.equal((await fetch(`${base}/api/catalog`)).status, 200)
+  // A doubled slash reaches the handler as the path it meant, end to end:
+  // the collapse has to be written back onto the request, because every
+  // handler parses request.url for itself.
+  const slipped = await fetch(`${base}/api//catalog`)
+  assert.equal(slipped.status, 200, 'the catalog, not a sign-in message and not a 404')
+  assert.ok(Array.isArray((await slipped.json()).tires))
+  assert.equal((await fetch(`${base}/api/api//catalog`)).status, 404)
 })
 
 test('the catalog handler answers the catalog and nothing else', async t => {
@@ -403,6 +605,34 @@ test('the catalog handler answers the catalog and nothing else', async t => {
 
   const catalog = await (await fetch(base + '/api/catalog')).json()
   assert.ok(Array.isArray(catalog.tires), 'and the catalog still answers its own path')
+})
+
+test('the catalog is cached for five minutes, and ?size narrows it to one size', async t => {
+  const OTHER_SIZE = '225/50R17'
+  const inventory = new Inventory(':memory:', [SIZE, OTHER_SIZE])
+  t.after(() => inventory.close())
+  inventory.importSnapshot({
+    source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE, OTHER_SIZE],
+    tires: [tire('giga-a', { size: SIZE }), tire('giga-b', { size: OTHER_SIZE, name: 'Second' })],
+  })
+  inventory.saveMarkup({ rate: 1.4 })
+  const quotes = new Quotes(inventory)
+  const base = await serve(t, quotes, inventory)
+
+  const whole = await fetch(base + '/api/catalog')
+  assert.equal(whole.headers.get('cache-control'), 'public, max-age=300')
+  const wholeSizes = (await whole.json()).tires.map(t => t.size).sort()
+  assert.deepEqual(wholeSizes, [OTHER_SIZE, SIZE].sort(), 'no size param answers every size')
+
+  const narrowed = await fetch(base + `/api/catalog?size=${encodeURIComponent(SIZE)}`)
+  assert.equal(narrowed.headers.get('cache-control'), 'public, max-age=300')
+  const narrowedTires = (await narrowed.json()).tires
+  assert.equal(narrowedTires.length, 1)
+  assert.equal(narrowedTires[0].size, SIZE)
+  assert.equal(narrowedTires[0].id, 'giga-a')
+
+  const unsupported = await (await fetch(base + '/api/catalog?size=999/99R99')).json()
+  assert.deepEqual(unsupported.tires, [], 'a size nothing matches answers empty, not an error')
 })
 
 /* ------------------------------------------------------- owner review (t30) */
@@ -431,6 +661,38 @@ test('the owner sees every request with the tire it was quoted for', async t => 
   assert.equal(mine.request.customerName, 'Jamie Rivera', 'the owner sees who to contact')
   assert.equal(mine.request.customerEmail, 'jamie@example.com')
   assert.equal(mine.request.customerPhone, '+16174108319')
+})
+
+test("the owner's row carries the supplier's stock and when it was last seen; the customer's carries no tire at all", async t => {
+  // Approval is the one human gate in the flow, and refreshes are monthly.
+  // The customer catalog strips stock and lastSeen by design (R16), so the
+  // owner was deciding against a tire it could not see the state of (#105).
+  const { inventory, quotes } = setup(t)
+  const { request } = quotes.submit(form())
+
+  const listed = quotes.listForOwner().find(row => row.request.id === request.id)
+  assert.equal(listed.tire.supplierStock, 12, 'the count the supplier last showed')
+  assert.equal(listed.tire.supplierLastSeen, '2026-09-05T15:00:00Z', 'when the supplier last showed it')
+  assert.equal(listed.tire.supplierActive, true)
+  assert.equal(listed.tire.price, 70, 'the quoted price is still the marked-up customer price, not the supplier cost')
+
+  // A complete refresh that no longer lists the tire retires it: stock is what
+  // it last was, and the row says the supplier has stopped listing it.
+  inventory.refreshSize(SIZE, [tire('giga-b', { name: 'Replacement' })])
+  const retired = quotes.listForOwner().find(row => row.request.id === request.id)
+  assert.equal(retired.tire.supplierActive, false)
+  assert.equal(retired.tire.supplierStock, 12)
+  assert.equal(retired.tire.name, 'Test Touring', 'the tire that was quoted is still named')
+
+  // A supplier that shows none in stock says so, as a number the card can warn on.
+  inventory.refreshSize(SIZE, [tire('giga-a', { inStock: false, source: { ...tire().source, stock: 0 } })])
+  assert.equal(quotes.listForOwner().find(row => row.request.id === request.id).tire.supplierStock, 0)
+
+  // The customer's shapes carry no tire object, so nothing here can leak that way.
+  assert.equal('tire' in quotes.get(request.id), false)
+  assert.equal('tire' in quotes.listForCustomer(KEY)[0], false)
+  // Nor does the owner row's tire carry the supplier's URL, SKU or list price.
+  assert.deepEqual(Object.keys(listed.tire).sort(), ['id', 'name', 'price', 'size', 'supplierActive', 'supplierLastSeen', 'supplierStock'])
 })
 
 test('a tire that has since left the catalog still shows what was quoted', async t => {
@@ -795,10 +1057,17 @@ test('health answers a machine with no session, and nothing else does', async t 
   assert.equal(answer.headers.get('cache-control'), 'no-store', 'a cached health check is not a health check')
   assert.deepEqual(await answer.json(), { ok: true })
 
-  // A GET only, and the session gate is what refuses the rest: the allow-list
-  // opens this path for GET alone, so a POST is 401 before the handler is
-  // reached. That is the right layer for it -- the handler is not the thing
-  // standing between the public and a write.
+  // HEAD is what uptime tools send: the same status, no body. The baseline
+  // recorded it as 401, which reads a healthy machine as refusing.
+  const head = await fetch(`${base}/api/health`, { method: 'HEAD' })
+  assert.equal(head.status, 200)
+  assert.equal(head.headers.get('cache-control'), 'no-store')
+  assert.equal(await head.text(), '', 'no body on a HEAD')
+
+  // GET and HEAD only, and the session gate is what refuses the rest: the
+  // allow-list opens this path for those alone, so a POST is 401 before the
+  // handler is reached. That is the right layer for it -- the handler is not
+  // the thing standing between the public and a write.
   const posted = await post(base, '/api/health', {})
   assert.equal(posted.status, 401, 'refused by the gate, not by the handler')
 
@@ -856,6 +1125,8 @@ test('the Host guard refuses a strange host, and never the health check', async 
   const allowed = ['kmt.fly.dev']
 
   assert.equal(isHostAllowed('kmt.fly.dev', '/', allowed), true)
+  assert.equal(isHostAllowed('KMT.Fly.Dev', '/', allowed), true, 'hostnames are case-insensitive, as the redirect already treats them')
+  assert.equal(isHostAllowed('kensmobiletire.com', '/', ['KensMobileTire.com']), true, 'in the allow-list too')
   assert.equal(isHostAllowed('evil.example.com', '/', allowed), false)
   assert.equal(isHostAllowed('evil.example.com', '/api/catalog', allowed), false,
     'the exemption is for the health path alone')

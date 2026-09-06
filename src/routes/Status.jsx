@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { cancelRequest, myRequests, payRequest, requestById } from '../store'
+import { useNoIndex } from '../noindex.js'
+import { PrivacyFooter } from './Privacy.jsx'
 
 /**
  * What the customer sees after asking for a quote.
@@ -22,6 +24,7 @@ const STAGE = { draft: 2, sent: 3, approved: 3, paid: 4, done: 4 }
 const CANCELLABLE = ['draft', 'sent', 'approved']
 
 function Status({ navigate }) {
+  useNoIndex()
   const requested = new URLSearchParams(window.location.search).get('request')
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -77,15 +80,15 @@ function Status({ navigate }) {
   return (
     <div className="app-shell status-shell">
       <nav className="internal-nav">
-        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
+        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
         <div className="internal-nav-links">
           <button className="btn btn-neutral" onClick={() => navigate('/')}>← New Request</button>
-          <button className="btn btn-neutral" onClick={() => navigate('/owner')}>Owner Review →</button>
         </div>
       </nav>
       <div className="owner-content">
         <p className="eyebrow">YOUR QUOTE</p>
         <h1 className="owner-heading">Quote Status</h1>
+        <p className="text-secondary" role="note">Save this link; it is how you find your quote again.</p>
         <p className="text-secondary owner-subhead" role="status">
           {loading ? 'Checking with the shop…' : 'Track your request and the shop’s decision.'}
         </p>
@@ -159,6 +162,7 @@ function Status({ navigate }) {
           </div>
         )}
       </div>
+      <PrivacyFooter navigate={navigate} />
     </div>
   )
 }

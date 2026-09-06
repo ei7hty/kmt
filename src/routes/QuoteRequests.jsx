@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import SignIn from '../owner/SignIn.jsx'
+import { useNoIndex } from '../noindex.js'
 import { NeedsSignIn, actOnQuote, ownerRequests } from '../store'
 import { signOut } from '../owner/session.js'
+import { exactTime, timeAgo } from '../owner/timeAgo.js'
+import { PrivacyFooter } from './Privacy.jsx'
 
 /** A stored US number, +16174108319, as a person reads it: (617) 410-8319. Anything else as stored. */
 const formatPhone = (phone) => {
@@ -56,6 +59,7 @@ const CLOSED_NOTE = {
 }
 
 function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
+  useNoIndex()
   const [view, setView] = useState('open')
   const [requests, setRequests] = useState([])
   const [counts, setCounts] = useState({})
@@ -68,7 +72,9 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
     setLoading(true)
     try {
       const data = await ownerRequests(view)
-      setRequests(data.requests)
+      // Newest first everywhere, except that what needs the owner is shown
+      // longest-waiting first: the API returns every view newest first.
+      setRequests(view === 'attention' ? [...data.requests].reverse() : data.requests)
       setCounts(data.counts)
       setError('')
       setNeedsSignIn(false)
@@ -129,7 +135,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
   return (
     <div className="app-shell owner-shell">
       <nav className="internal-nav">
-        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
+        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
         <div className="internal-nav-links"><button className="btn btn-neutral" onClick={() => navigate('/owner')}>← Inventory</button><button className="btn btn-neutral" onClick={() => navigate('/')}>Back to Customer Flow</button><button className="btn btn-neutral" onClick={leave}>Sign out</button></div>
       </nav>
       <div className="owner-content">
@@ -157,13 +163,33 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
               const tireLine = quote?.lineItems?.find(item => item.description !== 'Mobile installation service')
               return (
               <div key={request.id} className="panel owner-request">
-                <p className="owner-request-vehicle">{request.vehicleInfo}</p>
+                <div className="owner-request-head">
+                  <p className="owner-request-vehicle">{request.vehicleInfo}</p>
+                  <code className="owner-request-ref" title={`Request ${request.id}`}>#{request.id.slice(0, 8)}</code>
+                </div>
+                {request.createdAt && <p className="owner-request-age" title={exactTime(request.createdAt)}>Submitted {timeAgo(request.createdAt)}</p>}
                 <dl className="owner-details">
                   <div><dt>Tire:</dt> <dd>{tire?.name ? `${tireLine ? `${tireLine.quantity} × ` : ''}${tire.name} · ${tire.size}` : `${tire?.id ?? request.tireSelection} (no longer in the catalog)`}</dd></div>
+                  {/* #105: what the supplier last showed for this tire, read off the
+                      supplier row rather than the customer catalog, so Ken approves
+                      against stock as it was seen, not as the catalog assumes. The
+                      zero-stock warning is a separate line, by design. */}
+                  {tire && tire.supplierActive !== null && tire.supplierActive !== undefined && (
+                    <div className="owner-request-supplier" data-stock={tire.supplierStock ?? ''}><dt>Supplier:</dt> <dd>
+                      {tire.supplierActive === false
+                        ? <>No longer lists this tire{tire.supplierLastSeen && <> · last seen <span title={exactTime(tire.supplierLastSeen)}>{timeAgo(tire.supplierLastSeen)}</span></>}</>
+                        : <>{tire.supplierStock === null || tire.supplierStock === undefined ? 'stock not shown' : `${tire.supplierStock} in stock`}{tire.supplierLastSeen && <> · seen <span title={exactTime(tire.supplierLastSeen)}>{timeAgo(tire.supplierLastSeen)}</span></>}</>}
+                    </dd></div>
+                  )}
                   <div><dt>Location:</dt> <dd>{request.location}</dd></div>
                   <div><dt>Preferred Date:</dt> <dd>{request.date}</dd></div>
                   <div><dt>Contact:</dt> <dd>{request.customerEmail ? <>{request.customerName} · <a href={`mailto:${request.customerEmail}`}>{request.customerEmail}</a>{request.customerPhone && <> · <a href={`tel:${request.customerPhone}`}>{formatPhone(request.customerPhone)}</a></>}</> : <span className="text-secondary">No contact on file (submitted before this was collected)</span>}</dd></div>
                 </dl>
+                {/* The supplier's count is a fact the card shows (#170); this is the judgement on it (#105):
+                    shown only while the supplier still lists the tire and shows none, never for a
+                    delisted tire, whose own row already says so. A note after the list, like the
+                    card's other judgements, not a labelled fact inside it. */}
+                {tire?.supplierStock === 0 && tire?.supplierActive !== false && <p className="status-note status-note-wait owner-stock-warning" role="status">Supplier shows none in stock. Check before sending.</p>}
                 {quote && <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
                   <div className="owner-quote-summary"><div><p className="text-secondary">Draft Quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{quote.status}</span></div>
                   {quote.exception && <div className="owner-exception-note"><p>Owner review required</p><ul>{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
@@ -185,6 +211,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
           </div>
         )}
       </div>
+      <PrivacyFooter navigate={navigate} />
     </div>
   )
 }

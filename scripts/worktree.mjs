@@ -175,7 +175,7 @@ function remove({ name }) {
   console.log(`Removed ${path.relative(ROOT, tree)}.`)
 
   if (!known.branch) return
-  let merged = false
+  let merged
   try { git(['merge-base', '--is-ancestor', tip, 'origin/main']); merged = true } catch { merged = false }
   if (merged) {
     git(['branch', '-D', known.branch])

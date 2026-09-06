@@ -7,12 +7,14 @@
  * the path, and offers the three places a person here could have meant. It
  * changes no route: a known path never reaches it.
  */
+import { PrivacyFooter } from './Privacy.jsx'
+
 function NotFound({ navigate, path }) {
   const go = (to) => (event) => { event.preventDefault(); navigate(to) }
   return (
     <div className="app-shell status-shell">
       <nav className="internal-nav">
-        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
+        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
       </nav>
       <div className="owner-content">
         <p className="eyebrow">NOT FOUND</p>
@@ -23,10 +25,10 @@ function NotFound({ navigate, path }) {
           <div className="tire-empty-actions">
             <a href="/" onClick={go('/')} className="btn btn-primary">Order tires</a>
             <a href="/status" onClick={go('/status')} className="btn btn-neutral">My quote</a>
-            <a href="/owner" onClick={go('/owner')} className="btn btn-neutral">Owner review</a>
           </div>
         </div>
       </div>
+      <PrivacyFooter navigate={navigate} />
     </div>
   )
 }

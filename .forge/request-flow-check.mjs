@@ -1,3 +1,4 @@
+/* global innerWidth */ // used inside a locator evaluate, which runs in the browser
 import { chromium } from 'playwright'
 import { cleanTireFor, expandTireList, openOwnerQuotes } from './audit-ui.mjs'
 import assert from 'node:assert/strict'

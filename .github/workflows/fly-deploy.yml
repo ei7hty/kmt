@@ -48,7 +48,12 @@ jobs:
       # Every backend test file, not one named file: a new suite that CI does not
       # run is a suite that passes locally and guards nothing.
       - run: node --test backend/*.test.mjs
-      - run: npx eslint src backend
+      # The whole tree, not just src and backend: scripts/ and .forge/ are .mjs
+      # too, and the audits under .forge/ are the files that decide whether
+      # everything else is correct. An undefined name in one of them should fail
+      # here, as a named lint error, not at runtime as a mysterious audit error.
+      # eslint.config.js already scopes what it covers.
+      - run: npx eslint .
       - run: npm run build
 
       # The built bundle is public. Supplier data is not supposed to be in it.
@@ -141,9 +146,181 @@ jobs:
           node .forge/request-flow-check.mjs
           node .forge/responsive-check.mjs
 
+  # Does the image build, boot, and reach its data?
+  #
+  # Nothing else in this repository answers that. `flyctl deploy --remote-only`
+  # builds and releases in one step, so before this job the first time anyone
+  # ran a changed image was in production -- on the single machine that holds
+  # the customer database and does not auto-restart. "Deploy it and watch" was
+  # the only verification available for a Dockerfile change.
+  #
+  # It is also the gate for a failure this repository has now hit twice in one
+  # day, caught both times by a person rather than a check: a .dockerignore rule
+  # that excludes something the app reads at boot. The container starts, serves,
+  # answers a health check, and has an empty catalog. Every test passes. That is
+  # why this job asserts the catalog and not only health -- health alone sails
+  # straight through it.
+  image:
+    name: The image builds and boots
+    runs-on: ubuntu-latest
+    # The scope step below answers two questions for the jobs downstream: build
+    # (does the gate's docker build have to run) and ship (did the deployed
+    # artifact change, which deploy and verify gate on). A docs-only push does
+    # neither -- no build, no deploy, no re-audit -- rather than replacing the
+    # machine to carry a Markdown change; a frontend change does not force the
+    # gate build but does ship.
+    outputs:
+      build: ${{ steps.scope.outputs.build }}
+      ship: ${{ steps.scope.outputs.ship }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The whole history, because the step below diffs against the base.
+          fetch-depth: 0
+
+      # A docker build on a documentation change is cost with no return, so the
+      # heavy steps are skipped rather than the job. A job that skips would take
+      # `deploy` with it -- a skipped dependency skips its dependents -- and
+      # every docs merge would stop deploying. So this job always runs and
+      # always succeeds; it is the steps that are conditional.
+      #
+      # When it cannot tell what changed, it builds. A needless build costs four
+      # minutes; a skipped one ships an image nobody ran.
+      - name: Decide whether this change can affect the image
+        id: scope
+        run: |
+          # Two questions, two answers, because they are not the same question.
+          #
+          # build: does the GATE's docker build have to run? Only when the image
+          # or what it installs changed. The frontend build is already proven by
+          # `npm run build` in the check job, so a frontend-only change needs no
+          # second build here (#161).
+          build_paths='^(Dockerfile|\.dockerignore|fly\.toml|package-lock\.json|package\.json|backend/|src/data/|\.github/workflows/)'
+          # ship: did the DEPLOYED ARTIFACT change? Broader, and this is the one
+          # deploy gates on. The Dockerfile builds dist/ from ALL of src/, plus
+          # index.html and public/, so a change to any of them IS a change to the
+          # running image and must deploy -- gating deploy on `build` would skip a
+          # CSS or route change silently, an image nobody shipped (t53). `ship` is
+          # a superset of `build`: everything that forces a build also ships.
+          ship_paths='^(Dockerfile|\.dockerignore|fly\.toml|package-lock\.json|package\.json|backend/|src/|index\.html|public/|\.github/workflows/)'
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base='${{ github.event.pull_request.base.sha }}'
+          else
+            base='${{ github.event.before }}'
+          fi
+
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "no usable base ref; building and shipping rather than guessing"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "ship=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "$base" "${{ github.sha }}")"
+          echo "changed files:"; echo "$changed"
+          if echo "$changed" | grep -Eq "$build_paths"; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no image or backend file changed; the gate build is skipped"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$changed" | grep -Eq "$ship_paths"; then
+            echo "ship=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no file that reaches the deployed image changed; nothing to ship"
+            echo "ship=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Built from the repository root with the real .dockerignore in play. That
+      # is the point: the failure this catches is a file wrongly excluded from
+      # the build context, which is invisible unless the context is the real one.
+      - name: Build the image
+        if: steps.scope.outputs.build == 'true'
+        # The same --build-arg the real deploy passes, so the gate builds the
+        # image production builds. Without it the gate would prove an image that
+        # carries no release header while production carries one -- a header that
+        # differs between the two is worse than none, because it is trusted.
+        run: docker build --build-arg GIT_SHA=${GITHUB_SHA::7} -t kmt-gate .
+
+      # Booted the way Fly boots it: a volume at /data, the database inside it,
+      # a throwaway password. If the image ever cannot write there -- which is
+      # exactly what dropping to a non-root user without changing /data
+      # ownership would cause (#87) -- this is where it surfaces, as a red job
+      # instead of a machine that will not start.
+      - name: Boot it and prove it can serve
+        if: steps.scope.outputs.build == 'true'
+        run: |
+          docker volume create kmt-gate-data
+          docker run -d --name kmt-gate \
+            -e KMT_OWNER_PASSWORD=gate-only-password-not-a-secret \
+            -e KMT_SESSION_SECRET=gate-only-session-secret \
+            -e KMT_OWNER_DB=/data/gate.sqlite \
+            -e PORT=8080 \
+            -v kmt-gate-data:/data \
+            -p 8099:8080 \
+            kmt-gate
+
+          # Polled, not slept: the first boot runs the migration and the seed,
+          # and both are silent, so their duration is not something to guess at.
+          ready=false
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://localhost:8099/api/health 2>/dev/null; then
+              ready=true; break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != "true" ]; then
+            echo "FAIL: the container never became healthy in 120s"
+            exit 1
+          fi
+
+          health="$(curl -fsS http://localhost:8099/api/health)"
+          echo "health: $health"
+          echo "$health" | grep -q '"ok":true' || { echo "FAIL: health did not report ok"; exit 1; }
+
+          # What this catches that the health poll does not.
+          #
+          # The two assertions cover different failures and both are needed. A
+          # file the app reads at *boot* takes the process down -- seeding does
+          # an unguarded readFileSync of src/data/scraped-tires.json -- and the
+          # poll above catches that, because the container never becomes
+          # healthy. A file read *after* boot does not: the image starts,
+          # serves, answers health, and fails only when a customer touches the
+          # feature. backend/zip-centroids.json is exactly that shape -- an
+          # image without it boots clean and then recognises no postcode.
+          #
+          # This assertion sees the second kind, by asking for data rather than
+          # for a pulse. It depends on the catalog being seeded at boot from
+          # src/data/scraped-tires.json; if seeding ever moves, it moves too.
+          tires="$(curl -fsS http://localhost:8099/api/catalog | jq '.tires | length')"
+          echo "catalog rows: $tires"
+          if [ "$tires" -lt 1 ]; then
+            echo "FAIL: the image boots and serves an empty catalog."
+            echo "The usual cause is a .dockerignore rule excluding src/data/."
+            exit 1
+          fi
+
+      # A container that dies at boot leaves nothing else to read.
+      - name: What the container said
+        if: failure() && steps.scope.outputs.build == 'true'
+        run: |
+          docker logs kmt-gate 2>&1 | tail -50 ||
+            echo "no container: the build failed before one started, so the build log above is the failure"
+
+      - name: Clean up
+        if: always() && steps.scope.outputs.build == 'true'
+        run: |
+          docker rm -f kmt-gate 2>/dev/null || true
+          docker volume rm kmt-gate-data 2>/dev/null || true
+
   deploy:
     name: Deploy to Fly
-    needs: check
+    # Both, so an image that cannot boot stops the release. A Docker Hub hiccup
+    # blocking a good deploy is the cost; a retry clears that, and nothing
+    # clears an image already on the one machine that cannot open /data.
+    needs: [check, image]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -154,9 +331,25 @@ jobs:
       # Bump deliberately: check what changed, then move the SHA.
       # ed8efb3 = master as of 2026-04-08.
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
-      - run: flyctl deploy --remote-only --ha=false
+      # Skip the flyctl step, not the deploy job: verify needs deploy, and a
+      # skipped job skips its dependents. So on a docs-only push the job runs
+      # and succeeds with nothing shipped, and the running release stands rather
+      # than being replaced to carry a Markdown change (t53, #103). The signal is
+      # `ship` -- did the deployed artifact change -- which is broader than the
+      # gate's `build`: a CSS or route change does not force the gate's docker
+      # build but must still deploy, because dist/ is built from all of src/.
+      #
+      # --build-arg GIT_SHA: the seven-character commit, baked into the image as
+      # KMT_RELEASE, which the server answers as X-KMT-Release. It rides here and
+      # on the gate's docker build both, so a cutover step reads with one curl.
+      - name: Deploy the release
+        if: needs.image.outputs.ship == 'true'
+        run: flyctl deploy --remote-only --ha=false --build-arg GIT_SHA=${GITHUB_SHA::7}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Nothing reached the image
+        if: needs.image.outputs.ship != 'true'
+        run: echo "No file that reaches the deployed image changed; the running release stands (t53)."
 
   # The browser audits are the project's actual contract, and they only mean
   # anything against a real deployment -- this build passed every local check
@@ -165,7 +358,13 @@ jobs:
   # remember to check, and a failure here is the signal to roll back.
   verify:
     name: Audit the deployed site
-    needs: deploy
+    # deploy runs on every main push -- its flyctl step is what skips on a
+    # docs-only change -- so this audit is gated on the same `ship` signal.
+    # When nothing shipped there is nothing new to read, and checking
+    # X-KMT-Release against a SHA that was never deployed would read as a stale
+    # image when the truth is that nothing deployed. So verify skips too.
+    needs: [deploy, image]
+    if: needs.image.outputs.ship == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -176,12 +375,18 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Wait for the new release to answer
+        # The deployed origin, a repository variable so the cutover changes it in
+        # one place rather than in this file. Unset, it falls back to the Fly
+        # name that has been the deployed origin all along. Read into an env var,
+        # not inlined into the script, so the value cannot break the shell.
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS -o /dev/null https://kmt.fly.dev/; then exit 0; fi
+            if curl -fsS -o /dev/null "$DEPLOY_URL/"; then exit 0; fi
             sleep 5
           done
-          echo "kmt.fly.dev did not respond within 150s"; exit 1
+          echo "$DEPLOY_URL did not respond within 150s"; exit 1
       # What this run proves is the deploy, not the flow.
       #
       # The three flow audits perform the journey -- submit, approve, pay --
@@ -200,4 +405,34 @@ jobs:
       # production password belongs in this workflow.
       - run: node .forge/deployed-site-check.mjs
         env:
-          AUDIT_BASE: https://kmt.fly.dev
+          AUDIT_BASE: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
+
+      # The one thing deployed-site-check cannot prove, because it is what this
+      # run just built: that the release now answering is this commit. The
+      # server answers X-KMT-Release when the image carries KMT_RELEASE, which
+      # the deploy step baked in with --build-arg. Two failures with different
+      # fixes, so the messages name which: an ABSENT header is a build-arg that
+      # was not passed; a header that lags the commit is a stale image, the one
+      # this run built not being the one now serving. It retries because a Fly
+      # rollover can still be answering from the old machine for a few seconds.
+      - name: Confirm the deployed release answers as X-KMT-Release
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
+        run: |
+          expected="${GITHUB_SHA::7}"
+          got=''
+          for i in $(seq 1 12); do
+            got="$(curl -fsS -D - -o /dev/null "$DEPLOY_URL/" | tr -d '\r' | grep -i '^x-kmt-release:' | awk '{print $2}')"
+            if [ "$got" = "$expected" ]; then
+              echo "OK: the deployed release answers X-KMT-Release: $expected"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "expected X-KMT-Release: $expected; got: ${got:-<absent>}"
+          if [ -z "$got" ]; then
+            echo "FAIL: no X-KMT-Release header after 60s -- the image was built without --build-arg GIT_SHA, or the server is not emitting it. This is a build-arg-not-passed failure, not a stale image."
+          else
+            echo "FAIL: X-KMT-Release is $got but this deploy is $expected -- the header is present, so the arg was passed; a value that lags the commit means the running image is not the one this run built. This is a stale image, not a missing arg."
+          fi
+          exit 1

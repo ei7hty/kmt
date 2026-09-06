@@ -11,7 +11,7 @@
 .min-h-screen {
   min-height: 100svh;
   color: var(--text);
-  background: radial-gradient(circle at 50% -10%, #282828 0, var(--bg) 42rem) !important;
+  background: radial-gradient(circle at 50% -10%, #171717 0, var(--bg) 42rem) !important;
 }
 
 .min-h-screen > nav {
@@ -38,7 +38,7 @@
 :where(.min-h-screen) a.inline-block {
   border: 1px solid var(--accent);
   border-radius: 3px;
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
   font-family: var(--sans);
   font-weight: 800;
@@ -59,7 +59,7 @@
   padding: 34px !important;
   border: 1px solid var(--border);
   border-radius: 4px !important;
-  background: linear-gradient(145deg, rgba(28, 28, 28, 0.96), rgba(13, 13, 13, 0.96)) !important;
+  background: linear-gradient(145deg, rgba(23, 23, 23, 0.96), rgba(8, 8, 8, 0.96)) !important;
   box-shadow: var(--shadow);
   text-align: left;
 }
@@ -70,7 +70,7 @@
 }
 
 .min-h-screen > .max-w-2xl > p {
-  color: #88888c;
+  color: var(--muted);
 }
 
 .min-h-screen form {
@@ -82,7 +82,7 @@
 .min-h-screen label {
   display: block;
   margin-bottom: 7px;
-  color: #e8e8e8;
+  color: #dedee3;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 1px;
@@ -94,7 +94,7 @@
   width: 100%;
   border: 1px solid #3e3e42;
   border-radius: 3px;
-  background: #0b0b0b;
+  background: #080808;
   color: var(--text-h);
   padding: 13px 14px;
   outline: none;
@@ -120,7 +120,7 @@
 .min-h-screen .text-gray-500,
 .min-h-screen .text-gray-600,
 .min-h-screen .text-gray-700 {
-  color: #96969a !important;
+  color: var(--muted) !important;
 }
 
 .min-h-screen .text-gray-800,
@@ -164,7 +164,7 @@
 
   .min-h-screen > nav button {
     flex: 1;
-    min-height: 42px;
+    min-height: 44px;
     padding-inline: 10px !important;
     font-size: 11px;
   }
@@ -178,8 +178,8 @@
 /* Customer-facing KMT home and ordering experience */
 .customer-shell {
   overflow: hidden;
-  background: #070707 !important;
-  color: #d8d8da;
+  background: #080808 !important;
+  color: #dedee3;
 }
 
 .customer-shell > .site-nav {
@@ -191,8 +191,8 @@
   max-width: none;
   margin: 0 !important;
   padding: 13px clamp(18px, 4vw, 54px);
-  border-bottom: 1px solid #262629;
-  background: rgba(5, 5, 5, 0.94);
+  border-bottom: 1px solid #171717;
+  background: rgba(13, 27, 36, 0.94);
 }
 
 .customer-shell .site-nav::before {
@@ -230,7 +230,7 @@
 
 .brand-mark small {
   margin-top: 5px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--sans);
   font-size: 8px;
   font-weight: 900;
@@ -251,7 +251,7 @@
   border-bottom: 2px solid transparent !important;
   border-radius: 0 !important;
   background: transparent !important;
-  color: #dedede !important;
+  color: #dedee3 !important;
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.6px;
@@ -260,7 +260,7 @@
 .site-links button:hover,
 .site-links button.active {
   border-bottom-color: var(--accent) !important;
-  color: var(--accent) !important;
+  color: var(--accent-text) !important;
   transform: none !important;
 }
 
@@ -268,7 +268,7 @@
   padding: 12px 18px;
   border: 1px solid var(--accent);
   border-radius: 4px;
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
   font-size: 12px;
   font-weight: 900;
@@ -282,7 +282,7 @@
   grid-template-columns: minmax(360px, 0.82fr) minmax(420px, 1.18fr);
   min-height: 480px;
   isolation: isolate;
-  background: radial-gradient(ellipse at 82% 44%, #343434 0, #151515 28%, #080808 65%);
+  background: radial-gradient(ellipse at 82% 44%, #303033 0, #121212 28%, #080808 65%);
 }
 
 .hero-section::after {
@@ -291,8 +291,8 @@
   inset: 0;
   content: '';
   opacity: 0.18;
-  background: repeating-linear-gradient(112deg, transparent 0 18px, #999 19px 20px, transparent 21px 40px);
-  mask-image: linear-gradient(90deg, #000, transparent 68%);
+  background: repeating-linear-gradient(112deg, transparent 0 18px, #909094 19px 20px, transparent 21px 40px);
+  mask-image: linear-gradient(90deg, #080808, transparent 68%);
 }
 
 .hero-copy {
@@ -304,7 +304,7 @@
 .eyebrow,
 .panel-kicker {
   margin: 0 0 12px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 13px;
   font-weight: 900;
   letter-spacing: 1.8px;
@@ -321,12 +321,12 @@
 }
 
 .hero-copy h1 span {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .hero-lede {
   margin-top: 24px;
-  color: #e2e2e2;
+  color: #dedee3;
   font-size: 16px;
   font-weight: 800;
   line-height: 1.55;
@@ -344,7 +344,7 @@
   padding: 15px 20px !important;
   border: 1px solid var(--accent) !important;
   border-radius: 4px !important;
-  background: var(--accent) !important;
+  background: var(--accent-solid) !important;
   color: #fff !important;
   font-size: 13px;
   font-weight: 900;
@@ -362,7 +362,7 @@
   position: relative;
   min-height: 480px;
   overflow: hidden;
-  background: linear-gradient(140deg, transparent 3%, rgba(0, 0, 0, 0.22)), linear-gradient(20deg, #111 20%, #444 50%, #151515 78%);
+  background: linear-gradient(140deg, transparent 3%, rgba(0, 0, 0, 0.22)), linear-gradient(20deg, #121212 20%, #3e3e42 50%, #121212 78%);
   clip-path: polygon(12% 0, 100% 0, 100% 100%, 0 100%);
 }
 
@@ -372,7 +372,7 @@
   left: 50%;
   width: min(58%, 330px);
   aspect-ratio: 1;
-  border: 8px solid #0a0a0a;
+  border: 8px solid #080808;
   border-radius: 50%;
   object-fit: cover;
   box-shadow: 0 24px 45px rgba(0, 0, 0, 0.65), 0 0 0 2px var(--accent);
@@ -396,19 +396,19 @@
   margin: -1px auto 0;
   padding: 20px clamp(24px, 5vw, 72px);
   border: 1px solid var(--accent);
-  background: #0b0b0b;
+  background: #080808;
 }
 
 .service-strip > div {
   display: flex;
   align-items: center;
   gap: 14px;
-  border-right: 1px solid #37373a;
+  border-right: 1px solid #3e3e42;
 }
 
 .service-strip > div:last-child { border-right: 0; }
-.service-strip strong { color: var(--accent); font-size: 27px; }
-.service-strip span { display: grid; gap: 3px; color: #9c9c9f; font-size: 12px; }
+.service-strip strong { color: var(--accent-text); font-size: 27px; }
+.service-strip span { display: grid; gap: 3px; color: #a3a3ab; font-size: 12px; }
 .service-strip b { color: #f3f3f3; font-size: 12px; letter-spacing: 0.5px; }
 
 .order-section {
@@ -425,14 +425,14 @@
   letter-spacing: 1px;
 }
 
-.section-heading > p:last-child { margin-top: 8px; color: #8e8e91; }
+.section-heading > p:last-child { margin-top: 8px; color: var(--muted); }
 
 .order-steps {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 0;
   margin: 38px 0 18px;
-  border-block: 1px solid #29292c;
+  border-block: 1px solid #303033;
 }
 
 .order-step {
@@ -441,88 +441,98 @@
   align-items: center;
   gap: 12px;
   padding: 17px 8px;
-  color: #626267;
+  color: var(--muted);
   font-size: 12px;
   text-transform: uppercase;
 }
 
-.order-step:not(:last-child)::after { position: absolute; top: 50%; right: 0; width: 1px; height: 24px; background: #333; content: ''; transform: translateY(-50%); }
-.order-step span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #4c4c50; border-radius: 50%; font-weight: 900; }
+.order-step:not(:last-child)::after { position: absolute; top: 50%; right: 0; width: 1px; height: 24px; background: #303033; content: ''; transform: translateY(-50%); }
+.order-step span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #56565c; border-radius: 50%; font-weight: 900; }
 .order-step.current { color: #f3f3f3; }
-.order-step.current span { border-color: var(--accent); background: var(--accent); color: #fff; }
-.order-step.complete { color: #bcbcc0; }
+.order-step.current span { border-color: var(--accent); background: var(--accent-solid); color: #fff; }
+.order-step.complete { color: #c4c4ca; }
 .order-step.complete span { border-color: #4eaf68; color: #5ed47b; }
 
 .order-form { margin-top: 0 !important; }
-.step-panel { padding: 30px; border: 1px solid #303033; border-radius: 4px; background: linear-gradient(145deg, #151515, #0c0c0c); }
+.step-panel { padding: 30px; border: 1px solid #303033; border-radius: 4px; background: linear-gradient(145deg, #121212, #080808); }
 .step-panel h3 { margin: 0; color: #f4f4f4; font-family: var(--heading); font-size: clamp(1.8rem, 4vw, 2.9rem); letter-spacing: 0.5px; text-transform: uppercase; }
-.panel-note { margin-top: 7px; color: #8f8f93; font-size: 14px; }
+.panel-note { margin-top: 7px; color: var(--muted); font-size: 14px; }
 .size-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
-.size-card { display: flex; flex-direction: column; align-items: flex-start; min-height: 132px; padding: 18px !important; border: 1px solid #3a3a3d !important; border-radius: 3px !important; background: #101010 !important; color: #fff !important; text-align: left; }
+.size-card { display: flex; flex-direction: column; align-items: flex-start; min-height: 132px; padding: 18px !important; border: 1px solid #3e3e42 !important; border-radius: 3px !important; background: #121212 !important; color: #fff !important; text-align: left; }
 .size-card:hover, .size-card.selected { border-color: var(--accent) !important; background: var(--accent-bg) !important; transform: translateY(-2px); }
-.size-icon { color: var(--accent); font-size: 27px; }
+.size-icon { color: var(--accent-text); font-size: 27px; }
 .size-card strong { margin-top: 14px; font-family: var(--mono); font-size: 17px; }
-.size-card small { margin-top: 4px; color: #8a8a8e; font-size: 11px; }
-.fitment-modal { overflow: hidden; border: 1px solid #242427; border-radius: 5px; background: #f8f8f8; color: #242326; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38); }
+.size-card small { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.fitment-modal { overflow: hidden; border: 1px solid #171717; border-radius: 5px; background: #f8f8f8; color: #171717; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38); }
 .fitment-heading { display: flex; align-items: center; gap: 10px; padding: 20px 22px 12px; }
-.fitment-heading h3 { margin: 0; color: #17161a; font-family: var(--sans); font-size: 24px; font-weight: 800; letter-spacing: -0.4px; text-transform: none; }
-.fitment-wheel { display: grid; place-items: center; width: 27px; height: 27px; border: 2px solid #ef4b54; border-radius: 50%; color: #ef4b54; font-size: 17px; }
-.fitment-close { margin-left: auto; padding: 0 !important; border: 0 !important; background: transparent !important; color: #252329 !important; font-family: var(--sans); font-size: 31px; font-weight: 300; line-height: 1; }
+.fitment-heading h3 { margin: 0; color: #121212; font-family: var(--sans); font-size: 24px; font-weight: 800; letter-spacing: -0.4px; text-transform: none; }
+.fitment-wheel { display: grid; place-items: center; width: 27px; height: 27px; border: 2px solid #c41118; border-radius: 50%; color: #c41118; font-size: 17px; }
+.fitment-close { margin-left: auto; padding: 0 !important; border: 0 !important; background: transparent !important; color: #171717 !important; font-family: var(--sans); font-size: 31px; font-weight: 300; line-height: 1; }
 .fitment-close:hover { background: transparent !important; transform: none !important; }
 .fitment-progress { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 16px 16px 0; }
-.fitment-progress-item { position: relative; display: grid; justify-items: center; gap: 8px; color: #424148; font-size: 13px; }
-.fitment-progress-item::after { position: absolute; z-index: 0; top: 29px; left: 0; right: 0; height: 10px; content: ''; background: #e5e5e5; }
+.fitment-progress-item { position: relative; display: grid; justify-items: center; gap: 8px; color: #3e3e42; font-size: 13px; }
+.fitment-progress-item::after { position: absolute; z-index: 0; top: 29px; left: 0; right: 0; height: 10px; content: ''; background: #dedee3; }
 .fitment-progress-item:first-child::after { left: 50%; }
 .fitment-progress-item:last-child::after { right: 50%; }
 .fitment-progress-item span { position: relative; z-index: 1; width: 8px; height: 8px; border-radius: 50%; background: #77777a; }
-.fitment-progress-item.active { color: #ef4b54; font-weight: 800; }
+.fitment-progress-item.active { color: #c41118; font-weight: 800; }
 .fitment-progress-item.active span { background: #ef4b54; box-shadow: 0 0 0 1px #ef4b54; }
-.fitment-progress-item.active::after { background: linear-gradient(90deg, #f09ba0 0 52%, #e5e5e5 52%); }
+.fitment-progress-item.active::after { background: linear-gradient(90deg, #f09ba0 0 52%, #dedee3 52%); }
 .fitment-visual { position: relative; height: 172px; margin-top: 12px; overflow: hidden; background: linear-gradient(180deg, #fff, #f1f1f1); }
 /* Fixed height with object-fit rather than width:100%/height:auto: the three
    guides have different aspect ratios, so an auto height would make the panel
    jump every time the stage advances. Transparency plus the light panel means
    the letterboxing is invisible. */
 .fitment-guide { display: block; box-sizing: border-box; width: 100%; height: 100%; padding: 14px 18px 0; object-fit: contain; object-position: center bottom; }
-.fitment-back { margin: 0 16px; padding: 10px 0 !important; border: 0 !important; background: transparent !important; color: #55525a !important; font-size: 13px; }
+.fitment-back { margin: 0 16px; padding: 10px 0 !important; border: 0 !important; background: transparent !important; color: #56565c !important; font-size: 13px; }
 .fitment-back:hover { background: transparent !important; color: #ef4b54 !important; transform: none !important; }
 .fitment-back:disabled { visibility: hidden; }
 .fitment-controls { position: relative; z-index: 2; margin: -1px 16px 0; padding: 16px 0 0; background: #f8f8f8; }
 .fitment-zip { display: grid; gap: 8px; padding: 12px 0 22px; }
-.fitment-zip label { color: #38363b; font-size: 12px; font-weight: 800; }
-.fitment-zip input { border: 1px solid #aaa8aa !important; border-radius: 6px !important; background: #fff !important; color: #222 !important; }
-.fitment-search { display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid #aaa8aa; border-radius: 6px; background: #fff; }
-.fitment-search span { color: #5d5a61; font-size: 25px; transform: rotate(-20deg); }
-.fitment-search input { min-width: 0; border: 0 !important; background: transparent !important; color: #222 !important; font-size: 14px; }
+.fitment-zip label { color: #3e3e42; font-size: 12px; font-weight: 800; }
+.fitment-zip input { border: 1px solid #a3a3ab !important; border-radius: 6px !important; background: #fff !important; color: #171717 !important; }
+.fitment-search { display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid #a3a3ab; border-radius: 6px; background: #fff; }
+.fitment-search span { color: #56565c; font-size: 25px; transform: rotate(-20deg); }
+.fitment-search input { min-width: 0; border: 0 !important; background: transparent !important; color: #171717 !important; font-size: 14px; }
 .fitment-search input:focus { box-shadow: none !important; }
 .fitment-options { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; max-height: 252px; overflow-y: auto; padding: 16px 0 8px; }
-.fitment-option { min-height: 48px; padding: 10px 6px !important; border: 1px solid #d7d5d7 !important; border-radius: 5px !important; background: #fff !important; color: #4a484d !important; font-family: var(--sans); font-size: 14px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08); }
+.fitment-option { min-height: 48px; padding: 10px 6px !important; border: 1px solid #dedee3 !important; border-radius: 5px !important; background: #fff !important; color: #3e3e42 !important; font-family: var(--sans); font-size: 14px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08); }
 .fitment-option:hover { border-color: #ef4b54 !important; background: #fff1f2 !important; color: #d9323c !important; transform: translateY(-1px); }
-.fitment-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 18px 16px; color: #656269; font-size: 12px; }
+.fitment-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 18px 16px; color: #56565c; font-size: 12px; }
 .fitment-footer .primary-action { min-width: 175px; margin-top: 0; }
 .fitment-footer .primary-action:disabled { cursor: not-allowed; opacity: 0.45; }
-.back-action { padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent) !important; font-size: 12px; }
+.back-action { padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent-text) !important; font-size: 12px; }
 .tire-options { display: grid; gap: 10px; margin-top: 25px; }
-.tire-option { display: grid; grid-template-columns: 66px 1fr auto; align-items: center; gap: 15px; padding: 13px !important; border: 1px solid #353538 !important; border-radius: 3px !important; background: #101010 !important; color: #fff !important; text-align: left; }
+.tire-option { display: grid; grid-template-columns: 66px 1fr auto; align-items: center; gap: 15px; padding: 13px !important; border: 1px solid #303033 !important; border-radius: 3px !important; background: #121212 !important; color: #fff !important; text-align: left; }
 .tire-option:hover, .tire-option.selected { border-color: var(--accent) !important; background: var(--accent-bg) !important; transform: none; }
 .tire-option:disabled { cursor: not-allowed; opacity: 0.4; }
-.tire-art { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; border: 9px solid #28282b; outline: 2px solid #78787c; color: #080808; background: radial-gradient(circle, #777 0 9%, #1a1a1a 10% 26%, #929292 27% 31%, #181818 32% 100%); font-size: 0; }
+.tire-art { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; border: 9px solid #303033; outline: 2px solid #77777a; color: #080808; background: radial-gradient(circle, #77777a 0 9%, #171717 10% 26%, #909094 27% 31%, #121212 32% 100%); font-size: 0; }
 .tire-info { display: grid; gap: 3px; }
 .tire-info strong { font-size: 15px; }
-.tire-info small { color: #8d8d91; font-size: 11px; }
+.tire-info small { color: var(--muted); font-size: 11px; }
 .tire-info small:last-child { color: #58d77c; }
 .tire-option > b { display: grid; color: #f3f3f3; font-family: var(--mono); font-size: 17px; text-align: right; }
-.tire-option > b i { color: #858589; font-family: var(--sans); font-size: 10px; font-style: normal; font-weight: 400; }
+.tire-option > b i { color: var(--muted); font-family: var(--sans); font-size: 10px; font-style: normal; font-weight: 400; }
 .vehicle-inline, .service-fields { display: grid; gap: 8px; margin-top: 26px; }
 .service-fields { grid-template-columns: 1.5fr 1fr; gap: 15px; }
-.vehicle-inline label, .service-fields label { display: block; color: #e8e8e8; font-size: 11px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
-:where(.customer-shell) input { border-color: #3d3d40; background: #090909; }
-.order-summary-line { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; padding: 13px 0; border-block: 1px solid #303033; color: #a9a9ad; font-size: 13px; }
+.vehicle-inline label, .service-fields label { display: block; color: #dedee3; font-size: 11px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
+:where(.customer-shell) input { border-color: #3e3e42; background: #080808; }
+.order-summary-line { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; padding: 13px 0; border-block: 1px solid #303033; color: #a3a3ab; font-size: 13px; }
 .order-summary-line b { color: #f1f1f1; }
 .step-error { margin-top: 16px; color: #ff7077; font-size: 13px; }
 .success-message { margin-top: 16px; padding: 16px; border: 1px solid #3ca75b; background: rgba(60, 167, 91, 0.1); color: #71df8b; }
-.site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #2b2b2e; color: #737377; font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
-.site-footer button { padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent) !important; font-size: 11px; }
+.site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #303033; color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
+/* A text-only control, but a full-height one: it was 12px tall, which is not
+   a touch target for anyone, let alone at a roadside (#85). */
+/* The privacy notice's link at the foot of every screen (t50): text-only,
+   but a full-height touch target all the same. */
+.page-footer { padding: 6px 24px 28px; text-align: center; font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
+.page-footer a, .site-footer .privacy-link { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: var(--accent-text); text-decoration: none; }
+.page-footer a:hover, .site-footer .privacy-link:hover { text-decoration: underline; }
+.privacy-panel h2 { margin: 22px 0 6px; font-size: 18px; letter-spacing: 0.5px; }
+.privacy-panel h2:first-child { margin-top: 0; }
+.privacy-panel p { margin: 0; color: var(--text); font-size: 15px; line-height: 1.55; }
+.privacy-panel a { color: var(--accent-text); white-space: nowrap; }
 
 @media (max-width: 760px) {
   .customer-shell > .site-nav { flex-wrap: wrap; gap: 14px; }
@@ -544,9 +554,15 @@
   .fitment-heading h3 { font-size: 20px; }
   .fitment-progress { padding-inline: 10px; }
   .fitment-progress-item { font-size: 11px; }
-  .fitment-visual { height: 140px; }
-  .fitment-guide { padding: 10px 12px 0; }
-  .fitment-options { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  /* The illustration at its own shape. The artwork is a wide strip of
+     sidewall (about 4.6:1), and a fixed 140px band showed it as a slice
+     along the bottom with dead space above; now it is as wide as the panel
+     allows and exactly as tall as that makes it. */
+  .fitment-visual { height: auto; }
+  .fitment-guide { height: auto; padding: 10px 0 0; }
+  /* Every width on screen. Three columns of 23 is eight rows, and the only
+     cue that five of them sat behind a scroll was a half-cut fifth row. */
+  .fitment-options { grid-template-columns: repeat(3, 1fr); gap: 8px; max-height: none; overflow: visible; }
   .fitment-footer { align-items: flex-start; flex-direction: column; }
   .fitment-footer .primary-action { width: 100%; }
   .tire-option { grid-template-columns: 48px 1fr; }
@@ -568,7 +584,7 @@
 .app-shell {
   min-height: 100svh;
   color: var(--text);
-  background: radial-gradient(circle at 50% -10%, #282828 0, var(--bg) 42rem);
+  background: radial-gradient(circle at 50% -10%, #171717 0, var(--bg) 42rem);
 }
 
 /* Simple internal top bar: KMT wordmark + route-appropriate nav links.
@@ -585,7 +601,7 @@
   margin: 0 auto;
   padding: 16px clamp(18px, 4vw, 54px);
   border-bottom: 1px solid var(--border);
-  background: rgba(5, 5, 5, 0.94);
+  background: rgba(13, 27, 36, 0.94);
 }
 
 .internal-nav .brand-word {
@@ -600,7 +616,7 @@
 }
 
 .internal-nav .brand-word span {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .internal-nav-links {
@@ -617,7 +633,7 @@
   padding: 30px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: linear-gradient(145deg, rgba(28, 28, 28, 0.96), rgba(13, 13, 13, 0.96));
+  background: linear-gradient(145deg, rgba(23, 23, 23, 0.96), rgba(8, 8, 8, 0.96));
   box-shadow: var(--shadow);
   text-align: left;
 }
@@ -625,7 +641,7 @@
 /* Exception variant: amber, distinct from brand red and success green (R9). */
 .panel-exception {
   border-color: rgba(245, 158, 11, 0.55);
-  background: linear-gradient(145deg, rgba(58, 44, 10, 0.55), rgba(13, 13, 13, 0.96));
+  background: linear-gradient(145deg, rgba(58, 44, 10, 0.55), rgba(8, 8, 8, 0.96));
 }
 
 /* Heading/eyebrow/secondary text, generalized for card content. */
@@ -639,7 +655,7 @@
 }
 
 .text-secondary {
-  color: #96969a;
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -670,7 +686,7 @@
 
 .btn-primary {
   border-color: var(--accent);
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
 }
 
@@ -678,14 +694,15 @@
   background: var(--accent-dark);
 }
 
+/* White on the old #3ca75b was 3.06:1; this green reads at 4.91:1 (#85). */
 .btn-approve {
-  border-color: #3ca75b;
-  background: #3ca75b;
+  border-color: #2b8044;
+  background: #2b8044;
   color: #fff;
 }
 
 .btn-approve:hover {
-  background: #2f8a49;
+  background: #237038;
 }
 
 .btn-reject {
@@ -700,19 +717,19 @@
 
 .btn-neutral {
   border-color: var(--border);
-  background: #1a1a1a;
-  color: #e8e8e8;
+  background: #171717;
+  color: #dedee3;
 }
 
 .btn-neutral:hover {
-  background: #232323;
+  background: #171717;
 }
 
 /* Owner screen layout built on the shared components above. */
 .owner-shell {
   min-height: 100svh;
   color: var(--text);
-  background: radial-gradient(circle at 50% -10%, #282828 0, var(--bg) 42rem);
+  background: radial-gradient(circle at 50% -10%, #171717 0, var(--bg) 42rem);
 }
 
 .owner-content {
@@ -748,6 +765,10 @@
   gap: 18px;
 }
 
+/* Contact links on a request card were browser-default blue on near-black,
+   2.13:1. Brand red text reads at 5:1 on the panel. */
+.owner-request a { color: var(--accent-text); }
+
 .owner-request {
   display: grid;
   gap: 12px;
@@ -766,7 +787,7 @@
 }
 
 .owner-details dt {
-  color: #96969a;
+  color: var(--muted);
   font-weight: 800;
 }
 
@@ -794,7 +815,7 @@
 
 .owner-quote-total {
   margin: 2px 0 0;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 30px;
   font-weight: 800;
   letter-spacing: -0.01em;
@@ -1059,7 +1080,7 @@
    opposite Reject and the pairing is what carries the meaning there. */
 .btn-primary {
   border-color: var(--accent);
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
 }
 
@@ -1099,7 +1120,8 @@
 
 .status-note-wait { color: #d9a441; }
 .status-note-ok { color: #4bb96c; }
-.status-note-bad { color: #e8636b; }
+/* #ef7a80: 5.1:1 on the panel's lightest stop, where #e8636b read 4.22 (#85). */
+.status-note-bad { color: #ef7a80; }
 
 .status-paid {
   margin-top: 12px;
@@ -1111,7 +1133,7 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--accent-text);
   font: inherit;
   font-size: 14px;
   cursor: pointer;
@@ -1158,12 +1180,12 @@
   gap: 12px;
   margin: 22px 0;
   padding: 18px 0;
-  border-block: 1px solid #26262a;
+  border-block: 1px solid #171717;
   text-align: left;
 }
 
 .confirmation-detail dt {
-  color: #96969a;
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -1174,7 +1196,7 @@
 }
 
 .confirmation-total {
-  color: var(--accent) !important;
+  color: var(--accent-text) !important;
   font-size: 28px !important;
   font-weight: 800;
 }
@@ -1205,7 +1227,7 @@
 
 .tire-empty-body {
   margin: 0 0 18px;
-  color: #a6a6ab;
+  color: #a3a3ab;
   font-size: 14px;
 }
 
@@ -1216,3 +1238,233 @@
 }
 
 .tire-empty-actions .btn { text-decoration: none; }
+
+
+/* ------------------------------------------------------------------------
+   t59: the brand family. Navy ground from the logo, brand red for actions
+   and eyebrows, chrome reserved for the page headline and the logo. The
+   flame appears nowhere but the logo itself. Appended so it wins by order
+   without raising any specificity, and no selector an audit uses changes.
+   ------------------------------------------------------------------------ */
+
+.hero-section {
+  background: radial-gradient(ellipse at 82% 44%, #30303300 0, #303033 0, #121212 30%, var(--bg) 66%);
+}
+
+.hero-section::after {
+  opacity: 0.14;
+  background: repeating-linear-gradient(112deg, transparent 0 18px, #a3a3ab 19px 20px, transparent 21px 40px);
+}
+
+.hero-visual {
+  background: linear-gradient(140deg, transparent 3%, rgba(0, 0, 0, 0.28)), linear-gradient(20deg, #121212 20%, #56565c 50%, #171717 78%);
+}
+
+/* Chrome headline: the logo's silver lettering as a sheen across the page
+   headline. Solid light text is the colour the browser computes and the
+   fallback where text clipping is unsupported; the darkest stop, #ababab,
+   reads at 6.8:1 on the navy, well past the 3:1 large text needs. */
+.hero-copy h1,
+.section-heading h2,
+.owner-heading,
+.confirmation-heading,
+.oi-heading h1 {
+  color: #f0f0f0;
+}
+
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .hero-copy h1,
+  .section-heading h2,
+  .owner-heading,
+  .confirmation-heading,
+  .oi-heading h1 {
+    background: var(--chrome);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .hero-copy h1 span {
+    -webkit-text-fill-color: var(--accent-text);
+  }
+}
+
+.hero-copy h1 span {
+  color: var(--accent-text);
+}
+
+/* The primary lockup in the customer nav and the hero, from public/brand;
+   SOURCES.md there says which file is which. */
+.brand-mark {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.brand-mark img {
+  width: auto;
+  height: 62px;
+  object-fit: contain;
+  border-radius: 0;
+}
+
+.hero-logo {
+  width: min(72%, 420px);
+  /* The width and height attributes on the img (there for layout stability)
+     would otherwise fix its height; the ratio does that instead. */
+  height: auto;
+  aspect-ratio: 1200 / 1028;
+  border: 0;
+  border-radius: 10px;
+  object-fit: contain;
+  box-shadow: 0 24px 45px rgba(0, 0, 0, 0.55);
+  transform: translate(-50%, -50%);
+}
+
+/* The compact lockup on the internal screens and the owner workspace: the
+   wheel alone beside the name. */
+.brand-mark-icon {
+  width: 28px;
+  height: 28px;
+  margin-right: 8px;
+  border-radius: 7px;
+}
+
+.internal-nav .brand-word,
+.oi-brand {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 20px !important;
+  letter-spacing: 1px;
+}
+
+.internal-nav .brand-word span,
+.oi-brand span {
+  margin-left: 6px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 2.2px;
+  color: var(--accent-text);
+}
+
+.oi-brand span { color: var(--accent-text); }
+
+/* Red numbers over grey captions, as the marketing site does. */
+.service-strip strong { color: var(--accent-text); }
+
+/* Focus rings on the navy. */
+.oi-shell :focus-visible { outline-color: var(--accent-text); }
+
+/* On a phone the hero visual is a short band; the lockup sits inside it with
+   room for the caption below. This follows the block above so it wins. */
+@media (max-width: 760px) {
+  .hero-visual { min-height: 268px; }
+  .hero-logo { width: 200px; }
+}
+
+/* The quote card's reference and age (t59): the short id is what a customer
+   reads out from their status link; the full id sits in the title. */
+.owner-request-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.owner-request-ref { flex-shrink: 0; padding: 2px 6px; font-size: 12px; color: var(--muted); background: var(--bg); }
+.owner-request-age { margin: -6px 0 14px; font-size: 12px; color: var(--muted); }
+
+/* At phone width the internal nav is one row: the brand shrinks to its icon
+   (the button keeps its name for assistive tech) and the actions share the
+   rest as equal columns, each 44px tall and free to wrap its own label. The
+   t59 pass kept the lockup and put the actions on a second row; the review
+   measured that as a two-row nav, and it was. */
+@media (max-width: 480px) {
+  .internal-nav { flex-wrap: nowrap; gap: 10px; }
+  .internal-nav .brand-word { flex: none; min-width: 44px; justify-content: center; font-size: 0 !important; letter-spacing: 0; }
+  .internal-nav .brand-word span { display: none; }
+  .internal-nav .brand-word .brand-mark-icon { margin-right: 0; }
+  .internal-nav-links { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .internal-nav-links .btn { min-height: 44px; padding: 6px 4px; font-size: 10px; line-height: 1.2; white-space: normal; }
+  .internal-nav-links:has(> :only-child), .internal-nav-links:has(> :nth-child(2):last-child) { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+}
+
+/* Tap targets (#85, measured by the a11y pass: 55 of 353 controls under 44px
+   on main, all by height). Every control a thumb has to hit is at least 44px
+   tall; padding rather than margin, so nothing moves sideways. */
+.btn,
+.site-links button,
+.fitment-back,
+.customer-shell summary,
+.link-action {
+  min-height: 44px;
+}
+
+.link-action,
+.customer-shell summary {
+  display: inline-flex;
+  align-items: center;
+}
+
+.fitment-search input,
+#fitmentZip {
+  min-height: 44px;
+}
+
+.owner-request a,
+.owner-request .link-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.owner-request-age { margin-top: 0; }
+
+.internal-nav .brand-word,
+.brand-mark {
+  min-height: 44px;
+}
+
+/* The tire step while today's prices are on their way: no tire to choose yet,
+   a ring that moves, and the size it is checking. Then the sentence over the
+   standard list, the refresh offer, and the one line a refresh says about the
+   customer's choice. */
+.tire-loading { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 14px; margin-top: 25px; padding: 18px 16px; border: 1px dashed var(--border); border-radius: 3px; color: var(--text); font-size: 15px; line-height: 1.5; }
+.tire-loading p { margin: 0; }
+.tire-loading strong { color: var(--text-h); }
+.tire-loading-mark { width: 22px; height: 22px; border: 3px solid var(--border); border-top-color: var(--accent-text); border-radius: 50%; animation: tire-loading-spin 1.1s linear infinite; }
+@keyframes tire-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tire-loading-mark { animation: none; border-top-color: var(--border); } }
+.tire-list-note { margin: 22px 0 -10px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.tire-refresh { margin-top: 22px; min-height: 44px; }
+.tire-reselect-note { margin: 14px 0 0; color: var(--text); font-size: 14px; line-height: 1.5; }
+.tire-reselect-note.status-note-bad { color: #ef7a80; }
+.step-panel .primary-action:disabled { cursor: not-allowed; opacity: 0.45; }
+
+/* The size search's empty state: a sentence and a way back, never a blank
+   list. On the light modal, so the dark text tokens of that panel. */
+.fitment-empty { display: grid; gap: 10px; justify-items: start; padding: 14px 4px 6px; color: #171717; font-size: 14px; line-height: 1.5; }
+.fitment-empty p { margin: 0; }
+.fitment-clear { min-height: 44px; padding: 10px 16px !important; border: 1px solid #56565c !important; border-radius: 6px !important; background: #fff !important; color: #171717 !important; font-size: 13px; font-weight: 800; }
+.fitment-clear:hover { background: #ebebeb !important; }
+
+/* The tire list's paging control: the next page's size in the label, and how
+   much of the list is still folded under it. */
+.tire-show-more { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-height: 44px; margin-top: 14px; }
+.tire-show-more small { font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); }
+
+/* The brand band (t61). The logo files carry their ground baked in, measured
+   at rgb(13, 28, 35) in every corner of every file, so on the black ground
+   the logo would show as a faint rectangle. The nav and the hero keep that
+   exact colour as a deliberate band, the logo sits on it with no shadow and
+   no radius to give it an edge, and everything below is the original black,
+   white and red. These come last so they win over the base and phone-width
+   hero rules above. */
+.site-nav, .internal-nav { background: #0d1c23; border-bottom-color: #1d3745; }
+.oi-nav { background: #0d1c23; border-bottom: 1px solid #1d3745; }
+.hero-section { background: radial-gradient(ellipse at 82% 44%, #1d3745 0, #122430 28%, #0d1c23 65%); }
+.hero-section::after { mask-image: linear-gradient(90deg, #0d1c23, transparent 68%); }
+.hero-visual { background: #0d1c23; }
+.hero-logo { border: 0; border-radius: 0; box-shadow: none; }
+.brand-mark img { border-radius: 0; }
+@media (max-width: 760px) {
+  .hero-section { background: radial-gradient(ellipse at 82% 44%, #24435400 0, #1d3745 0, #122430 30%, #0d1c23 66%); }
+  .hero-visual { background: #0d1c23; }
+}

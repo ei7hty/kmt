@@ -1,0 +1,51 @@
+name: Health monitor
+
+# A scheduled pulse on the deployed site, separate from the deploy pipeline so
+# it runs whether or not anything shipped (t53, #101). The alert is the failed
+# run itself: GitHub notifies the repository on a failed scheduled workflow, so
+# a red heartbeat here is the page. It reads /api/health, which answers
+# {"ok":true} only when the database on the volume is reachable -- the one
+# endpoint whose failure nobody is watching a screen for.
+#
+# Scheduled workflows run from the default branch once this file is on it, and
+# GitHub's cron is best-effort and can lag under load; this is a heartbeat, not
+# a millisecond SLA.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: health-monitor
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: The deployed site is healthy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read /api/health
+        # The deployed origin, the same repository variable the deploy pipeline
+        # reads, so the cutover moves the monitor with it in one place. Unset,
+        # it falls back to the Fly name the site has always answered on.
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
+        run: |
+          # A short retry so a single dropped connection or a mid-rollover
+          # moment does not read as an outage; a real outage fails all of them.
+          body=''
+          for i in $(seq 1 5); do
+            body="$(curl -fsS --max-time 10 "$DEPLOY_URL/api/health" 2>/dev/null || true)"
+            echo "attempt $i: ${body:-<no response>}"
+            if echo "$body" | grep -q '"ok":true'; then
+              echo "OK: $DEPLOY_URL/api/health answers ok:true"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "FAIL: $DEPLOY_URL/api/health did not answer ok:true in 5 attempts over ~50s."
+          exit 1

@@ -1,0 +1,146 @@
+# Baseline of https://kmt.fly.dev, 2026-09-06T11:11:04Z, read-only
+
+## TLS
+  issuer=C=US, O=Let's Encrypt, CN=YE1
+  subject=CN=*.fly.dev
+  notBefore=Aug 21 11:49:33 2026 GMT
+  notAfter=Nov 19 11:49:32 2026 GMT
+  X509v3 Subject Alternative Name: 
+      DNS:*.fly.dev
+  tls1.2: New, TLSv1.2, Cipher is ECDHE-ECDSA-AES256-GCM-SHA384
+  tls1.2: Protocol: TLSv1.2
+  tls1.3: New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+  tls1.3: Protocol: TLSv1.3
+
+## Redirects
+  http://kmt.fly.dev/            -> 301 https://kmt.fly.dev/
+  http://kmt.fly.dev/status      -> 301 https://kmt.fly.dev/status
+  https://www.kmt.fly.dev/ (if any) -> 000 no such host
+
+## Response headers, GET / (every header, verbatim)
+  HTTP/1.1 200 OK
+  content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  x-content-type-options: nosniff
+  x-frame-options: DENY
+  referrer-policy: strict-origin-when-cross-origin
+  permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+  cross-origin-opener-policy: same-origin
+  strict-transport-security: max-age=31536000; includeSubDomains
+  content-type: text/html; charset=utf-8
+  cache-control: no-cache
+  etag: W/"50a-1a07666fcc0"
+  last-modified: Sun, 06 Sep 2026 11:07:36 GMT
+  content-length: 1290
+  date: Sun, 06 Sep 2026 11:11:13 GMT
+  connection: keep-alive
+  keep-alive: timeout=5
+  server: Fly/ec1a4f957c (2026-08-31)
+  via: 1.1 fly.io
+  fly-request-id: 01M1V6MM0MHXT4BCMVDGX23FTW-ewr
+
+## Security headers present on / (name only)
+  strict-transport-security: max-age=31536000; includeSubDomains
+  content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  x-content-type-options: nosniff
+  x-frame-options: DENY
+  referrer-policy: strict-origin-when-cross-origin
+  permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+  cross-origin-opener-policy: same-origin
+
+## Compression (GET with Accept-Encoding: br, gzip)
+  / -> content-encoding: br downloaded=687 
+  /api/catalog -> content-encoding: br downloaded=179599 
+
+## Routes and status codes
+  /                                                200  text/html; charset=utf-8
+  /status                                          200  text/html; charset=utf-8
+  /owner                                           200  text/html; charset=utf-8
+  /owner/quotes                                    200  text/html; charset=utf-8
+  /owner/                                          200  text/html; charset=utf-8
+  /nonsense-path                                   200  text/html; charset=utf-8
+  /robots.txt                                      200  text/plain; charset=utf-8
+  /index.html                                      200  text/html; charset=utf-8
+  /api/nope                                        404  application/json
+  /api/health                                      200  application/json
+  /api/catalog                                     200  application/json
+  /api/owner/session                               200  application/json
+  /api/owner/inventory                             401  application/json
+  /api/owner/requests                              401  application/json
+  /api/owner/markup                                401  application/json
+  /api/owner/import-token                          401  application/json
+  /api/requests                                    400  application/json
+  /api/requests/0123456789abcdef0123456789abcdef   404  application/json
+  /brand/SOURCES.md                                200  text/html; charset=utf-8
+  /brand/og-1200x630.jpg                           200  image/jpeg
+  /.env                                            200  text/html; charset=utf-8
+  /backend/data/owner.sqlite                       200  text/html; charset=utf-8
+  /package.json                                    200  text/html; charset=utf-8
+
+## Method handling
+  HEAD /               -> 200
+  HEAD /api/health     -> 401
+  OPTIONS /api/owner/import (no Origin)      -> 403
+  OPTIONS /api/owner/import (Origin evil)    -> 403
+  OPTIONS /api/owner/import (Origin giga)    -> access-control-allow-origin: https://www.giga-tires.com code=204 
+  TRACE /              -> 405
+
+## Bodies of the public JSON answers (shape, not values)
+  /api/health: {"ok":true}
+  /api/owner/session: {"authenticated":false}
+  /api/owner/inventory: {"error":"Sign in to use the owner workspace."}
+  /api/requests/<unknown id>: {"error":"No such request."}
+  /api/requests (no key): {"error":"Pass the customer key this browser was given."}
+  /api/requests?customer=<key with no requests>: {"requests":[]}
+  /api/catalog: tires=6169 sizes=511 keys=[category,description,id,inStock,name,price,size]
+
+## Asset caching
+  /brand/og-1200x630.jpg -> cache-control: public, max-age=86400, stale-while-revalidate=604800 etag: W/"10ea5-1a07666fcc0" last-modified: Sun, 06 Sep 2026 11:07:36 GMT 
+  /assets/index-CPJHgat3.js -> cache-control: public, max-age=31536000, immutable etag: W/"3f3e5-1a07666fcc0" last-modified: Sun, 06 Sep 2026 11:07:36 GMT 
+
+## Fly (read-only)
+   Hostname │ kmt.fly.dev                               
+   Image    │ kmt:deployment-01M1V6D6DBMQVGSXJ14HSSP103 
+   PROCESS │ ID             │ VERSION │ REGION │ STATE   │ ROLE │ CHECKS             │ LAST UPDATED         
+   app     │ d89459da9703e8 │ 104     │ ewr    │ started │      │ 1 total, 1 passing │ 2026-09-06T11:07:48Z 
+   health │ passing │ d89459da9703e8 │ 3m24s ago    │ {"ok":true} 
+  secret: KMT_SESSION_SECRET
+  secret: KMT_OWNER_PASSWORD
+  certs: HOSTNAME                       SOURCE     STATUS
+  certs: order.kensmobiletire.com       Fly        Issued
+  certs: kensmobiletire.com             Fly        Issued
+  certs: www.kensmobiletire.com         Fly        Issued
+
+## Notes (hand-added the same run, read-only; not produced by baseline.sh)
+
+State: kmt.fly.dev after #147 (static headers, brand cache, robots/sitemap,
+405 on non-GET/HEAD static), #167 (six security headers on every response,
+the canonical redirect, /api/ unknown-path 404, // collapse) and #178
+(malformed percent-encoding answers the app shell, not 500). KMT_CANONICAL_HOST
+is unset, so no cutover has happened: this is the state the flip starts from.
+All four hostnames (kmt.fly.dev, the apex, www, order) serve 200 with no
+redirect; the app is host-independent until the secret is set.
+
+The static-header seam, which baseline.sh does not probe:
+  GET /brand/icon-32.png (served by backend/static.mjs) -> 200 with all six
+    headers (Content-Security-Policy, X-Content-Type-Options, X-Frame-Options,
+    Referrer-Policy, Permissions-Policy, Cross-Origin-Opener-Policy) plus
+    Content-Type image/png and Cache-Control public, max-age=86400,
+    stale-while-revalidate=604800 and an ETag. #147 writeHead merges with
+    #167 setHeader rather than replacing it, so the headers ride a static file.
+  Conditional GET (If-None-Match) -> 304 with the CSP, nosniff, Content-Type
+    and Cache-Control still present.
+
+GET /api/catalog -> Cache-Control public, max-age=300 (was no-store before
+  #154/#169); ?size=215/60R16 -> 200, one size only (~9.6 KB brotli) instead
+  of the ~170 KB full list. (baseline.sh probes the catalog with GET; the
+  routes list above uses HEAD for status only, so it shows no cache-control.)
+
+Known quirk, not a fault: HEAD /api/catalog -> 401, because the catalog
+handler is GET-only and a HEAD falls through to the session gate; GET is
+public 200. HEAD /api/health -> 401 for the same reason (already in the
+morning capture). No impact: the flow, the audits and the machine health
+check all use GET. Meet it as a known quirk, not a discovery.
+
+When the flip happens the only new behaviour is the 301: every non-canonical
+host answers 301 to KMT_CANONICAL_HOST (except /api/health), and everything
+above must stay put. A difference other than the 301 is a finding.

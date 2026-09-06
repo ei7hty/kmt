@@ -81,7 +81,7 @@ async function post(base, route, body, headers = {}) {
     })
   } catch (error) {
     const why = error.cause?.code || error.cause?.message || error.message
-    throw new Error(`Could not reach ${base} (${why}). Is the server running? \`node backend/dev.mjs\` starts the local one.`)
+    throw new Error(`Could not reach ${base} (${why}). Is the server running? \`node backend/dev.mjs\` starts the local one.`, { cause: error })
   }
 }
 
@@ -144,7 +144,7 @@ async function main() {
   try {
     file = JSON.parse(await readFile(options.snapshot, 'utf8'))
   } catch (error) {
-    throw new Error(`Could not read ${path.relative(process.cwd(), options.snapshot)}: ${error.message}`)
+    throw new Error(`Could not read ${path.relative(process.cwd(), options.snapshot)}: ${error.message}`, { cause: error })
   }
   const tires = only.size ? (file.tires || []).filter(tire => only.has(tire.size)) : file.tires
   if (!Array.isArray(tires) || !tires.length) {
