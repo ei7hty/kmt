@@ -101,6 +101,38 @@ test('every template names its personal fields the way the outbox redacts them, 
   assert.doesNotMatch(rendered.html, /<script/)
 })
 
+test('the decline carries the reason only when Ken wrote one, names the request, and offers no payment link or email reply', () => {
+  const declined = TEMPLATES['quote-declined']
+  const ctx = {
+    request: { id: 'r1', vehicleInfo: 'v', quantity: 4, date: '2026-09-10' },
+    quote: { lines: [], total: 250, reason: null }, tire: { name: 'Test Touring', size: SIZE },
+    origin: 'https://x', to: 'a@b.c', toName: 'Jamie',
+  }
+  const withReason = reason => declined.render(declined.data({ ...ctx, quote: { ...ctx.quote, reason } }))
+  const blank = withReason(null)
+  assert.match(blank.text, /I can't take this one on\. You haven't been charged\./, 'no reason: no colon and no hole')
+  assert.doesNotMatch(blank.text, /on:/)
+  assert.doesNotMatch(withReason('   ').text, /on:/, 'whitespace is no reason')
+  assert.doesNotMatch(withReason(undefined).text, /on:/, 'a quote without the field is no reason')
+  const spoken = withReason('that size is back-ordered until October')
+  assert.match(spoken.text, /I can't take this one on: that size is back-ordered until October\. You haven't been charged\./, 'the colon and the reason appear together')
+  for (const rendered of [blank, spoken]) {
+    assert.match(rendered.text, /4 × Test Touring \(215\/60R16\) for 2026-09-10/, 'names the request by size and date')
+    assert.match(rendered.text, /Text me at \(617\) 410-8319/, 'one way back')
+    assert.match(rendered.text, /— Ken$/, "Ken's first person, and nothing after his name")
+    assert.doesNotMatch(rendered.text, /status\?request=|\bpay\b|payment/i, 'no payment link: nothing is owed')
+    assert.doesNotMatch(rendered.text, /reply/i, 'no invitation to reply by email: nothing reads that mailbox')
+    assert.doesNotMatch(rendered.text, /\bwe\b|\bour\b/i, 'no "we"')
+    assert.doesNotMatch(rendered.text, /sorry|apolog|call you|get back to you/i, 'no apology theatre, no callback promise')
+    assert.doesNotMatch(rendered.html, /<script/)
+  }
+  assert.equal(declined.data({ ...ctx, quote: { ...ctx.quote, reason: ' as written ' } }).reason, 'as written', 'stored as its own key, trimmed, never rewritten')
+  assert.equal(declined.data(ctx).reason, null)
+  for (const key of OUTBOX_PERSONAL_DATA_KEYS) assert.ok(key in declined.data(ctx), `${key} is a top-level key of the stored data`)
+  assert.equal(declined.audience, 'customer')
+  assert.ok(MAIL_TYPES.includes('quote-declined'))
+})
+
 test('the owner alert shows what the customer added under "Anything else I should know?", and nothing when they added nothing', () => {
   const ctx = { request: { id: 'r1', vehicleInfo: 'v', quantity: 4, date: 'd' }, quote: { lines: [], total: 1 }, tire: { name: 'T', size: SIZE }, origin: 'https://x', to: 'o@x.com', toName: 'Ken' }
   const arrived = TEMPLATES['request-arrived']

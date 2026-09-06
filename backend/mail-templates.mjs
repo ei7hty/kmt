@@ -16,7 +16,7 @@
 
 const MOBILE = 'Ken\'s Mobile Tire'
 
-export const MAIL_TYPES = ['request-received', 'request-arrived', 'quote-sent', 'payment-recorded']
+export const MAIL_TYPES = ['request-received', 'request-arrived', 'quote-sent', 'payment-recorded', 'quote-declined']
 
 const money = value => `$${Number(value).toFixed(2)}`
 
@@ -101,6 +101,30 @@ export const TEMPLATES = {
     render: d => {
       const text = `Hi ${d.to_name},\n\nPayment received. Thank you.\n\n${invoice(d.lines, d.total)}\n\nYour receipt and the service details are here:\n${d.statusUrl}${signoff}`
       return { subject: `Receipt from ${MOBILE}: ${money(d.total)}`, text, html: htmlOf(text) }
+    },
+  },
+  // The decline, in Ken's first person (t62-voice.md part F as corrected by
+  // #258; decisions.md, 2026-09-06). The reason is carried only when Ken
+  // wrote one: the colon and the reason appear together or neither appears,
+  // and a blank is Ken choosing to say nothing, never a guess made for him.
+  // That is the shape the screen already uses (QuoteRequests.jsx, the closed
+  // note), so the email and the screen describe the same event the same way.
+  // It names the request by size and date so the customer knows which one,
+  // gives one way back (text him), and carries no payment link and no
+  // invitation to reply by email: nothing is owed, nothing reads that mailbox.
+  'quote-declined': {
+    version: 1,
+    audience: 'customer',
+    data: ctx => {
+      const written = typeof ctx.quote?.reason === 'string' ? ctx.quote.reason.trim() : ''
+      return { ...baseData(ctx), reason: written || null }
+    },
+    render: d => {
+      const size = d.tireSize ? ` (${d.tireSize})` : ''
+      const which = `${d.quantity} × ${d.tireName}${size} for ${d.date}`
+      const line = d.reason ? `I can't take this one on: ${d.reason}.` : `I can't take this one on.`
+      const text = `Hi ${d.to_name},\n\nAbout your request for ${which}.\n\n${line} You haven't been charged. Text me at (617) 410-8319 if you'd like to talk it through.\n\n— Ken`
+      return { subject: `About your tire request${d.tireSize ? `, ${d.tireSize}` : ''}`, text, html: htmlOf(text) }
     },
   },
 }
