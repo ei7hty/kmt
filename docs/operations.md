@@ -654,11 +654,37 @@ at risk and production was still briefly degraded.
    about mounting a restored volume requires being inside the app that serves
    customers.
 
-   So create the restore machine in an app of its own -- `kmt-restore`, made for
-   the drill and destroyed with it -- and mount the restored volume there. If a
-   separate app is genuinely impossible, the machine must be prevented from
-   taking traffic before it is created, not after; a machine that is already in
-   the pool has already been routed to. Fly's exact invocation for a one-off machine changes
+   **The invariant, whichever way you achieve it: no machine may exist in the
+   customer-serving app that is not the server.** Everything below is about how
+   to satisfy that, and the honest answer is that nobody here has established
+   which method actually works.
+
+   **Preferred, and UNVERIFIED: a separate app.** `flyctl apps create
+   kmt-restore-test`, restore into a volume there, mount it, take the file,
+   destroy the app. Nothing customers can reach is involved at any point.
+
+   **The open question that decides whether this is possible: a Fly volume
+   belongs to exactly one app, and it is not established here whether a snapshot
+   of `kmt`'s volume can be restored into another app's volume.** If it can,
+   this is simply the right procedure and the paragraph below is unnecessary. If
+   it cannot, the separate-app path does not exist and pretending otherwise
+   sends the next person round a loop at the worst moment. **Settle it once, at
+   the start of the next drill, and rewrite this step with the answer** --
+   `flyctl volumes create --help` and one attempt will say.
+
+   **Fallback, if the volume cannot leave the app.** Do it in `kmt`, and treat
+   the machine as a live incident from the moment it exists:
+
+   - tell whoever watches the health monitor **before** creating it, because it
+     will fire and it should not be diagnosed from scratch;
+   - give it the shortest life that gets the file off, not `sleep 900`;
+   - destroy it the moment the transfer finishes, not at the end of the drill;
+   - confirm afterwards that the app is back to one machine and that
+     `x-kmt-release` is stable across several reads.
+
+   That is containment, not safety. It was thirteen minutes and a low-traffic
+   evening last time; the same procedure at 9am on a launch week is a different
+   sentence. Fly's exact invocation for a one-off machine changes
    between `flyctl` versions, so read `flyctl machine run --help` rather than
    trusting a command written here months earlier. What you need is a container
    with `kmt_restore_test` mounted at `/data` and a shell.
