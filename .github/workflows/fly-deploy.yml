@@ -242,15 +242,20 @@ jobs:
           echo "health: $health"
           echo "$health" | grep -q '"ok":true' || { echo "FAIL: health did not report ok"; exit 1; }
 
-          # The load-bearing assertion. /api/health proves the process can read
-          # its database; it says nothing about whether the image contains the
-          # files the app needs. The catalog is seeded at boot from
-          # src/data/scraped-tires.json, so an empty one means that file did not
-          # reach the image -- the .dockerignore failure, which looks like the
-          # app working right up until a customer tries to buy a tire.
+          # What this catches that the health poll does not.
           #
-          # It therefore depends on the seed running from that path. If seeding
-          # ever moves, this assertion moves with it.
+          # The two assertions cover different failures and both are needed. A
+          # file the app reads at *boot* takes the process down -- seeding does
+          # an unguarded readFileSync of src/data/scraped-tires.json -- and the
+          # poll above catches that, because the container never becomes
+          # healthy. A file read *after* boot does not: the image starts,
+          # serves, answers health, and fails only when a customer touches the
+          # feature. backend/zip-centroids.json is exactly that shape -- an
+          # image without it boots clean and then recognises no postcode.
+          #
+          # This assertion sees the second kind, by asking for data rather than
+          # for a pulse. It depends on the catalog being seeded at boot from
+          # src/data/scraped-tires.json; if seeding ever moves, it moves too.
           tires="$(curl -fsS http://localhost:8099/api/catalog | jq '.tires | length')"
           echo "catalog rows: $tires"
           if [ "$tires" -lt 1 ]; then
@@ -262,7 +267,9 @@ jobs:
       # A container that dies at boot leaves nothing else to read.
       - name: What the container said
         if: failure() && steps.scope.outputs.build == 'true'
-        run: docker logs kmt-gate 2>&1 | tail -50
+        run: |
+          docker logs kmt-gate 2>&1 | tail -50 ||
+            echo "no container: the build failed before one started, so the build log above is the failure"
 
       - name: Clean up
         if: always() && steps.scope.outputs.build == 'true'

@@ -49,4 +49,4 @@ backend/data
 # add a data-shaped rule here, name the directory exactly.
 
 # TEMPORARY: deliberate break to prove the gate fails. Reverted in the next commit.
-src/data
+src/data/scraped-tires.json
