@@ -1,0 +1,113 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { REASONS, centroidProvenance, describeServiceArea, distanceMiles, isServiceable, normalizeZip, readServiceAreaConfig } from './service-area.mjs'
+
+/** The area the business is expected to run with: Malden, 100 miles, review past 25. */
+const AREA = readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: '100' })
+
+/** Places a customer might type, by their downtown ZIP. */
+const ZIPS = {
+  malden: '02148', medford: '02155', boston: '02108', worcester: '01608', providence: '02903',
+  manchesterNH: '03101', portlandME: '04101', hartfordCT: '06103',
+  bangor: '04401', albany: '12207', newYorkCity: '10001',
+}
+
+test('the centroid table says where it came from', () => {
+  const provenance = centroidProvenance()
+  assert.match(provenance.source, /^https:\/\/www2\.census\.gov\/geo\/docs\/maps-data\/data\/gazetteer\//)
+  assert.match(provenance.vintage, /^\d{4}$/)
+  assert.match(provenance.cutOn, /^\d{4}-\d{2}-\d{2}$/)
+  assert.deepEqual(provenance.prefixes, ['010-069', '120-139'])
+  assert.ok(provenance.count > 2000, `a New England cut is thousands of ZIPs, not ${provenance.count}`)
+})
+
+test('distance is zero at home and roughly right to the places the van would go', () => {
+  assert.equal(distanceMiles(ZIPS.malden, ZIPS.malden), 0)
+  const near = (zip, miles, within = 3) => {
+    const actual = distanceMiles(ZIPS.malden, zip)
+    assert.ok(Math.abs(actual - miles) <= within, `${zip}: ${actual.toFixed(1)} miles, expected about ${miles}`)
+  }
+  near(ZIPS.boston, 5)
+  near(ZIPS.worcester, 40)
+  near(ZIPS.providence, 46)
+  near(ZIPS.manchesterNH, 44)
+  near(ZIPS.portlandME, 94)
+  near(ZIPS.hartfordCT, 95)
+  near(ZIPS.bangor, 200)
+  near(ZIPS.albany, 138)
+  assert.equal(distanceMiles(ZIPS.malden, '99999'), null, 'a ZIP the table lacks is null, not zero')
+  assert.equal(distanceMiles(ZIPS.malden, ZIPS.newYorkCity), null, 'the city is outside the cut prefixes')
+})
+
+test('inside the radius is served; the review band names the miles; beyond is refused with the miles', () => {
+  const home = isServiceable(ZIPS.malden, AREA)
+  assert.deepEqual(home, { serviceable: true, reason: null, miles: 0, message: null })
+
+  const close = isServiceable(ZIPS.medford, AREA)
+  assert.equal(close.serviceable, true)
+  assert.equal(close.reason, null, 'three miles needs no reason')
+  assert.equal(close.miles, 3)
+
+  for (const zip of [ZIPS.boston, ZIPS.worcester, ZIPS.providence, ZIPS.manchesterNH, ZIPS.portlandME, ZIPS.hartfordCT]) {
+    assert.equal(isServiceable(zip, AREA).serviceable, true, `${zip} is inside 100 miles`)
+  }
+
+  const worcester = isServiceable(ZIPS.worcester, AREA)
+  assert.equal(worcester.serviceable, true)
+  assert.equal(worcester.reason, REASONS.REVIEW)
+  assert.equal(worcester.miles, 40)
+  assert.match(worcester.message, /About 40 miles/, 'the owner is told how far, not just that it is far')
+
+  for (const zip of [ZIPS.bangor, ZIPS.albany]) {
+    const far = isServiceable(zip, AREA)
+    assert.equal(far.serviceable, false, `${zip} is beyond 100 miles`)
+    assert.equal(far.reason, REASONS.BEYOND_RADIUS)
+    assert.ok(far.miles > 100)
+    assert.match(far.message, new RegExp(`about ${far.miles} miles`))
+    assert.match(far.message, /100 mile area/)
+  }
+
+  // New York City is refused too, though as a ZIP the table does not carry:
+  // the cut stops at prefix 139, and 100xx is the city. Widening the cut
+  // would turn this into a beyond-radius refusal with the miles named.
+  const city = isServiceable(ZIPS.newYorkCity, AREA)
+  assert.equal(city.serviceable, false)
+  assert.equal(city.reason, REASONS.UNKNOWN)
+})
+
+test('an unknown or malformed ZIP is refused before any distance is computed', () => {
+  assert.deepEqual(isServiceable('99999', AREA), { serviceable: false, reason: REASONS.UNKNOWN, miles: null, message: 'We do not recognise that ZIP code.' })
+  for (const bad of ['2148', '021480', 'abcde', '', null, undefined, '02148-', '0214x']) {
+    const result = isServiceable(bad, AREA)
+    assert.equal(result.serviceable, false, `${JSON.stringify(bad)} is refused`)
+    assert.equal(result.reason, REASONS.MALFORMED)
+  }
+  assert.equal(normalizeZip(' 02148-1234 '), '02148', 'a ZIP+4 is its five-digit ZIP')
+  assert.equal(normalizeZip(2148), null, 'a number that lost its leading zero is not a ZIP')
+})
+
+test('with no radius set every known ZIP is accepted, and the review band still flags', () => {
+  const open = readServiceAreaConfig({})
+  assert.equal(open.radiusMiles, null)
+  assert.equal(open.baseZip, '02148', 'Malden by default')
+  assert.equal(open.reviewMiles, 25)
+  assert.equal(readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: '' }).radiusMiles, null, 'empty is unset')
+
+  const bangor = isServiceable(ZIPS.bangor, open)
+  assert.equal(bangor.serviceable, true)
+  assert.equal(bangor.reason, REASONS.REVIEW, 'accepted, but the owner is shown 200 miles')
+  assert.equal(bangor.miles, 200)
+  assert.equal(isServiceable('99999', open).serviceable, false, 'unknown is still unknown')
+  assert.match(describeServiceArea(open), /no radius \(every ZIP accepted\)/)
+  assert.match(describeServiceArea(AREA), /100 mile radius, review beyond 25 miles; \d+ ZIP centroids \(Census \d{4}\)/)
+})
+
+test('the configuration refuses a base the table does not know and a radius that is not a distance', () => {
+  assert.throws(() => readServiceAreaConfig({ KMT_SERVICE_BASE_ZIP: '99999' }), /KMT_SERVICE_BASE_ZIP/)
+  assert.throws(() => readServiceAreaConfig({ KMT_SERVICE_BASE_ZIP: 'home' }), /KMT_SERVICE_BASE_ZIP/)
+  assert.throws(() => readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: 'far' }), /KMT_SERVICE_RADIUS_MILES/)
+  assert.throws(() => readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: '0' }), /KMT_SERVICE_RADIUS_MILES/)
+  assert.throws(() => readServiceAreaConfig({ KMT_SERVICE_REVIEW_MILES: '-5' }), /KMT_SERVICE_REVIEW_MILES/)
+  const boston = readServiceAreaConfig({ KMT_SERVICE_BASE_ZIP: '02108', KMT_SERVICE_RADIUS_MILES: '50', KMT_SERVICE_REVIEW_MILES: '10' })
+  assert.deepEqual(boston, { baseZip: '02108', radiusMiles: 50, reviewMiles: 10 })
+})
