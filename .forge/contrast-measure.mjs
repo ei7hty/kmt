@@ -1,4 +1,4 @@
-/* global document */ // used inside page.evaluate, which runs in the browser
+/* global document, getComputedStyle, location */ // used inside page.evaluate, which runs in the browser
 /**
  * The fixed #85 measurement (WCAG contrast, including background-clip:text
  * headlines, and 44x44 tap targets), factored out so a11y-85-measure.mjs's

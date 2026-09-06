@@ -1,4 +1,3 @@
-/* global document, getComputedStyle, location */ // used inside page.evaluate, which runs in the browser
 /**
  * Measure issue #85 at 375px against a running server: contrast ratios for
  * every visible text element (with every brand-red pairing called out) and
