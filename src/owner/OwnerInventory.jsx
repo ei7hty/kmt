@@ -130,18 +130,23 @@ const compactSize = value => String(value).replace(/\D/g, '')
 
 function MarkupRule({ markup, onSaved }) {
   const [rate, setRate] = useState(String(markup.rate))
+  const [shippingPerTire, setShippingPerTire] = useState(String(markup.shippingPerTire ?? 0))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   async function save(event) {
     event.preventDefault()
     setError('')
-    const parsed = Number(rate)
-    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 10) {
+    const parsedRate = Number(rate)
+    if (!Number.isFinite(parsedRate) || parsedRate < 1 || parsedRate > 10) {
       setError('Enter a markup between 1 and 10 times the supplier price.'); return
     }
+    const parsedShipping = Number(shippingPerTire)
+    if (!Number.isFinite(parsedShipping) || parsedShipping < 0 || parsedShipping > 200) {
+      setError('Enter a per-tire shipping cost between $0 and $200.'); return
+    }
     setSaving(true)
-    try { onSaved(await api('markup', { method: 'PUT', body: JSON.stringify({ rate: parsed }) })) }
+    try { onSaved(await api('markup', { method: 'PUT', body: JSON.stringify({ rate: parsedRate, shippingPerTire: parsedShipping }) })) }
     catch (err) { setError(err.message) }
     finally { setSaving(false) }
   }
@@ -149,17 +154,105 @@ function MarkupRule({ markup, onSaved }) {
   return <section className="oi-refresh" aria-label="Markup rule">
     <div>
       <h2>Default markup</h2>
-      <p>Tires you have not priced are offered at the supplier price times this number. Any price you set below wins over it.</p>
+      <p>Tires you have not priced are offered at the supplier price plus shipping, times this number. Any price you set below wins over it.</p>
       <p className="oi-muted">
         {markup.isPlaceholder
-          ? 'Still the starting value — nobody has set this yet, so those prices are provisional.'
+          ? 'Still the starting values — nobody has set these yet, so those prices are provisional.'
           : `Set ${dateLabel(markup.updatedAt)}.`}
       </p>
     </div>
     <form className="oi-refresh-actions" onSubmit={save}>
-      <label htmlFor="markup-rate" className="oi-kicker">× SUPPLIER PRICE</label>
+      <label htmlFor="markup-rate" className="oi-kicker">× (SUPPLIER PRICE + SHIPPING)</label>
       <input id="markup-rate" value={rate} onChange={e => setRate(e.target.value)} inputMode="decimal" disabled={saving} />
+      <label htmlFor="markup-shipping" className="oi-kicker">SHIPPING PER TIRE ($)</label>
+      <input id="markup-shipping" value={shippingPerTire} onChange={e => setShippingPerTire(e.target.value)} inputMode="decimal" disabled={saving} />
       <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save markup'}</button>
+      {error && <p role="alert" className="oi-error">{error}</p>}
+    </form>
+  </section>
+}
+
+/**
+ * The quote-side settings: the mobile fee, disposal, tax. Per
+ * .forge/pricing-settings.md (#289): the mobile fee is already charged and
+ * this only makes it a number Ken can change; disposal and tax both default
+ * off, and turning tax on requires an answer from Ken's accountant about
+ * which lines it applies to, so that field is not guessed at here either.
+ */
+function PricingSettings({ pricing, onSaved }) {
+  const [mobileServiceFee, setMobileServiceFee] = useState(String(pricing.mobileServiceFee))
+  const [disposalOn, setDisposalOn] = useState(pricing.disposalFee !== null)
+  const [disposalFee, setDisposalFee] = useState(String(pricing.disposalFee ?? ''))
+  const [taxOn, setTaxOn] = useState(pricing.tax !== null)
+  const [taxRate, setTaxRate] = useState(String(pricing.tax ? pricing.tax.rate * 100 : ''))
+  const [taxAppliesTo, setTaxAppliesTo] = useState(pricing.tax?.appliesTo ?? 'all')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save(event) {
+    event.preventDefault()
+    setError('')
+    const parsedFee = Number(mobileServiceFee)
+    if (!Number.isFinite(parsedFee) || parsedFee <= 0 || parsedFee > 1000) {
+      setError('Enter a mobile service fee between $0 and $1000.'); return
+    }
+    let parsedDisposal = null
+    if (disposalOn) {
+      parsedDisposal = Number(disposalFee)
+      if (!Number.isFinite(parsedDisposal) || parsedDisposal < 0 || parsedDisposal > 200) {
+        setError('Enter a disposal fee between $0 and $200, or turn disposal off.'); return
+      }
+    }
+    let tax = null
+    if (taxOn) {
+      const parsedRate = Number(taxRate)
+      if (!Number.isFinite(parsedRate) || parsedRate <= 0 || parsedRate >= 25) {
+        setError('Enter a tax rate between 0 and 25%.'); return
+      }
+      tax = { rate: parsedRate / 100, appliesTo: taxAppliesTo }
+    }
+    setSaving(true)
+    try {
+      onSaved(await api('pricing', {
+        method: 'PUT',
+        body: JSON.stringify({ mobileServiceFee: parsedFee, disposalFee: parsedDisposal, tax }),
+      }))
+    } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return <section className="oi-refresh" aria-label="Pricing settings">
+    <div>
+      <h2>Pricing settings</h2>
+      <p className="oi-muted">
+        {pricing.mobileServiceFeeIsPlaceholder
+          ? 'The mobile fee is still the starting value — nobody has set it yet.'
+          : `Set ${dateLabel(pricing.updatedAt)}.`}
+      </p>
+    </div>
+    <form className="oi-refresh-actions" onSubmit={save}>
+      <label htmlFor="pricing-fee" className="oi-kicker">MOBILE SERVICE FEE ($, PER VISIT)</label>
+      <input id="pricing-fee" value={mobileServiceFee} onChange={e => setMobileServiceFee(e.target.value)} inputMode="decimal" disabled={saving} />
+
+      <label><input type="checkbox" checked={disposalOn} onChange={e => setDisposalOn(e.target.checked)} disabled={saving} /> Offer old-tire disposal to customers</label>
+      {disposalOn && <>
+        <label htmlFor="pricing-disposal" className="oi-kicker">DISPOSAL FEE ($, PER TIRE)</label>
+        <input id="pricing-disposal" value={disposalFee} onChange={e => setDisposalFee(e.target.value)} inputMode="decimal" disabled={saving} />
+      </>}
+
+      <label><input type="checkbox" checked={taxOn} onChange={e => setTaxOn(e.target.checked)} disabled={saving} /> Charge tax</label>
+      {taxOn && <>
+        <label htmlFor="pricing-tax-rate" className="oi-kicker">TAX RATE (%)</label>
+        <input id="pricing-tax-rate" value={taxRate} onChange={e => setTaxRate(e.target.value)} inputMode="decimal" disabled={saving} />
+        <label htmlFor="pricing-tax-applies" className="oi-kicker">APPLIES TO</label>
+        <select id="pricing-tax-applies" value={taxAppliesTo} onChange={e => setTaxAppliesTo(e.target.value)} disabled={saving}>
+          <option value="all">Everything</option>
+          <option value="goods">Tires only</option>
+          <option value="services">Labour and disposal only</option>
+        </select>
+      </>}
+
+      <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save pricing'}</button>
       {error && <p role="alert" className="oi-error">{error}</p>}
     </form>
   </section>
@@ -380,7 +473,12 @@ export default function OwnerInventory({ navigate }) {
   function markupSaved(markup) {
     invalidate()
     setData(previous => ({ ...previous, summary: { ...previous.summary, markup } }))
-    setNotice(`Default markup saved. Tires you have not priced are now offered at ${markup.rate}× the supplier price.`)
+    setNotice(`Default markup saved. Tires you have not priced are now offered at ${markup.rate}× (supplier price + $${markup.shippingPerTire} shipping).`)
+  }
+
+  function pricingSaved(pricing) {
+    setData(previous => ({ ...previous, summary: { ...previous.summary, pricing } }))
+    setNotice('Pricing settings saved.')
   }
 
   function saved(id, offer) {
@@ -447,6 +545,7 @@ export default function OwnerInventory({ navigate }) {
       </section>
       <BrowserImport sizes={summary?.sizes} />
       {summary?.markup && <MarkupRule markup={summary.markup} onSaved={markupSaved} />}
+      {summary?.pricing && <PricingSettings pricing={summary.pricing} onSaved={pricingSaved} />}
       {summary?.brands?.length > 0 && <BrandOffers brands={summary.brands} onChanged={load} />}
         </div>
       </div>

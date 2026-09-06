@@ -300,6 +300,42 @@ test('markup rejects rates that would quote below cost or reprice by typo', t =>
   assert.equal(db.getMarkup().isPlaceholder, true, 'nothing was written by the rejected saves')
 })
 
+test('shipping per tire is folded into landed cost before the rate multiplies it (#289)', t => {
+  const db = setup(t)
+  assert.equal(db.getMarkup().shippingPerTire, DEFAULT_MARKUP_SETTINGS.shippingPerTire, 'starts at the shared default')
+
+  const saved = db.saveMarkup({ rate: 1.5, shippingPerTire: 8 })
+  assert.equal(saved.shippingPerTire, 8)
+  assert.equal(saved.isPlaceholder, false)
+
+  // (supplierPrice + shipping) x rate, not supplierPrice x rate + shipping.
+  assert.equal(quotedPrice({ supplierPrice: 50, offer: null, settings: db.getMarkup() }).price, 87, '(50 + 8) x 1.5')
+})
+
+test('omitting shippingPerTire on a save keeps whatever was already stored', t => {
+  const db = setup(t)
+  db.saveMarkup({ rate: 1.5, shippingPerTire: 8 })
+  // A caller that only ever knew about `rate` (every one before this change)
+  // must not silently reset shipping back to a guess.
+  const saved = db.saveMarkup({ rate: 1.6 })
+  assert.equal(saved.shippingPerTire, 8, 'rate-only saves do not touch shipping')
+})
+
+test('shipping rejects a negative cost or an unreasonable one', t => {
+  const db = setup(t)
+  for (const shippingPerTire of [-1, 201, Number.NaN, Infinity, 'eight']) {
+    assert.throws(() => db.saveMarkup({ rate: 1.5, shippingPerTire }), /shipping cost between \$0 and \$200/, `rejected ${String(shippingPerTire)}`)
+  }
+  assert.equal(db.getMarkup().isPlaceholder, true, 'nothing was written by the rejected saves')
+})
+
+test('zero shipping is a real, explicit answer -- Ken absorbing the cost -- not a rejected one', t => {
+  const db = setup(t)
+  const saved = db.saveMarkup({ rate: 1.5, shippingPerTire: 0 })
+  assert.equal(saved.shippingPerTire, 0)
+  assert.equal(saved.isPlaceholder, false)
+})
+
 test('markup never overrides a price the owner set', t => {
   const db = setup(t)
   db.saveMarkup({ rate: 2 })
@@ -337,6 +373,69 @@ test('owner markup endpoint saves and validates over HTTP', async t => {
   const bad = await call('PUT', { rate: 0.5 })
   assert.equal(bad.status, 400)
   assert.equal(db.getMarkup().rate, 1.45, 'the rejected save left the stored rule alone')
+})
+
+test('pricing settings start inert, and each field carries its own placeholder flag (#289)', t => {
+  const db = setup(t)
+  const initial = db.getPricingSettings()
+  assert.equal(initial.mobileServiceFee, 49.99, 'the fee already being charged')
+  assert.equal(initial.mobileServiceFeeIsPlaceholder, true)
+  assert.equal(initial.disposalFee, null, 'off until Ken sets one')
+  assert.equal(initial.tax, null, 'absent, not a placeholder')
+  assert.equal(db.summary().pricing.mobileServiceFee, 49.99, 'inventory summary carries it for the screen')
+})
+
+test('saving pricing settings stores cents and reads back dollars', t => {
+  const db = setup(t)
+  const saved = db.savePricingSettings({ mobileServiceFee: 55, disposalFee: 6.5, tax: { rate: 0.0625, appliesTo: 'goods' } })
+  assert.equal(saved.mobileServiceFee, 55)
+  assert.equal(saved.mobileServiceFeeIsPlaceholder, false)
+  assert.equal(saved.disposalFee, 6.5)
+  assert.deepEqual(saved.tax, { rate: 0.0625, appliesTo: 'goods' })
+  assert.ok(saved.updatedAt)
+  assert.equal(db.getPricingSettings().mobileServiceFee, 55, 'survives a fresh read')
+})
+
+test('turning disposal off is a real save, stored as null, not left as a stale amount', t => {
+  const db = setup(t)
+  db.savePricingSettings({ mobileServiceFee: 49.99, disposalFee: 6.5, tax: null })
+  const off = db.savePricingSettings({ mobileServiceFee: 49.99, disposalFee: null, tax: null })
+  assert.equal(off.disposalFee, null)
+  assert.equal(db.getPricingSettings().disposalFee, null)
+})
+
+test('pricing settings reject a fee, a disposal amount, or a tax shape that would misprice', t => {
+  const db = setup(t)
+  assert.throws(() => db.savePricingSettings({ mobileServiceFee: 0 }), /mobile service fee between \$0 and \$1000/)
+  assert.throws(() => db.savePricingSettings({ mobileServiceFee: -5 }), /mobile service fee/)
+  assert.throws(() => db.savePricingSettings({ mobileServiceFee: 49.99, disposalFee: -1 }), /disposal fee between \$0 and \$200/)
+  assert.throws(() => db.savePricingSettings({ mobileServiceFee: 49.99, disposalFee: null, tax: { rate: 1, appliesTo: 'all' } }), /tax rate between 0 and 25%/)
+  assert.throws(() => db.savePricingSettings({ mobileServiceFee: 49.99, disposalFee: null, tax: { rate: 0.06, appliesTo: 'nowhere' } }), /which lines the tax applies to/)
+  assert.equal(db.getPricingSettings().mobileServiceFeeIsPlaceholder, true, 'nothing was written by the rejected saves')
+})
+
+test('owner pricing endpoint saves and validates over HTTP', async t => {
+  const db = setup(t)
+  const api = createApi(db, new Refresher(db))
+  const server = createServer(async (request, response) => { if (!(await api(request, response))) response.writeHead(404).end() })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+  const call = (method, body) => fetch(`${base}/api/owner/pricing`, {
+    method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body),
+  })
+
+  const read = await call('GET')
+  assert.equal(read.status, 200)
+  assert.equal((await read.json()).mobileServiceFeeIsPlaceholder, true)
+
+  const ok = await call('PUT', { mobileServiceFee: 60, disposalFee: null, tax: null })
+  assert.equal(ok.status, 200)
+  assert.equal((await ok.json()).mobileServiceFee, 60)
+
+  const bad = await call('PUT', { mobileServiceFee: -1 })
+  assert.equal(bad.status, 400)
+  assert.equal(db.getPricingSettings().mobileServiceFee, 60, 'the rejected save left the stored settings alone')
 })
 
 test('auth refuses to start without a usable password', () => {

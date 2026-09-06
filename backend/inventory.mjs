@@ -4,9 +4,11 @@ import { DatabaseSync } from 'node:sqlite'
 // rule. Importing it rather than restating 1.35 here means the two cannot
 // drift into disagreeing about what an unconfigured catalog costs.
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
+import { DEFAULT_PRICING_SETTINGS, normalizePricingSettings } from '../src/pricing.js'
 import { deriveBrand } from '../src/data/brand.js'
 
 const DEFAULT_MARKUP_RATE = DEFAULT_MARKUP_SETTINGS.rate
+const DEFAULT_SHIPPING_PER_TIRE = DEFAULT_MARKUP_SETTINGS.shippingPerTire
 
 export class InputError extends Error {
   constructor(message, status = 400) { super(message); this.status = status }
@@ -85,7 +87,7 @@ export class Inventory {
    * as a decision that was made.
    */
   getMarkup() {
-    return this.getMeta('markup') ?? { rate: DEFAULT_MARKUP_RATE, isPlaceholder: true, updatedAt: null }
+    return this.getMeta('markup') ?? { rate: DEFAULT_MARKUP_RATE, shippingPerTire: DEFAULT_SHIPPING_PER_TIRE, isPlaceholder: true, updatedAt: null }
   }
 
   saveMarkup(input) {
@@ -94,9 +96,79 @@ export class Inventory {
     if (!input || !Number.isFinite(input.rate) || input.rate < 1 || input.rate > 10) {
       throw new InputError('Enter a markup between 1 and 10 times the supplier price.')
     }
-    const markup = { rate: Math.round(input.rate * 10000) / 10000, isPlaceholder: false, updatedAt: now() }
+    // Omitted means "not changing this" (every caller before shipping existed
+    // still only sends `rate`), not zero -- so a missing field keeps whatever
+    // is already stored, or the default, rather than refusing the whole save.
+    // Zero is still a real, explicit answer (Ken absorbs shipping); a negative
+    // number or anything past the guard rail is refused either way.
+    const shippingPerTire = input.shippingPerTire === undefined
+      ? (this.getMeta('markup')?.shippingPerTire ?? DEFAULT_SHIPPING_PER_TIRE)
+      : input.shippingPerTire
+    if (!Number.isFinite(shippingPerTire) || shippingPerTire < 0 || shippingPerTire > 200) {
+      throw new InputError('Enter a per-tire shipping cost between $0 and $200.')
+    }
+    const markup = {
+      rate: Math.round(input.rate * 10000) / 10000,
+      shippingPerTire: Math.round(shippingPerTire * 100) / 100,
+      isPlaceholder: false,
+      updatedAt: now(),
+    }
     this.setMeta('markup', markup)
     return markup
+  }
+
+  /**
+   * The quote-side settings: the mobile fee, disposal, tax (.forge/pricing-
+   * settings.md, #289). Stored as integer cents, the way `offers.price_cents`
+   * already is -- a tax rate multiplied across several lines is where float
+   * drift starts to matter, and cents is the cheap fix while this is being
+   * built anyway. `src/pricing.js` works in dollars, the way tire prices
+   * already do, so the conversion happens here, at the one boundary, and
+   * `calculateDraftQuote` never has to know the database's units.
+   */
+  getPricingSettings() {
+    const stored = this.getMeta('pricing')
+    if (!stored) return { ...DEFAULT_PRICING_SETTINGS, updatedAt: null }
+    return normalizePricingSettings({
+      mobileServiceFee: stored.mobileServiceFeeCents / 100,
+      mobileServiceFeeIsPlaceholder: stored.mobileServiceFeeIsPlaceholder,
+      disposalFee: stored.disposalFeeCents === null ? null : stored.disposalFeeCents / 100,
+      disposalFeeIsPlaceholder: stored.disposalFeeIsPlaceholder,
+      tax: stored.tax,
+      updatedAt: stored.updatedAt,
+    })
+  }
+
+  savePricingSettings(input) {
+    if (!input || !Number.isFinite(input.mobileServiceFee) || input.mobileServiceFee <= 0 || input.mobileServiceFee > 1000) {
+      throw new InputError('Enter a mobile service fee between $0 and $1000.')
+    }
+    // null is "not offered"; anything else has to be a real amount, not a guess.
+    if (input.disposalFee !== null && (!Number.isFinite(input.disposalFee) || input.disposalFee < 0 || input.disposalFee > 200)) {
+      throw new InputError('Enter a disposal fee between $0 and $200, or leave it off.')
+    }
+    let tax = null
+    if (input.tax !== null && input.tax !== undefined) {
+      // A rate is a fraction of the price, not a percentage typed as one: 6.25% is 0.0625.
+      // The upper bound is a typo guard (a rate above 25% is not a tax rate anyone charges here).
+      if (!Number.isFinite(input.tax.rate) || input.tax.rate <= 0 || input.tax.rate >= 0.25) {
+        throw new InputError('Enter a tax rate between 0 and 25%, as a fraction (6.25% is 0.0625).')
+      }
+      if (!['all', 'goods', 'services'].includes(input.tax.appliesTo)) {
+        throw new InputError('Choose which lines the tax applies to.')
+      }
+      tax = { rate: input.tax.rate, appliesTo: input.tax.appliesTo }
+    }
+    const pricing = {
+      mobileServiceFeeCents: Math.round(input.mobileServiceFee * 100),
+      mobileServiceFeeIsPlaceholder: false,
+      disposalFeeCents: input.disposalFee === null ? null : Math.round(input.disposalFee * 100),
+      disposalFeeIsPlaceholder: false,
+      tax,
+      updatedAt: now(),
+    }
+    this.setMeta('pricing', pricing)
+    return this.getPricingSettings()
   }
 
   /**
@@ -450,6 +522,9 @@ export class Inventory {
       // Carried on the inventory response so the screen can show the rule and
       // each tire's suggested price without a second round trip.
       markup: this.getMarkup(),
+      // Same reasoning: the mobile fee, disposal and tax settings ride along
+      // rather than needing their own request.
+      pricing: this.getPricingSettings(),
       // Same reasoning: the brand picker's counts ride along rather than
       // needing their own request.
       brands: this.brandSummary(),

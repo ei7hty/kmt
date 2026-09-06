@@ -74,6 +74,31 @@ test('a submit stores the request and its quote, priced exactly as the frontend 
   assert.equal(found.quote.total, quote.total)
 })
 
+test('submit reads the owner\'s pricing settings, not the constant, and the customer sees subtotal but not the raw tax gate', async t => {
+  const { inventory, quotes } = setup(t)
+  inventory.savePricingSettings({ mobileServiceFee: 75, disposalFee: 6, tax: { rate: 0.1, appliesTo: 'all' } })
+
+  const { request, quote } = quotes.submit(form({ disposeOldTires: true }))
+  assert.ok(quote.lineItems.some(line => line.description === 'Mobile installation service' && line.unitPrice === 75))
+  assert.ok(quote.lineItems.some(line => line.description === 'Old tire disposal' && line.unitPrice === 6))
+  const tireLine = quote.lineItems.find(line => line.description === 'Test Touring')
+  assert.equal(quote.subtotal, tireLine.quantity * tireLine.unitPrice + 75 + 6 * 4, 'four tires at the catalog (marked-up) price, the configured fee, four tires’ worth of disposal')
+  assert.deepEqual(quote.tax, { rate: 0.1, appliesTo: 'all', amount: Math.round(quote.subtotal * 0.1 * 100) / 100 })
+  assert.equal(quote.total, Math.round((quote.subtotal + quote.tax.amount) * 100) / 100)
+
+  // Both fields are in CUSTOMER_QUOTE_FIELDS (#289): the customer's own read carries them too.
+  const customerRead = quotes.get(request.id)
+  assert.equal(customerRead.quote.subtotal, quote.subtotal)
+  assert.deepEqual(customerRead.quote.tax, quote.tax)
+})
+
+test('with tax off (the default everywhere), a request never carries a tax key at all', async t => {
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form())
+  assert.equal('tax' in quotes.get(request.id).quote, false)
+  assert.equal('tax' in quotes.get(request.id, 'owner').quote, false)
+})
+
 test('an owner adjustment changes the current quote and keeps the original draft', async t => {
   const { quotes } = setup(t)
   const original = quotes.submit(form())
@@ -428,7 +453,7 @@ test('a request stored before contact fields existed renders without error, cont
 /* ------------------------------------------------- who reads what (t44, #65) */
 
 /** The fields a customer read may carry, and the ones it never may. */
-const CUSTOMER_FIELDS = ['id', 'vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip', 'createdAt', 'updatedAt']
+const CUSTOMER_FIELDS = ['id', 'vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip', 'disposeOldTires', 'createdAt', 'updatedAt']
 const OWNER_ONLY = ['customerName', 'customerEmail', 'customerPhone', 'location', 'locationNotes']
 
 test('a request read by id is the customer shape: no name, email, phone or location notes', async t => {
