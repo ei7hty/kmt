@@ -47,6 +47,3 @@ backend/data
 # reads it at boot to seed the catalog, so a rule like `data` or `**/data` would
 # build an image that starts, serves, and shows an empty catalog. If you ever
 # add a data-shaped rule here, name the directory exactly.
-
-# TEMPORARY: deliberate break to prove the gate fails. Reverted in the next commit.
-src/data/scraped-tires.json
