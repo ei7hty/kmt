@@ -19,7 +19,7 @@ function Privacy({ navigate }) {
         <p className="eyebrow">PRIVACY</p>
         <h1 className="owner-heading">How KMT handles your details</h1>
         <div className="panel privacy-panel">
-          <h2>What we collect</h2>
+          <h2>What Ken&apos;s Mobile Tire collects</h2>
           <p>Your name, your email address, your mobile number if you give one, the address where the vehicle is, any notes on finding it, and the vehicle and tires you chose.</p>
           <h2>Why</h2>
           <p>To draft your quote, to reach you about it, and to come to the right place with the right tires.</p>
