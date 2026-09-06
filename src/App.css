@@ -1357,13 +1357,19 @@
 .owner-request-ref { flex-shrink: 0; padding: 2px 6px; font-size: 12px; color: var(--muted); background: var(--bg); }
 .owner-request-age { margin: -6px 0 14px; font-size: 12px; color: var(--muted); }
 
-/* At phone width the internal nav is two rows: the lockup, then the actions
-   in one row of three rather than two rows with one orphan. */
+/* At phone width the internal nav is one row: the brand shrinks to its icon
+   (the button keeps its name for assistive tech) and the actions share the
+   rest as equal columns, each 44px tall and free to wrap its own label. The
+   t59 pass kept the lockup and put the actions on a second row; the review
+   measured that as a two-row nav, and it was. */
 @media (max-width: 480px) {
-  .internal-nav { flex-wrap: wrap; row-gap: 10px; }
-  .internal-nav-links { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-  .internal-nav-links .btn { min-height: 44px; padding: 8px 6px; font-size: 10px; line-height: 1.2; white-space: normal; }
-  .internal-nav-links:has(> :only-child), .internal-nav-links:has(> :nth-child(2):last-child) { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+  .internal-nav { flex-wrap: nowrap; gap: 10px; }
+  .internal-nav .brand-word { flex: none; min-width: 44px; justify-content: center; font-size: 0 !important; letter-spacing: 0; }
+  .internal-nav .brand-word span { display: none; }
+  .internal-nav .brand-word .brand-mark-icon { margin-right: 0; }
+  .internal-nav-links { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .internal-nav-links .btn { min-height: 44px; padding: 6px 4px; font-size: 10px; line-height: 1.2; white-space: normal; }
+  .internal-nav-links:has(> :only-child), .internal-nav-links:has(> :nth-child(2):last-child) { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
 }
 
 /* Tap targets (#85, measured by the a11y pass: 55 of 353 controls under 44px
