@@ -2,6 +2,8 @@ import { chromium } from 'playwright';
 import { EXCEPTION_TIRE, cleanTireFor, freshPage, openOwnerQuotes, submitRequest } from './audit-ui.mjs';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4173';
+/** A preferred date always ahead of today: the server refuses a past day (#70). */
+const SOON = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
 const VIEWPORTS = [
   { name: 'phone', width: 375, height: 812 },
   { name: 'desktop', width: 1280, height: 900 },
@@ -64,7 +66,7 @@ const screens = [
         base: BASE, ...EXCEPTION_TIRE,
         vehicle: '2020 Ford F-150 Pickup Truck Long Bed XLT',
         location: '123 Very Long Street Address Name, Springfield, ST 00000',
-        date: '2026-09-10',
+        date: SOON,
         notes: 'Behind the building, blue truck by the loading bay',
       });
       await openOwnerQuotes(page);
@@ -78,7 +80,7 @@ const screens = [
         base: BASE, ...(await cleanTireFor(BASE)),
         vehicle: '2020 Toyota Corolla',
         location: '456 Demo Ave, Everett, MA 02149',
-        date: '2026-09-10',
+        date: SOON,
       });
       await openOwnerQuotes(page);
       await page.click('button:has-text("Approve")');

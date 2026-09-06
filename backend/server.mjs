@@ -38,6 +38,7 @@ import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
 import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { Quotes } from './quotes.mjs'
+import { describeServiceArea, readServiceAreaConfig } from './service-area.mjs'
 import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
 import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl } from './site.mjs'
@@ -75,7 +76,17 @@ const auth = createAuth(authConfig, {
 })
 const refresher = new Refresher(inventory)
 const importer = new PageImporter(inventory)
-const quotes = new Quotes(inventory)
+// Where the van goes (t48): a base ZIP the table does not know, or a radius
+// that is not a distance, is refused here at boot rather than at the first
+// submit, the way a bad password is.
+let serviceArea
+try {
+  serviceArea = readServiceAreaConfig()
+} catch (error) {
+  console.error(error.message)
+  process.exit(1)
+}
+const quotes = new Quotes(inventory, { serviceArea })
 const api = createApi(inventory, refresher, importer, quotes)
 const catalogApi = createCatalogApi(inventory)
 // The platform's health check, mounted here too so the local server and the
@@ -187,6 +198,7 @@ server.listen(port, bind, () => {
   if (!process.env.KMT_SESSION_SECRET) {
     console.log('KMT_SESSION_SECRET unset: sessions will not survive a restart.')
   }
+  console.log(describeServiceArea(serviceArea))
 })
 
 let stopping = false
