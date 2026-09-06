@@ -57,7 +57,8 @@ changes alongside the cutover's. Each line below says which change owns it.
   size and the field list should not change without a reason.
 - `/brand/*` read `no-cache` with no validators. After #147 (merged, live)
   the same paths read `public, max-age=86400, stale-while-revalidate=604800`
-  with an `ETag` and a `Last-Modified`; `/assets/*` stays `immutable`.
+  with an `ETag` and a `Last-Modified`, and a conditional GET (`If-None-Match`)
+  answers `304` with an empty body; `/assets/*` stays `immutable`.
 - `/robots.txt` and `/sitemap.xml` read as the app shell (`200 text/html`).
   After #147 they are real files: `text/plain` disallowing everything but the
   customer flow, and `application/xml`. Every other unknown path, including
