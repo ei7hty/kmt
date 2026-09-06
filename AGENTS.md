@@ -8,6 +8,8 @@ belong to which lane, and what has to pass before anything is done lives in
 
 The short version, because it has already cost real work here:
 
+- Claim your work with a row in `.forge/CLAIMS.md` before you start, and
+  remove it when you are done.
 - Never `git add -A` or `git add .`. Stage explicit paths; commit only files
   you changed.
 - Check `git branch --show-current` before committing. Do not assume `main`.
@@ -15,5 +17,7 @@ The short version, because it has already cost real work here:
   `git switch`.
 - Nothing is done until the tests, lint, build and browser audits in
   `README.md` pass. Run them; do not assume them.
+- Do not merge your own pull request. A second agent reads the diff and the
+  counts, and merges.
 
 `README.md` explains what the project is and how to run it.
