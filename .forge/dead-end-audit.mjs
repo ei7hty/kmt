@@ -13,7 +13,26 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 50;
+const EXPECTED_CHECKS = 54;
+
+/**
+ * Preferred dates, always ahead of today. The server refuses a day in the
+ * past (#70), and a fixed date in a script is a gate that goes red on a
+ * morning nobody changed anything.
+ */
+const daysAhead = (days) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+const SOON = daysAhead(7);
+const LATER = daysAhead(8);
+const LATEST = daysAhead(9);
+
+/**
+ * ZIPs the service-area check answers differently (t48). The base is Malden
+ * 02148 with a 100-mile radius and a 25-mile review band by default; Everett
+ * is next door, Worcester is about 40 miles, Bangor about 200.
+ */
+const ZIP_IN_AREA = '02149';
+const ZIP_REVIEW = '01608';
+const ZIP_OUT_OF_AREA = '04401';
 
 let passed = 0;
 let failed = 0;
@@ -56,7 +75,7 @@ function reportCount() {
  *
  * @param size  Tire size as it appears in the catalog, e.g. '265/70R16'.
  */
-async function submitRequest(page, { size, tireName, vehicle, location, date, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
+async function submitRequest(page, { size, tireName, vehicle, location, date, zip = ZIP_IN_AREA, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
   const [width, rest] = size.split('/');
   const [ratio, diameter] = rest.split('R');
 
@@ -65,11 +84,13 @@ async function submitRequest(page, { size, tireName, vehicle, location, date, cu
   try {
     await page.goto(BASE + '/');
 
-    // Step 1: fitment. Each stage advances as soon as a value is chosen.
+    // Step 1: fitment. Each stage advances as soon as a value is chosen. The
+    // ZIP typed here carries into the service details, and the server needs
+    // it: it is where the van goes.
     for (const value of [width, ratio, diameter]) {
       await page.click(`.fitment-option:has-text("${value}")`, step);
     }
-    await page.fill('#fitmentZip', '02149').catch(() => {}); // Optional field.
+    await page.fill('#fitmentZip', zip, step);
     await page.click('button:has-text("Continue to tires")', step);
 
     // Step 2: pick the tire by its catalog name, and say what it is going on.
@@ -135,7 +156,7 @@ async function main() {
       ...EXCEPTION_TIRE,
       vehicle: '2019 Ford F-150 Pickup',
       location: '123 Demo St',
-      date: '2025-06-01',
+      date: SOON,
     });
 
     const submissionMsg = await page.locator('[role="status"]').first().textContent().catch(() => null);
@@ -307,6 +328,46 @@ async function main() {
       }
     }
 
+    // 6b. The service area (t48). Beyond the radius, the customer is refused
+    //     with the distance and a way to call, not a quote for a job nobody
+    //     will do. Past the review distance but inside the radius, the
+    //     request goes through and the owner's card says how far.
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
+    await submitRequest(page, {
+      ...CLEAN_TIRE,
+      vehicle: '2021 Honda Civic',
+      location: '1 Far Away Rd, Bangor, ME',
+      date: SOON,
+      zip: ZIP_OUT_OF_AREA,
+    });
+    const refusal = await page.locator('.submit-failure').first();
+    const refusalText = (await refusal.textContent().catch(() => '')) || '';
+    const refusalPhone = await refusal.locator('a[href^="tel:"]').first().isVisible().catch(() => false);
+    if (/about \d+ miles/.test(refusalText) && /outside the \d+ mile area/.test(refusalText) && refusalPhone) {
+      ok(`Customer form: a ZIP beyond the service area (${ZIP_OUT_OF_AREA}) is refused with the distance and a visible phone link.`);
+    } else {
+      fail(`Customer form: out-of-area ZIP ${ZIP_OUT_OF_AREA} was not refused with the distance and a phone link. Got: ${refusalText.slice(0, 200)}`);
+    }
+
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
+    await submitRequest(page, {
+      ...CLEAN_TIRE,
+      vehicle: '2021 Honda Civic',
+      location: '100 Front St, Worcester, MA',
+      date: SOON,
+      zip: ZIP_REVIEW,
+    });
+    await openOwnerQuotes(page);
+    const reviewCard = await page.locator('.owner-request', { hasText: 'Worcester' }).first();
+    const reviewText = (await reviewCard.textContent().catch(() => '')) || '';
+    if (/Owner review required/.test(reviewText) && /about \d+ miles from base/.test(reviewText)) {
+      ok(`/owner: a request from the review band (${ZIP_REVIEW}) shows "Owner review required" with the distance in miles.`);
+    } else {
+      fail(`/owner: the review-band request (${ZIP_REVIEW}) did not show the review reason with the miles. Got: ${reviewText.slice(0, 200)}`);
+    }
+
     // 7. Rejected quote path: does the customer have a next action, or a dead end?
     await context.close();
     ({ context, page } = await freshPage(browser, viewport));
@@ -314,7 +375,7 @@ async function main() {
       ...CLEAN_TIRE,
       vehicle: '2021 Honda Civic',
       location: '456 Demo Ave',
-      date: '2025-06-02',
+      date: LATER,
     });
     await openOwnerQuotes(page);
     const rejectVisible = await page.locator('button:has-text("Reject")').first().isVisible().catch(() => false);
@@ -357,6 +418,9 @@ async function main() {
     for (const value of [qWidth, qRatio, qDiameter]) {
       await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
     }
+    // The ZIP is required at submit now (t48); this scenario drives the
+    // fitment step itself rather than through submitRequest(), so it types it.
+    await page.fill('#fitmentZip', ZIP_IN_AREA, { timeout: 5000 });
     await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
     await expandTireList(page);
     await page.click(`.tire-option:has-text("${CLEAN_TIRE.tireName}")`, { timeout: 5000 });
@@ -370,7 +434,7 @@ async function main() {
     await page.fill('#vehicleInfo', '2020 Toyota Camry', { timeout: 5000 });
     await page.click('button:has-text("Continue to mobile service")', { timeout: 5000 });
     await page.fill('#location', '789 Demo Blvd', { timeout: 5000 });
-    await page.fill('#date', '2025-06-03', { timeout: 5000 });
+    await page.fill('#date', LATEST, { timeout: 5000 });
     await page.fill('#customerName', 'Jamie Rivera', { timeout: 5000 });
     await page.fill('#customerEmail', 'jamie@example.com', { timeout: 5000 });
     await page.click('button[type="submit"]', { timeout: 5000 });
