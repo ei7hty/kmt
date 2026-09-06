@@ -50,7 +50,7 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 45;
+const EXPECTED_CHECKS = 47;
 
 let passed = 0;
 let failed = 0;
@@ -81,6 +81,39 @@ function describeFetchError(error) {
   const code = error.cause?.code || error.code;
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return `no DNS record for this host (${code})`;
   return `request failed: ${error.message.split('\n')[0]}`;
+}
+
+/**
+ * og:image, absolute and naming the canonical host (the auditor's design).
+ * A relative tag is silently useless: no social scraper resolves it, and
+ * nothing else in this gate reads a meta tag at all, so a wrong one would
+ * ship unnoticed the way #145's tag briefly was on an earlier revision of
+ * that branch -- never on main, per the auditor's own check of the merge
+ * tree, but real enough during review that it earns a permanent assertion.
+ *
+ * Missing, relative, and wrong-host are three different mistakes with one
+ * fix each, but they get one check: the detail string names which,
+ * matching how this file already writes a condition plus a detail rather
+ * than three near-duplicate checks for one property.
+ */
+function checkOgImageTag(html, canonicalHost) {
+  const match = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i)
+    || html.match(/<meta\s+content=["']([^"']+)["']\s+property=["']og:image["']/i);
+  if (!match) return { ok: false, url: null, reason: 'no og:image tag found' };
+  const content = match[1];
+  if (!/^https?:\/\//i.test(content)) {
+    return { ok: false, url: content, reason: `relative, not absolute: ${content}` };
+  }
+  let host;
+  try {
+    host = new URL(content).hostname.toLowerCase();
+  } catch {
+    return { ok: false, url: content, reason: `not a valid URL: ${content}` };
+  }
+  if (host !== canonicalHost.toLowerCase()) {
+    return { ok: false, url: content, reason: `host is ${host}, not the canonical host ${canonicalHost}` };
+  }
+  return { ok: true, url: content, reason: '' };
 }
 
 /**
@@ -460,6 +493,29 @@ async function main() {
       manifestLinkTag ? '' : homeBody.includes('manifest') ? 'a manifest reference exists but not as a <link> tag' : 'no manifest reference found');
   } catch (error) {
     fail(`the live index.html links the manifest, not just serves it separately — ${describeFetchError(error)}`);
+  }
+
+  try {
+    const homeHtml = await (await fetch(`${BASE}/`)).text();
+    const ogImage = checkOgImageTag(homeHtml, CANONICAL_HOST);
+    check(ogImage.ok, 'og:image is absolute and names the canonical host', ogImage.reason);
+
+    if (ogImage.url) {
+      const resolvedUrl = /^https?:\/\//i.test(ogImage.url) ? ogImage.url : new URL(ogImage.url, BASE).toString();
+      try {
+        const imgResponse = await fetch(resolvedUrl);
+        const imgType = imgResponse.headers.get('content-type') || '';
+        check(imgResponse.status === 200 && imgType.startsWith('image/'),
+          'the og:image URL resolves with an image content-type',
+          `status ${imgResponse.status}, content-type ${imgType || 'none'}`);
+      } catch (error) {
+        fail(`the og:image URL resolves with an image content-type — ${describeFetchError(error)}`);
+      }
+    } else {
+      fail('the og:image URL resolves with an image content-type — no og:image tag found to resolve');
+    }
+  } catch (error) {
+    fail(`og:image is absolute and names the canonical host — ${describeFetchError(error)}`);
   }
 
   reportCount();

@@ -258,7 +258,7 @@ export function createRequestsApi(quotes, { limiter = null } = {}) {
   }
   const TOO_MANY = 'Too many requests from this connection. Wait a few minutes and try again.'
   const TOO_MANY_KEY = 'Too many requests from this browser. Wait a few minutes and try again.'
-  const TOO_MANY_EMAIL = 'That email address has been used for too many requests today. Call us instead.'
+  const TOO_MANY_EMAIL = 'That email address has been used for too many requests today. Text us instead.'
   const keyOf = body => (typeof body?.customerKey === 'string' ? body.customerKey.trim().toLowerCase() : '')
   const emailOf = body => (typeof body?.customerEmail === 'string' ? body.customerEmail.trim().toLowerCase() : '')
 
