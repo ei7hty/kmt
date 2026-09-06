@@ -864,3 +864,87 @@ is a gap, not an invitation to guess what filled it. "The check couldn't
 have told you whether the flip had been live for a while" says everything
 that was actually known and costs one sentence more than the wrong version
 did.
+
+
+**2026-09-06 — PRODUCT MANAGER / OWNER AGENT (session local_44d1e1f9), at the
+PROJECT MANAGER's request, from doing it to myself with the evidence on screen**
+When you record that something happened, grep for every other place that says
+it has not.
+
+The entry above this one says a document is an assertion with a timestamp and
+nothing re-measures one. **This is that observation turned into a command you
+can actually run**, and it is here because I wrote that entry and then made the
+mistake anyway, three hours later, with the contradicting sentence quoted in my
+own pull request.
+
+**What I did.** I ran t54's restore drill for the first time, it passed, and I
+wrote the record into `HANDOFF.md`:
+
+```
+.forge/HANDOFF.md:468   The restore drill, run 2026-09-06 ~20:35Z — PASSED
+```
+
+**And left three sentences in another file saying it had never happened:**
+
+```
+docs/operations.md:481  The restore drill in it has not been run.
+docs/operations.md:542  This procedure has still never been run end to end.
+docs/operations.md:608  This has not been run. Run it once on a quiet day.
+```
+
+**I had read line 608 that hour and quoted it in the PR body.** The junior
+project manager then swept #80, believed the runbook, and was misled by a
+document I had personally superseded ninety minutes earlier.
+
+## Why the rule is worth more than the instance
+
+**It generalises to every case of this shape tonight, and there were five.**
+Each one is a sentence that was true until somebody made it false and did not
+go looking for it:
+
+- `t62-voice.md` part F was written **for** t37's templates and said what
+  voice they would carry. The templates shipped in another pull request in the
+  wrong voice, and three customer emails went out saying "we" for a one-man
+  business. **Nobody grepped for the templates after approving the voice.**
+- `src/noindex.js` documented itself as covering "a page a crawler already
+  found through a link" — the exact case a `Disallow`ed URL cannot reach.
+  **Wrong on the day it was written**, which no re-measurement schedule catches.
+- The DNS repair table told an operator to delete `rsend` and hunt an apex
+  TXT. Both had become **live, verified records for the provider the user had
+  just chosen.** Accurate when written; an instruction to destroy something by
+  the time it was read.
+- `sprint-first-week.md` listed two items separately after the lead had
+  merged them into one pull request in practice. **The plan was true on its
+  face and false in effect**, and I assigned three people from it.
+
+**In every one, the fix is the same grep**: after you make a thing true, search
+for the sentences that still say it is not. `git grep -n "has not been run"`
+takes one second and would have caught the drill, the templates, the plan and
+the table.
+
+## The half that is about lanes, and it is the part I got wrong
+
+`docs/operations.md` belongs to DEV OPS. **Staying out of another lane's file
+was right. Staying silent about it was not** — and those are different things
+I had collapsed into one.
+
+**When you cannot fix the contradiction because the file is not yours, name it
+where you are.** One line in my own pull request — *"three lines in
+operations.md now contradict this; routed to DEV OPS"* — costs nothing, crosses
+no lane, and turns a trap into a known open item. I routed it and did not name
+it, so the record read as settled while three sentences in the next file said
+the opposite.
+
+## The same failure wearing an instruction instead of a document
+
+**Worth naming because it caught me an hour later in a form I did not
+recognise.** I ruled on a piece of copy, the lead overturned me with a better
+argument, I accepted it — **and told only the lead.** The junior actually
+holding the work was still executing my superseded ruling, and rewrote the line
+and reran the whole gate on it before the correction reached them.
+
+**A reversal has to reach the hands, not just the other manager.** Same shape
+as everything above: accurate when issued, invalidated elsewhere, never
+reconciled with whoever was acting on it. **The document version is caught by a
+grep; this one is caught by asking who is currently doing the thing I just
+changed my mind about.**
