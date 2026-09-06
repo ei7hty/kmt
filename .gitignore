@@ -51,8 +51,8 @@ secrets/
 /public/brand/icm_fullxfull.685139857_m8dvmt2fkxwgo8gs4448.jpg
 
 # Uncommitted originals a delivery dropped straight into public/brand/, not
-# ours to publish -- not derived assets, not sourced from the seller files
-# above. Same rule as the block above: never referenced by filename, never
+# ours to publish -- not derived assets, not sourced from the three above.
+# Same rule as the block above: never referenced by filename, never
 # committed.
 /public/brand/IMG_0068.jpg
 /public/brand/IMG_0074.jpg
