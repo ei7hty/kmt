@@ -189,10 +189,13 @@ the PR body as before and after.
   with #182 merged in locally), red on main by design until #182 lands its
   rewritten fixtures. To land: merge main after #182, run the gate, take it
   out of draft. Not abandoned.
-- The junior's **#210** (t63: every phone control is a text control; plus two
-  settled t62 items) has this lane's first-reader approval from the branch;
-  the repo agent takes the second read. The t62 voice remainder is a written
-  list in that PR, not a half-applied sweep; it needs an owner.
+- The junior's **#210** (t63: every phone control is a text control; plus
+  t62's app half, the approved list applied in a later commit). This lane's
+  first-reader approval covers the t63 head  only; the t62 commit
+   (26 rows, including two error strings in ) is the
+  repo agent's read. Approved on that head: zero  and zero "call" on
+  every customer route, one sms module, the owner card's  to the
+  customer as the one deliberate exception.
 
 ## What this lane would do next
 
