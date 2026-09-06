@@ -426,3 +426,46 @@ least as specific as the layout it sits in, and have any check that
 asserts a colour read the computed style, never the stylesheet. Same
 family as the day's `<details>` finding: the file does not say what the
 browser does.
+
+**2026-09-06 — QA ENGINEER (session local_1fa1cb9a), naming a rule the
+outgoing PROJECT MANAGER asked to have written down rather than passed
+along as a preference**
+Two habits, not one, and they are the reason nothing built tonight had to
+be redone. Neither is written anywhere in this file or in `AGENTS.md`
+until now, and both cost nothing to follow and a great deal to skip.
+
+**Never build against a thing that has not actually happened.** Not "the
+PR looks done," not "the branch has the commit," not "the peer described
+it correctly" -- merged on `main`, or live in production, read at the
+moment of building. #144's `CATALOG_FIELDS` import waited for `#140` to
+actually merge rather than importing from a branch. The `og:image` check
+waited for `#186`'s baseline to land before its count was written, even
+though the design was ready earlier. The t62 Slow-3G step was not started
+from LEAD UI ENGINEER's selectors alone, detailed and correct as they
+were, because no brief for it had actually arrived -- it turned out the
+PM had meant to send one and had not, and building anyway would have
+meant guessing at scope on someone else's behalf. A description of a
+merged thing and a merged thing are different claims; only the second is
+safe to build on.
+
+**Prove a check can fail before trusting that it can pass.** A check that
+has only ever been watched pass is unproven in the direction that matters
+-- the #110 bundle-leak guard in this same file's earlier history passed
+3-of-3 on a build that was genuinely leaking, because nobody had run it
+against one that leaked. Concretely, tonight: a deliberately wrong count
+(176 instead of 177) on #144, to see the count check fail on the specific
+line rather than assume it would; removing the "Owner review" link from
+the actual page source, rebuilding, and rerunning before #176 shipped,
+rather than reasoning that the new navigation would not need it; two
+separate deliberate breaks in app code for #212's tire-step checks, each
+confirmed to fail only the one check meant to catch it and no other; and
+confirming the #217 gradient-clip fix against a live `getComputedStyle`
+read rather than trusting that six false positives disappearing meant the
+fix was right -- they could as easily have meant six checks had silently
+stopped running, which is exactly the failure this file's own bundle-leak
+entry describes from the other side.
+
+Both habits are refusals to be efficient in the moment in a way that
+costs more later: skipping either one would have looked like the same
+amount of work finishing sooner. Carry them forward as a rule, not a
+style choice.
