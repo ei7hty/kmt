@@ -323,6 +323,10 @@ Environment for the hosted server:
 | `PORT`, `KMT_BIND` | Default `8080` and `0.0.0.0`. |
 | `KMT_ALLOWED_HOSTS` | Comma-separated hostnames to accept. Unset accepts any. |
 | `KMT_SESSION_HOURS` | Session lifetime, default 12. |
+| `KMT_MAIL_API_KEY` | The Resend API key. Unset, the server sends nothing and records every message in the outbox as `queued` (R25). |
+| `KMT_MAIL_FROM` | Required with the key: the sending address Resend has verified on the domain, e.g. `quotes@kensmobiletire.com`. |
+| `KMT_OWNER_EMAIL` | Required with the key: where the owner's copy goes and what customers reply to. |
+| `KMT_PUBLIC_ORIGIN` | The origin links in emails point at. Unset, `https://` plus `KMT_CANONICAL_HOST`. |
 
 First-time Fly setup, `fly launch` pitfalls and the Docker commands are in
 [`.forge/owner-backend.md`](.forge/owner-backend.md). Whether supplier
