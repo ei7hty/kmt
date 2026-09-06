@@ -43,7 +43,12 @@ backend/data
 *.log
 .env*
 
-# Deliberately NOT ignored: src/data/scraped-tires.json. backend/server.mjs
-# reads it at boot to seed the catalog, so a rule like `data` or `**/data` would
-# build an image that starts, serves, and shows an empty catalog. If you ever
-# add a data-shaped rule here, name the directory exactly.
+# Deliberately NOT ignored: src/data/. backend/server.mjs reads
+# scraped-tires.json from there at boot to seed the catalog, and the frontend
+# imports catalog.js from the same directory. Measured, not guessed: a rule
+# matching the whole directory fails the image build with "Module not found",
+# and a rule matching only the JSON builds an image that then dies at boot with
+# ENOENT. Neither is the quiet empty-catalog this comment first claimed -- that
+# shape belongs to a file read AFTER boot, like backend/zip-centroids.json,
+# where the image starts and serves and only fails when a customer touches the
+# feature. If you ever add a data-shaped rule here, name the directory exactly.
