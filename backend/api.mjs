@@ -266,6 +266,10 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
   const TOO_MANY = 'Too many requests from this connection. Wait a few minutes and try again.'
   const TOO_MANY_KEY = 'Too many requests from this browser. Wait a few minutes and try again.'
   const TOO_MANY_EMAIL = 'That email address has been used for too many requests today. Text me instead.'
+  // customerKey no longer authorises pay/cancel (#284/#316: the id alone
+  // does, same as reading). This is now only the rate-limit bucket -- a hint
+  // for publicPerKey, not a check -- so it still matters here, but a reader
+  // should not mistake it for access control on the routes below.
   const keyOf = body => (typeof body?.customerKey === 'string' ? body.customerKey.trim().toLowerCase() : '')
   const emailOf = body => (typeof body?.customerEmail === 'string' ? body.customerEmail.trim().toLowerCase() : '')
 

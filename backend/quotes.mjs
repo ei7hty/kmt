@@ -818,23 +818,32 @@ export class Quotes {
    * The customer calling their own request off, before they pay for it.
    *
    * Authorised by `id` alone, the same as reading it (R19: holding the id is
-   * the access) -- not by a `customerKey` match. That check used to require
-   * the browser that submitted, which sounds like a second factor and is not
-   * one: a browser with no key yet (a different device, a private window, or
-   * iOS's seven-day localStorage clear -- #97) sends a freshly generated key
-   * that was never going to match anything, so the check refused every
-   * legitimate customer opening the emailed link from a new device (#284)
-   * and no attacker who did not already have the id, which the id's own 128
-   * bits already excluded. No version either, for the same reason pay() takes
-   * none -- the customer has one screen showing one request of their own, and
-   * there is no second window of theirs for a stale view to come from.
+   * the access) -- not by a `customerKey` match. That match was a real
+   * write-side second factor, not nothing: the id is deliberately shareable
+   * (the /status link exists to be shown to people, R19), so the key is what
+   * separated "can read" from "can write" for a token designed to be
+   * forwarded. Removing it means anyone the customer forwards the link to can
+   * now pay or cancel on their behalf, and that is accepted deliberately, not
+   * because the id was ever a secret.
    *
-   * Accepted trade, ruled explicitly rather than left as an oversight:
-   * cancelling is destructive-ish, and holding the id is now sufficient to do
-   * it. It is reversible by texting Ken, the id lives only in the customer's
-   * own inbox, and the alternative is that a real customer cannot cancel from
-   * their phone at all. Paying carries no equivalent downside -- the amount
-   * is fixed and already quoted, so a stranger paying it is not an attack.
+   * The trade is bounded, not free: a browser with no key yet (a different
+   * device, a private window, or iOS's seven-day localStorage clear -- #97)
+   * generates a fresh one that was never going to match anything, so the
+   * check refused every legitimate customer opening the emailed link from a
+   * new device (#284) -- and the writes it now exposes are non-financial,
+   * idempotent, owner-gated, and (for cancel) reversible: paying charges
+   * nothing extra and cannot be repeated for a second charge; cancelling
+   * before payment deletes nothing and is reversible by texting Ken. No
+   * version either, for the same reason pay() takes none -- the customer has
+   * one screen showing one request of their own, and there is no second
+   * window of theirs for a stale view to come from.
+   *
+   * One consequence found in review, accepted with its bound stated rather
+   * than left undiscovered: someone holding the shared link can call pay()
+   * on a sent quote specifically to block the customer's own cancel (this
+   * method refuses once `paid`) and trigger a false "payment received"
+   * email. No money moves and nothing is deleted, so the bound holds; filed
+   * separately rather than fixed here.
    */
   cancelByCustomer(id, reason) {
     const found = this.get(id)
@@ -854,12 +863,17 @@ export class Quotes {
   /**
    * Mark an approved quote paid.
    *
-   * Authorised by `id` alone, the same reasoning as `cancelByCustomer` above
-   * (#284, #97): a `customerKey` match refused every customer opening the
-   * emailed link from a device that never submitted, and stopped no one who
-   * did not already hold the id. Payment carries no downside symmetrical to
-   * cancel's -- the amount is fixed and already quoted, so someone else
-   * paying it is not an attack worth guarding against.
+   * Authorised by `id` alone, the same reasoning and the same bounded trade
+   * as `cancelByCustomer` above (#284, #97): the `customerKey` match was a
+   * real second factor for a deliberately shareable token, removed anyway
+   * because the amount is fixed and already quoted, so someone else paying
+   * it is not an attack worth guarding against.
+   *
+   * Unlike cancel, there is no reversal here at all, not even the owner's:
+   * `CANCELLABLE` excludes `paid`, and `paid` moves only to `done`. A mistaken
+   * or induced payment is not "text Ken and he sorts it out" the way a
+   * cancellation is -- it needs a manual database edit. That gap is real and
+   * is filed as its own issue rather than fixed in this change.
    *
    * Payment is still the fake step that always succeeds, but the result is
    * recorded here so both sides see it from their own devices. A draft cannot

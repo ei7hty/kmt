@@ -102,8 +102,11 @@ export async function requestById(id) {
 /**
  * Call off a request from the customer's side, before it is paid for.
  *
- * Keyed like paying is, and refused the same way. A reason is optional: a
- * customer who has changed their mind does not owe anyone an explanation.
+ * A reason is optional: a customer who has changed their mind does not owe
+ * anyone an explanation. `customerKey` is sent but no longer authorises this
+ * (#284/#316): the server accepts the id alone, the same as reading it. The
+ * field survives here only as the rate-limit bucket `publicPerIp`'s sibling
+ * check reads (backend/api.mjs) -- a hint for throttling, not a credential.
  */
 export async function cancelRequest(id, reason) {
   return call(`/api/requests/${encodeURIComponent(id)}/cancel`, {
@@ -112,7 +115,12 @@ export async function cancelRequest(id, reason) {
   })
 }
 
-/** Pay an approved quote. Still the fake step, recorded by the server. */
+/**
+ * Pay an approved quote. Still the fake step, recorded by the server.
+ *
+ * `customerKey` is sent but no longer authorises this (#284/#316) -- see
+ * `cancelRequest` above.
+ */
 export async function payRequest(id) {
   return call(`/api/requests/${encodeURIComponent(id)}/pay`, {
     method: 'POST',
