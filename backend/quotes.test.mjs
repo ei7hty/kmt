@@ -405,6 +405,34 @@ test('the catalog handler answers the catalog and nothing else', async t => {
   assert.ok(Array.isArray(catalog.tires), 'and the catalog still answers its own path')
 })
 
+test('the catalog is cached for five minutes, and ?size narrows it to one size', async t => {
+  const OTHER_SIZE = '225/50R17'
+  const inventory = new Inventory(':memory:', [SIZE, OTHER_SIZE])
+  t.after(() => inventory.close())
+  inventory.importSnapshot({
+    source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE, OTHER_SIZE],
+    tires: [tire('giga-a', { size: SIZE }), tire('giga-b', { size: OTHER_SIZE, name: 'Second' })],
+  })
+  inventory.saveMarkup({ rate: 1.4 })
+  const quotes = new Quotes(inventory)
+  const base = await serve(t, quotes, inventory)
+
+  const whole = await fetch(base + '/api/catalog')
+  assert.equal(whole.headers.get('cache-control'), 'public, max-age=300')
+  const wholeSizes = (await whole.json()).tires.map(t => t.size).sort()
+  assert.deepEqual(wholeSizes, [OTHER_SIZE, SIZE].sort(), 'no size param answers every size')
+
+  const narrowed = await fetch(base + `/api/catalog?size=${encodeURIComponent(SIZE)}`)
+  assert.equal(narrowed.headers.get('cache-control'), 'public, max-age=300')
+  const narrowedTires = (await narrowed.json()).tires
+  assert.equal(narrowedTires.length, 1)
+  assert.equal(narrowedTires[0].size, SIZE)
+  assert.equal(narrowedTires[0].id, 'giga-a')
+
+  const unsupported = await (await fetch(base + '/api/catalog?size=999/99R99')).json()
+  assert.deepEqual(unsupported.tires, [], 'a size nothing matches answers empty, not an error')
+})
+
 /* ------------------------------------------------------- owner review (t30) */
 
 /** Sign in the way the owner screen does, and return the cookie header. */
