@@ -143,6 +143,19 @@ export const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain' 
 export const CLEAN_SIZE = '205/65R15'
 
 /**
+ * The seven fields a customer's browser is built around, and nothing else.
+ *
+ * One list, imported by every script that checks it (deployed-site-check.mjs,
+ * catalog-import-check.mjs), rather than a hand-synced copy in each. This
+ * repository has already lost a copy to drift once -- a duplicated CLEAN_TIRE
+ * fixture whose own comment flagged the risk before it happened -- and the
+ * failure shape for this particular list is quieter than a leak: someone adds
+ * a legitimate eighth field, updates one file, and now one check passes while
+ * the other fails on a diff nobody made.
+ */
+export const CATALOG_FIELDS = ['id', 'name', 'size', 'price', 'inStock', 'category', 'description']
+
+/**
  * A size and a tire in it that sail through without an exception, resolved
  * against whatever the server is actually offering right now rather than a
  * name typed into this file.

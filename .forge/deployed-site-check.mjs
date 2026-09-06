@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { CATALOG_FIELDS } from './audit-ui.mjs';
 
 /**
  * What a deploy has to prove, without touching anything.
@@ -21,6 +22,24 @@ import { chromium } from 'playwright';
 const BASE = process.env.AUDIT_BASE || 'https://kmt.fly.dev';
 
 /**
+ * The domain, as configuration rather than a literal (t53).
+ *
+ * CANONICAL_HOST is the apex the app is meant to live on -- decided, but still
+ * read from the environment rather than typed into the script a second time,
+ * because the one time this sprint a domain literal got typed into a file it
+ * had to be undone an hour later. REDIRECT_HOSTS are the names expected to
+ * send a visitor on to it once the flip is live. HEALTH_OTHER_HOST is checked
+ * for /api/health alongside AUDIT_BASE (see check 2 above): kmt.fly.dev
+ * specifically, never one of the DNS aliases, because an alias tests the
+ * resolver and not the app -- it is the one host KMT_ALLOWED_HOSTS could omit
+ * by accident while every customer-facing name kept working.
+ */
+const CANONICAL_HOST = process.env.CANONICAL_HOST || 'kensmobiletire.com';
+const REDIRECT_HOSTS = (process.env.REDIRECT_HOSTS || 'www.kensmobiletire.com,order.kensmobiletire.com,kmt.fly.dev')
+  .split(',').map(host => host.trim()).filter(Boolean);
+const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
+
+/**
  * How many checks a complete run performs.
  *
  * The baseline lives here, in the thing that produces it, and nowhere in
@@ -29,10 +48,11 @@ const BASE = process.env.AUDIT_BASE || 'https://kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 20;
+const EXPECTED_CHECKS = 25;
 
 let passed = 0;
 let failed = 0;
+let skipped = 0;
 
 function ok(message) {
   passed += 1;
@@ -50,19 +70,40 @@ function check(condition, message, detail = '') {
   else fail(`${message}${detail ? ` — ${detail}` : ''}`);
 }
 
+/**
+ * No DNS record and "resolves but answers wrong" have different fixes -- one
+ * at the registrar, one in the app -- and this check is the only thing that
+ * will be looking when it happens, so it says which.
+ */
+function describeFetchError(error) {
+  const code = error.cause?.code || error.code;
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return `no DNS record for this host (${code})`;
+  return `request failed: ${error.message.split('\n')[0]}`;
+}
+
+/**
+ * A check counted as ran, neither passed nor failed -- because the thing it
+ * proves has not happened yet. Never printed as OK: a skip that looks like a
+ * pass is exactly how a check quietly stops being able to fail.
+ */
+function skip(message, reason) {
+  skipped += 1;
+  console.log(`SKIP: ${message} (${reason})`);
+}
+
 /** The count, held against the baseline. Printed last, so it is the line a reader lands on. */
 function reportCount() {
-  const ran = passed + failed;
-  console.log(`\n${passed} checks passed, ${failed} failed -- ${ran} of ${EXPECTED_CHECKS} expected checks ran`);
+  const ran = passed + failed + skipped;
+  console.log(`\n${passed} checks passed, ${failed} failed, ${skipped} skipped -- ${ran} of ${EXPECTED_CHECKS} expected checks ran`);
   if (ran < EXPECTED_CHECKS) {
     fail(`only ${ran} of ${EXPECTED_CHECKS} checks ran. A check that stopped running is not a check that passed.`);
   } else if (ran > EXPECTED_CHECKS) {
     fail(`${ran} checks ran but EXPECTED_CHECKS is ${EXPECTED_CHECKS}. Update it in the same commit as the new check.`);
   }
+  if (skipped > 0) {
+    console.log(`${skipped} of those are SKIP, not OK -- read them, they are not the same as a pass.`);
+  }
 }
-
-/** The seven fields a customer's browser is built around, and nothing else. */
-const CATALOG_FIELDS = ['id', 'name', 'size', 'price', 'inStock', 'category', 'description'];
 
 /** A size the supplier snapshot covers, and one only the generator fills. */
 const SCRAPED_SIZE = '215/60R16';
@@ -198,6 +239,69 @@ async function main() {
     }
   } finally {
     await browser.close();
+  }
+
+  // 9. The domain (t53). Read entirely: no browser, and no literal domain --
+  //    the apex-versus-subdomain decision changed once already this sprint,
+  //    and reading CANONICAL_HOST from configuration is what kept that a
+  //    value change instead of a rewrite.
+  try {
+    const canonicalResponse = await fetch(`https://${CANONICAL_HOST}/`);
+    check(canonicalResponse.status === 200, `the canonical host (${CANONICAL_HOST}) answers 200 over HTTPS`,
+      `got ${canonicalResponse.status}`);
+  } catch (error) {
+    fail(`the canonical host (${CANONICAL_HOST}) answers 200 over HTTPS — ${describeFetchError(error)}`);
+  }
+
+  // Bare hostname, no scheme, no trailing slash -- dumb on purpose. A guard
+  // that is itself clever is a guard nobody can verify by reading, and the
+  // bundle-leak check that once passed 3-of-3 on a leaking build is why that
+  // matters here: this one exists to catch a state rare enough that it will
+  // be read far more often than it ever fires.
+  const bareHost = (value) => value.replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
+  const flipConfigured = Boolean(process.env.KMT_CANONICAL_HOST);
+  const auditBaseIsCanonical = bareHost(BASE) === bareHost(CANONICAL_HOST);
+
+  for (const host of REDIRECT_HOSTS) {
+    const label = `${host} redirects to the canonical host (${CANONICAL_HOST})`;
+    if (!flipConfigured) {
+      if (auditBaseIsCanonical) {
+        // The workflow's half of the flip (AUDIT_BASE) moved to the canonical
+        // host; the backend's half (KMT_CANONICAL_HOST) did not. That is not
+        // "not yet" -- it is the two halves of one cutover disagreeing, and
+        // it is invisible from outside: the canonical host answers fine
+        // throughout, which is exactly what would let this sit unnoticed.
+        fail(`${label} — AUDIT_BASE already points at the canonical host but KMT_CANONICAL_HOST is not set on the server`);
+      } else {
+        skip(label, 'KMT_CANONICAL_HOST not set yet');
+      }
+      continue;
+    }
+    try {
+      const response = await fetch(`https://${host}/`, { redirect: 'manual' });
+      const location = response.headers.get('location') || '';
+      const redirectsToCanonical = response.status === 301 && bareHost(location) === bareHost(CANONICAL_HOST);
+      check(redirectsToCanonical, label,
+        `got status ${response.status}${location ? `, location ${location}` : ', no location header'}`);
+    } catch (error) {
+      fail(`${label} — ${describeFetchError(error)}`);
+    }
+  }
+
+  // kmt.fly.dev specifically, not one of the DNS aliases: www and order are
+  // names for the same machine AUDIT_BASE already tests (check 2 above), so
+  // testing them again would prove the resolver works, not the app. This is
+  // the one host KMT_ALLOWED_HOSTS could omit by accident during the flip
+  // while every customer-facing name kept answering -- nothing else in this
+  // file would notice that.
+  try {
+    const otherHealthResponse = await fetch(`https://${HEALTH_OTHER_HOST}/api/health`, { headers: { Accept: 'application/json' } });
+    const otherHealth = await otherHealthResponse.json().catch(() => null);
+    check(otherHealthResponse.status === 200 && otherHealth?.ok === true,
+      `GET /api/health on ${HEALTH_OTHER_HOST} answers 200 with ok:true`,
+      `status ${otherHealthResponse.status}, body ${JSON.stringify(otherHealth)}`);
+  } catch (error) {
+    fail(`GET /api/health on ${HEALTH_OTHER_HOST} answers 200 with ok:true — ${describeFetchError(error)}`);
   }
 
   reportCount();

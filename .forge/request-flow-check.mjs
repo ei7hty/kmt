@@ -81,7 +81,8 @@ try {
     check(ownerText.includes('2020 Toyota Corolla'), 'owner sees the vehicle the customer entered')
     check(ownerText.includes('02149'), 'owner sees the ZIP the customer entered')
     check(ownerText.includes('Blue sedan'), 'owner sees the access instructions the customer entered')
-    check(ownerText.includes('Jamie Rivera') && ownerText.includes('jamie@example.com') && ownerText.includes('+16174108319'), 'owner sees the contact name, email and normalized phone the customer entered')
+    const phoneLinkVisible = await page.locator('.owner-content a[href="tel:+16174108319"]').first().isVisible().catch(() => false)
+    check(ownerText.includes('Jamie Rivera') && ownerText.includes('jamie@example.com') && phoneLinkVisible, 'owner sees the contact name, email and normalized phone the customer entered')
     check(errors.length === 0, 'no browser runtime errors')
     await page.close()
   }

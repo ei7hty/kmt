@@ -143,20 +143,25 @@ test('a name and email are required; the email is stored lower-cased and trimmed
   assert.throws(() => quotes.submit(form({ customerEmail: 'not-an-email' })), /valid email/)
   assert.throws(() => quotes.submit(form({ customerEmail: 'missing-domain@' })), /valid email/)
 
+  // What was stored is read the way the owner reads it: a submit answers the
+  // customer shape, which carries no email.
   const { request } = quotes.submit(form({ customerEmail: '  Jamie@Example.COM  ' }))
-  assert.equal(request.customerEmail, 'jamie@example.com')
+  assert.equal(stored(quotes, request.id).customerEmail, 'jamie@example.com')
 })
+
+/** The full stored request, as the owner's list carries it. */
+const stored = (quotes, id) => quotes.listForOwner().find(row => row.request.id === id).request
 
 test('a phone is optional, and a US number typed any of the usual ways is stored E.164', async t => {
   const { quotes } = setup(t)
 
-  const noPhone = quotes.submit(form({ customerPhone: '' })).request
+  const noPhone = stored(quotes, quotes.submit(form({ customerPhone: '' })).request.id)
   assert.equal(noPhone.customerPhone, '', 'missing phone is fine')
 
-  const typed = quotes.submit(form({ customerPhone: '(617) 410-8319' })).request
+  const typed = stored(quotes, quotes.submit(form({ customerPhone: '(617) 410-8319' })).request.id)
   assert.equal(typed.customerPhone, '+16174108319')
 
-  const withCountryCode = quotes.submit(form({ customerPhone: '1-617-410-8319' })).request
+  const withCountryCode = stored(quotes, quotes.submit(form({ customerPhone: '1-617-410-8319' })).request.id)
   assert.equal(withCountryCode.customerPhone, '+16174108319')
 
   assert.throws(() => quotes.submit(form({ customerPhone: '12345' })), /US phone number/)
@@ -184,6 +189,63 @@ test('a request stored before contact fields existed renders without error, cont
 
   const owner = quotes.listForOwner().find(row => row.request.id === request.id)
   assert.equal(owner.request.customerEmail, undefined, 'the owner list renders the same row without throwing')
+})
+
+/* ------------------------------------------------- who reads what (t44, #65) */
+
+/** The fields a customer read may carry, and the ones it never may. */
+const CUSTOMER_FIELDS = ['id', 'vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip', 'createdAt', 'updatedAt']
+const OWNER_ONLY = ['customerName', 'customerEmail', 'customerPhone', 'location', 'locationNotes']
+
+test('a request read by id is the customer shape: no name, email, phone or location notes', async t => {
+  // The id is the access and the status link is meant to be shared (R19), so
+  // whoever holds it must not learn who the customer is (R23). Measured on
+  // production before this: all three contact fields present.
+  const { quotes } = setup(t)
+  const submitted = quotes.submit(form({ locationNotes: 'Key under the mat, gate code 4411' }))
+
+  const byId = quotes.get(submitted.request.id).request
+  assert.deepEqual(Object.keys(byId).sort(), [...CUSTOMER_FIELDS].sort(), 'a list of fields, not the payload minus a few')
+  for (const field of OWNER_ONLY) assert.equal(byId[field], undefined, `${field} does not travel with the link`)
+  assert.equal(byId.vehicleInfo, '2021 Honda Civic')
+  assert.equal(byId.quantity, 4)
+
+  // Every customer-facing write answers the same shape: it all reads through get().
+  for (const field of OWNER_ONLY) assert.equal(submitted.request[field], undefined, `submit: ${field}`)
+  quotes.decide(submitted.request.id, 'sent', 1)
+  const paid = quotes.pay(submitted.request.id, KEY)
+  for (const field of OWNER_ONLY) assert.equal(paid.request[field], undefined, `pay: ${field}`)
+})
+
+test("a browser's own list is the customer shape too", async t => {
+  const { quotes } = setup(t)
+  quotes.submit(form())
+  quotes.submit(form({ vehicleInfo: '2018 Subaru Outback' }))
+
+  const mine = quotes.listForCustomer(KEY)
+  assert.equal(mine.length, 2)
+  for (const { request } of mine) {
+    assert.deepEqual(Object.keys(request).sort(), [...CUSTOMER_FIELDS].sort())
+    for (const field of OWNER_ONLY) assert.equal(request[field], undefined, `list: ${field}`)
+  }
+  assert.ok(mine.every(row => row.quote?.total > 0), 'the quote still travels with each request')
+})
+
+test('the owner keeps the full row: contact and notes, on the list and after every action', async t => {
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form({ locationNotes: 'Key under the mat, gate code 4411' }))
+
+  const listed = stored(quotes, request.id)
+  assert.equal(listed.customerName, 'Jamie Rivera')
+  assert.equal(listed.customerEmail, 'jamie@example.com')
+  assert.equal(listed.customerPhone, '+16174108319')
+  assert.equal(listed.locationNotes, 'Key under the mat, gate code 4411')
+
+  // The owner's actions answer the owner's shape.
+  const sent = quotes.decide(request.id, 'sent', 1)
+  assert.equal(sent.request.customerEmail, 'jamie@example.com', 'decide answers the owner')
+  const cancelled = quotes.cancel(request.id, 2, 'Out of stock')
+  assert.equal(cancelled.request.locationNotes, 'Key under the mat, gate code 4411', 'cancel answers the owner')
 })
 
 test('a browser sees its own requests and nobody else', async t => {
@@ -356,6 +418,11 @@ test('a customer with no session can submit, read and pay; the owner API still c
 
   const one = await fetch(`${base}/api/requests/${request.id}`)
   assert.equal(one.status, 200, 'the id alone opens it, on any device')
+  // And what it opens is the customer shape, on the wire and not only in the store.
+  const opened = (await one.json()).request
+  for (const field of OWNER_ONLY) assert.equal(opened[field], undefined, `GET by id: ${field}`)
+  for (const field of OWNER_ONLY) assert.equal(listed.requests[0].request[field], undefined, `GET by key: ${field}`)
+  assert.equal(opened.vehicleInfo, '2021 Honda Civic')
 
   // Not another browser's, and not a listing without a key.
   const other = await (await fetch(`${base}/api/requests?customer=${OTHER_KEY}`)).json()
