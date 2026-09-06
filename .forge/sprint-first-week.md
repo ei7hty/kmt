@@ -263,8 +263,27 @@ written the line in `HANDOFF.md`, and Ken has used search and the note on a
 real request. Not "the audits pass": two of today's worst findings survived
 every test and were caught by someone reading the output.
 
-**Which items are walked at 375 before "done"** (the method is
-`.forge/roles/owner-portal-analyst.md`, PR #213, under a minute per screen):
+**The walk reaches the delivered form, not the rendered one.** Tonight's two
+worst findings have this in common: the five emails were verified in their
+`.text` half while clients show `.html`, whose escaped `<pre>` carries no
+link at all; and the declined path passed every test while its reason could
+never be anything but blank, because a comment that was true when written
+("nothing else asks, because nothing else needs to") was made false hours
+later by `quote-declined` landing. So for anything a customer receives, the
+check is in the client they will actually use, on a phone, with the tap
+made; for anything on a screen, at 375 in a browser; for anything the owner
+does, the state after the action, not the action succeeding. "Walk it"
+without that decays into "someone opened it".
+
+**The method, written down so it is available when its author is not:**
+walk the path as the person in it, from the artifact they actually receive,
+with a specific question about what they can do next; not "does this work"
+but "the customer has just been declined at 7 pm on a roadside; what can
+they do?" That question is what surfaced a cold page linking out of a warm
+email. The full procedure and the driver scripts are in
+`.forge/roles/owner-portal-analyst.md` (PR #213), under a minute per screen.
+
+**Which items are walked at 375 before "done":**
 t38 (two real inboxes, every link in every email tapped on a phone, the
 `sms:` one included); item 1 (the same tap, on the declined email
 specifically); item 2 (Ken's screen at 375: the confirm appears, the reason
