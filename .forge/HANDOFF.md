@@ -463,3 +463,91 @@ carries a supplier, cost or markup field, and the deployed-site check passes.
 
 Merge is deploy; a deploy carrying a migration runs it on first boot; rolling
 back a commit restores code, not data.
+
+
+## The restore drill, run 2026-09-06 ~20:35Z — PASSED
+
+Written by the PRODUCT MANAGER / OWNER AGENT (`local_44d1e1f9`) on the user's
+instruction. **t54's drill had never been run.** It has now, once, end to end,
+and the file that came back was sound. This is the record the sprint plan means
+when it says an item without a line here is not done.
+
+### The two numbers, and why the gap is right
+
+Taken from production before restoring anything, at **20:34:52Z**:
+
+| | live | restored |
+| --- | --- | --- |
+| requests | **8** | **6** |
+| quotes | **8** | **6** |
+| oldest request | `2026-09-06T02:55:37.277Z` | `2026-09-06T02:55:37.277Z` |
+| newest request | `2026-09-06T19:30:46.037Z` | `2026-09-06T16:33:50.822Z` |
+
+**Six against eight is the pass, not a shortfall.** The runbook says to compare
+against the count at the snapshot's age rather than at the moment you run the
+drill, so the counts alone could not settle it — the **timestamps** do. The
+oldest record is byte-identical on both sides, so the whole history came back
+rather than a truncated tail; and both missing rows fall after the snapshot's
+newest. Nothing that existed when the snapshot was taken is absent from it.
+
+### The file, checked
+
+```
+node .forge/restore-integrity-check.mjs <restored.sqlite>
+14 OK, 0 OLDER SCHEMA, 0 FAIL — 14 of 14 expected checks ran
+SOUND: this file passed every check this script knows to run.
+```
+
+`integrity_check` ok, `foreign_key_check` clean, every table present with its
+expected columns, and `quotes.status`'s CHECK constraint covering every current
+status. Row counts in the restored file: supplier 6169, offers 896, coverage
+511, requests 6, quotes 6, outbox 6, owner_sessions 3.
+
+### What it cost, and what was cleaned up
+
+Snapshot `vs_PZQZnNDY8b7fyw0BRR3mkJP` (2 h old, 25 MiB) → volume
+`kmt_restore_test` → a throwaway machine with it mounted → `ssh sftp get` of
+`/data/owner.sqlite` (3,366,912 bytes). **The live volume was never touched.**
+
+**Both Fly resources were destroyed afterwards, and the local copy of the
+database was deleted** — it held real customer records and had no business
+sitting in a temp directory. Production re-checked after: 200, health ok,
+`kmt.fly.dev` still 301 to canonical.
+
+### The finding: `sqlite3` is not in the production image
+
+**The runbook's first drill command does not work.**
+
+```
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite '...'"
+exec: "sqlite3": executable file not found in $PATH
+```
+
+**This is not confined to the drill.** `docs/operations.md` reaches for
+`sqlite3` in at least three procedures — taking the two numbers, the monthly
+off-Fly `.backup` copy, and the by-hand redaction commands a removal request
+runs. **The removal one is the expensive one**: it is a privacy obligation
+executed under time pressure, and it would fail at the prompt.
+
+**The workaround is already in the image.** Node 24 is there and
+`node:sqlite` is built in, so this reads the same numbers, read-only:
+
+```
+flyctl ssh console -a kmt -C "node -e 'const s=require(\"node:sqlite\");const d=new s.DatabaseSync(\"/data/owner.sqlite\",{readOnly:true});console.log(JSON.stringify(d.prepare(\"select (select count(*) from requests) req,(select count(*) from quotes) quo\").get()))'"
+```
+
+Read-only matters for the same reason `restore-integrity-check.mjs` documents:
+opening a SQLite file read-write is not inert, and a command that quietly
+checkpoints a WAL can repair the evidence it was meant to judge.
+
+**Routed to DEV OPS, whose file it is.** Rewriting those three procedures is
+theirs; this entry records the finding and the workaround so nobody is stopped
+by it in the meantime.
+
+### What the drill proves, stated at its real size
+
+The customer records in this database can be recovered from a Fly snapshot, and
+the recovered file is structurally sound. **It does not prove the monthly
+off-Fly copy works** — that procedure uses the missing `sqlite3` and has still
+never been run — **and it does not prove anyone would remember to do this under
+pressure.** It proves the path exists and that a person walked it once.
