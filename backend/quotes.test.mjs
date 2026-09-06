@@ -358,7 +358,7 @@ test('one browser key and one email address have limits of their own', async t =
   }
   const byEmail = await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'same@example.com' }))
   assert.equal(byEmail.status, 429)
-  assert.match((await byEmail.json()).error, /email address/)
+  assert.match((await byEmail.json()).error, /email address has been used for too many requests today. Text us instead./)
   assert.equal((await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'other@example.com' }))).status, 201, 'the key itself is fine')
 })
 
