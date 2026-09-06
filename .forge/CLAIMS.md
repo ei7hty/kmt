@@ -16,6 +16,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | doc-staleness-note | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/NOTES.md, one appended entry (the three stale-record instances of 2026-09-06 and a detection proposal). At the PROJECT MANAGER's request. | 2026-09-06 |
 | declined-email-reason-optional | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/t62-voice.md, part F only (the declined sketch renders a reason Ken may not have written; voice/product, no code) | 2026-09-06 |
 | funnel-report-spec | GROWTH/MARKETING (local_d80272eb) | .forge/funnel-report.md only: two additions to the open PR #263 at the product owner's request (docs) | 2026-09-06 |
+| terra-t65-inquiries | TERRA AGENT | backend/inquiries.mjs, backend/inquiries-api.mjs, backend/{server,dev,api}.mjs (api: PUBLIC_POST_PATHS and isKnownApiPath only; t35 holds owner dispatch), backend/*.test.mjs, src/routes/components/CSS for the inquiry form, src/routes/Privacy.jsx, docs/operations.md (post-wire handoff paragraph, at PM instruction), audit coverage | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
