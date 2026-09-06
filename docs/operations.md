@@ -630,6 +630,215 @@ means Ken signs in again.
 assume -- a password that was set with the wrong quoting is a password nobody
 knows.
 
+## Manual data removal (until redaction is code)
+
+`/privacy` promises this today, in these exact words: *"To ask for your name,
+contact details and address to be removed, call (617) 410-8319."* Nobody has
+written `redact()` yet -- not for `requests`, not for `outbox`, not for
+`inquiries`; `docs/data-policy.md` documents the mechanism for each and
+implements none of them. **So if that phone rings, this is what happens: a
+human, by hand, in the database.** That is a legitimate way to run this for a
+business this size, but only if it is written down -- the person doing it is
+the user, who has not read the schema, and a promise with no procedure behind
+it is discovered at the worst possible moment, not the best one.
+
+This section is a checklist for that call, not a design document. Delete or
+rewrite it the day real `redact()` code exists for these tables -- at that
+point this procedure is the thing being replaced, not a reference for it.
+
+**Take a snapshot first.** Same rule as everywhere else in this document: it
+costs seconds, and it is the difference between one problem and two if a typed
+`WHERE` clause is wrong. See "Taking a snapshot by hand," above.
+
+**Everything below runs against a live table only if that table exists.**
+`requests` and `quotes` are live today. `outbox` (#157) and `inquiries` (#205)
+are not yet merged as of this writing -- running a query against a table name
+that does not exist yet fails with `no such table`, loudly, which is the
+correct failure. Check which of the three blocks below apply before running
+any of them.
+
+### 1. Find what you have
+
+You will be holding a request id (from an emailed link, or read off `/status`
+by the customer), or only a name or phone number. `flyctl ssh console -a kmt`
+puts you on the machine; one `sqlite3` invocation per call, per the rule above
+-- nested quoting through `-C` breaks in ways that are hard to see.
+
+By id, if you have one:
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, payload FROM requests WHERE id='<request-id>';\""
+```
+
+By name or phone, if that is all you have -- the payload is JSON, so this
+reads inside it:
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, json_extract(payload,'\$.customerName'), json_extract(payload,'\$.customerPhone') FROM requests WHERE json_extract(payload,'\$.customerName') LIKE '%<name>%' OR json_extract(payload,'\$.customerPhone') LIKE '%<digits>%';\""
+```
+
+A name with an apostrophe (O'Brien) needs it doubled for SQL, not backslash-escaped:
+`O''Brien`, not `O\'Brien`.
+
+**Read the row back before touching anything.** More than one match, or no
+match at all, both mean stop and confirm you have the right person before the
+next step -- there is no undo on the write that follows.
+
+Then, with the request id in hand, find everything attached to it:
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, status FROM quotes WHERE request_id='<request-id>';\""
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, type, status FROM outbox WHERE request_id='<request-id>';\""
+```
+
+(the second line only once `outbox` exists.) An inquiry is not attached to a
+request at all -- there is no `request_id` to search by, because an inquiry
+was never about a tire. If the person also submitted the "more than tires"
+form, you need its own id or a name/contact search the same shape as above,
+against `inquiries` directly, once it exists.
+
+### 2. Redact exactly what `docs/data-policy.md` promises -- no more, no less
+
+**This is a deliberate, authorised exception to R27 ("nothing is deleted"),
+not a violation of it -- read closely, they say different things.** R27
+governs the *row*: a request or quote is never deleted, through every state
+including cancelled, and this procedure does not delete one either. What it
+blanks is a handful of columns inside a row that stays. `docs/data-policy.md`
+draws exactly this line -- "redaction, not deletion" -- and its own header
+says the policy behind it was decided by the lead under the user's standing
+direction, with the user holding veto; `/privacy` making this promise in
+production is that authorisation already exercised, not something this
+procedure grants itself. If a future reader still sees a contradiction
+between R27 and this section, that reading is worth a ruling from the PM or
+the lead rather than either DB ADMIN or DEV OPS deciding it in a doc.
+
+**What gets blanked:** `requests.payload`'s `customerName`, `customerEmail`,
+`customerPhone`, `location` and `locationNotes`; `outbox`'s `to_address`,
+`to_name`, and inside its `data` the same personal keys
+(`OUTBOX_PERSONAL_DATA_KEYS` in `backend/outbox.mjs`); `inquiries`' `name` and
+`contact` (`INQUIRY_PERSONAL_FIELDS` in `backend/inquiries.mjs`).
+
+**What survives, on every table, and must not be touched:** `quotes` in full
+-- status, version, total, line items, both timestamps, all of it; on
+`requests`, `vehicleInfo`, `tireSelection`, `quantity`, `date`, `locationType`
+and `serviceZip`; on `outbox`, `type`, `template_version`, the business fields
+inside `data` (tire, size, quantity, price, the request id), `status`,
+`provider_id`; on `inquiries`, `vehicle_info` and `message`. These are the
+ledger and the business record this policy exists to keep, not contact
+information -- see "What redaction does not touch, and why" in
+`docs/data-policy.md`.
+
+**Never touch `requests.customer_key`.** It is what lets the customer's own
+device still see their history at `/status`; redacting contact information
+and revoking device access are two different asks, and this call was only
+one of them.
+
+**The marker is the literal string `[redacted]`,** written into every blanked
+field, not an empty string and not a deleted key -- so a reader can tell "this
+was removed" apart from "this was never collected," which is exactly what
+`docs/data-policy.md` asks for and does not itself pick a value for. Whoever
+eventually codes `redact()` for these tables should use the same string, so a
+row fixed by hand and a row redacted by code are not distinguishable from each
+other afterward.
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE requests SET payload = json_set(payload, '\$.customerName','[redacted]', '\$.customerEmail','[redacted]', '\$.customerPhone','[redacted]', '\$.location','[redacted]', '\$.locationNotes','[redacted]'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='<request-id>';\""
+```
+
+Once `outbox` exists, in the same visit:
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE outbox SET to_address='[redacted]', to_name='[redacted]', data = json_set(data, '\$.to_name','[redacted]', '\$.to_email','[redacted]', '\$.customerPhone','[redacted]', '\$.location','[redacted]', '\$.locationNotes','[redacted]'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE request_id='<request-id>';\""
+```
+
+And for an inquiry, once `inquiries` exists, by its own id:
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE inquiries SET name='[redacted]', contact='[redacted]', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='<inquiry-id>';\""
+```
+
+**Idempotent by construction.** `json_set` writing the same literal twice, or
+a plain `UPDATE ... = '[redacted]'` run twice, changes nothing the second
+time -- running this whole section again on a request already handled is safe,
+which matters if you are not sure whether last month's call was ever acted on.
+
+### 3. Verify
+
+Read the row back -- the same `SELECT`s as step 1 -- and confirm the five
+fields now read `[redacted]` and nothing else moved: the quote's status, the
+outbox row's `type`, the inquiry's `vehicle_info`, all unchanged.
+
+**Then check the customer's own access paths, not only the table.** The
+request is reachable by its 128-bit id at `GET /api/requests/<request-id>`
+and by the per-browser key at `/status` -- a row whose columns are blanked in
+`sqlite3` but which still answers with the old name over the API has not been
+removed from the one point of view that actually matters. If you have the id:
+
+```bash
+curl -s https://kensmobiletire.com/api/requests/<request-id>
+```
+
+The shaped response must no longer carry the real name, email, phone or
+location. Checking the table alone would not have caught a redaction that
+missed the row the public API actually reads.
+
+Then pull a copy off the machine (the same `.backup` and `sftp get` as "The
+monthly copy that leaves Fly," above) and run the read-only checker against
+it, from your own machine, the same way the restore drill's own
+integrity-check step does (see "The restore drill," above):
+
+```bash
+node .forge/restore-integrity-check.mjs /path/to/owner-backup.sqlite
+```
+
+A hand-edited database is exactly the case that checker exists for -- a typo
+in a `WHERE` clause, a quoted value that did not close the way it looked like
+it would, or a request whose `outbox` rows were missed is a mistake it
+catches, not one it prevents. Read its own output for what passed; a database
+that predates the `outbox` or `inquiries` tables reads as such on its own
+terms and is not evidence this procedure went wrong. Delete the local copy
+once you have read the result, the same as after any other backup.
+
+### What "removed" actually means here
+
+**Blanking a column does not erase the old bytes from the file.** SQLite
+writes the new value elsewhere on disk and leaves the previous one in
+freelist pages until something reuses them; the WAL holds the prior version
+too, until it is checkpointed. Your `UPDATE` reporting success means the app
+can no longer reach the name and address through any query -- it does not
+mean those bytes are gone from `/data/owner.sqlite`. If someone asks precisely
+what "removed" means, the honest answer is **no longer reachable by the app,
+today** -- not **erased from the file, today**.
+
+**`VACUUM` is what actually reclaims those pages**, rewriting the database
+without them. It is not part of this procedure by default, because it is not
+free: it needs roughly the size of the database again in free space, holds an
+exclusive lock for the duration, and on a live file that duration is real
+time, not instant. Whether it is worth running right after a removal, or
+batched for a quiet moment, is a judgement call -- but it is the tool for
+"gone from the file," and this procedure does not reach that state on its
+own.
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"VACUUM;\""
+```
+
+**And every snapshot or off-Fly copy taken before this was run still holds
+the original bytes, in full**, until it ages out on its own schedule -- five
+days for a Fly snapshot, whenever it is next replaced for a monthly copy
+someone kept encrypted. Neither an `UPDATE` nor a `VACUUM` against the live
+volume reaches back into a copy that already existed before the call came in.
+
+**Mail already sent** is the fourth boundary. Once `mail.mjs` exists and a
+message has actually left for the customer's own inbox, this procedure can
+redact KMT's record of having sent it -- it cannot recall the message itself.
+
+Say all of this on the call if it comes up, in the terms above: reachable
+today, gone from the file only after a `VACUUM`, and out of every backup only
+once each ages out on its own schedule. That is the honest shape of the
+promise `/privacy` makes, not a weaker one than it sounds, but not a stronger
+one either.
+
 ## When it breaks
 
 **The site is down.** Read `flyctl status -a kmt` first: a machine that will not
