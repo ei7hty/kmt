@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `audit-self-counts` | Claude (kmt CLI session, SWE agent 3) | `.forge/dead-end-audit.mjs`, `.forge/request-flow-check.mjs`, `.forge/responsive-check.mjs`, `.forge/deployed-site-check.mjs`; the count block in `.forge/AGENTS.md` (coordinating with #45) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
