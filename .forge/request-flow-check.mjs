@@ -1,5 +1,5 @@
 import { chromium } from 'playwright'
-import { openOwnerQuotes } from './audit-ui.mjs'
+import { expandTireList, openOwnerQuotes } from './audit-ui.mjs'
 import assert from 'node:assert/strict'
 
 const base = process.env.AUDIT_BASE || 'http://localhost:4183'
@@ -16,6 +16,7 @@ try {
     for (const value of ['215', '60', '16']) await page.locator('.fitment-option').getByText(value, { exact: true }).click()
     await page.locator('#fitmentZip').fill('02149')
     await page.getByRole('button', { name: 'Continue to tires' }).click()
+    await expandTireList(page)
     await page.locator('.tire-option').filter({ hasText: 'All-Weather Standard' }).click()
     await page.getByLabel('Year', { exact: true }).fill('2020')
     await page.getByLabel('Make', { exact: true }).fill('Honda')
