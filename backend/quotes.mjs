@@ -78,6 +78,27 @@ function cleanRequest(input) {
   return cleaned
 }
 
+/**
+ * Every status a quote may hold.
+ *
+ * `approved` is here for what is already stored, not for anything new: the
+ * owner's decision writes `sent` from now on, and the deployed database holds
+ * rows that were approved before that was true. Dropping it from this list
+ * would not tidy the vocabulary, it would make those rows unreadable.
+ */
+export const QUOTE_STATUSES = [
+  'draft', 'sent', 'approved', 'rejected', 'paid', 'done', 'cancelled',
+]
+
+/** The current shape of the quotes table, as one place both paths use. */
+const QUOTES_COLUMNS = `
+  id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES requests(id),
+  payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
+  version INTEGER NOT NULL DEFAULT 1, reason TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  CHECK(status IN (${QUOTE_STATUSES.map(status => `'${status}'`).join(', ')}))
+`
+
 export class Quotes {
   constructor(inventory) {
     this.inventory = inventory
@@ -88,15 +109,60 @@ export class Quotes {
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS requests_customer ON requests(customer_key, created_at);
-      CREATE TABLE IF NOT EXISTS quotes (
-        id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES requests(id),
-        payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
-        version INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-        CHECK(status IN ('draft', 'approved', 'rejected', 'paid'))
-      );
+      CREATE TABLE IF NOT EXISTS quotes (${QUOTES_COLUMNS});
       CREATE INDEX IF NOT EXISTS quotes_request ON quotes(request_id);
     `)
+    this.migrate()
+  }
+
+  /**
+   * Widen an already-created quotes table to the statuses above.
+   *
+   * CREATE TABLE IF NOT EXISTS does nothing to a table that exists, and SQLite
+   * cannot ALTER a CHECK constraint, so a database created before these
+   * statuses existed keeps the old one -- silently. Nothing in the tests would
+   * notice, because every test and both CI jobs build the table fresh. The
+   * deployed database does not: fly.toml mounts a volume, the rows are the
+   * owner's real ones, and the first write of `sent` there would fail the
+   * check. That is the owner's Approve button, so this runs before anything
+   * else touches the table.
+   *
+   * The rebuild is SQLite's documented one -- new table, copy, drop, rename --
+   * with foreign keys off around it, because dropping `quotes` while `requests`
+   * is referenced by it is exactly what the switch is for. It is off outside
+   * the transaction because the pragma is a no-op inside one.
+   *
+   * The condition is the stored schema itself rather than a version counter.
+   * There is no migration framework here to hang a counter on, and asking the
+   * table what constraint it actually carries is the question we care about: it
+   * is right on a database from any earlier day, and it is a no-op on a fresh
+   * one.
+   */
+  migrate() {
+    const stored = this.db
+      .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='quotes'")
+      .get()?.sql ?? ''
+    if (QUOTE_STATUSES.every(status => stored.includes(`'${status}'`))) return
+
+    this.db.exec('PRAGMA foreign_keys=OFF')
+    try {
+      this.transaction(() => {
+        this.db.exec(`CREATE TABLE quotes_migrating (${QUOTES_COLUMNS})`)
+        // Named columns, not SELECT *: the old table has no reason column, and
+        // a positional copy would put created_at into it.
+        this.db.exec(`
+          INSERT INTO quotes_migrating
+            (id, request_id, payload, status, version, reason, created_at, updated_at)
+          SELECT id, request_id, payload, status, version, NULL, created_at, updated_at
+          FROM quotes;
+          DROP TABLE quotes;
+          ALTER TABLE quotes_migrating RENAME TO quotes;
+          CREATE INDEX IF NOT EXISTS quotes_request ON quotes(request_id);
+        `)
+      })
+    } finally {
+      this.db.exec('PRAGMA foreign_keys=ON')
+    }
   }
 
   /** The catalog the customer was shown: live rows, composed the way the flow composes them. */
@@ -130,8 +196,10 @@ export class Quotes {
     return this.transaction(() => {
       this.db.prepare('INSERT INTO requests VALUES (?, ?, ?, ?, ?)')
         .run(id, customerKey, JSON.stringify(request), stamp, stamp)
-      this.db.prepare('INSERT INTO quotes VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(newId(), id, JSON.stringify(draft), 'draft', 1, stamp, stamp)
+      this.db.prepare(`INSERT INTO quotes
+          (id, request_id, payload, status, version, reason, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(newId(), id, JSON.stringify(draft), 'draft', 1, null, stamp, stamp)
       return this.get(id)
     })
   }
@@ -150,6 +218,10 @@ export class Quotes {
         ? {
             id: quote.id, requestId: quote.request_id, ...JSON.parse(quote.payload),
             status: quote.status, version: quote.version,
+            // Why a quote was rejected or cancelled, when the owner gave a
+            // reason. Every screen that shows a closed request reads it here
+            // rather than each one inventing a place to keep it.
+            reason: quote.reason ?? null,
             createdAt: quote.created_at, updatedAt: quote.updated_at,
           }
         : null,
