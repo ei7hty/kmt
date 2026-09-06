@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import './OwnerInventory.css'
+import { PrivacyFooter } from '../routes/Privacy.jsx'
 
 /**
  * The owner's sign-in gate, shared by both owner screens.
@@ -49,7 +50,7 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace', 
         want. Dropping it left an owner on /owner with no route to the quote
         list at all, which the dead-end audit caught. */}
     <nav className="oi-nav">
-      <button className="oi-brand" onClick={() => navigate('/')}>KMT<span>.</span></button>
+      <button className="oi-brand" onClick={() => navigate('/')}><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
       <span>OWNER WORKSPACE</span>
       <button className="oi-button" onClick={() => navigate(other.path)}>{other.label}</button>
     </nav>
@@ -67,5 +68,6 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace', 
         {error && <p role="alert" className="oi-error">{error}</p>}
       </form>
     </main>
+    <PrivacyFooter navigate={navigate} />
   </div>
 }

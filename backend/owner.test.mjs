@@ -591,7 +591,7 @@ test('page import will not mix two different reads of a listing', t => {
   assert.equal(db.list().total, 1, 'and nothing reached the database meanwhile')
 })
 
-test('import tokens cannot be swapped for session tokens', t => {
+test('import tokens cannot be swapped for session tokens', () => {
   const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'secret-one' }
   const config = readAuthConfig(env)
   const auth = createAuth(config)
@@ -968,7 +968,7 @@ test('the scraper records what it read, and only a full read counts as complete'
   assert.deepEqual(Object.keys(replaced.coverage), [SIZE], '--replace drops the untouched size and its record')
 })
 
-test('a confirmed-empty size keeps its record on a run that does not touch it', async t => {
+test('a confirmed-empty size keeps its record on a run that does not touch it', async () => {
   // A genuinely empty size (read in full, nothing there) has no tire to ride
   // along on. Keying the carry-forward off carried tires, as an earlier
   // version did, silently dropped every such size's record the moment a
@@ -992,6 +992,51 @@ test('a confirmed-empty size keeps its record on a run that does not touch it', 
   assert.deepEqual(next.coverage[emptySize], previous.coverage[emptySize], 'the empty size\'s record survives untouched')
   assert.ok(next.sizes.includes(emptySize), 'and it still counts as a covered size')
   assert.equal(next.tires.some(t => t.size === emptySize), false, 'with no tires manufactured for it')
+})
+
+test('the minimum interval between sizes holds on a run of empties, not just hits', async () => {
+  // The trap this guards against: before #129, an empty size took ~20s to
+  // conclude, which paced requests as a side effect. #129 made empties fast,
+  // and removed that pacing on exactly the runs that are mostly empty. If
+  // the interval below can be shrunk by a fast result, we have rebuilt the
+  // same trap in a new shape -- so this proves the spacing on a run where
+  // every single size returns instantly empty, the worst case for it.
+  const { scrapeAll } = await import('../scripts/scrape-tires.mjs')
+  const sizes = ['165/70R15', '165/75R15', '175/70R15', '185/50R15']
+  const starts = []
+  const fetcher = async () => {
+    starts.push(Date.now())
+    return { html: '<html><body>no results here</body></html>' }
+  }
+
+  const result = await scrapeAll(sizes, { pages: 1, limit: 0, delay: 0, minInterval: 150 }, fetcher)
+
+  assert.equal(result.tires.length, 0, 'every size was genuinely empty')
+  assert.equal(Object.keys(result.coverage).length, 4, 'all four recorded as read, not skipped')
+  assert.equal(starts.length, 4)
+  for (let i = 1; i < starts.length; i++) {
+    const gap = starts[i] - starts[i - 1]
+    assert.ok(gap >= 140, `gap before size ${i} was ${gap}ms; expected the ~150ms floor to hold even though the fetch itself was instant`)
+  }
+})
+
+test('a 429 stops the whole run immediately, not a per-size failure to log and continue', async () => {
+  const { scrapeAll } = await import('../scripts/scrape-tires.mjs')
+  const { RateLimitedError } = await import('../scripts/browser-fetch.mjs')
+  const sizes = ['165/70R15', '165/75R15', '175/70R15']
+  let calls = 0
+  const fetcher = async () => {
+    calls++
+    if (calls === 2) throw new RateLimitedError('429 from a test fixture', '30')
+    return { html: '<html><body>no results here</body></html>' }
+  }
+
+  const result = await scrapeAll(sizes, { pages: 1, limit: 0, delay: 0, minInterval: 1 }, fetcher)
+
+  assert.equal(calls, 2, 'the third size was never attempted')
+  assert.deepEqual(result.stoppedOnRateLimit, { size: '165/75R15', retryAfter: '30' })
+  assert.equal(result.failures.length, 0, 'a 429 is not a failure entry -- it is a stop')
+  assert.equal(Object.keys(result.coverage).length, 1, 'only the size read before the 429 is recorded')
 })
 
 test('scripts/import-tires.mjs refuses --complete for a size that was not read in full', async t => {

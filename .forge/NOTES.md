@@ -392,6 +392,40 @@ markers and showed both results, and #114 wired it in only after that. Before
 a gate step ships, run it once on a build it must reject and quote the failing
 output in the pull request.
 
+**2026-09-06 — Claude (scraper/import lane)**
+A behaviour can be load-bearing without anyone knowing it is there. #81 fixed
+a real problem -- an empty size took ~20 seconds for the fetcher to give up
+on, indistinguishable in the log from a real block -- by recognizing the
+supplier's own "not available" text and returning in ~1.7 seconds instead.
+Correct fix, on its own terms: it made the tool faster and more honest about
+what it had actually read. What nobody had written down, because nobody had
+noticed it, is that the 20-second wait was also the only thing pacing
+requests on a run of mostly-empty sizes. Remove the slow failure and you
+remove the accidental rate limit riding on top of it. The very next real walk
+took a `429` after 44 back-to-back empties at the new, unthrottled rate.
+
+The gate could not have caught this. Nothing about it is wrong in a unit
+test, in eslint, or in a build -- it is only wrong on someone else's server,
+under a load pattern the test suite has no way to produce. So the lesson is
+not "test more" -- it is: **a change to how fast we ask is a change to what
+we ask**, and it needs to be reviewed as one, deliberately, even when the
+diff that caused it was about something else entirely (here, honesty about
+empty results). If a fix changes how long an operation takes, ask what was
+depending on the old timing before shipping the new one.
+
+**2026-09-06 — JUNIOR FRONT END DEV (session local_376e0377)**
+A second instance of the specificity trap at the top of this file, from the
+other direction: a rule scoped to a container outranks a semantic class.
+`.owner-details dd { color: var(--text-h) }` painted the #105 zero-stock
+warning in the heading white even though its `dd` carried
+`.status-note-wait`, because `(0,1,1)` beats `(0,1,0)` whatever the source
+order. The screenshot looked like a line in a card and would have passed a
+glance; only a `getComputedStyle` readout in the check script said the
+colour was wrong. Two habits follow. Give a status colour a selector at
+least as specific as the layout it sits in, and have any check that
+asserts a colour read the computed style, never the stylesheet. Same
+family as the day's `<details>` finding: the file does not say what the
+browser does.
 **2026-09-06 — Claude (DEV OPS/INFRASTRUCTURE, writing t52)**
 A tool that is not installed answers nothing, and nothing reads as "no".
 
@@ -422,4 +456,29 @@ For DNS on this machine, use PowerShell, which fails loudly:
 
 `nslookup` also works and shows the CNAME chain. Neither is `dig`; do not
 translate a `dig` recipe from a web page and assume it ran.
+
+
+**2026-09-06 — Claude (DEV OPS/INFRASTRUCTURE)**
+A handoff is a snapshot, and its state claims decay faster than its reasoning.
+
+Two sessions changed seats today and the handover chain carried two claims that
+were true when written and false when read: that `X-KMT-Release` emitted nothing
+in production and its SHA truncation was unsettled, when the `--build-arg` was
+already in both places and production was serving `x-kmt-release: 2fdf08d`; and
+that #157 needed `customerNotes` adding to `OUTBOX_PERSONAL_DATA_KEYS`, when the
+key and a test asserting the exact array were already in the diff. Neither cost
+anything, because both were caught by someone opening the file instead of
+trusting the note -- the same habit as the `grep -P`, `dig` and `jq` entries,
+pointed at a teammate's report rather than at a tool.
+
+I wrote the first one. It is worth saying that plainly: warning someone about
+stale reports in the same message that contains one is the ordinary failure
+here, not an unusual one. Nobody re-reads what they are confident about.
+
+So write a handoff in two parts and label them. **Intent** -- why a stale-looking
+row stays in a table, why a verdict exists, why a number is what it is -- keeps
+indefinitely and is the part only the author has. **State** -- what has merged,
+what is deployed, what is still open -- is a measurement with a timestamp, and
+the receiver should re-measure anything they are about to act on. Naming which
+is which costs a line and tells the reader where scepticism is owed.
 

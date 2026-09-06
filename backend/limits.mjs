@@ -19,19 +19,29 @@
  * than remembered.
  */
 
-import { createHash } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 
 /** A request body on a public endpoint: a form is under 3KB, so this is room. */
 export const PUBLIC_BODY_LIMIT = 8 * 1024
 
 /**
  * How an id appears in the log: as itself for an address, as eight hex
- * characters of its hash for anything private. Enough to see that the same
- * id is being refused again, and nothing to read a person's address back
- * from. The rule and the count are what an operator acts on, not the value.
+ * characters of a keyed hash for anything private. Enough to see that the
+ * same id is being refused again, and nothing to read a person's address
+ * back from. The rule and the count are what an operator acts on, not the
+ * value.
+ *
+ * Keyed, not a bare digest, because an email address is low-entropy: a plain
+ * SHA-256 of it is the same eight characters every boot, so anyone holding
+ * the log and a guess at an address could compute the prefix and confirm the
+ * guess. The key is random per process and configured nowhere. Correlation
+ * within one process lifetime is all the log is for: no window outlasts a
+ * day and the process restarts on every deploy. (The customer key was never
+ * at risk, being 128 random bits; the address was.)
  */
+const LABEL_KEY = randomBytes(32)
 export const logLabel = (rule, id) =>
-  rule.private ? createHash('sha256').update(String(id)).digest('hex').slice(0, 8) : String(id)
+  rule.private ? createHmac('sha256', LABEL_KEY).update(String(id)).digest('hex').slice(0, 8) : String(id)
 
 /**
  * What one gate run asks of the server, measured rather than estimated: the

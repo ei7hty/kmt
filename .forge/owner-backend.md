@@ -49,6 +49,39 @@ come from the existing KMT catalog (290 sizes), not from the supplier results or
 owner selections. If customer catalog integration replaces that source later,
 extract the supported-size list first so missing supplier stock cannot shrink it.
 
+### ZIP centroids, for the service area
+
+`backend/zip-centroids.json` is a cut of the US Census Bureau's ZCTA
+Gazetteer (public domain): the interior-point latitude and longitude of
+every ZIP Code Tabulation Area whose prefix is 010-069 (Massachusetts, Rhode
+Island, New Hampshire, Maine, Vermont, Connecticut) or 100-139 (New York:
+the city, Long Island and the state north of them; the city is far outside
+any radius but a visitor from there should be told the distance, not that
+their ZIP is unrecognised). Its header carries the source URL, the vintage and the
+date it was cut. `backend/service-area.mjs` reads it to say how far a
+customer's ZIP is from the base and whether the request is inside the
+radius, in the review band, or refused (t48, #95).
+
+It lives beside the module rather than under `backend/data/` because
+`.dockerignore` excludes that directory (it is where the local database
+lives): a table there would be committed and still missing from the deployed
+image, and every test would pass until the first submit in production.
+Nothing under `src/` imports it, so it never enters the customer bundle;
+`bundle-leak-check.mjs` does not look for it, so keep it that way by hand.
+
+To recut it, for a new vintage or wider prefixes:
+
+```bash
+node scripts/cut-zip-centroids.mjs --vintage 2024
+```
+
+The script fetches the archive from census.gov, reads the one text file in
+it, keeps the prefixes named at its top, and rewrites the JSON; commit the
+result. A layout change at the Census (a renamed column) fails the script
+with the header it found rather than writing a wrong file. ZCTAs are not
+exactly ZIP codes: a few PO-box-only ZIPs have no ZCTA and read as unknown,
+which is refused with a message that offers the phone number.
+
 ## Owner API
 
 - `GET /api/owner/inventory?search=&size=&filter=all&page=1`: 24 rows per page,
@@ -134,7 +167,11 @@ Everything comes from the environment, so the same image runs anywhere:
 | `PORT` | Defaults to 8080. Most hosts set this for you. |
 | `KMT_BIND` | Defaults to `0.0.0.0`. |
 | `KMT_ALLOWED_HOSTS` | Comma-separated hostnames to accept. Unset accepts any, which is fine behind a host terminating its own TLS. |
+| `KMT_CANONICAL_HOST` | The one name the site lives on. When set, every other accepted name answers 301 to it with the same path and query, except `/api/health`, which the platform reads under an internal name. Unset, every accepted name serves. This is the cutover's one switch; unsetting it is the rollback. If `KMT_ALLOWED_HOSTS` is set and does not include this name, the server refuses to start and says so: every other name would redirect to a name it refuses while the health check stayed green. |
 | `KMT_SESSION_HOURS` | Session lifetime, default 12. |
+| `KMT_SERVICE_BASE_ZIP` | Where the van starts, default `02148` (Malden). Must be in the centroid table. |
+| `KMT_SERVICE_RADIUS_MILES` | Straight-line miles beyond which a request is refused, default 100. `off` (or `0`) accepts every known ZIP and the boot line says so; the only place that is a default is `backend/dev.mjs`, so a laptop in another state is not refused. Read by t48 part two once wired. |
+| `KMT_SERVICE_REVIEW_MILES` | Miles beyond which a request is flagged for the owner with its distance, default 25; `off` flags nothing. |
 
 ### Deploying
 

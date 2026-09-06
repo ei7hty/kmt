@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Only the pages meant for a search index: the customer flow and the
+     privacy notice (t50, #163). Everything else here is a customer's own
+     request or the shop's sign-in, and robots.txt disallows those. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://kensmobiletire.com/</loc>
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
+    <loc>https://kensmobiletire.com/privacy</loc>
+    <changefreq>yearly</changefreq>
+  </url>
+</urlset>

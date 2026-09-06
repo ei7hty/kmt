@@ -56,6 +56,27 @@ RUN npm run build
 # Only now, so it governs the server and not the install.
 ENV NODE_ENV=production
 
+# Which commit this image was built from.
+#
+# The site says nothing about what is running on it -- not the footer, not a
+# meta tag, and /api/health answers exactly {"ok":true}. So "confirm the
+# deployed SHA", which is step one of the live-test checklist, currently needs
+# `flyctl`. The server reads KMT_RELEASE and puts it in an X-KMT-Release header,
+# which rides API answers and redirects alike, so a cutover step is confirmed
+# with one `curl -sI`.
+#
+# Deliberately down here, after npm ci and the build. An ARG invalidates every
+# layer below it, so declaring this near the top would rebuild Chromium's apt
+# layer and reinstall node_modules on every commit -- minutes added to each
+# deploy to carry seven characters.
+#
+# Empty by default, and the server omits the header when it is empty rather
+# than emitting a placeholder: a missing header is honest, and `unknown` is a
+# value that ends up in somebody's comparison. So a local `docker build` with no
+# --build-arg produces an image that simply does not claim a release.
+ARG GIT_SHA=""
+ENV KMT_RELEASE=$GIT_SHA
+
 # The database lives on a volume mounted here. Without one it still runs, but
 # every offer and price disappears when the container is replaced.
 VOLUME ["/data"]
