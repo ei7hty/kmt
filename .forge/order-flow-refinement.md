@@ -32,4 +32,13 @@ was used. A focused assertion first needed whitespace normalization, then caught
 missing ZIP carryover; fixed and reran successfully. Port 4173 was occupied, so
 preview uses 4183 and responsive-check now honors AUDIT_BASE.
 
-Deployment verification is recorded below after the live checks finish.
+Production deployed from code commit 76de133 to
+https://temporary-flying-slate-pie8smm.vercel.app using the existing linked project.
+Deployment ID: dpl_5ZUrwzWx5nEuyiuL8o4DTrYABKAf.
+
+Live verification with AUDIT_BASE set to that URL: dead-end audit 36/36,
+request-flow check 26/26, responsive check 8/8. Each completed successfully.
+The dead-end audit includes hard reload of paid status; responsive checks directly
+navigate to owner, status, and confirmation. Browser viewports were simulated;
+no physical phone test was performed. Main remains at 7890ae5; code is pushed on
+the refinement branch, and that branch's build is now deployed.
