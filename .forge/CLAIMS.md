@@ -14,6 +14,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | t63-text-controls | JUNIOR FRONTEND DEV 2 (83b42a) | rebase onto current main, no new file changes | 2026-09-06 |
 | release-m13-claims | TEMP REPO AGENT (local_b2ab10bb) | .forge/CLAIMS.md (rebase, releasing two merged rows) | 2026-09-06 |
 | owner-guide | TEMP REPO AGENT (local_b2ab10bb) | rebase onto current main, no new file changes | 2026-09-06 |
+| `drill-pass-condition` | DEV OPS/INFRASTRUCTURE | `docs/operations.md` (docs only) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
