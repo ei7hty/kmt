@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Quotes } from './quotes.mjs'
 import { Outbox, OUTBOX_PERSONAL_DATA_KEYS } from './outbox.mjs'
-import { Mailer, NullAdapter, SmtpAdapter, addressLabel, readMailConfig } from './mail.mjs'
+import { Mailer, NullAdapter, SmtpAdapter, addressLabel, describeMail, readMailConfig } from './mail.mjs'
 import { MAIL_TYPES, TEMPLATES } from './mail-templates.mjs'
 import { createApi, createRequestsApi } from './api.mjs'
 
@@ -53,6 +53,27 @@ test('the configuration is the environment: nothing set means the outbox-only mo
   assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_HOST: 'h', KMT_MAIL_FROM: 'q@x.com' }), /KMT_OWNER_EMAIL/)
   assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_USER: 'u', KMT_MAIL_FROM: 'q@x.com', KMT_OWNER_EMAIL: 'o@x.com' }), /go together/)
   assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_HOST: 'h', KMT_MAIL_SMTP_PORT: 'lots', KMT_MAIL_FROM: 'q@x.com', KMT_OWNER_EMAIL: 'o@x.com' }), /port number/)
+})
+
+test('the boot warning fires on exactly one shape: a from-domain that differs from the authenticating mailbox', () => {
+  const base = { KMT_MAIL_SMTP_HOST: 'smtp.gmail.com', KMT_OWNER_EMAIL: 'owner@x.com', KMT_CANONICAL_HOST: 'kensmobiletire.com' }
+  const trap = readMailConfig({ ...base, KMT_MAIL_SMTP_USER: 'interim@gmail.com', KMT_MAIL_SMTP_PASSWORD: 'p', KMT_MAIL_FROM: 'quotes@kensmobiletire.com' })
+  assert.equal(trap.warnings.length, 1)
+  assert.match(trap.warnings[0], /kensmobiletire\.com.*SPF and DKIM.*filed as spam while the outbox records it sent/)
+  const interim = readMailConfig({ ...base, KMT_MAIL_SMTP_USER: 'interim@gmail.com', KMT_MAIL_SMTP_PASSWORD: 'p', KMT_MAIL_FROM: 'interim@gmail.com' })
+  assert.deepEqual(interim.warnings, [], 'the interim setup is silent')
+  assert.equal(interim.interim, true, 'and flagged as interim, not the end state')
+  const endState = readMailConfig({ ...base, KMT_MAIL_SMTP_USER: 'ken@kensmobiletire.com', KMT_MAIL_SMTP_PASSWORD: 'p', KMT_MAIL_FROM: 'quotes@kensmobiletire.com' })
+  assert.deepEqual(endState.warnings, [], 'the end state is silent')
+  assert.equal(endState.interim, false)
+  const relay = readMailConfig({ ...base, KMT_MAIL_SMTP_HOST: 'smtp-relay.gmail.com', KMT_MAIL_FROM: 'quotes@kensmobiletire.com' })
+  assert.deepEqual(relay.warnings, [], 'an allow-listed relay has no mailbox to compare against')
+  assert.equal(readMailConfig({}).warnings.length, 0)
+  assert.equal(readMailConfig({}).interim, false)
+  const lines = describeMail(interim)
+  assert.match(lines[0], /INTERIM sender/)
+  assert.match(describeMail(trap).join('\n'), /WARNING:/)
+  assert.match(describeMail(readMailConfig({}))[0], /nothing is sent/)
 })
 
 test('the SMTP adapter is STARTTLS on 587 and implicit TLS on 465, with auth only when a user is given', () => {
@@ -199,6 +220,7 @@ test('the API sends after it answers: submit records two messages, sending the q
 
   const listed = await (await fetch(base + '/api/owner/outbox?limit=10')).json()
   assert.equal(listed.provider, 'none')
+  assert.equal(listed.interim, false, 'the owner route says whether the sender is interim')
   assert.equal(listed.messages.length, 4)
   assert.equal(listed.messages[0].status, 'queued')
 })

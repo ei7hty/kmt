@@ -414,7 +414,7 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
         // the owner screen shows (R25). Session-gated like everything here.
         if (!mailer) throw new InputError('Owner endpoint not found', 404)
         const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 50))
-        send(200, { provider: mailer.adapter.name, messages: mailer.outbox.list({ limit }) })
+        send(200, { provider: mailer.adapter.name, interim: Boolean(mailer.config?.interim), messages: mailer.outbox.list({ limit }) })
       } else if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
         send(200, { ...inventory.list(Object.fromEntries(url.searchParams)), summary: inventory.summary() })
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/by-brand/')) {
