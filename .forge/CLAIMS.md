@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `health-check` | DEV OPS/INFRASTRUCTURE | #88: `backend/api.mjs`, `server.mjs`, `dev.mjs`, `quotes.test.mjs`, `fly.toml`, `.forge/deployed-site-check.mjs` (the verification lane) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
