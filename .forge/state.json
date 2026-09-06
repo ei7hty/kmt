@@ -77,7 +77,7 @@
       "id": "m11",
       "title": "Live baseline corrections",
       "description": "Decided by the user on 2026-09-06 after the v1 baseline push and the scrutiny reports: supplier data must leave the public bundle (#61), invented tires must route to owner review rather than auto-quote (#62), and a job is quoted for the number of tires asked for, default four (#93). Three PRs in that order from the owner-screen lane; the gate gains a bundle check.",
-      "status": "planned",
+      "status": "done",
       "order": 9
     }
   ],
@@ -718,42 +718,48 @@
       "title": "Supplier data leaves the public bundle",
       "description": "src/data/catalog.js stops importing scraped-tires.json; the static fallback is seed tires plus generated coverage; the backend alone reads the snapshot; the live catalog still composes through catalogFromLiveRows. A script under .forge/ fails if dist/ contains listPrice, sku: or giga-tires.com after the build; the repo agent wires it into the check job. Report bundle size before and after. Issue #61.",
       "milestoneId": "m11",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [],
-      "notes": [],
+      "notes": [
+        "Shipped in #110 (bdc399a), gate step in #114 (59c28ce); deployed asset 250,887 bytes with zero sku:/listPrice:/scrapedAt:/stock: markers, checked by the lead on the live bundle. Closed by the lead 2026-09-06."
+      ],
       "createdAt": "2026-09-06T03:37:19.565Z",
-      "updatedAt": "2026-09-06T03:37:19.565Z"
+      "updatedAt": "2026-09-06T04:42:09.431Z"
     },
     {
       "id": "t40",
       "title": "Invented tires route to owner review",
       "description": "In src/pricing.js a tire whose id does not start with giga- adds the exception reason \"Not a supplier-listed tire; owner review required\". The audits' clean path moves from the seed All-Weather Standard to a real supplier tire present in the seeded gate database; the off-road seed stays for the exception path; EXPECTED_CHECKS bumped where counts move. Tests for both branches. Issue #62.",
       "milestoneId": "m11",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t39"
       ],
-      "notes": [],
+      "notes": [
+        "Shipped in #111 (afcb481); audits resolve the clean-path tire from /api/catalog. Closed by the lead 2026-09-06."
+      ],
       "createdAt": "2026-09-06T03:37:19.565Z",
-      "updatedAt": "2026-09-06T03:37:19.565Z"
+      "updatedAt": "2026-09-06T04:42:09.431Z"
     },
     {
       "id": "t41",
       "title": "A job is quoted for the number of tires asked for, default four",
       "description": "The tire step asks how many (1, 2, 4; default 4); the payload carries quantity; cleanRequest validates it; calculateDraftQuote multiplies the tire line by quantity and keeps the mobile-service fee as one line; the set price on the tire step, the owner card and /status show quantity times unit price; audits fill the default and update expected totals. Tests: default 4, explicit 2, invalid refused, fee unmultiplied. Issue #93.",
       "milestoneId": "m11",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t40"
       ],
-      "notes": [],
+      "notes": [
+        "Shipped in #112 (df196ce), deployed green 04:36Z; intersection test covers four of a non-supplier tire. Audit gap tracked as #113. Closed by the lead 2026-09-06."
+      ],
       "createdAt": "2026-09-06T03:37:19.565Z",
-      "updatedAt": "2026-09-06T03:37:19.565Z"
+      "updatedAt": "2026-09-06T04:42:09.431Z"
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-06T03:37:19.565Z"
+  "updatedAt": "2026-09-06T04:42:09.431Z"
 }

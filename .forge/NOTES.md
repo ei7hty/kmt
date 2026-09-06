@@ -383,3 +383,11 @@ then went green unchanged. Without it, re-running until green is
 indistinguishable from letting a genuine failure through. The fix is queued
 in `HANDOFF.md`.
 
+**2026-09-06 — KMT LEAD AGENT (retro on #110)**
+A check nobody has watched fail is untested. The lead approved a bundle-leak
+check by reading its patterns; the repo agent ran it against a deliberately
+leaking build and it passed 3 of 3, because esbuild emits bare object keys and
+the patterns matched quoted JSON keys. The author rewrote it on bare `key:`
+markers and showed both results, and #114 wired it in only after that. Before
+a gate step ships, run it once on a build it must reject and quote the failing
+output in the pull request.
