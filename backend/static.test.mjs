@@ -4,7 +4,8 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, utimesSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createServer, request as httpRequest } from 'node:http'
-import { TYPES, cachePolicy, createStaticHandler } from './static.mjs'
+import { PassThrough } from 'node:stream'
+import { TYPES, cachePolicy, createStaticHandler, decodePath } from './static.mjs'
 
 /** A dist/ the shape Vite produces, plus the public/ files that matter here. */
 function buildDist(t) {
@@ -107,6 +108,42 @@ test('hashed assets are immutable; unknown routes and traversal attempts get ind
     assert.equal(response.headers.get('cache-control'), 'no-cache', `${route} is never cached`)
     assert.match(await response.text(), /id="root"/, `${route} is index.html, not something outside dist`)
   }
+})
+
+test('a malformed percent-encoding is an unknown path, not a server fault', async t => {
+  const { base } = await serve(t)
+  assert.equal(decodePath('/%'), null)
+  assert.equal(decodePath('/brand/icon-192.png'), '/brand/icon-192.png')
+  for (const route of ['/%', '/%E0%A4%A', '/brand/%', '/%zz/%']) {
+    const response = await fetch(`${base}${route}`)
+    assert.equal(response.status, 200, `${route} is the app shell, not a 500`)
+    assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8', route)
+    assert.equal(response.headers.get('cache-control'), 'no-cache', route)
+    assert.match(await response.text(), /id="root"/, route)
+  }
+})
+
+test('a sibling directory whose name begins with "dist" is outside dist', async t => {
+  const dist = buildDist(t)
+  // The URL parser normalises dot segments before a real request reaches the
+  // handler, so this calls the handler directly with the path it would never
+  // otherwise see, and the guard has to hold on its own.
+  const sibling = `${dist}-sibling`
+  mkdirSync(sibling)
+  t.after(() => rmSync(sibling, { recursive: true, force: true }))
+  writeFileSync(path.join(sibling, 'secret.txt'), 'not yours')
+  const handler = createStaticHandler(dist)
+  const chunks = []
+  let head = null
+  const response = new PassThrough()
+  response.writeHead = (status, headers) => { head = { status, headers } }
+  response.on('data', chunk => chunks.push(chunk))
+  const done = new Promise(resolve => response.on('end', resolve))
+  handler({ method: 'GET', headers: {} }, response, `/../${path.basename(sibling)}/secret.txt`)
+  await done
+  assert.equal(head.status, 200)
+  assert.equal(head.headers['Content-Type'], 'text/html; charset=utf-8', 'the app shell')
+  assert.match(Buffer.concat(chunks).toString(), /id="root"/, 'and never the sibling file')
 })
 
 test('robots.txt is a real file served as text, not the app shell', async t => {
