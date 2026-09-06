@@ -1036,6 +1036,31 @@ repair that looks applied may also be one.
 
 ## What is in the zone now, and what it should be
 
+> **STOP. DO NOT FOLLOW THE DELETIONS IN THIS TABLE.** Re-measured later on
+> 2026-09-06, every row below is now wrong, and two of them instruct the
+> deletion of records that are live and working:
+>
+> | this table says | measured now |
+> | --- | --- |
+> | MX absent, "this is why mail bounces" | **PRESENT** -- Google's five `aspmx.l.google.com` records are restored. Mail does not bounce; Ken can receive. |
+> | apex TXT is junk reading `resend._domainkey`, **delete** | **No such record.** The only root TXT is `google-site-verification=w_zlY-...` |
+> | CNAME `rsend`, **delete** | **LIVE AND VERIFIED.** `rsend.forge.rmta.net`, green on Resend's own dashboard. |
+> | "there is no record at `resend._domainkey`" | **It exists** -- a real 218-character DKIM TXT, `p=MIGfMA0GCSqGSIb3DQ...` |
+>
+> **Following the deletions today removes the DKIM record that makes this
+> domain verified for sending, plus a working SPF CNAME.** The framing below
+> -- "removing Resend's leftovers is part of the fix" -- was accurate when
+> written. Those records are no longer leftovers; they are a working
+> configuration.
+>
+> **The sending provider is an open decision with the user** and this table
+> is not usable under either answer: if Workspace, the deletions may be right
+> but the MX and junk-TXT rows send you hunting for records that do not
+> exist; if Resend, the deletions are destructive. **Re-measure the zone
+> before changing anything, with a positive control** (`Resolve-DnsName
+> google.com -Type TXT` returns 17 records, so an empty answer is an answer
+> and not a broken command).
+
 Measured authoritatively on 2026-09-06.
 
 | record | name | now | target |
