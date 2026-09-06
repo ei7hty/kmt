@@ -159,8 +159,8 @@ exactly as before (second reader, trial-merge, diff-read, `CLAIMS.md`), and anyt
 goes to the user directly when they're in a session, or is held and flagged here or in `NOTES.md` otherwise --
 it does not route through a PM.
 
-What landed during the interlude: `#182` (t48 service-area enforcement -- active by default in production,
-verified live via the boot log rather than assumed from the PR), `#206` (t37's mail seam, SMTP through the
+What landed during the interlude: `#182` (t48 service-area enforcement -- **shipped, and switched OFF on
+production**: `curl -sI https://kensmobiletire.com/` answers `x-kmt-service-area: off`. This line previously read "active by default in production, verified live via the boot log"; that was wrong, and two agents held contradicting boot-log readings for an hour because neither could check the other's. #259 made the state a response header, so it is now one command rather than an argument. The code still fails closed -- unset means enforcing -- but the secret is set and resolves to `off`, and turning it on is a named cutover step whose pass condition is `x-kmt-service-area: on`.), `#206` (t37's mail seam, SMTP through the
 owner's Google Workspace, outbox-first with no provider required), `#214` (the wizard's ZIP-required/date-floor
 half of t48). All three merged in sequence, each needing a rebase after the one before it changed a file the
 next one also touched; every rebase was verified beyond CI before merging (a scratch server boot, a live
