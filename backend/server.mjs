@@ -126,6 +126,10 @@ try {
   process.exit(1)
 }
 const quotes = new Quotes(inventory, { serviceArea })
+// The same object Quotes and the boot line already read from -- on/off only,
+// answered as X-KMT-Service-Area on every response, never the radius, base
+// ZIP or review distance it also holds.
+const serviceAreaOn = serviceArea.radiusMiles !== null
 // Every message about a request is recorded here whether or not a provider is
 // configured; the mailer decides whether anything is actually sent.
 const outbox = new Outbox(inventory.db)
@@ -163,7 +167,7 @@ const server = createServer(async (request, response) => {
     // as the catalog and then matched no handler.
     request.url = url.pathname + url.search
     const hostname = (request.headers.host || '').split(':')[0]
-    applySecurityHeaders(request, response, { release })
+    applySecurityHeaders(request, response, { release, serviceAreaOn })
 
     // The health check is exempt, and isHostAllowed says why. The canonical
     // redirect below exempts it for the same reason.

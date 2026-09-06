@@ -50,7 +50,7 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 50;
+const EXPECTED_CHECKS = 51;
 
 let passed = 0;
 let failed = 0;
@@ -614,6 +614,27 @@ async function main() {
     }
   } catch (error) {
     fail(`the live index.html serves a non-empty meta description — ${describeFetchError(error)}`);
+  }
+
+  // The service-area check, on or off, as its own header (t48/#182's config,
+  // answered the same minimal way as X-KMT-Release: a boolean, never the
+  // radius, base ZIP or review distance readServiceAreaConfig() also
+  // produces). This does not assert which value is correct -- on is the
+  // default and off is a deliberate, explicit choice, and a generic audit
+  // script has no business hardcoding which one production should be in
+  // right now. What it proves is that the answer is legible at all, on
+  // every deploy, without anyone needing a shell on the machine to find out.
+  try {
+    const serviceAreaResponse = await fetch(`${BASE}/`);
+    const serviceArea = (serviceAreaResponse.headers.get('x-kmt-service-area') || '').toLowerCase();
+    check(serviceArea === 'on' || serviceArea === 'off',
+      'the deployed site answers X-KMT-Service-Area as on or off',
+      serviceArea ? `got ${JSON.stringify(serviceArea)}` : 'header absent');
+    if (serviceArea === 'on' || serviceArea === 'off') {
+      console.log(`    service-area check is currently ${serviceArea.toUpperCase()} on ${BASE} (this run's own read, not a cached or assumed value)`);
+    }
+  } catch (error) {
+    fail(`the deployed site answers X-KMT-Service-Area as on or off — ${describeFetchError(error)}`);
   }
 
   reportCount();

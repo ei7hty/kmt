@@ -103,7 +103,7 @@ export function assertCanonicalIsAllowed({ canonicalHost, allowedHosts }) {
  * meaningless, and a local run should not teach a browser to insist on TLS
  * for localhost.
  */
-export function securityHeaders({ secure, release = '' }) {
+export function securityHeaders({ secure, release = '', serviceAreaOn }) {
   const headers = {
     'Content-Security-Policy': [
       "default-src 'self'",
@@ -131,6 +131,17 @@ export function securityHeaders({ secure, release = '' }) {
   // header is omitted: a missing header is honest, and a placeholder is a
   // value that ends up in someone's comparison.
   if (release) headers['X-KMT-Release'] = release
+  // On or off, never the radius, the base ZIP or the review distance -- the
+  // same minimalism /api/health already holds ("not the place for a
+  // version, a row count, or a path on disk") applied to a different
+  // setting. `serviceAreaOn` is a boolean the caller derives once from the
+  // same config object readServiceAreaConfig() already produced for the
+  // boot line and for Quotes, not a value this function reads or composes
+  // itself -- there is no second source of truth to drift from the first.
+  // Omitted rather than false when the caller has no answer (a test that
+  // does not pass it), the same way a missing release is omitted rather
+  // than a placeholder.
+  if (typeof serviceAreaOn === 'boolean') headers['X-KMT-Service-Area'] = serviceAreaOn ? 'on' : 'off'
   return headers
 }
 
@@ -146,8 +157,8 @@ export function readRelease(env = process.env) {
 }
 
 /** Put the headers on a response before anything writes it; writeHead keeps them. */
-export function applySecurityHeaders(request, response, { release = '' } = {}) {
-  for (const [name, value] of Object.entries(securityHeaders({ secure: isSecureRequest(request), release }))) {
+export function applySecurityHeaders(request, response, { release = '', serviceAreaOn } = {}) {
+  for (const [name, value] of Object.entries(securityHeaders({ secure: isSecureRequest(request), release, serviceAreaOn }))) {
     response.setHeader(name, value)
   }
 }
