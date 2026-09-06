@@ -18,6 +18,8 @@
  *   KMT_BIND             defaults to 0.0.0.0
  *   KMT_ALLOWED_HOSTS    comma-separated hostnames to accept. Unset means any,
  *                        which is fine behind a host that terminates its own TLS
+ *   KMT_CANONICAL_HOST   when set, every other accepted name answers 301 to
+ *                        this one (except /api/health). Unset: every name serves
  *   KMT_SESSION_HOURS    session lifetime, default 12
  *
  * One origin is a deliberate choice, not a convenience: the API's same-origin
@@ -39,6 +41,7 @@ import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHost
 import { Quotes } from './quotes.mjs'
 import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
+import { applySecurityHeaders, canonicalRedirectTarget, parseRequestUrl } from './site.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
@@ -93,6 +96,9 @@ const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'
 const allowedHosts = (process.env.KMT_ALLOWED_HOSTS || '')
   .split(',').map(value => value.trim()).filter(Boolean)
+// The one switch for the domain cutover: set it and every other name answers
+// 301 to this one. site.mjs says what is exempt and why.
+const canonicalHost = (process.env.KMT_CANONICAL_HOST || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
 
 /**
  * Serve one file out of dist, falling back to index.html.
@@ -124,13 +130,21 @@ function serveStatic(request, response, pathname) {
 
 const server = createServer(async (request, response) => {
   try {
-    const url = new URL(request.url, 'http://localhost')
+    // A URL that does not parse is a bad link, not a server fault (#132), and
+    // the browser-facing headers go on before anything can write (#67).
+    const { url } = parseRequestUrl(request.url)
     const hostname = (request.headers.host || '').split(':')[0]
+    applySecurityHeaders(request, response)
 
-    // The health check is exempt, and isHostAllowed says why. A canonical-host
-    // redirect added later has to exempt it for the same reason.
+    // The health check is exempt, and isHostAllowed says why. The canonical
+    // redirect below exempts it for the same reason.
     if (!isHostAllowed(hostname, url.pathname, allowedHosts)) {
       response.writeHead(403); response.end('Unrecognised host'); return
+    }
+
+    const canonical = canonicalRedirectTarget({ hostname, pathname: url.pathname, search: url.search, canonicalHost })
+    if (canonical) {
+      response.writeHead(301, { Location: canonical, 'Cache-Control': 'no-store' }); response.end(); return
     }
 
     // Login and logout have to be reachable without a session, or there is no
@@ -178,6 +192,9 @@ server.listen(port, bind, () => {
   console.log(`KMT owner workspace listening on ${bind}:${port}`)
   console.log(`Database: ${dbPath}`)
   if (!allowedHosts.length) console.log('KMT_ALLOWED_HOSTS unset: accepting any Host header.')
+  console.log(canonicalHost
+    ? `KMT_CANONICAL_HOST=${canonicalHost}: every other name answers 301 to it, except /api/health.`
+    : 'KMT_CANONICAL_HOST unset: every accepted name serves; no canonical redirect.')
   if (!process.env.KMT_SESSION_SECRET) {
     console.log('KMT_SESSION_SECRET unset: sessions will not survive a restart.')
   }
