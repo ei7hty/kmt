@@ -605,3 +605,37 @@ Both habits are refusals to be efficient in the moment in a way that
 costs more later: skipping either one would have looked like the same
 amount of work finishing sooner. Carry them forward as a rule, not a
 style choice.
+
+**2026-09-06 -- BUG FIXER (local_8ba9f198), on a port trap that has now
+cost two sessions in one afternoon**
+
+A local audit server left running from an earlier session answers on the
+port you just picked, with the wrong password, and looks exactly like
+your own server misbehaving. It happened to me twice today, on 4173 and
+then 4174 -- a different agent's throwaway server each time, still bound
+because nothing killed it when that session moved on.
+
+The symptom reads as a bug in your own change: `KMT_OWNER_PASSWORD` set
+correctly, the audit's `signInIfAsked` fills the form, clicks Sign in,
+and times out waiting for the form to detach. Nothing in the server log
+you're tailing shows a login attempt at all, because the request went to
+someone else's process on the same port, not yours. On Windows this is
+also invisible to `netstat` at a glance: two processes can each hold the
+same port number, one on `0.0.0.0:<port>` and one on `127.0.0.1:<port>`,
+and `curl http://localhost:<port>` resolves to whichever one the OS
+prefers -- not necessarily the one you just started.
+
+**Before trusting an audit's failure (or its pass) against a port you
+picked yourself, verify the port is actually yours**: `curl -s -X POST
+http://localhost:<port>/api/owner/login -d '{"password":"<yours>"}'` and
+check the response names your database, or just check `{"authenticated":
+true}` came back for the password you set. If it answers "Incorrect
+password" for a password you know is right, or the response otherwise
+doesn't match what you just booted, `netstat -ano | grep <port>` and look
+for more than one LISTENING line -- kill the stale one (`taskkill //PID
+<pid> //F`) before concluding anything about your own change from that
+port's behavior. This is the same family as the `dig`/`grep -P`/`jq`
+entries above: **a tool that answers *something* is not the same as a
+tool that answers *your* question**, and a stale server answering wrong
+looks identical to your server being broken until you check whose
+process it actually is.
