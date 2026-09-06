@@ -128,11 +128,62 @@ test('refresh reads every supplier page and keeps all rows', async t => {
   assert.equal(closed, true)
 })
 
+test('the refreshable subset is the sizes the supplier has been asked about, and the summary carries it', t => {
+  const db = setup(t)
+  // The snapshot covered SIZE only; otherSize is supported but untouched.
+  assert.deepEqual(db.summary().sizes, [SIZE, otherSize])
+  assert.deepEqual(db.summary().refreshableSizes, [SIZE])
+  // A recorded failure is coverage too: the supplier was asked, and the owner
+  // needs to be able to retry it from "Refresh all".
+  db.recordFailure(otherSize, 'Blocked')
+  assert.deepEqual(db.summary().refreshableSizes, [SIZE, otherSize])
+})
+
+test('a bulk refresh stays inside the refreshable subset; a single size may be anything supported', async t => {
+  const db = setup(t)
+  const refresh = new Refresher(db, { pause: async () => {}, createFetcher: async () => ({
+    // One row per size, with an id of its own: supplier ids are unique across sizes.
+    fetchSizePage: async size => ({ html: html(`S${size.replace(/\D/g, '')}`, 1).replaceAll(SIZE, size) }), close: async () => {},
+  }) })
+  // otherSize has no supplier rows and no coverage, so a list that includes it is refused...
+  assert.throws(() => refresh.start([SIZE, otherSize]), { status: 400, message: /Refresh all covers only sizes that already have supplier data/ })
+  assert.throws(() => refresh.start([SIZE, otherSize]), { message: /225\/50R17 can be refreshed one at a time/ })
+  assert.throws(() => refresh.start([SIZE, otherSize]), { message: /scrape-tires -- --from-catalog/ })
+  assert.equal(db.summary().job, null, 'a refused refresh leaves no job behind')
+  // ...while naming it on its own is the owner asking for that size from the filter.
+  refresh.start([otherSize]); await refresh.done
+  assert.equal(db.summary().job.status, 'completed', db.summary().job.message)
+  assert.deepEqual(db.summary().refreshableSizes, [SIZE, otherSize], 'and once refreshed it joins the subset')
+  // The whole subset is exactly what the owner screen sends for "Refresh all".
+  refresh.start(db.summary().refreshableSizes); await refresh.done
+  assert.equal(db.summary().job.status, 'completed')
+  assert.equal(db.summary().job.sizes.length, 2)
+})
+
+test('the refresh endpoint refuses a bulk list outside the subset with a reason the owner can act on', async t => {
+  const db = setup(t)
+  const api = createApi(db, new Refresher(db, { pause: async () => {}, createFetcher: async () => ({ fetchSizePage: async () => ({ html: html('ONE', 1) }), close: async () => {} }) }))
+  const server = createServer((req, res) => api(req, res))
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  const base = `http://127.0.0.1:${server.address().port}/api/owner`
+  const post = sizes => fetch(`${base}/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sizes }) })
+  const refused = await post([SIZE, otherSize])
+  assert.equal(refused.status, 400)
+  assert.match((await refused.json()).error, /one at a time from the size filter/)
+  const inventory = await (await fetch(`${base}/inventory`)).json()
+  assert.deepEqual(inventory.summary.refreshableSizes, [SIZE], 'the screen reads the subset off the summary it already loads')
+  assert.equal((await post([SIZE])).status, 202, 'and the subset itself is accepted')
+})
+
 test('a failed later page does not partially replace a size or continue challenging supplier', async t => {
   const db = setup(t), calls = []
   const refresh = new Refresher(db, { pause: async () => {}, createFetcher: async () => ({
     fetchSizePage: async (size, page) => { calls.push([size, page]); if (page === 2) throw new Error('Blocked'); return { html: html('NEW') } }, close: async () => {},
   }) })
+  // A two-size list is a bulk refresh, which stays inside the sizes the
+  // supplier has been asked about; an earlier failed attempt counts.
+  db.recordFailure(otherSize, 'Earlier attempt')
   refresh.start([SIZE, otherSize]); await refresh.done
   assert.equal(db.list().total, 1)
   assert.equal(db.list().items[0].supplierActive, true)

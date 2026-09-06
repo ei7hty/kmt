@@ -232,7 +232,7 @@ async function main() {
 
     // 6. The selector narrows each stage to choices that lead somewhere, so a
     //    completed selection should always land on tires rather than an empty
-    //    list. Sampled here; the exhaustive walk of all 290 paths is a one-off,
+    //    list. Sampled here; the exhaustive walk of all 910 paths is a one-off,
     //    too slow to run every time.
     for (const [w, r, d] of [['175', '70', '14'], ['225', '45', '17'], ['275', '40', '20']]) {
       await page.goto(BASE + '/');

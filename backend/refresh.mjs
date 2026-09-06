@@ -21,6 +21,19 @@ export class Refresher {
     if (this.active) throw new InputError('A supplier refresh is already running.', 409)
     if (!Array.isArray(sizes) || !sizes.length || sizes.length > this.inventory.sizes.length ||
         sizes.some(size => !this.inventory.sizes.includes(size))) throw new InputError('Choose supported KMT sizes')
+    // One size named on its own may be anything the catalog supports: that is
+    // the owner picking a size from the filter and asking for it. A list is a
+    // bulk refresh, and a bulk refresh stays inside the sizes the supplier has
+    // already been asked about (see Inventory.refreshableSizes). Walking every
+    // supported size from here is the job of the local scrape, not this button.
+    if (sizes.length > 1) {
+      const refreshable = new Set(this.inventory.refreshableSizes())
+      const outside = [...new Set(sizes)].filter(size => !refreshable.has(size))
+      if (outside.length) {
+        const named = outside.length === 1 ? outside[0] : `${outside[0]} and ${outside.length - 1} other size${outside.length === 2 ? '' : 's'}`
+        throw new InputError(`Refresh all covers only sizes that already have supplier data. ${named} can be refreshed one at a time from the size filter; for every catalog size, run npm run scrape-tires -- --from-catalog locally, then npm run import-tires.`)
+      }
+    }
     const job = { id: randomUUID(), status: 'running', sizes: [...new Set(sizes)],
       completed: 0, failed: [], tiresRead: 0, pagesRead: 0, currentSize: null,
       startedAt: new Date().toISOString(), message: 'Opening supplier browser…' }

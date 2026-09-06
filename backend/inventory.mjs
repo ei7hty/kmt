@@ -75,8 +75,9 @@ export class Inventory {
    *
    * It never overrides one. An offer's price_cents still wins wherever it is
    * set; this only fills the gap so a tire nobody has reached still has a
-   * number, because there are 290 supported sizes and pricing every tire by
-   * hand is not something anyone finishes.
+   * number, because there are hundreds of supported sizes (910 as of the
+   * fitment-range change) and pricing every tire by hand is not something
+   * anyone finishes.
    *
    * `isPlaceholder` stays true until someone saves a rate, so the customer
    * catalog can mark those prices provisional instead of presenting a default
@@ -314,10 +315,28 @@ export class Inventory {
     return tires
   }
 
+  /**
+   * The sizes a bulk refresh may cover: those the supplier has already been
+   * asked about, meaning they hold supplier rows or a coverage row (full,
+   * snapshot, or a recorded failure). Everything else in `sizes` is a size the
+   * customer selector can build, and there are 910 of those. Walking all of
+   * them from the hosted machine is 910 page loads at a 1.5-second pause from
+   * a datacenter address the supplier's firewall already dislikes, so the full
+   * walk is a deliberate local action -- `npm run scrape-tires -- --from-catalog`
+   * on a home connection, then `npm run import-tires` -- and the owner screen's
+   * "Refresh all" stays inside this subset. Any single size can still be
+   * refreshed on its own from the size filter; see Refresher.start.
+   */
+  refreshableSizes() {
+    const known = new Set(this.db.prepare('SELECT size FROM supplier UNION SELECT size FROM coverage').all().map(row => row.size))
+    return this.sizes.filter(size => known.has(size))
+  }
+
   summary() {
     const coverage = this.db.prepare('SELECT * FROM coverage ORDER BY size').all()
     return {
       sizes: this.sizes, coverage,
+      refreshableSizes: this.refreshableSizes(),
       supplierCount: this.db.prepare('SELECT count(*) AS n FROM supplier').get().n,
       offeredCount: this.db.prepare('SELECT count(*) AS n FROM offers WHERE enabled=1').get().n,
       fullSizeCount: coverage.filter(c => c.completeness === 'full').length,
