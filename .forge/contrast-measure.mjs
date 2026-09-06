@@ -142,8 +142,20 @@ export async function measure(page, label) {
     }
     const interactive = []
     const sel = 'a[href], button, input, select, textarea, summary, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"]), label.oi-check'
-    for (const el of document.querySelectorAll(sel)) {
+    const interactiveEls = [...document.querySelectorAll(sel)]
+    for (const el of interactiveEls) {
       if (!visible(el)) continue
+      // A control nested inside another matched interactive element -- the
+      // common case is a checkbox inside its own wrapping <label> -- shares
+      // that ancestor's click surface: native label semantics activate the
+      // input from anywhere inside the label, with no `for`/id needed. The
+      // ancestor is the real tap target a person reaches for; measuring the
+      // descendant too reports the same control's size twice, once at the
+      // wrong (smaller) number, which is a distinct problem from measuring
+      // it wrong -- the #217 bug was the fixed logic returning a wrong
+      // number for the right element; this is asking the right logic about
+      // the wrong element entirely.
+      if (interactiveEls.some(other => other !== el && other.contains(el))) continue
       const r = el.getBoundingClientRect()
       const cs = getComputedStyle(el)
       const fg = parse(cs.color)
