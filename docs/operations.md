@@ -1,7 +1,9 @@
 # Operations: the domain cutover
 
 Moving the site from `kmt.fly.dev` to `kensmobiletire.com`. Written 2026-09-06
-against main `c81e023`.
+against main `c81e023`; revised the same day against `3c6b71f`, the deploy that
+made t46 live. Where a line says what was measured, it names the release it was
+measured against.
 
 **The user runs every `flyctl` and registrar command in this file, with their
 own hands.** No agent holds the Fly token or a registrar login, and no step here
@@ -84,17 +86,23 @@ this precondition exists to prevent, and it is the reason the certificate check
 comes before the flip rather than beside it.
 
 **3. t46 has deployed** before Step 2, and only Step 2. `KMT_CANONICAL_HOST` is
-read by code that does not exist on `main` as of `c81e023`; setting the secret
-before that code deploys does nothing at all, which is a confusing way to spend
-an afternoon. Confirm the deployed release contains it:
+read by code that shipped in #167; setting the secret before that code is live
+does nothing at all, which is a confusing way to spend an afternoon.
+
+**Met as of 2026-09-06: #167 deployed as `3c6b71f`.** Production now serves all
+six security headers, `GET //` answers 200, and -- the part that matters here --
+the canonical switch shipped **dormant**, because a code merge sets no
+environment. The redirect is inert until the secret is set, which is the whole
+separation Steps 1 and 2 depend on. Confirm for yourself rather than trusting
+this line:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: kmt.fly.dev' https://kensmobiletire.com/
 ```
 
-Before t46 that answers 200. After t46 and Step 2 it answers 301. **Measured
-2026-09-06: 200**, and `www` likewise -- t46 is not deployed as of `c81e023`,
-so Step 2 is blocked today and Step 1 is not.
+Before Step 2 that answers 200; after it, 301. **Measured 2026-09-06 against
+`3c6b71f`, with t46 live: still 200**, which is the dormant state, not a
+failure. Both steps are now technically unblocked; the timing is the user's.
 
 ---
 
@@ -126,15 +134,20 @@ and do not narrow the allow-list later without checking what the canonical host
 is set to.
 
 **How this shows up depends on whether #167 has deployed, so check which state
-you are in before diagnosing.** #167 adds a boot refusal: with a canonical host
-set and a non-empty allow-list that does not contain it, the process refuses to
+you are in before diagnosing.** #167 added a boot refusal for this, and it is live: with a canonical host set
+and a non-empty allow-list that does not contain it, the process refuses to
 start and names both variables, the way `readAuthConfig` already refuses a bad
 password.
 
 | | symptom | where you see it |
 | --- | --- | --- |
-| **before #167 deploys** | the canonical name answers **403**, every other name 301s into it, **health stays green** | only a GET on the canonical name |
-| **after #167 deploys** | the machine **will not start**; the boot message names both variables and the fix | `flyctl status`, and the site is down |
+| before #167 deployed | the canonical name answers **403**, every other name 301s into it, **health stays green** | only a GET on the canonical name |
+| **after #167 deployed — this is now the live behaviour, as of `3c6b71f`** | the machine **will not start**; the boot message names both variables and the fix | `flyctl status`, and the site is down |
+
+The first row is kept deliberately. It is history for this deployment, but it is
+the behaviour of any environment running a build older than #167 -- a rollback
+to an earlier release, or a second app stood up from an old image -- and someone
+reading this file in one of those is in that row, not this one.
 
 Neither is quiet in the same way. Before, everything reports healthy and only a
 customer notices. After, nothing reports healthy and the cause is written in the
