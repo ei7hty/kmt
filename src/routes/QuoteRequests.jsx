@@ -183,6 +183,11 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                   <div><dt>Preferred Date:</dt> <dd>{request.date}</dd></div>
                   <div><dt>Contact:</dt> <dd>{request.customerEmail ? <>{request.customerName} · <a href={`mailto:${request.customerEmail}`}>{request.customerEmail}</a>{request.customerPhone && <> · <a href={`tel:${request.customerPhone}`}>{formatPhone(request.customerPhone)}</a></>}</> : <span className="text-secondary">No contact on file (submitted before this was collected)</span>}</dd></div>
                 </dl>
+                {/* The supplier's count is a fact the card shows (#170); this is the judgement on it (#105):
+                    shown only while the supplier still lists the tire and shows none, never for a
+                    delisted tire, whose own row already says so. A note after the list, like the
+                    card's other judgements, not a labelled fact inside it. */}
+                {tire?.supplierStock === 0 && tire?.supplierActive !== false && <p className="status-note status-note-wait owner-stock-warning" role="status">Supplier shows none in stock. Check before sending.</p>}
                 {quote && <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
                   <div className="owner-quote-summary"><div><p className="text-secondary">Draft Quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{quote.status}</span></div>
                   {quote.exception && <div className="owner-exception-note"><p>Owner review required</p><ul>{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
