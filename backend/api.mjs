@@ -1,4 +1,5 @@
 import { InputError } from './inventory.mjs'
+import { PUBLIC_BODY_LIMIT, clientIp, refuse } from './limits.mjs'
 
 /**
  * Exported as `readJsonBody` so the auth routes parse request bodies the same
@@ -191,8 +192,30 @@ export function createHealthApi(inventory) {
  * Nothing here lists anything without a customer key or a request id. A key
  * that does not match is answered exactly as a request that does not exist,
  * because "not yours" tells the asker the request is real.
+ *
+ * The three POSTs are the only public writes, so they are the ones limited
+ * (#63): per address before the body is read, per browser key once it is, and
+ * a submission per email address in a day, which is the cap that matters the
+ * day the email seam sends. A refusal is a 429 with the wait named, before
+ * anything is stored. Reads are not limited: they cost a lookup and disclose
+ * nothing without the id or the key. Without a limiter, as in most tests,
+ * nothing is counted.
  */
-export function createRequestsApi(quotes) {
+export function createRequestsApi(quotes, { limiter = null } = {}) {
+  /** Count one hit; answer 429 and return true if it was over. */
+  const over = (response, rule, id, message) => {
+    if (!limiter || !id) return false
+    const taken = limiter.take(rule, id)
+    if (taken.allowed) return false
+    refuse(response, taken.retryAfterSeconds, message)
+    return true
+  }
+  const TOO_MANY = 'Too many requests from this connection. Wait a few minutes and try again.'
+  const TOO_MANY_KEY = 'Too many requests from this browser. Wait a few minutes and try again.'
+  const TOO_MANY_EMAIL = 'That email address has been used for too many requests today. Call us instead.'
+  const keyOf = body => (typeof body?.customerKey === 'string' ? body.customerKey.trim().toLowerCase() : '')
+  const emailOf = body => (typeof body?.customerEmail === 'string' ? body.customerEmail.trim().toLowerCase() : '')
+
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
     if (!url.pathname.startsWith('/api/requests')) return false
@@ -203,8 +226,15 @@ export function createRequestsApi(quotes) {
     }
 
     try {
+      if (request.method === 'POST' && isPublicApiCall('POST', url.pathname)) {
+        if (over(response, 'publicPerIp', clientIp(request), TOO_MANY)) return true
+      }
+
       if (request.method === 'POST' && url.pathname === '/api/requests') {
-        send(201, quotes.submit(await readJsonBody(request)))
+        const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
+        if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
+        if (over(response, 'submitPerEmail', emailOf(body), TOO_MANY_EMAIL)) return true
+        send(201, quotes.submit(body))
         return true
       }
 
@@ -217,14 +247,16 @@ export function createRequestsApi(quotes) {
 
       const payMatch = url.pathname.match(/^\/api\/requests\/([^/]+)\/pay$/)
       if (request.method === 'POST' && payMatch) {
-        const body = await readJsonBody(request)
+        const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
+        if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
         send(200, quotes.pay(decodeURIComponent(payMatch[1]), body?.customerKey))
         return true
       }
 
       const cancelMatch = url.pathname.match(/^\/api\/requests\/([^/]+)\/cancel$/)
       if (request.method === 'POST' && cancelMatch) {
-        const body = await readJsonBody(request)
+        const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
+        if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
         send(200, quotes.cancelByCustomer(decodeURIComponent(cancelMatch[1]), body?.customerKey, body?.reason))
         return true
       }
