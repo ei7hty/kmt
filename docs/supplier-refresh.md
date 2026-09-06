@@ -15,9 +15,24 @@ request is refused outright. There is no stealth plugin and no spoofed user
 agent. That is a deliberate choice, not a limitation to work around: it is
 what makes the scraping reasonable to do at all, and it means someone has to
 sit with it, at least until they trust the batch boundaries. Do not add
-stealth, do not shorten the 1.5-second pause between requests, and if the
-supplier ever answers with a challenge page, stop that batch and say so
-rather than retrying past it.
+stealth, do not shorten the pacing described below, and if the supplier ever
+answers with a real block, stop that batch and say so rather than retrying
+past it.
+
+**Two paces, and neither is optional.** `--delay` (1.5s, default) is between
+pages within one size's own multi-page read. `--min-interval` (10s, default)
+is between the start of one size's request and the next, and it holds
+**regardless of outcome** -- empty, full, or failed alike. That second
+number exists because of what happened without it: before the empty-listing
+fix in #81/#129, a size with no results took the fetcher ~20 seconds to give
+up on, which paced every request as an accidental side effect of a slow
+failure. Once #129 made an empty size resolve in ~1.7 seconds -- correctly,
+and much faster -- that accidental pacing disappeared on exactly the runs
+that are mostly empty, and the very next real walk got a `429` from the
+supplier after 44 back-to-back empty results at the new, unthrottled rate.
+`--min-interval` is that pacing restored on purpose instead of by accident.
+Do not shorten it because a stretch of empties feels wasteful to wait
+through -- that feeling is the bug coming back.
 
 ## Before you start
 
@@ -104,7 +119,15 @@ Four sizes, scraped complete, took this many pages:
 That is 111 pages, and the run took longer than ten minutes -- more than the
 166.5 seconds the mandated 1.5-second pause alone would predict, because
 each page also has to load and render in a real browser and its listings
-extracted. Budget roughly 5-6 seconds per page, not 1.5.
+extracted. Budget roughly 5-6 seconds per page, not 1.5, for a deep,
+multi-page-per-size run like this one.
+
+**A breadth pass (`--pages 1`) is governed by `--min-interval` instead**,
+not this per-page figure -- it only ever reads one page per size, so the
+10-second floor between sizes is most of the cost. Budget ~10-11 seconds
+per size for a breadth pass (the 10s floor plus the page's own load time),
+not the 5-6s/page table above; that number does not apply to a single-page
+run at all.
 
 **Do not extrapolate that per-size depth across all 910 sizes.** Those four
 were chosen because they already had real supplier inventory; most of the
@@ -155,12 +178,24 @@ of a band will take.
 
 ## When the supplier blocks a run
 
-Stop that batch immediately -- do not retry, do not add a delay-shortening
-workaround, do not switch to a different fetch strategy. Note which size and
-which page it happened on, leave the rest of that batch for later, and say
-so plainly wherever this refresh is being tracked. The scraper staying
-small, visible and slow is what makes it reasonable to run at all; treating
-a block as a puzzle to route around is the direction that stops being true.
+A real block is now its own thing, not a guess from a page's title: the
+fetcher reads the actual HTTP status, and a `429` throws a distinguishable
+error that stops the whole run immediately, on its own, before it reaches
+another size. If you see it: do not retry, do not add a delay-shortening
+workaround, do not switch to a different fetch strategy, and do not treat a
+`429` as something to back off from and continue past -- "we backed off and
+kept going" is exactly the workaround this rule forbids. Note which size it
+happened on, whether a `Retry-After` was logged, leave the rest of that
+batch for later, and say so plainly wherever this refresh is being tracked.
+A stretch of ordinary empty results is not a block and does not stop a run
+-- only a real `429` (or any other abnormal response) does. The scraper
+staying small, visible and paced on purpose is what makes it reasonable to
+run at all; treating a block as a puzzle to route around is the direction
+that stops being true.
+
+Wait at least an hour before resuming after a `429`, whatever else is
+ready. The supplier just told you the rate was too high; running again
+sooner is asking the same question again before it changed its mind.
 
 ## Committing the result
 
