@@ -71,6 +71,10 @@ a conflict is trivial to resolve.
 - **Check the branch before committing.** Do not assume `main`.
 - **Need another branch while someone is editing? Use `git worktree add`,** not
   `git switch`. Switching moves the checkout under whoever is writing.
+- **`node scripts/worktree.mjs add <name>` and `remove <name>`** do that with
+  the shared `node_modules` link handled in the safe order. Never
+  `git worktree remove --force` a tree whose `node_modules` is a link: it
+  deletes through the link into the install every worktree shares.
 - **Push promptly.** The divergence window is where this goes wrong.
 - **An author does not merge their own pull request.** A second agent reads the
   diff and the audit counts in the check log, and merges. That has been the
