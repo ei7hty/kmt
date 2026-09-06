@@ -669,6 +669,21 @@ async function main() {
   }
 
   reportCount();
+
+  // A SKIP is honest and easy to scroll past: the three above read this way
+  // for a day before anyone acted on them. This is not "not applicable" --
+  // it is an unfinished cutover step with a known fix and a known order.
+  // Printed after reportCount() on purpose, same reason that function is:
+  // last is the line a reader actually lands on.
+  if (!flipConfigured) {
+    console.log(
+      `\nOPEN: KMT_CANONICAL_HOST is not set. Until it is, ${[CANONICAL_HOST, ...REDIRECT_HOSTS].join(', ')} ` +
+      'all serve identical content with no redirect between them -- four crawlable copies of one site, ' +
+      'not a missing feature. Fix is docs/operations.md Step 2 -- but only after Step 1 ' +
+      '(KMT_ALLOWED_HOSTS) has shipped, or the flip 403s every visitor.'
+    );
+  }
+
   if (failed > 0) process.exitCode = 1;
 }
 
