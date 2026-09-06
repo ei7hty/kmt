@@ -994,176 +994,127 @@ kilobytes, and it is the difference between one problem and two.
 
 ---
 
-# Repairing the domain's mail records
+# The domain's mail records
 
-**Mail to `@kensmobiletire.com` is bouncing as of 2026-09-06.** There are no MX
-records on the domain, so every message sent to any address there has nowhere to
-be delivered and is returned to the sender. The website is entirely unaffected:
-every record the app depends on is intact and the site serves normally.
+**This section was rewritten on 2026-09-06 against a fresh authoritative
+measurement, because the version before it described a zone that no longer
+existed and its deletion steps had become dangerous.** An earlier revision told
+the reader to delete "the junk apex TXT" and "the `rsend` CNAME". Both
+descriptions have since stopped matching reality: the junk TXT is gone, the apex
+TXT now holds something that must be kept, and the Resend records have been
+completed into working ones. **Do not act on any deletion instruction in an
+older copy of this file.**
 
-**Google Workspace is the only sender.** Resend was cancelled on 2026-09-06, so
-this is a restoration to a single-sender zone rather than a reconciliation
-between two. That makes the repair simpler than it first looked, and it makes
-removing Resend's leftovers part of the fix rather than tidying afterwards.
+That is the general hazard with a runbook about live DNS: it ages into a
+weapon. Every table below carries the time it was measured, and the first step
+of using it is re-measuring.
 
-**The user makes every registrar edit.** No credential and no registrar action
-passes through an agent. This section provides the rows, where their values come
-from, the order to do them in, and the command that proves each one landed.
-
-## Query the authoritative nameserver, with a tool that fails loudly
-
-Everything is served through Google's nameservers, so ask them directly rather
-than asking a resolver:
-
-```powershell
-Resolve-DnsName -Name kensmobiletire.com -Type MX  -Server ns-cloud-a1.googledomains.com
-Resolve-DnsName -Name kensmobiletire.com -Type TXT -Server ns-cloud-a1.googledomains.com
-```
-
-**Use `Resolve-DnsName`, not `dig`, and this matters more here than anywhere
-else in this document.** `dig` is not installed on this machine and prints
-nothing rather than failing. On this question the two possible outputs are
-identical: *"there are no MX records"* and *"the tool that would have shown me
-the MX records is not installed"* both look like silence. That mistake sends
-someone to repair a zone that was fine, or to declare a broken one healthy.
-`Resolve-DnsName` raises `DNS name does not exist` and returns nothing only when
-the record genuinely is not there.
-
-**Ask the authoritative server, never a public cache.** Resolvers keep answering
-with stale good records for hours after the zone is wrong, and stale bad ones
-for hours after it is right. A repair that looks unapplied is usually a cache; a
-repair that looks applied may also be one.
-
-## What is in the zone now, and what it should be
-
-> **STOP. DO NOT FOLLOW THE DELETIONS IN THIS TABLE.** Re-measured later on
-> 2026-09-06, every row below is now wrong, and two of them instruct the
-> deletion of records that are live and working:
->
-> | this table says | measured now |
-> | --- | --- |
-> | MX absent, "this is why mail bounces" | **PRESENT** -- Google's five `aspmx.l.google.com` records are restored. Mail does not bounce; Ken can receive. |
-> | apex TXT is junk reading `resend._domainkey`, **delete** | **No such record.** The only root TXT is `google-site-verification=w_zlY-...` |
-> | CNAME `rsend`, **delete** | **LIVE AND VERIFIED.** `rsend.forge.rmta.net`, green on Resend's own dashboard. |
-> | "there is no record at `resend._domainkey`" | **It exists** -- a real 218-character DKIM TXT, `p=MIGfMA0GCSqGSIb3DQ...` |
->
-> **Following the deletions today removes the DKIM record that makes this
-> domain verified for sending, plus a working SPF CNAME.** The framing below
-> -- "removing Resend's leftovers is part of the fix" -- was accurate when
-> written. Those records are no longer leftovers; they are a working
-> configuration.
->
-> **The sending provider is an open decision with the user** and this table
-> is not usable under either answer: if Workspace, the deletions may be right
-> but the MX and junk-TXT rows send you hunting for records that do not
-> exist; if Resend, the deletions are destructive. **Re-measure the zone
-> before changing anything, with a positive control** (`Resolve-DnsName
-> google.com -Type TXT` returns 17 records, so an empty answer is an answer
-> and not a broken command).
-
-Measured authoritatively on 2026-09-06.
-
-| record | name | now | target |
-| --- | --- | --- | --- |
-| **MX** | `kensmobiletire.com` | **absent — this is why mail bounces** | Google Workspace MX |
-| **TXT (SPF)** | `kensmobiletire.com` | **absent** | one record, Google only |
-| **TXT (DKIM)** | `google._domainkey` | absent | add, generated in the admin console |
-| TXT | `kensmobiletire.com` | **junk: value is the literal string `resend._domainkey`** | delete |
-| CNAME | `rsend` | `rsend.forge.rmta.net` | delete |
-| A | `kensmobiletire.com` | `66.241.124.248` | unchanged |
-| AAAA | `kensmobiletire.com` | `2a09:8280:1::184:5351:0` | unchanged |
-| CNAME | `www` | `kmt.fly.dev` | unchanged |
-
-**One correction to expect when you go looking.** There is no record *at*
-`resend._domainkey` to delete — that name does not exist. What exists is a TXT
-record **at the apex** whose *value* is the literal text `resend._domainkey`,
-which is the record's host pasted into its value field. Search the apex TXT
-records for that string; do not search for a `resend._domainkey` host and
-conclude there is nothing to remove.
-
-That mistake is also the best available evidence for how the incident happened.
-A session in which a record's name went into its value field is a session in
-which a record set could be replaced rather than appended to. **Screenshot the
-existing rows before editing**, and treat the interface as capable of replacing
-what you meant to add to.
-
-## The repair, in this order
-
-The order matters: the first step is what stops mail bouncing, and the last one
-changes nothing about the bounce.
-
-**1. Restore the Google Workspace MX records. This is the fix for the
-incident.** The values come from **the user's Google Workspace admin console**,
-which is the only authority on whether their tenant expects the single
-`smtp.google.com` record or the older five `aspmx` hosts. Both are valid Google
-configurations for different tenants, and guessing picks the wrong one. Do not
-take MX values from this document, from memory, or from a search result.
-
-Mail delivery resumes when these are live and propagated. Everything below
-affects outbound mail, not the bounce.
-
-**2. Add one SPF TXT record at the apex, naming Google only.** With a single
-sender there is nothing to merge — take Google's `include:` from their own
-documentation.
-
-The rule to keep in mind even though it is not at risk today: **a domain may
-have only one SPF record.** Two is a misconfiguration that fails every sender,
-not just the added one. It is not the likely mistake in this repair because
-there is only one sender; it becomes the likely mistake the day a second is
-added, which is why it is written here rather than left to be rediscovered.
-
-**3. Add Google's DKIM key at `google._domainkey`.** This is not automatic and
-is easy to skip because nothing visibly breaks without it. The user generates
-the key in the Workspace admin console, which produces the TXT record to add.
-Without it Google signs nothing, and unsigned mail from the domain is markedly
-more likely to be filtered — a failure that looks like customers ignoring you.
-
-**4. Remove Resend's two leftovers.** The junk apex TXT described above, and the
-`rsend` CNAME pointing at `rsend.forge.rmta.net`. They are inert once nothing
-sends through Resend, but they are a standing claim in the zone that a sender
-nobody uses is associated with this domain, and they will confuse whoever reads
-these records next. Last, because nothing breaks if they linger a few minutes.
-
-## Proving the repair
-
-Authoritative, in this order:
+## Measure before you touch anything
 
 ```powershell
 $ns = 'ns-cloud-a1.googledomains.com'
-Resolve-DnsName -Name kensmobiletire.com                    -Type MX    -Server $ns
-Resolve-DnsName -Name kensmobiletire.com                    -Type TXT   -Server $ns
-Resolve-DnsName -Name google._domainkey.kensmobiletire.com  -Type TXT   -Server $ns
-Resolve-DnsName -Name rsend.kensmobiletire.com              -Type CNAME -Server $ns
+Resolve-DnsName -Name kensmobiletire.com                   -Type MX    -Server $ns
+Resolve-DnsName -Name kensmobiletire.com                   -Type TXT   -Server $ns
+Resolve-DnsName -Name google._domainkey.kensmobiletire.com -Type TXT   -Server $ns
+Resolve-DnsName -Name resend._domainkey.kensmobiletire.com -Type TXT   -Server $ns
+Resolve-DnsName -Name rsend.kensmobiletire.com             -Type CNAME -Server $ns
 ```
 
-What each must show:
+**`Resolve-DnsName`, never `dig`.** `dig` is not installed on this machine and
+prints nothing rather than failing, so its silence is indistinguishable from a
+record that does not exist. On this question that mistake sends someone to
+repair a zone that was fine, or to declare a broken one healthy. Ask the
+authoritative server, never a public cache: resolvers answer with stale good
+records for hours after a zone is wrong, and stale bad ones after it is right.
 
-- **MX**: the mail exchangers from the admin console, exactly.
-- **TXT at the apex**: exactly **one** record beginning `v=spf1`, naming Google;
-  and **no** record whose value is `resend._domainkey`.
-- **`google._domainkey`**: a DKIM key.
-- **`rsend`**: `DNS name does not exist`. That error is the pass condition for
-  this one, which is worth saying out loud because it is the only line here
-  where an error is the good outcome.
+## What is in the zone, measured 2026-09-06
 
-**Then prove it with mail, not with DNS.** DNS answering correctly is the
-precondition, not the result.
+| record | name | state |
+| --- | --- | --- |
+| MX | `kensmobiletire.com` | five `aspmx` hosts (1 / 5 / 5 / 10 / 10) — **correct, inbound mail works** |
+| TXT | `kensmobiletire.com` | `google-site-verification=...` — **correct, and must not be deleted** |
+| TXT | `google._domainkey` | **absent — Google DKIM is not published** |
+| TXT | `resend._domainkey` | a real DKIM key (`p=MIGf...`) — **live and valid** |
+| CNAME | `rsend` | `rsend.forge.rmta.net` — **live and valid** |
+| A | `kensmobiletire.com` | `66.241.124.248` — the site, and the mail domain's address record |
+| CNAME | `www` | `kmt.fly.dev` — the site |
 
-- **Send a message to an `@kensmobiletire.com` address from an outside account
-  and confirm it arrives rather than bounces.** That is the fix for this
-  incident, and nothing else demonstrates it.
-- Send one **from** the domain to an address on another provider, and read the
-  received message's `Authentication-Results` header: `spf=pass` and `dkim=pass`
+**There is no SPF record.** The apex TXT is a Google *site verification* string,
+not an SPF policy. It is easy to glance at a TXT record at the apex and conclude
+SPF is handled; it is not.
+
+## What must not be deleted, and why
+
+**The apex TXT (`google-site-verification=...`).** This is how Google proves the
+domain belongs to this Workspace tenant. Removing it can un-verify the domain
+and take Workspace mail with it. An older revision of this section described an
+apex TXT as junk to delete — that junk record is gone, and this one is not it.
+**Delete a TXT record by matching its value, never by its position or by "the
+TXT at the apex".**
+
+**The five MX records.** They are why mail is delivered at all.
+
+**The apex `A` record.** It serves the website *and* is the mail domain's
+address record. Replacing it with a CNAME would break mail permanently: a CNAME
+at the apex cannot coexist with MX.
+
+**`resend._domainkey` and the `rsend` CNAME.** These are now complete, working
+Resend records — a published DKIM key and its sending CNAME. They were incomplete
+when an earlier revision called them leftovers. **Deleting them breaks Resend
+sending.**
+
+## The open question, which is the user's and not an agent's
+
+Resend was said to be cancelled on 2026-09-06, and the zone now contains
+correctly configured Resend records. Those two facts disagree, and the
+disagreement is not for an agent to resolve by deleting something.
+
+- If Resend **is** cancelled, its two records are inert and may be removed —
+  after the user confirms, and after checking that nothing is configured to send
+  through it (`KMT_MAIL_SMTP_HOST` and friends; `flyctl secrets list -a kmt`).
+- If Resend **is** in use, they are load-bearing and deleting them stops mail.
+
+Either way, removal is a step to take deliberately once, not a tidy-up bundled
+into a repair.
+
+## What is actually still missing
+
+**1. SPF, at the apex.** One TXT record beginning `v=spf1`, authorising whoever
+sends for this domain. Take the `include:` from the provider's own
+documentation.
+
+**Add it beside the verification record; do not replace it.** A name may carry
+many TXT records, and the apex already carries one. What a domain may only have
+*one* of is an **SPF** record specifically — two `v=spf1` records fail every
+sender. Those are different rules and conflating them is how the verification
+record gets overwritten.
+
+**2. Google DKIM, at `google._domainkey`.** Generated in the Workspace admin
+console, which produces the TXT record to add. Not automatic, and easy to skip
+because nothing visibly breaks without it: unsigned mail is simply more likely
+to be filtered, which looks like customers ignoring you rather than a fault.
+
+**No values are written in this document, deliberately.** They are
+tenant-specific and come from the Workspace admin console or the provider's
+dashboard at the time. A wrong value here is worse than a missing one.
+
+## Proving it
+
+Re-run the measurement block above. Then prove it with mail rather than with
+DNS, because DNS answering correctly is the precondition and not the result:
+
+- send a message **to** an `@kensmobiletire.com` address from an outside account
+  and confirm it arrives;
+- send one **from** the domain to an address on another provider and read the
+  received message's `Authentication-Results` header. `spf=pass` and `dkim=pass`
   is the proof. A dashboard reporting "verified" is a provider agreeing with
   itself.
 
-## What the app does and does not depend on
+**Do not send bulk mail from the domain until SPF and DKIM are both correct.**
+Early unauthenticated mail is what teaches spam filters to distrust a new
+sending domain, and that reputation is slow to undo.
 
-Nothing in this section affects the site. The app reads no DNS, sends no mail
-today, and its records — the apex `A` and `AAAA`, and the `www` and `order`
-CNAMEs — were not touched by the incident and must not be touched by the repair.
+## What the app depends on
 
-**The apex `A` and `AAAA` records are also the mail domain's records.** Replacing
-them with a CNAME to satisfy some future instruction would break mail a second
-way and permanently: a CNAME at the apex cannot coexist with MX. That warning is
-in the cutover section too, and this incident is why it is worth repeating.
+Nothing here affects the website. The app reads no DNS and its records — the
+apex `A`, and the `www` and `order` CNAMEs — are not touched by any step above.
