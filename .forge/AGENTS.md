@@ -68,9 +68,24 @@ file from opposite ends.
 | `backend/`, `src/owner/` | owner workspace and its API |
 | `src/markup.js` | supplier price -> customer price |
 | `Dockerfile`, `fly.toml`, `.github/workflows/` | deployment |
+| `index.html`'s marketing head (title, description, JSON-LD, `og:*`), `public/robots.txt`, `public/sitemap.xml`, `public/brand/`, `docs/brand.md`, landing copy | growth and marketing (`roles/growth-marketing.md`); the first three are **shared with SEO** until the PM rules — see below |
 
 `package.json` and `README.md` are shared. Touch them in a commit of their own so
 a conflict is trivial to resolve.
+
+Two rows above overlap on purpose and the split is by *kind of change*, not by
+file. In `src/routes/CustomerRequest.jsx` the landing **copy** is growth's and
+the **markup and CSS** are UI's: changing a string is one lane, anything
+needing structure is a claim row that says so and a pairing. In `index.html`'s
+head, the marketing tags are growth's while viewport, `theme-color` and the
+icon and manifest links stay UI's. Say which you are doing in your claim row.
+
+A third overlap is **open, not settled**: an SEO agent now works the same
+surface. The proposed split — technical SEO (crawlability, canonical and
+redirect behaviour, sitemap accuracy, page speed) to SEO; brand, copy and
+on-page content to growth — is a proposal, not a ruling, and it divides
+`robots.txt`, `sitemap.xml` and the structured data between them. Until the
+PROJECT MANAGER rules, treat those three as shared and claim them explicitly.
 
 ---
 
