@@ -28,8 +28,7 @@
  */
 
 import { createServer } from 'node:http'
-import { createReadStream, existsSync, statSync } from 'node:fs'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -42,16 +41,10 @@ import { Quotes } from './quotes.mjs'
 import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
 import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl } from './site.mjs'
+import { createStaticHandler } from './static.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
-
-const TYPES = {
-  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg',
-  '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
-}
 
 if (!existsSync(path.join(dist, 'index.html'))) {
   console.error(`No build found at ${dist}. Run \`npm run build\` before starting this server.`)
@@ -108,33 +101,9 @@ try {
   process.exit(1)
 }
 
-/**
- * Serve one file out of dist, falling back to index.html.
- *
- * The SPA fallback is what makes a hard navigation to /owner/quotes work. It is
- * the same job vercel.json's rewrite does, and forgetting it is how this project
- * shipped a build that passed every local check and 404'd in production.
- */
-function serveStatic(request, response, pathname) {
-  const relative = pathname.replace(/^\/+/, '')
-  const candidate = path.join(dist, relative)
-
-  // Never serve outside dist, whatever the URL claims.
-  const resolved = path.resolve(candidate)
-  const isFile = resolved.startsWith(path.resolve(dist)) &&
-    existsSync(resolved) && statSync(resolved).isFile()
-
-  const file = isFile ? resolved : path.join(dist, 'index.html')
-  const type = TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream'
-
-  // Hashed asset filenames are safe to cache hard; index.html never is.
-  const cache = isFile && relative.startsWith('assets/')
-    ? 'public, max-age=31536000, immutable'
-    : 'no-cache'
-
-  response.writeHead(200, { 'Content-Type': type, 'Cache-Control': cache })
-  createReadStream(file).pipe(response)
-}
+// The built frontend, served the way backend/static.mjs describes: hashed
+// assets forever, brand files for a day, everything else revalidated.
+const serveStatic = createStaticHandler(dist)
 
 const server = createServer(async (request, response) => {
   try {
