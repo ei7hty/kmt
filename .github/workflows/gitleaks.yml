@@ -1,0 +1,133 @@
+name: Gitleaks history scan
+
+# A one-shot, re-runnable check that no secret has ever been committed to
+# this repository's history -- not just the working tree today. Asked for
+# because the repository is now public and "no leaks found" from a scanner
+# that has never been shown to fire on anything is not evidence of that; it
+# is the same shape of unearned confidence this project has spent tonight
+# correcting elsewhere. So this workflow proves its own instrument before it
+# trusts a clean result: a positive-control job scans a throwaway repository
+# containing a deliberately fake, correctly-shaped secret first, and the real
+# scan only runs, and is only meaningful, once that has been shown to fail.
+#
+# workflow_dispatch only. This is not wired into fly-deploy.yml or any other
+# trigger -- a full-history scan is a one-time record, not a per-push gate,
+# and it can be re-run by hand whenever that record needs refreshing.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: 8.21.2
+
+jobs:
+  positive-control:
+    name: Prove the ruleset actually fires before trusting a clean scan
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.install.outputs.version }}
+    steps:
+      - name: Install gitleaks
+        id: install
+        run: |
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks version
+          echo "version=$(./gitleaks version)" >> "$GITHUB_OUTPUT"
+
+      - name: Build a throwaway repo with one deliberately fake secret
+        run: |
+          mkdir -p /tmp/canary && cd /tmp/canary
+          git init -q
+          git config user.email canary@example.invalid
+          git config user.name gitleaks-canary
+          # AWS-secret-key shaped: gitleaks' default ruleset has a dedicated
+          # rule for this exact format, so a miss here means the binary or
+          # ruleset is broken, not that this particular pattern is obscure.
+          echo 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' > fake.env
+          git add fake.env
+          git commit -q -m "canary: never pushed, never merged, exists only for this job"
+
+      - name: Confirm gitleaks flags the canary
+        run: |
+          set +e
+          "$GITHUB_WORKSPACE/gitleaks" detect --source /tmp/canary --no-banner \
+            --report-format json --report-path /tmp/canary-report.json
+          code=$?
+          set -e
+          echo "canary scan exit code: $code (gitleaks exits non-zero when it finds something)"
+          if [ "$code" -eq 0 ]; then
+            echo "::error::gitleaks did NOT flag a known-bad AWS-secret-shaped string." \
+                 "The ruleset or binary is not working -- a clean result on the real scan" \
+                 "below would mean nothing and must not be trusted until this is fixed."
+            exit 1
+          fi
+          echo "Positive control passed. Report:"
+          cat /tmp/canary-report.json
+
+  full-history-scan:
+    name: Scan this repository's full git history
+    needs: positive-control
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history, every ref
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Record scan scope
+        run: |
+          echo "commits reachable from all refs: $(git rev-list --all --count)"
+          echo "commits reachable from HEAD only: $(git rev-list HEAD --count)"
+
+      - name: Report exclusions, so a clean result is not a silent one
+        run: |
+          if [ -f .gitleaksignore ]; then
+            echo "::warning::.gitleaksignore is present and will be honoured. Contents:"
+            cat .gitleaksignore
+          else
+            echo "No .gitleaksignore in this repository. No findings are excluded."
+          fi
+          if [ -f .gitleaks.toml ] || [ -f gitleaks.toml ]; then
+            echo "::warning::a custom gitleaks config is present in this repository."
+          else
+            echo "No custom ruleset. This run uses gitleaks' own default ruleset, unmodified."
+          fi
+
+      - name: Install gitleaks
+        run: |
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks version
+
+      - name: Scan every ref's full history (not the working tree, not just HEAD)
+        run: |
+          set +e
+          ./gitleaks detect --source . --log-opts="--all" --no-banner \
+            --report-format json --report-path gitleaks-report.json -v
+          echo "GITLEAKS_EXIT_CODE=$?" >> "$GITHUB_ENV"
+
+      - name: Upload the report as a durable, re-readable artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report-${{ github.run_id }}
+          path: gitleaks-report.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Fail if the real scan found anything
+        run: |
+          if [ "$GITLEAKS_EXIT_CODE" != "0" ]; then
+            echo "::error::gitleaks flagged something in this repository's history." \
+                 "See the uploaded report artifact for exactly what and where."
+            exit 1
+          fi
+          echo "Clean: gitleaks scanned the full history above and found nothing, and" \
+               "the positive-control job in this same run proved that a finding would" \
+               "have been reported if one existed."
