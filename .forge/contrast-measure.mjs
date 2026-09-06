@@ -141,20 +141,31 @@ export async function measure(page, label) {
       })
     }
     const interactive = []
-    const sel = 'a[href], button, input, select, textarea, summary, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"]), label.oi-check'
+    // label:has(...) rather than one named class: the first version of this
+    // fix only taught the selector about label.oi-check, so it generalised
+    // the skip logic below (any matched ancestor covers its matched
+    // descendants) without generalising what counts as a matched ancestor
+    // in the first place -- half a fix for a mechanism that has two halves.
+    // t35's quote-editor labels (plain <label>Qty<input/></label>, no
+    // special class) proved the gap within hours: their own bare inputs
+    // measured small and standalone, same shape as the checkboxes, because
+    // this selector had never heard of them. Any label wrapping a form
+    // control is a native, no-for-needed click target, in this app or the
+    // next one added to it.
+    const sel = 'a[href], button, input, select, textarea, summary, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"]), label:has(input, select, textarea)'
     const interactiveEls = [...document.querySelectorAll(sel)]
     for (const el of interactiveEls) {
       if (!visible(el)) continue
       // A control nested inside another matched interactive element -- the
-      // common case is a checkbox inside its own wrapping <label> -- shares
-      // that ancestor's click surface: native label semantics activate the
-      // input from anywhere inside the label, with no `for`/id needed. The
-      // ancestor is the real tap target a person reaches for; measuring the
-      // descendant too reports the same control's size twice, once at the
-      // wrong (smaller) number, which is a distinct problem from measuring
-      // it wrong -- the #217 bug was the fixed logic returning a wrong
-      // number for the right element; this is asking the right logic about
-      // the wrong element entirely.
+      // common case is a checkbox or a text field inside its own wrapping
+      // <label> -- shares that ancestor's click surface: native label
+      // semantics activate the control from anywhere inside the label, with
+      // no `for`/id needed. The ancestor is the real tap target a person
+      // reaches for; measuring the descendant too reports the same
+      // control's size twice, once at the wrong (smaller) number, which is
+      // a distinct problem from measuring it wrong -- the #217 bug was the
+      // fixed logic returning a wrong number for the right element; this is
+      // asking the right logic about the wrong element entirely.
       if (interactiveEls.some(other => other !== el && other.contains(el))) continue
       const r = el.getBoundingClientRect()
       const cs = getComputedStyle(el)
