@@ -33,6 +33,9 @@
 .detail-badge { border: 1px solid #3e3e42; border-radius: 30px; padding: 5px 10px; font-size: 11px; white-space: nowrap; color: #c4c4ca; }
 .detail-help { margin-top: 8px; color: #a3a3ab; font-size: 13px; line-height: 1.6; }
 .detail-footnote { font-size: 12px; }
+/* The footnote's link: the site's red for links rather than the browser's blue
+   (1.99:1 on the panel), and a 44px hit area that does not move the line. */
+.detail-footnote a { display: inline-block; padding: 15px 0; margin: -15px 0; color: var(--accent-text); }
 .vehicle-fields { display: grid; grid-template-columns: .7fr 1.25fr 1.5fr; gap: 14px; margin-top: 24px; }
 .request-details label, .location-types legend { font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: .2px; color: #dedee3; }
 .request-details input { min-height: 50px; min-width: 0; border-radius: 7px !important; font: inherit; font-size: 16px; }
