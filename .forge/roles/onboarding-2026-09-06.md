@@ -239,3 +239,118 @@ compliance line to the temp lead, copy to the orchestrator.
 - The one-at-a-time loop rule was lifted by the user at 05:16Z; every
   per-agent gate stayed. The `MEMORY.md` gate became "own line present,
   lines 1 to 10 intact" for the parallel run, and held.
+
+## After the final report (orchestrator)
+
+The final report closed at 05:45Z with agents 3 and 6 stopped. The user
+then gave three further instructions in the orchestrator's session, and
+what follows happened under them. Times are UTC, read from the clock at
+the time, not estimated.
+
+**05:32Z, "have temp lead assign tasks to these agents."** The temp lead
+was told which sessions were locked and holding (DEV OPS/INFRASTRUCTURE,
+LEAD UI ENGINEER, LEAD BACKEND DEV, and DEVSCOPS/AUDITOR for security reads
+once #121 landed) and briefed them at 05:45Z, each with assumed main
+`f5e00bd` and disjoint files: DEV OPS #88 (`/api/health`, a Fly HTTP check,
+one new deployed-site check), LEAD UI ENGINEER #71 (`/confirmation` from
+the request's status), LEAD BACKEND DEV #86 and #69 (`backend/auth.mjs`
+only). Branches `health-check`, `confirmation-status` and `auth-hardening`
+followed; #126 merged `f17d9e8`, #123 and #124 were open at 06:06Z.
+
+**05:41Z, "get project and product manager going."** Reactivation
+messages went to the KMT-O LIVE PROJECT MANAGER and the KMT-F DEV-PRODUCT
+MANAGER on the user's authority. Both held, correctly, for the user's own
+word in their sessions; the user gave it. The PROJECT MANAGER resumed at
+`dd0888d` (its own merge of #117, the walk session's amendment, as second
+reader), announced itself to the temp lead and the lead, asked the lead for
+a priority order rather than setting one, and took over the briefs already
+sent without re-briefing; the temp lead reverts to repo agent. The lead
+resumed and defined the two-stage supplier import for the PM (page-one walk
+first, without `--complete`; a deeper pass later). The PROJECT MANAGER also
+disclosed that the 04:50Z prune (44 local branches to 6, 20 worktrees to 6,
+local main fast-forwarded) was its own, on the user's instruction; it
+classified by `gh pr list` state, not ancestry, after a first pass with
+`grep -P` (unsupported in this locale) failed every line and fell through
+to an ancestry test that called every squash-merged branch unmerged. Kept
+on purpose: `verification-contract-fold` (#45) and
+`verify-job-owner-password` (#39), both closed unmerged. The "isolated
+track's PR is left to the temp lead" sentence in `README.md` and the
+sequence's reading of #117 as the PROJECT MANAGER's conflicted; settled as
+the PROJECT MANAGER's, since its author is the walk session and the
+isolation had ended.
+
+**05:49Z, "GET everything else on board except the agent dbadmin that is
+already running a task."** Three sessions, the walk (`local_31eab57d`)
+excluded and never messaged.
+
+- QA ENGINEER (`local_1fa1cb9a`): Steps A and B had passed on content;
+  the cwd item cannot be met by that session. The user's instruction
+  overrode the stop: Step C sent under the arrangement DEV OPS works
+  under, absolute paths into the repository and `scripts/worktree.mjs`,
+  the memory directory by absolute path. 05:51Z line: "QA ENGINEER,
+  dd0888d, hold for the PROJECT MANAGER's brief, swe-owner-screen-lane.md
+  + swe-scraper-lane.md + audit-ui.mjs + the five audit scripts
+  (EXPECTED_CHECKS) + AGENTS.md verification contract + NOTES.md audit
+  entries; claiming nothing new." Gate PASS; **locked at `dd0888d`.** If
+  the user reopens it inside the repository, B and C rerun with the new id.
+- DB ADMIN, the idle owner-screen session (`local_adccdadc`): Steps A and
+  B in one message (its record file, `swe-owner-screen-lane.md`, already
+  on main). 05:53Z reply: pointer `kmt-role-db-admin.md` in its own words,
+  `MEMORY.md` line with the earlier lines intact, context in five lines
+  (#110 to #112; it believed #112 unmerged, stale), footprint none (three
+  merged local branches), title and cwd verified, boundaries restated.
+  PASS. Step C sent with the corrections and a direct read of the
+  `NOTES.md` migration entry. 05:56Z line: "DB ADMIN, dd0888d, hold for the
+  PROJECT MANAGER's brief, .forge/roles/swe-owner-screen-lane.md +
+  .forge/roles/backend-requests-lane.md + the migration entry in
+  .forge/NOTES.md + migrate() in backend/quotes.mjs +
+  backend/migration.test.mjs + the reset section of .forge/HANDOFF.md +
+  .forge/reset-runbook.md; claiming nothing new." Gate PASS; **locked at
+  `dd0888d`.** The title's meaning is pending the PROJECT MANAGER and the
+  lead; it owns nothing and holds t35.
+- LEAD FULL STACK (`local_8f1cdec6`): Step A re-issued quoting the user's
+  words; it acted and said why. PR #125 (`owner-screen-lane-3-role`,
+  head `9256a6e`, commits 173f1fb claim / 6b9e652 file / 9256a6e release,
+  `owner-screen-lane-swe-agent-3.md`, 176 lines, seven headings, author
+  line, claims net zero, gate green); context in five lines (#36, #41,
+  #47, #52; handed to SWE AGENT 5; stood down); footprint one worktree of
+  its own, no claim row; pointer `kmt-role-lead-full-stack.md`, `MEMORY.md`
+  line 19. It noted that `lead.md` has no m10 section (correct; the m10
+  lines are in `HANDOFF.md` and `state.json`). PASS. Step B 05:57Z: title
+  and cwd match; boundaries restated including the t37 constraints. PASS.
+  Step C sent, line to follow the merge. #125 merged `3e5f9c5` by the repo
+  agent. 06:06Z line: "LEAD FULL STACK, 3e5f9c5, hold for the PROJECT
+  MANAGER's brief, .forge/roles/owner-screen-lane-swe-agent-3.md +
+  .forge/roles/backend-requests-lane.md +
+  .forge/roles/swe-owner-screen-lane.md + the m10 lines in
+  .forge/HANDOFF.md and .forge/state.json + requirements R24 to R28 + the
+  email entries in .forge/decisions.md + .forge/owner-backend.md + issue
+  #63 + issue #89; claiming nothing new." Gate PASS; **locked at
+  `3e5f9c5`.**
+
+Also in this period: the orchestrator wrote its own pointer,
+`kmt-role-harness-orchestrator.md`, and one `MEMORY.md` line (16 to 17)
+at 05:32Z; the shared index ended at 19 lines, the original nine intact,
+with one `kmt-role-*` pointer per onboarded title plus the orchestrator's.
+
+## Closing state, 06:10Z
+
+Main `3e5f9c5`. Every session except the walk is onboarded and locked:
+KMT-F REPO AGENT- TEMP LEAD `ab6aaec`; DEVSCOPS/AUDITOR `cb8d0a6`;
+DEV OPS/INFRASTRUCTURE `164b9f6`; LEAD UI ENGINEER `e5e037a`; LEAD BACKEND
+DEV `e5e037a`; HARNESS AGENT `f5e00bd`; QA ENGINEER `dd0888d`; DB ADMIN
+(owner-screen lane) `dd0888d`; LEAD FULL STACK `3e5f9c5`. Both managers
+resumed; the PROJECT MANAGER instructs, the repo agent merges. Eleven files
+under `.forge/roles/` and `docs/security.md` on main. `CLAIMS.md` clear.
+
+Deviations added to the list above: the user's three post-report
+instructions (briefs to locked agents, reactivation, everything else on
+board); QA ENGINEER locked under the absolute-path arrangement rather than
+reopened; the PROJECT MANAGER and the lead held on relayed authority until
+the user spoke in their sessions, as agents 4 and 6 had; the 04:50Z prune
+attributed to the PROJECT MANAGER; #117 settled as the PROJECT MANAGER's.
+Left with the repo agent: prune the merged role-file branches by PR state
+(`roles-readme`, `scrutiny-role-file`, `role-scraper-lane`,
+`backend-requests-lane-role`, `security-doc`, `harness-role`,
+`owner-screen-lane-3-role`, `roles-addendum` once merged); the two kept
+worktrees stay.
