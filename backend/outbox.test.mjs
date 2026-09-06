@@ -21,9 +21,26 @@ test('a message is recorded unsent by default, and read back whole', t => {
   assert.match(message.id, /^[0-9a-f]{32}$/, 'a 128-bit id, not a guessable one')
   assert.equal(message.to, 'jamie@example.com')
   assert.equal(message.status, 'unsent')
+  assert.equal(message.requestId, null, 'optional, and absent here')
   assert.equal(message.providerId, null)
   assert.equal(message.error, null)
   assert.equal(outbox.get(message.id).body, 'Thanks, Jamie.')
+})
+
+test('a message carries the request it is about, and forRequest finds every message for one request', t => {
+  const outbox = setup(t)
+  const forA = outbox.record({ to: 'a@example.com', subject: 'We received your request', body: 'x', requestId: 'req-a' })
+  outbox.record({ to: 'owner@example.com', subject: 'A request arrived', body: 'x', requestId: 'req-a' })
+  outbox.record({ to: 'b@example.com', subject: 'We received your request', body: 'x', requestId: 'req-b' })
+
+  assert.equal(forA.requestId, 'req-a')
+
+  const messagesForA = outbox.forRequest('req-a')
+  assert.equal(messagesForA.length, 2, 'both messages about req-a, and none of req-b')
+  assert.ok(messagesForA.every(m => m.requestId === 'req-a'))
+
+  assert.deepEqual(outbox.forRequest('req-nothing-sent-for-this-one'), [], 'a request with no messages answers empty, not an error')
+  assert.deepEqual(outbox.forRequest(''), [], 'a blank id answers empty rather than matching every unlinked row')
 })
 
 test('an address, a subject and a body are all required', t => {
@@ -142,7 +159,7 @@ test('opening a deployed database (no outbox table yet) adds it without touching
   assert.equal(db.prepare("SELECT id FROM supplier WHERE id='giga-a'").get().id, 'giga-a')
 })
 
-test('a second, genuinely separate connection to the same file sees the table and the row', t => {
+test('a second, genuinely separate connection to the same file sees the table, the row and the request link', t => {
   // Not the same live handle reused -- opening a real new connection to the
   // same file on disk, which is the actual shape of a Fly deploy: the old
   // process's connection is gone, and a new process opens the file fresh.
@@ -150,7 +167,7 @@ test('a second, genuinely separate connection to the same file sees the table an
 
   const first = open()
   const firstOutbox = new Outbox(first)
-  const written = firstOutbox.record({ to: 'a@example.com', subject: 'x', body: 'x' })
+  const written = firstOutbox.record({ to: 'a@example.com', subject: 'x', body: 'x', requestId: 'req-1' })
   first.close()
 
   const second = open()
@@ -158,6 +175,8 @@ test('a second, genuinely separate connection to the same file sees the table an
   const found = secondOutbox.get(written.id)
   assert.ok(found, 'the row written by the first connection is visible to a fresh one')
   assert.equal(found.to, 'a@example.com')
+  assert.equal(found.requestId, 'req-1', 'the request link survives a real close and reopen too')
+  assert.equal(secondOutbox.forRequest('req-1').length, 1, 'and the indexed lookup finds it on the fresh connection')
 })
 
 test('reopening a database that already has the table changes nothing and loses nothing', t => {
@@ -170,4 +189,14 @@ test('reopening a database that already has the table changes nothing and loses 
   const second = open()
   const secondOutbox = new Outbox(second) // CREATE TABLE IF NOT EXISTS must be a no-op here, not an error
   assert.equal(secondOutbox.list().length, 1, 'the earlier row is still there, and nothing was duplicated')
+})
+
+test('forRequest is answered from an index, not a table scan', t => {
+  // The whole reason request_id exists: proving it, not assuming the column
+  // implies the index gets used.
+  const inventory = new Inventory(':memory:', [SIZE])
+  t.after(() => inventory.close())
+  const outbox = new Outbox(inventory.db)
+  const plan = inventory.db.prepare("EXPLAIN QUERY PLAN SELECT * FROM outbox WHERE request_id=?").all('req-1')
+  assert.ok(plan.some(row => /USING INDEX outbox_request/.test(row.detail)), `expected an index search, got: ${plan.map(r => r.detail).join(' | ')}`)
 })

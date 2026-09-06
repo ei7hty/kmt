@@ -16,15 +16,34 @@ import { InputError } from './inventory.mjs'
  * This module is the storage layer only: no template, no provider call, no
  * route. `backend/mail.mjs`'s `send()` and the four message bodies, and the
  * session-gated `GET /api/owner/outbox` panel, are their own pieces of t37,
- * built on top of `record()`/`list()` here.
+ * built on top of `record()`/`list()`/`forRequest()` here.
+ *
+ * Every message carries the request it is about (`requestId`), indexed, so
+ * "every message sent about this request" is a lookup rather than a
+ * body-text search -- for a removal request, for showing Ken what was sent,
+ * for debugging a failed send. What should happen to those messages under a
+ * removal request (redacted, kept as historical record, or something else)
+ * is not decided here; see docs/data-policy.md.
  */
 
 /** Every status a message may hold. Widening this later is a migration, the same as quotes.status. */
 export const OUTBOX_STATUSES = ['unsent', 'sent', 'failed']
 
-/** The current shape of the table, as one place both creation and migration use. */
+/**
+ * The current shape of the table, as one place both creation and migration use.
+ *
+ * `request_id` is nullable and unenforced by a foreign key on purpose: an
+ * outbox row must never become impossible to write because the request it is
+ * about was deleted or is momentarily unavailable inside a transaction, and
+ * nothing here deletes a request in the first place. It exists so "every
+ * message about this request" is a WHERE clause instead of a body-text
+ * search -- for a removal request, for showing Ken what was sent about a
+ * request, for debugging a failed send -- without deciding anything about
+ * what should happen to a message once found. That decision (docs/data-policy.md)
+ * is not this module's to make; not having the link would have made it for us.
+ */
 const OUTBOX_COLUMNS = `
-  id TEXT PRIMARY KEY, to_address TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL,
+  id TEXT PRIMARY KEY, request_id TEXT, to_address TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'unsent', provider_id TEXT, error TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   CHECK(status IN (${OUTBOX_STATUSES.map(status => `'${status}'`).join(', ')}))
@@ -40,7 +59,10 @@ export class Outbox {
    */
   constructor(db) {
     this.db = db
-    this.db.exec(`CREATE TABLE IF NOT EXISTS outbox (${OUTBOX_COLUMNS})`)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS outbox (${OUTBOX_COLUMNS});
+      CREATE INDEX IF NOT EXISTS outbox_request ON outbox(request_id);
+    `)
   }
 
   /**
@@ -51,8 +73,12 @@ export class Outbox {
    * asking because none is configured. A caller that already knows the
    * outcome (a provider answered synchronously) may pass `sent` or `failed`
    * directly rather than recording twice.
+   *
+   * `requestId` is optional -- not every message a future caller records has
+   * to be about one request -- but every message t37 sends today is, and
+   * should carry it.
    */
-  record({ to, subject, body, status = 'unsent', providerId = null, error = null }) {
+  record({ to, subject, body, status = 'unsent', requestId = null, providerId = null, error = null }) {
     if (typeof to !== 'string' || !to.trim()) throw new InputError('An outbox message needs an address.')
     if (typeof subject !== 'string' || !subject.trim()) throw new InputError('An outbox message needs a subject.')
     if (typeof body !== 'string' || !body) throw new InputError('An outbox message needs a body.')
@@ -60,9 +86,9 @@ export class Outbox {
 
     const id = randomBytes(16).toString('hex')
     const stamp = now()
-    this.db.prepare(`INSERT INTO outbox (id, to_address, subject, body, status, provider_id, error, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, to.trim(), subject, body, status, providerId, error, stamp, stamp)
+    this.db.prepare(`INSERT INTO outbox (id, request_id, to_address, subject, body, status, provider_id, error, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, requestId, to.trim(), subject, body, status, providerId, error, stamp, stamp)
     return this.get(id)
   }
 
@@ -85,7 +111,7 @@ export class Outbox {
 
   shapeRow(row) {
     return {
-      id: row.id, to: row.to_address, subject: row.subject, body: row.body,
+      id: row.id, requestId: row.request_id ?? null, to: row.to_address, subject: row.subject, body: row.body,
       status: row.status, providerId: row.provider_id ?? null, error: row.error ?? null,
       createdAt: row.created_at, updatedAt: row.updated_at,
     }
@@ -111,5 +137,20 @@ export class Outbox {
   list({ limit = 50 } = {}) {
     return this.db.prepare('SELECT *, rowid FROM outbox ORDER BY created_at DESC, rowid DESC LIMIT ?')
       .all(limit).map(row => this.shapeRow(row))
+  }
+
+  /**
+   * Every message recorded about one request, newest first.
+   *
+   * The lookup a removal request, a debugging session, or an owner asking
+   * "what did we send about this" all need -- an indexed WHERE clause over
+   * `request_id`, not a search through free-text bodies. What happens to
+   * what this finds (redacted, kept as historical record, or something else)
+   * is a policy decision this method does not make.
+   */
+  forRequest(requestId) {
+    if (typeof requestId !== 'string' || !requestId) return []
+    return this.db.prepare('SELECT *, rowid FROM outbox WHERE request_id=? ORDER BY created_at DESC, rowid DESC')
+      .all(requestId).map(row => this.shapeRow(row))
   }
 }
