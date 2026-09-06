@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `t49-copy-signout-contrast` | LEAD UI ENGINEER | t49: `index.html` title, `src/owner/OwnerInventory.jsx` and `src/owner/OwnerInventory.css` (copy, sign-out), `src/routes/QuoteRequests.jsx` (phone, sign-out), `src/App.css` and `src/RequestFlow.css` (contrast, footer control); `.forge/request-flow-check.mjs` phone string only with QA (#72 #96 #85) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
