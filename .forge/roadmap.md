@@ -294,6 +294,10 @@ reason it always is.
 
 - Real payment processing (phase 5, first item). Stripe Checkout or Square,
   whichever the client already has an account with.
+- Refunds, which arrive with real payments and not before. Until they do, a
+  paid request's only exit is `done`: nothing in the app can undo a payment, so
+  nothing in the app pretends to. A customer who paid and then needs out of it
+  is a phone call, and the owner closes the request when it is settled.
 - Scheduling: a confirmed time, not just a preferred date.
 - Photo of the tire or the sidewall on the request, for cases where the
   customer is not sure of the size.
