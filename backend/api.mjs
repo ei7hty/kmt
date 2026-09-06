@@ -111,6 +111,18 @@ export function isPublicApiCall(method, pathname) {
  * same-origin check on everything else, and hanging a public route off it
  * would mean every future change to those rules silently applies to the
  * public one too.
+ *
+ * Cached for five minutes (#84): the cost of this endpoint was never SQLite's
+ * query time -- measured on a table sized for tonight's import, the full
+ * catalog is tens of milliseconds -- it is the size of the response, sent
+ * uncached on every visit. A price the owner just saved can be up to five
+ * minutes stale on someone's screen; the draft it produces is server-computed
+ * from the live row at submit time regardless (src/pricing.js never trusts a
+ * client-supplied price), so a stale display corrects itself the moment a
+ * quote is actually drafted. `?size=<size>` narrows the response to one size,
+ * for the customer flow to fetch after a size is chosen rather than the whole
+ * catalog on first paint; omitting it answers everything, unchanged, for the
+ * audits and anything else that still wants the full list.
  */
 export function createCatalogApi(inventory) {
   return async (request, response) => {
@@ -122,13 +134,12 @@ export function createCatalogApi(inventory) {
     if (request.method !== 'GET' || url.pathname !== '/api/catalog') return false
 
     try {
+      const size = url.searchParams.get('size') || ''
       response.writeHead(200, {
         'Content-Type': 'application/json',
-        // Prices change the moment the owner saves one. A cached catalog quotes
-        // a price he has already changed his mind about.
-        'Cache-Control': 'no-store',
+        'Cache-Control': 'public, max-age=300',
       })
-      response.end(JSON.stringify({ tires: inventory.catalog() }))
+      response.end(JSON.stringify({ tires: inventory.catalog({ size }) }))
     } catch (error) {
       console.error(error)
       response.writeHead(500, { 'Content-Type': 'application/json' })
