@@ -204,10 +204,13 @@ An import writes through the same door a supplier refresh uses: owner prices,
 choices and notes are untouched, and nothing is ever deleted. A dry run reports
 new, changed and unchanged tires per size and writes nothing. By default a
 size is treated as a **partial** view, because the scraper keeps only the
-cheapest few per size, so tires the file does not mention stay listed. Pass
-`--complete` only for a scrape run with `--limit 0` over every page: then
-tires missing from the file are marked no longer listed, as a refresh would,
-with their offers kept. The result shows on `/owner` like any refresh.
+cheapest few per size, so tires the file does not mention stay listed.
+`--complete` marks tires missing from the file as no longer listed, as a
+refresh would, with their offers kept. The scraper records per size whether it
+read everything (`--limit 0`, every page), and both the CLI and the server
+refuse `--complete` for any size the file does not record as read in full,
+naming the size; a snapshot from before that record existed counts as
+partial. The result shows on `/owner` like any refresh.
 
 ```bash
 npm run import-tires -- --help
