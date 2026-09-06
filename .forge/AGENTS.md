@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| `fitment-range` | Claude (kmt CLI session) | `src/data/fitment.js`, `src/data/catalog.js` (plausibility rule), README fitment lines | 2026-09-05 |
+| _none_ | | | |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
@@ -371,3 +371,17 @@ against the same branch alone: zero errors, everything PASS. Measured, not
 inferred -- I first assumed it was pre-existing and it was not; unmodified
 `main` passed too. If that assertion fails on you, check for a second dev
 server before you check your diff.
+
+**2026-09-05 — Claude (kmt CLI session)**
+The size selector now spans the supplier's metric passenger / light-truck
+range: 23 widths (135–355), 13 ratios (25–85) and 13 rim diameters (12–24),
+read off giga-tires.com's size menu; `src/data/fitment.js` says what was left
+out and why. `isPlausibleFitment` in `src/data/catalog.js` is now a per-rim
+band table plus an overall-diameter check (500–900 mm). Measured by counting
+`TIRE_CATALOG`: 910 sizes and 3,846 rows, up from 290 and 1,213. Three
+comments still say "290" -- `backend/inventory.mjs` (markup JSDoc),
+`src/owner/OwnerInventory.jsx` (MarkupRule JSDoc) and `.forge/dead-end-audit.mjs`
+("all 290 paths") -- left alone because they are other lanes and two of the
+files are in open PRs #31 and #34; correct the number when you next touch them.
+Owner-facing consequence: "Refresh all N sizes" on `/owner` is now 910 browser
+scrapes rather than 290, so roughly three times as long.
