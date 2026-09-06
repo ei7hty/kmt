@@ -12,6 +12,7 @@ reviewer (DEVSCOPS/AUDITOR) on 2026-09-06.
 | `baseline.sh` | The capture script. GET, HEAD and OPTIONS only, plus a TLS handshake and read-only `flyctl` listings. It never signs in, submits, pays or cancels, so it is safe against production. |
 | `2026-09-06-precutover-kmt-fly-dev.txt` | `kmt.fly.dev` at 07:41Z on 2026-09-06, before t46 (headers and the canonical redirect) and t52 (the cutover to the client's domain). Machine version 87. |
 | `2026-09-06-precutover-kensmobiletire-com.txt` | `kensmobiletire.com` at the same time: the app was already answering on the apex, `www` and `order` with no canonical redirect and `KMT_ALLOWED_HOSTS` unset. |
+| `2026-09-06-postheaders-precutover-kmt-fly-dev.txt` | `kmt.fly.dev` at 11:11Z on 2026-09-06, after #147, #167 and #178 but before the cutover (`KMT_CANONICAL_HOST` still unset). The state the flip starts from, so a diff of the post-flip site against this shows the flip alone rather than the day's header and route changes. Its notes carry the static-header seam and the `HEAD /api/catalog` quirk that `baseline.sh` does not probe. |
 
 ## How to take one
 
@@ -32,8 +33,11 @@ machine id and an image tag, all of which the repository already records.
 `diff` the two captures. What the pre-cutover files say, and what the
 post-cutover read should expect to see move:
 
-The captures predate #147 as well as the cutover, so the diff carries #147's
-changes alongside the cutover's. Each line below says which change owns it.
+The morning captures predate #147 as well as the cutover, so a diff against
+them carries #147's changes alongside the cutover's; each line below says
+which change owns it. For a diff that shows only the flip, use the
+`postheaders-precutover` capture as the before instead: everything below has
+already landed in it, so the sole expected difference is the canonical `301`.
 
 - The three client hostnames and `kmt.fly.dev` all answer `200` today with
   no canonical redirect. After t46 (#167) and t52, every non-canonical host
