@@ -1444,3 +1444,8 @@
 .fitment-empty p { margin: 0; }
 .fitment-clear { min-height: 44px; padding: 10px 16px !important; border: 1px solid #34505e !important; border-radius: 6px !important; background: #fff !important; color: #16303c !important; font-size: 13px; font-weight: 800; }
 .fitment-clear:hover { background: #e8edf0 !important; }
+
+/* The tire list's paging control: the next page's size in the label, and how
+   much of the list is still folded under it. */
+.tire-show-more { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-height: 44px; margin-top: 14px; }
+.tire-show-more small { font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); }

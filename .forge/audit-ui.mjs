@@ -93,16 +93,20 @@ export async function waitForStatus(page) {
  * fields on load stopped running its checks and nobody noticed.
  */
 /**
- * Open the whole tire list when the step is showing only its cheapest dozen.
+ * Open the whole tire list when the step is showing only its first page.
  *
- * The seed tires the audits pick by name are priced above every supplier tire
- * in their size, so on a real size they sit behind the "Show all" control.
- * Clicking it is what a customer looking for that tire would do; when the
- * list is short enough to have no control, there is nothing to click.
+ * The seed tires the audits pick by name are priced above every supplier
+ * tire in their size, so on a real size they sit behind the paged
+ * "Show N more" control and may need more than one click to reach. Loop on
+ * the control's class rather than its text -- the count in "Show 24 more"
+ * changes on every click, and the button disappears once nothing is left
+ * to page in, which is the actual thing this waits for.
  */
 export async function expandTireList(page) {
-  const showAll = page.locator('button:has-text("Show all")')
-  if (await showAll.count()) await showAll.first().click()
+  const showMore = page.locator('button.tire-show-more')
+  while (await showMore.count()) {
+    await showMore.first().click()
+  }
 }
 
 export async function submitRequest(page, { base, size, tireName, vehicle, location, date, notes, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
