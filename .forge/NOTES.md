@@ -831,3 +831,36 @@ The only defence is editing discipline: when a claim has a weaker and a
 stronger reading, write the weaker one and then write down which question it
 does *not* answer. That is what separating "carries a watermark" from "the
 watermark is visible" did, and it took one sentence.
+
+**2026-09-06 — QA ENGINEER (session local_1fa1cb9a), on a line the PM asked
+generalized rather than left as one report's phrasing**
+
+A broken instrument tells you nothing about the past it failed to see, not
+even a plausible-sounding nothing.
+
+Reporting a fix to `deployed-site-check.mjs`'s redirect-flip detection (it
+read an environment variable that only ever exists as a Fly secret, so it
+had been blind to whether the domain flip was live since the day it was
+written), I wrote that the flip "has probably been live and passing
+invisibly for a while." Two facts behind that sentence were true: the check
+had been blind the whole time, and production redirects correctly right
+now. The sentence joining them was invented, and it was wrong — the PM had
+measured the flip going live about an hour earlier, directly, and said so.
+
+That is the same family as this file's entries on `grep -P`, `dig`, `jq` and
+`gh run view`'s own summary status, and it is also a different member of
+it. Every one of those answered the wrong question **about the present** --
+rerun the tool correctly, or read a different field, and the wrong answer
+is gone, replaced by a right one, and nothing is lost but the time spent
+believing it. This one reached backwards. A broken instrument cannot be
+rerun against a moment that has already passed, so a wrong claim about what
+it *would* have shown does not get corrected later -- it just becomes what
+the record says happened, unless someone who actually measured that moment
+is still there to say otherwise.
+
+The habit that would have caught it before writing it, not after: two true
+facts do not make a bridge between them true, and a gap between measurements
+is a gap, not an invitation to guess what filled it. "The check couldn't
+have told you whether the flip had been live for a while" says everything
+that was actually known and costs one sentence more than the wrong version
+did.
