@@ -137,11 +137,16 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
         {error && <div className="panel"><p className="status-note status-note-bad" role="alert">{error}</p><button className="btn btn-neutral" onClick={load}>Try again</button></div>}
         {!loading && !error && requests.length === 0 ? <div className="panel"><p className="text-secondary">{view === 'open' ? 'No open requests. Go to the customer flow and submit one.' : 'Nothing here right now.'}</p></div> : (
           <div className="owner-list">
-            {requests.map(({ request, quote, tire }) => (
+            {requests.map(({ request, quote, tire }) => {
+              // The tire line always carries how many, drafted once and never
+              // recomputed here: reading it back is how the owner sees the
+              // same quantity the quote was actually priced for.
+              const tireLine = quote?.lineItems?.find(item => item.description !== 'Mobile installation service')
+              return (
               <div key={request.id} className="panel owner-request">
                 <p className="owner-request-vehicle">{request.vehicleInfo}</p>
                 <dl className="owner-details">
-                  <div><dt>Tire:</dt> <dd>{tire?.name ? `${tire.name} · ${tire.size}` : `${tire?.id ?? request.tireSelection} (no longer in the catalog)`}</dd></div>
+                  <div><dt>Tire:</dt> <dd>{tire?.name ? `${tireLine ? `${tireLine.quantity} × ` : ''}${tire.name} · ${tire.size}` : `${tire?.id ?? request.tireSelection} (no longer in the catalog)`}</dd></div>
                   <div><dt>Location:</dt> <dd>{request.location}</dd></div>
                   <div><dt>Preferred Date:</dt> <dd>{request.date}</dd></div>
                   <div><dt>Contact:</dt> <dd>{request.customerEmail ? <>{request.customerName} · <a href={`mailto:${request.customerEmail}`}>{request.customerEmail}</a>{request.customerPhone && <> · <a href={`tel:${request.customerPhone}`}>{request.customerPhone}</a></>}</> : <span className="text-secondary">No contact on file (submitted before this was collected)</span>}</dd></div>
@@ -162,7 +167,8 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                   </div>}
                 </div>}
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

@@ -33,6 +33,7 @@ const form = (overrides = {}) => ({
   customerKey: KEY,
   vehicleInfo: '2021 Honda Civic',
   tireSelection: 'giga-a',
+  quantity: 4,
   location: '456 Demo Ave',
   date: '2026-09-10',
   locationType: 'home',
@@ -64,6 +65,48 @@ test('a submit stores the request and its quote, priced exactly as the frontend 
   // And it is readable back by id alone.
   const found = quotes.get(request.id)
   assert.equal(found.quote.total, quote.total)
+})
+
+test('calculateDraftQuote multiplies the tire line by quantity and leaves the fee alone', () => {
+  const catalog = [tire()]
+  const quoteOfFour = calculateDraftQuote({ tireSelection: 'giga-a', quantity: 4 }, catalog)
+  const tireLine = quoteOfFour.lineItems.find(item => item.description !== 'Mobile installation service')
+  const feeLine = quoteOfFour.lineItems.find(item => item.description === 'Mobile installation service')
+  assert.equal(tireLine.quantity, 4)
+  assert.equal(tireLine.unitPrice, 50)
+  assert.equal(feeLine.quantity, 1)
+  assert.equal(feeLine.unitPrice, 49.99)
+  assert.equal(quoteOfFour.total, Math.round((50 * 4 + 49.99) * 100) / 100)
+
+  const quoteOfOne = calculateDraftQuote({ tireSelection: 'giga-a' }, catalog)
+  assert.equal(quoteOfOne.lineItems[0].quantity, 1, 'no quantity at all still means one tire, not zero and not a full set')
+})
+
+test('quantity defaults to 4, an explicit choice is honoured, and the fee never multiplies', async t => {
+  const { quotes } = setup(t)
+
+  const defaulted = quotes.submit(form({ quantity: undefined }))
+  const tireLine = defaulted.quote.lineItems.find(item => item.description !== 'Mobile installation service')
+  const feeLine = defaulted.quote.lineItems.find(item => item.description === 'Mobile installation service')
+  assert.equal(tireLine.quantity, 4, 'a request that says nothing about quantity means a full set')
+  assert.equal(feeLine.quantity, 1, 'the mobile-service fee is one line regardless of how many tires')
+  const expectedDefault = calculateDraftQuote({ ...form({ quantity: 4 }), id: defaulted.request.id }, quotes.catalog())
+  assert.equal(defaulted.quote.total, expectedDefault.total)
+  assert.deepEqual(defaulted.quote.lineItems, expectedDefault.lineItems)
+
+  const explicit = quotes.submit(form({ quantity: 2 }))
+  const explicitTireLine = explicit.quote.lineItems.find(item => item.description !== 'Mobile installation service')
+  assert.equal(explicitTireLine.quantity, 2)
+  const expectedExplicit = calculateDraftQuote({ ...form({ quantity: 2 }), id: explicit.request.id }, quotes.catalog())
+  assert.equal(explicit.quote.total, expectedExplicit.total)
+})
+
+test('a quantity outside the offered choices is refused', async t => {
+  const { quotes } = setup(t)
+  assert.throws(() => quotes.submit(form({ quantity: 3 })), /quantity must be one of/)
+  assert.throws(() => quotes.submit(form({ quantity: 0 })), /quantity must be one of/)
+  assert.throws(() => quotes.submit(form({ quantity: -1 })), /quantity must be one of/)
+  assert.throws(() => quotes.submit(form({ quantity: 'a lot' })), /quantity must be one of/)
 })
 
 test('an out-of-stock tire and a truck both raise the exception the existing rules raise', async t => {
