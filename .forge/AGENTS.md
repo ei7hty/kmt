@@ -14,7 +14,8 @@ happening.
 
 ## The protocol
 
-**Before you start.** Read this file top to bottom, then `.forge/project.md`,
+**Before you start.** If you are the lead, read `HANDOFF.md` first; it is the
+state at the last pause. Then read this file top to bottom, then `.forge/project.md`,
 `.forge/requirements.md` and `.forge/state.json`. Run `git branch --show-current`
 and `git status`. If someone else has uncommitted or staged work in the tree,
 you are sharing a workspace — behave accordingly.
