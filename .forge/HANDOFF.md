@@ -175,8 +175,14 @@ automatically as now. After that, the m10 plan resumes.
   over the remaining 879 sizes at one page each (about 80 minutes), then deep
   batches for the common sizes. Imports were held until the live test ended.
   The monthly runbook is `docs/supplier-refresh.md` (#60).
+- After t39 lands: the bundle check is wired into the check job by the repo
+  agent, asserting on `dist/` only for what the fix removed, never before the
+  fix (main contains `listPrice` 1085 times until then, so a check first
+  would block its own fix); and `/api/catalog` moves from `no-store` to a
+  public five-minute max-age, decided 2026-09-06, backend lane, not started.
 - Then t37 email, which needs the user's provider account and a verified
-  sending domain. t35 waits for the pricing decision.
+  sending domain, with the rate-limit and SameSite constraints above. t35
+  waits for the pricing decision.
 
 ### What the production database actually held before the reset
 
