@@ -274,9 +274,15 @@ test('a database with no outbox table redacts the request and says the table is 
   assert.equal(readRequest(db).customerName, REDACTED)
 })
 
-test('inquiries is not wired into any entry point yet, so a plan against a database without it says so plainly', t => {
+test('a database whose inquiries table was never created says so plainly rather than failing obscurely', t => {
+  // t65 wired `Inquiries` into both entry points, so production has this table
+  // now. A restored backup taken before that, or any database built without
+  // the class, still does not -- and that is what this asserts. The setup here
+  // deliberately does not construct `Inquiries`, which is also what keeps the
+  // check honest: the table is absent because nothing made it, not because a
+  // flag says so.
   const { db } = setup(t)
-  assert.equal(tableExists(db, 'inquiries'), false, 'nothing constructs Inquiries; see .forge/personal-data-removal.md finding 3')
+  assert.equal(tableExists(db, 'inquiries'), false)
   assert.throws(() => planInquiryRedaction(db, 'whatever'), /no inquiries table/)
 })
 

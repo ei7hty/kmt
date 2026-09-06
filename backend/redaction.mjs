@@ -68,12 +68,21 @@ const now = () => new Date().toISOString()
 /**
  * Does this database have this table?
  *
- * `inquiries` is created by `Inquiries`' constructor, which no entry point
- * calls yet (`.forge/personal-data-removal.md`, finding 3), so on a real
- * volume the table does not exist. A removal must treat that as "nothing of
- * theirs is here", not as a failure -- and must not create it on the way
- * past, which is one of two reasons the CLI opens the file read-only to
- * inspect it.
+ * Not every database this runs against has every table. `outbox` and
+ * `inquiries` were both added after requests and quotes were already live,
+ * so a restored backup, or a copy taken before either shipped, can be missing
+ * one. A removal must treat that as "nothing of theirs is here", not as a
+ * failure: absence is the correct answer for that database, not a fault for
+ * whoever happens to look to repair.
+ *
+ * And it must not create the table on the way past -- which is the second
+ * reason the CLI inspects through a read-only handle. Each of these tables is
+ * created by its owning class's constructor, so merely opening a database
+ * read-write through one of them brings the table into existence; on a copy
+ * being examined, that silently makes the file disagree with the production
+ * it was taken from. `inquiries` was the live example of this until t65 wired
+ * `Inquiries` into both entry points (`server.mjs`, `dev.mjs`); the hazard is
+ * unchanged for the next table added the same way.
  */
 export const tableExists = (db, table) =>
   Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))
