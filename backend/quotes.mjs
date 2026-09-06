@@ -817,17 +817,35 @@ export class Quotes {
   /**
    * The customer calling their own request off, before they pay for it.
    *
-   * Keyed the way pay() is, and refused the same way: a wrong key is answered
-   * "no such request" rather than "not yours", because the second sentence
-   * confirms the request exists. No version either, for the same reason pay()
-   * takes none -- the customer has one screen showing one request of their own,
-   * and there is no second window of theirs for a stale view to come from.
+   * Authorised by `id` alone, the same as reading it (R19: holding the id is
+   * the access) -- not by a `customerKey` match. That match was a real
+   * write-side second factor, not nothing: the id is deliberately shareable
+   * (the /status link exists to be shown to people, R19), so the key is what
+   * separated "can read" from "can write" for a token designed to be
+   * forwarded. Removing it means anyone the customer forwards the link to can
+   * now pay or cancel on their behalf, and that is accepted deliberately, not
+   * because the id was ever a secret.
+   *
+   * The trade is bounded, not free: a browser with no key yet (a different
+   * device, a private window, or iOS's seven-day localStorage clear -- #97)
+   * generates a fresh one that was never going to match anything, so the
+   * check refused every legitimate customer opening the emailed link from a
+   * new device (#284) -- and the writes it now exposes are non-financial,
+   * idempotent, owner-gated, and (for cancel) reversible: paying charges
+   * nothing extra and cannot be repeated for a second charge; cancelling
+   * before payment deletes nothing and is reversible by texting Ken. No
+   * version either, for the same reason pay() takes none -- the customer has
+   * one screen showing one request of their own, and there is no second
+   * window of theirs for a stale view to come from.
+   *
+   * One consequence found in review, accepted with its bound stated rather
+   * than left undiscovered: someone holding the shared link can call pay()
+   * on a sent quote specifically to block the customer's own cancel (this
+   * method refuses once `paid`) and trigger a false "payment received"
+   * email. No money moves and nothing is deleted, so the bound holds; filed
+   * separately rather than fixed here.
    */
-  cancelByCustomer(id, customerKey, reason) {
-    const key = cleanCustomerKey(customerKey)
-    const stored = this.keyFor(id)
-    if (stored === null || stored !== key) throw new InputError('No such request.', 404)
-
+  cancelByCustomer(id, reason) {
     const found = this.get(id)
     if (!found?.quote) throw new InputError('No such request.', 404)
     if (found.quote.status === 'cancelled') return found
@@ -842,24 +860,27 @@ export class Quotes {
     })
   }
 
-  keyFor(id) {
-    return this.db.prepare('SELECT customer_key FROM requests WHERE id=?').get(id)?.customer_key ?? null
-  }
-
   /**
    * Mark an approved quote paid.
+   *
+   * Authorised by `id` alone, the same reasoning and the same bounded trade
+   * as `cancelByCustomer` above (#284, #97): the `customerKey` match was a
+   * real second factor for a deliberately shareable token, removed anyway
+   * because the amount is fixed and already quoted, so someone else paying
+   * it is not an attack worth guarding against.
+   *
+   * Unlike cancel, there is no reversal here at all, not even the owner's:
+   * `CANCELLABLE` excludes `paid`, and `paid` moves only to `done`. A mistaken
+   * or induced payment is not "text Ken and he sorts it out" the way a
+   * cancellation is -- it needs a manual database edit. That gap is real and
+   * is filed as its own issue rather than fixed in this change.
    *
    * Payment is still the fake step that always succeeds, but the result is
    * recorded here so both sides see it from their own devices. A draft cannot
    * be paid: that would be a customer paying a price the owner has not agreed
-   * to. A wrong key is answered "no such request" rather than "not yours",
-   * because the second sentence confirms the request exists.
+   * to.
    */
-  pay(id, customerKey) {
-    const key = cleanCustomerKey(customerKey)
-    const stored = this.keyFor(id)
-    if (stored === null || stored !== key) throw new InputError('No such request.', 404)
-
+  pay(id) {
     const found = this.get(id)
     if (!found?.quote) throw new InputError('No such request.', 404)
     if (found.quote.status === 'paid') return found

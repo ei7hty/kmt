@@ -269,6 +269,10 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
   const TOO_MANY = 'Too many requests from this connection. Wait a few minutes and try again.'
   const TOO_MANY_KEY = 'Too many requests from this browser. Wait a few minutes and try again.'
   const TOO_MANY_EMAIL = 'That email address has been used for too many requests today. Text me instead.'
+  // customerKey no longer authorises pay/cancel (#284/#316: the id alone
+  // does, same as reading). This is now only the rate-limit bucket -- a hint
+  // for publicPerKey, not a check -- so it still matters here, but a reader
+  // should not mistake it for access control on the routes below.
   const keyOf = body => (typeof body?.customerKey === 'string' ? body.customerKey.trim().toLowerCase() : '')
   const emailOf = body => (typeof body?.customerEmail === 'string' ? body.customerEmail.trim().toLowerCase() : '')
 
@@ -313,7 +317,7 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
       if (request.method === 'POST' && payMatch) {
         const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
         if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
-        const paid = quotes.pay(decodeURIComponent(payMatch[1]), body?.customerKey)
+        const paid = quotes.pay(decodeURIComponent(payMatch[1]))
         send(200, paid)
         if (mailer && paid?.quote?.status === 'paid') mailer.after('payment-recorded', paid.request.id)
         return true
@@ -323,7 +327,7 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
       if (request.method === 'POST' && cancelMatch) {
         const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
         if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
-        send(200, quotes.cancelByCustomer(decodeURIComponent(cancelMatch[1]), body?.customerKey, body?.reason))
+        send(200, quotes.cancelByCustomer(decodeURIComponent(cancelMatch[1]), body?.reason))
         return true
       }
 
