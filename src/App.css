@@ -524,9 +524,8 @@
 .site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #1d3745; color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
 /* A text-only control, but a full-height one: it was 12px tall, which is not
    a touch target for anyone, let alone at a roadside (#85). */
-.site-footer button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent-text) !important; font-size: 11px; }
 /* The privacy notice's link at the foot of every screen (t50): text-only,
-   but a full-height touch target like the footer control above it. */
+   but a full-height touch target all the same. */
 .page-footer { padding: 6px 24px 28px; text-align: center; font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
 .page-footer a, .site-footer .privacy-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-text); text-decoration: none; }
 .page-footer a:hover, .site-footer .privacy-link:hover { text-decoration: underline; }
