@@ -9,7 +9,6 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| fitment-and-owner-visual-notes | LEAD UI ENGINEER | src/App.css fitment rules at 375, src/owner/OwnerInventory.css at 1280 (LEAD FULL STACK visual notes i, ii, iv; the tire-list paging waits for #183) | 2026-09-06 |
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
