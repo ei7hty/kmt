@@ -63,7 +63,7 @@
       "id": "m9",
       "title": "The owner reviews real requests from any device",
       "description": "Phase 4 outcome: a request made on a customer's phone is stored by the backend, drafted server-side by the existing rules, reviewed by the owner at /owner/quotes from any device behind the owner sign-in when hosted, and its approval and (fake) payment are visible to both sides from their own devices. The localStorage request/quote store is retired; only a per-browser customer key remains in the browser. R17-R22.",
-      "status": "planned",
+      "status": "done",
       "order": 8
     },
     {
@@ -586,43 +586,49 @@
       "title": "The four routes read and write the backend; the browser store is retired",
       "description": "Replace the localStorage implementation in src/store.js with an API client that keeps the call sites small: saveRequest posts to /api/requests (the server drafts the quote, so CustomerRequest.jsx no longer calls calculateDraftQuote or saveQuote itself), getAllRequests/getAllQuotes for the customer become one call to /api/requests?customer=<key>, updateQuoteStatus('paid') becomes POST /api/requests/:id/pay, and the owner screen's list/approve/reject call the t30 endpoints. The per-browser customer key is generated once with crypto.randomUUID() and kept in localStorage under its own name; nothing else is stored there, and the old kmt_store key is removed on first load. Failure handling follows the phase 3 loader's rule for detection (content-type before parse, non-2xx is a failure) but NOT its rule for recovery: a failed submit shows a clear message with the shop's phone number and a retry, and never drafts a quote locally (R21). /owner/quotes gets the same sign-in gate OwnerInventory.jsx already has; extract SignIn into src/owner/SignIn.jsx rather than copying it. /status accepts ?request=<id> to show one request from any device, and otherwise lists the device's requests. Keep the catalog fallback from phase 3 untouched: browsing works with the backend down, only submit needs it. Loading states in the existing style. No change to src/pricing.js beyond what t29 needed, none to the exception rules, none to routes or CSS beyond the new failure and loading states. Verify against node backend/dev.mjs: submit from one browser profile, approve from another (owner), pay from the first, and confirm each step is visible to the other side after at most one reload; then confirm the submit-failure state with the backend stopped. The audits will not pass against a plain preview after this task; run them against the real server per t32's method, and record the counts you got in the PR body.",
       "milestoneId": "m9",
-      "status": "todo",
+      "status": "done",
       "priority": "medium",
       "dependsOn": [
         "t29",
         "t30"
       ],
-      "notes": [],
+      "notes": [
+        "Shipped in PR #31 and merged 2026-09-06: src/store.js became an API client over the t29/t30 endpoints, the four routes read and write the backend, SignIn moved to src/owner/SignIn.jsx and gates both owner screens, /status accepts ?request=<id>, and the browser keeps only a per-device key."
+      ],
       "createdAt": "2026-09-05T21:22:39.887Z",
-      "updatedAt": "2026-09-05T21:22:39.887Z"
+      "updatedAt": "2026-09-06T00:56:39.692Z"
     },
     {
       "id": "t32",
       "title": "The browser audits run against the real server, locally and in the CI gate",
       "description": "Change the three audit scripts (.forge/dead-end-audit.mjs, request-flow-check.mjs, responsive-check.mjs) and the CI gate so they run against backend/server.mjs serving the built dist/, not vite preview: in the workflow's check job, after npm run build, start node backend/server.mjs with KMT_OWNER_DB pointing at a temp file, KMT_OWNER_PASSWORD set to a throwaway value, PORT 4173, bound to 127.0.0.1, using the reachable-start form already in the workflow (node directly, $! captured, trap on EXIT), wait for it as the preview is waited for today, then run the audits with AUDIT_BASE and the same KMT_OWNER_PASSWORD in the environment. In the scripts, at the owner step, if a sign-in form appears, fill the password from the environment and continue; locally against backend/dev.mjs no form appears and nothing changes. Give each script a fresh customer context per viewport so runs do not see each other's requests. Update .forge/AGENTS.md's verification contract and hygiene note and .forge/conventions.md (which still says the audits run against vite preview) with the new command and the new counts; the numbers will differ from 36 / 26 / 8 and the new baseline is recorded, not the old one held. Prove the gate is real: open a PR with a deliberate one-line break in the submit path, watch the check fail at the audit step, then revert it in the same PR before it is merged, and say so in the PR body.",
       "milestoneId": "m9",
-      "status": "todo",
+      "status": "done",
       "priority": "medium",
       "dependsOn": [
         "t31"
       ],
-      "notes": [],
+      "notes": [
+        "Shipped in PR #34 and merged 2026-09-06: the three browser audits drive the UI instead of seeding localStorage, and the pre-merge gate runs them against backend/server.mjs with the built dist. Counts 36 / 30 / 8. Follow-up PR #42 made the post-deploy run a read-only deployed-site check (19) so production stops accumulating fabricated requests."
+      ],
       "createdAt": "2026-09-05T21:22:39.887Z",
-      "updatedAt": "2026-09-05T21:22:39.887Z"
+      "updatedAt": "2026-09-06T00:56:39.706Z"
     },
     {
       "id": "t33",
       "title": "Deploy through CI and prove the flow between two devices on the public site",
       "description": "Merge to main, let CI deploy, and confirm the post-deploy audit job passed on its own. Then the proof the phase exists for: on a real phone, submit a request at https://kmt.fly.dev for a tire in a scraped size; on a different device, sign in at /owner/quotes, see that request with its draft, and approve it; back on the phone, open /status, see it approved, pay, and reach /confirmation; then see it paid on the owner device. Also open the request by its link (/status?request=<id>) on the second device without the phone's key. Record each step as its own line with the device it was done on. Note in the PR body that requests previously stored in browsers' localStorage are gone by design. Close m9.",
       "milestoneId": "m9",
-      "status": "todo",
+      "status": "done",
       "priority": "medium",
       "dependsOn": [
         "t32"
       ],
-      "notes": [],
+      "notes": [
+        "Verified in PR #50 against https://kmt.fly.dev on 2026-09-06. Request f80ada133275b41c327b6c35fb5555a4: submitted from an emulated iPhone 13, approved by the owner on their own device, read as approved on the phone after one reload, paid from the phone to /confirmation at $135.98, and opened from a third browser context holding no customer key, which read paid. Server-side final state: paid, version 3. The TEST row stays approved-and-paid until t36 adds done."
+      ],
       "createdAt": "2026-09-05T21:22:39.887Z",
-      "updatedAt": "2026-09-05T21:22:39.887Z"
+      "updatedAt": "2026-09-06T01:08:50.414Z"
     },
     {
       "id": "t34",
@@ -696,5 +702,5 @@
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T23:36:35.812Z"
+  "updatedAt": "2026-09-06T01:08:50.415Z"
 }
