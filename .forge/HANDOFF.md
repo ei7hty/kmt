@@ -64,17 +64,42 @@ since it was written.
   URL variable. Precondition met: `www` resolves and holds its certificate.
   Robots, sitemap and `noindex` on `/owner`, `/status` and `/confirmation`
   are a cutover precondition with LEAD FULL STACK.
-- **DNS incident, open and the user's to fix first**: while adding Resend's
-  records at Squarespace the user's Google Workspace mail records were lost
-  at the authoritative nameserver: the root MX (`smtp.google.com`,
-  priority 1), the root SPF (`v=spf1 include:_spf.google.com ~all`) and
-  `google._domainkey`. Mail to `@kensmobiletire.com` bounces until they are
-  back. Resend's DKIM landed wrong (a root TXT whose data reads
-  `resend._domainkey`; a CNAME named `rsend`); a `send` CNAME to
-  `send.forge.rmta.net` and a `_dmarc` record exist and look right. The
-  exact rows to restore are in the lead's last messages to the user; DEV
-  OPS carries the DNS section of the runbook and should verify at
-  `ns-cloud-a1.googledomains.com`, not through public caches.
+- **DNS incident, HALF restored -- re-measured 2026-09-06 evening**: while
+  adding Resend's records at Squarespace the user's Google Workspace mail
+  records were lost at the authoritative nameserver. Measured state now,
+  each negative taken with a positive control, because a query returning
+  nothing looks identical to one that did not run:
+  - **MX: restored.** Google's five `aspmx.l.google.com` records answer.
+    **Mail to `@kensmobiletire.com` no longer bounces -- Ken can receive.**
+    This section previously said it bounced, which is why the incident now
+    reads as resolved to anyone spot-checking, and is not.
+  - **SPF: still missing.** The root carries *zero* TXT records of any kind
+    (control: `google.com` returns 17). Value to restore:
+    `v=spf1 include:_spf.google.com ~all` -- no admin rights needed, and
+    harmless until something sends.
+  - **DKIM: still missing.** `google._domainkey.kensmobiletire.com` does not
+    exist. Nobody here can supply it: the value is generated per-domain in
+    the Workspace admin console, and a plausible-looking one is worse than
+    none.
+  - **The Resend wreckage is gone, not pending**: `resend._domainkey`,
+    `send` and `rsend` are all NOT FOUND, and there are no root TXT records
+    to untangle. **Three of the four rows this section used to name no
+    longer exist to be fixed.** Whoever restores SPF adds to an empty set.
+  - **`_dmarc` does not exist either** -- this section claimed it existed
+    and looked right (control: `_dmarc.google.com` returns `p=reject`).
+    That *lowers* today's severity rather than raising it: with no DMARC
+    policy, mail carrying a wrong `KMT_MAIL_FROM` is spam-foldered rather
+    than hard-bounced. Still silent, still guarded by #254 and #261.
+
+  **The domain can receive and cannot be safely sent from.** That is the
+  live consequence, and it is why the interim non-domain sender is the
+  correct answer rather than a workaround: a Gmail address is already
+  authenticated by Google's own records for `gmail.com`, so using one is not
+  evading authentication, it is using a domain that has it. SPF and DKIM
+  authorise *servers to send as a domain*; they cannot be added for
+  `gmail.com` and do not need to be. **Email is unblocked today with no DNS
+  change at all.** DEV OPS carries the DNS section of the runbook and should
+  verify at `ns-cloud-a1.googledomains.com`, not through public caches.
 
 ### Rulings made today, where recorded
 
@@ -159,8 +184,8 @@ exactly as before (second reader, trial-merge, diff-read, `CLAIMS.md`), and anyt
 goes to the user directly when they're in a session, or is held and flagged here or in `NOTES.md` otherwise --
 it does not route through a PM.
 
-What landed during the interlude: `#182` (t48 service-area enforcement -- active by default in production,
-verified live via the boot log rather than assumed from the PR), `#206` (t37's mail seam, SMTP through the
+What landed during the interlude: `#182` (t48 service-area enforcement -- **shipped, and switched OFF on
+production**: `curl -sI https://kensmobiletire.com/` answers `x-kmt-service-area: off`. This line previously read "active by default in production, verified live via the boot log"; that was wrong, and two agents held contradicting boot-log readings for an hour because neither could check the other's. #259 made the state a response header, so it is now one command rather than an argument. The code still fails closed -- unset means enforcing -- but the secret is set and resolves to `off`, and turning it on is a named cutover step whose pass condition is `x-kmt-service-area: on`.), `#206` (t37's mail seam, SMTP through the
 owner's Google Workspace, outbox-first with no provider required), `#214` (the wizard's ZIP-required/date-floor
 half of t48). All three merged in sequence, each needing a rebase after the one before it changed a file the
 next one also touched; every rebase was verified beyond CI before merging (a scratch server boot, a live

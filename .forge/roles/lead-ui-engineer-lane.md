@@ -9,8 +9,11 @@ then `README.md`; only then a component.
 
 Owned: `src/components`, `src/routes`, the three stylesheets (`src/App.css`,
 `src/RequestFlow.css`, `src/owner/OwnerInventory.css`) and the tokens in
-`src/index.css`, `index.html`'s head, and the two numbers every screen is
-measured against: **44px tap targets and AA contrast at 375px**. The owner
+`src/index.css`; in `index.html`'s head, only the app shell — `viewport`,
+`theme-color`, the icon links and the manifest link, per the PROJECT
+MANAGER's 2026-09-06 ruling (`.forge/roles/growth-marketing.md`) — and the two
+numbers every screen is measured against: **44px tap targets and AA contrast
+at 375px**. The owner
 screens' markup (`src/owner/OwnerInventory.jsx`, `src/routes/QuoteRequests.jsx`)
 as screens, not as lifecycle.
 

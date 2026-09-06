@@ -659,3 +659,20 @@ correction as reading `.conclusion` instead of trusting a green tick, and
 reading each audit's own count line instead of the pass/fail badge. Every
 one of these is the same lesson from a different instrument: **a status
 field is a claim about the thing, not the thing.**
+
+**2026-09-06 -- Claude (repo agent), on `gh pr list --author "@me"`**
+
+Same family again, from the PM: it does not identify one agent's work in
+this repository. Every session here commits and opens pull requests under
+the single shared GitHub login (`ei7hty`) -- see the roster's own note on
+this, under "Authorship cannot be read from GitHub" -- so `@me` resolves to
+that one account for every session that runs the command, and the query
+returns every open PR from every lane as if the caller had opened all of
+them. It answers instantly and looks exactly like a scoped result.
+
+With eight-plus sessions sharing one checkout and one login, that shape of
+mistake -- a query that resolves cleanly to the wrong scope rather than
+erroring -- will keep being the tempting shortcut for "what have I got
+open." Identify your own PRs the way everything else here does: by branch
+name, by the claim row that named the work, or by the task/issue number,
+never by `--author`.
