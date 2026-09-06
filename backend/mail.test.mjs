@@ -13,9 +13,11 @@ const tire = (id = 'giga-a') => ({ id, name: 'Test Touring', size: SIZE, price: 
   source: { sku: id.slice(5), stock: 12, listPrice: 60, segment: 'Passenger', url: 'https://www.giga-tires.com/tires/test' } })
 const snapshot = tires => ({ source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE], tires })
 const KEY = 'a'.repeat(32)
+/** Well clear of the server's 7-day date floor (t48), always ahead of today. */
+const SOON = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)
 const form = () => ({ customerKey: KEY, tireSize: SIZE, tireSelection: 'giga-a', quantity: 4, vehicleInfo: '2020 Toyota Corolla',
   location: '456 Demo Ave, Everett, MA 02149', locationType: 'Home', serviceZip: '02149', locationNotes: 'Blue sedan, gate code 1234',
-  date: '2026-09-10', customerName: 'Jamie Rivera', customerEmail: 'Jamie@Example.com', customerPhone: '6175550100' })
+  date: SOON, customerName: 'Jamie Rivera', customerEmail: 'Jamie@Example.com', customerPhone: '6175550100' })
 const CONFIG = { provider: 'smtp', host: 'smtp-relay.gmail.com', port: 587, user: 'quotes@kensmobiletire.com', password: 'app-password',
   from: 'quotes@kensmobiletire.com', ownerEmail: 'owner@example.com', ownerName: 'Ken' }
 

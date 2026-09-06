@@ -20,6 +20,14 @@ const BASE = process.env.AUDIT_BASE
 if (!BASE) { console.error('Set AUDIT_BASE explicitly; the audits default to different ports and this one refuses to guess.'); process.exit(2) }
 const VIEWPORT = { width: 375, height: 812 }
 
+/**
+ * A preferred date well clear of today: the server refuses anything inside
+ * a week of today (t48's date floor). A fixed literal ('2026-09-10') used to
+ * sit at every call site below; once that date moved inside the floor every
+ * submission in this script started failing for a reason it wasn't testing.
+ */
+const SOON = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)
+
 // ---------- colour maths (WCAG 2.x) ----------
 // The colour parsing happens inside page.evaluate; only the ratio maths runs here.
 function lum({ r, g, b }) {
@@ -257,7 +265,7 @@ try {
     await page.waitForSelector('#location', { timeout: 15000 })
     results.push(await measure(page, 'step 3 (service details, empty)'))
     await page.fill('#location', '12 Example St, Everett, MA 02149')
-    await page.fill('#date', '2026-09-10')
+    await page.fill('#date', SOON)
     await page.fill('#customerName', 'Jamie Rivera')
     await page.fill('#customerEmail', 'jamie@example.com')
     await page.click('button[type="submit"]', { timeout: 15000 })
@@ -272,7 +280,7 @@ try {
   // Owner: sign-in, inventory, quotes with a draft and an exception; approve one.
   {
     const { context, page } = await freshPage(browser, VIEWPORT)
-    await submitRequest(page, { base: BASE, ...EXCEPTION_TIRE, vehicle: '2020 Ford F-150 Pickup Truck', location: '12 Example St, Everett, MA 02149', date: '2026-09-10', notes: 'Behind the building' })
+    await submitRequest(page, { base: BASE, ...EXCEPTION_TIRE, vehicle: '2020 Ford F-150 Pickup Truck', location: '12 Example St, Everett, MA 02149', date: SOON, notes: 'Behind the building' })
     // R4 retires the customer-facing "Owner review" link; direct navigation
     // replaces the click, the same fix openOwnerQuotes() got in audit-ui.mjs.
     await page.goto(`${new URL(page.url()).origin}/owner`)
@@ -299,7 +307,7 @@ try {
   // Customer: /status with a sent quote (Pay), then /confirmation.
   {
     const { context, page } = await freshPage(browser, VIEWPORT)
-    await submitRequest(page, { base: BASE, ...clean2, vehicle: '2019 Honda Civic', location: '12 Example St, Everett, MA 02149', date: '2026-09-10' })
+    await submitRequest(page, { base: BASE, ...clean2, vehicle: '2019 Honda Civic', location: '12 Example St, Everett, MA 02149', date: SOON })
     await openOwnerQuotes(page)
     const approve = page.locator('.owner-request:has-text("Honda Civic") button:has-text("Approve"), button:has-text("Approve")')
     if (await approve.count()) { await approve.first().click(); await page.waitForTimeout(800) }
