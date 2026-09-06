@@ -28,6 +28,24 @@ directions. Your branch name is the claim: make it describe the work.
 **While you work.** Stay in your lane (below). If you must touch a file outside
 it, say so in your claim row first.
 
+**A claim row names a region, not a lock on the whole path.** Two agents may
+hold the same file at once when their work sits in different parts of it --
+BUG FIXER held `backend/quotes.mjs`'s `cleanDate()` near the top while JUNIOR
+BACKEND DEV held the quote-adjustment functions forty-plus lines away, and
+both merged clean. Name the region when you claim a file someone else's row
+already covers -- `backend/api.mjs (PUBLIC_POST_PATHS and isKnownApiPath
+only; t35 holds the owner dispatch block)`, not just the bare filename --
+so the next reader can tell at a glance whether two rows actually collide.
+
+**Check before you block.** A `git diff` against the other branch answers in
+seconds whether the regions in fact overlap; read as a lock instead of a
+statement of intent, this table has already idled a remote agent with no way
+to ask on a collision that did not exist. But checking the diff is advice
+for whoever arrives second, not permission to ignore a row: if the regions
+genuinely overlap, the row wins and you wait, and if the two sides disagree
+about anything once you've looked, that disagreement is a finding to report,
+not something to resolve quietly.
+
 **When you finish.** Remove your row from `CLAIMS.md`. If you learned something
 the next agent would otherwise rediscover the hard way, append it to
 [`.forge/NOTES.md`](NOTES.md). Update `.forge/state.json` if you closed a task,
