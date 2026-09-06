@@ -140,6 +140,23 @@ jobs:
     name: Audit the deployed site
     needs: deploy
     runs-on: ubuntu-latest
+
+    # Job-level rather than repeated on each step: three steps need both, and
+    # the failure mode when one is missed is invisible until a screen happens to
+    # ask for a password. That is exactly how this broke -- the check job got
+    # KMT_OWNER_PASSWORD when the gate moved to a real server, the verify job
+    # did not, and nothing noticed until t31 made /owner ask a server on the
+    # deployed site too.
+    #
+    # This is production's real owner password, so it is a repository secret and
+    # never a literal. If the secret is absent it resolves to an empty string and
+    # the audits stop at "The owner screen asked for a password and
+    # KMT_OWNER_PASSWORD is not set" -- a clear message, and the reason that
+    # error was written to name the variable.
+    env:
+      AUDIT_BASE: https://kmt.fly.dev
+      KMT_OWNER_PASSWORD: ${{ secrets.KMT_OWNER_PASSWORD }}
+
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -155,12 +172,7 @@ jobs:
             sleep 5
           done
           echo "kmt.fly.dev did not respond within 150s"; exit 1
+      # AUDIT_BASE and the password come from the job env above.
       - run: node .forge/dead-end-audit.mjs
-        env:
-          AUDIT_BASE: https://kmt.fly.dev
       - run: node .forge/request-flow-check.mjs
-        env:
-          AUDIT_BASE: https://kmt.fly.dev
       - run: node .forge/responsive-check.mjs
-        env:
-          AUDIT_BASE: https://kmt.fly.dev
