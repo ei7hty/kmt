@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { AUDIT_BUDGET, LIMITS, LoginThrottle, RateLimiter, clientIp } from './limits.mjs'
+import { AUDIT_BUDGET, LIMITS, LoginThrottle, RateLimiter, clientIp, logLabel } from './limits.mjs'
 
 /** A clock the test moves by hand. */
 const clock = (start = 1_000_000) => {
@@ -42,6 +42,31 @@ test('a window counts hits, refuses past its limit, and opens again when it clos
   assert.ok(logged.some(line => /refused for a/.test(line)), 'a refusal is logged')
   assert.ok(logged.some(line => /at 2\/3 for a/.test(line)), 'the halfway mark is logged once')
   assert.equal(logged.filter(line => /at 2\/3 for a/.test(line)).length, 1)
+})
+
+test('a private id is logged as a short hash, never as itself; an address is logged as itself', () => {
+  // The email cap's id is the customer's address and the key cap's id is the
+  // credential that reads, pays and cancels that browser's requests. Fly's
+  // logs persist and are readable by anyone who can pull them.
+  assert.equal(LIMITS.publicPerKey.private, true)
+  assert.equal(LIMITS.submitPerEmail.private, true)
+  assert.notEqual(LIMITS.publicPerIp.private, true, 'addresses stay readable: they are what an operator blocks')
+
+  const logged = []
+  const limiter = new RateLimiter({
+    rules: { submitPerEmail: { max: 2, windowMs: 1000, private: true }, publicPerIp: { max: 2, windowMs: 1000 } },
+    log: line => logged.push(line),
+  })
+  for (let i = 0; i < 3; i++) limiter.take('submitPerEmail', 'victim@example.com')
+  for (let i = 0; i < 3; i++) limiter.take('publicPerIp', '203.0.113.9')
+
+  assert.ok(logged.length >= 4, 'the halfway mark and the refusal were logged for both')
+  assert.ok(logged.every(line => !line.includes('victim') && !line.includes('example.com')), `no line carries the address: ${logged.join(' | ')}`)
+  const hash = logLabel(LIMITS.submitPerEmail, 'victim@example.com')
+  assert.match(hash, /^[0-9a-f]{8}$/)
+  assert.ok(logged.some(line => line.includes(`submitPerEmail refused for ${hash}`)), 'the same id is recognisable across lines by its hash')
+  assert.ok(logged.some(line => line.includes('publicPerIp refused for 203.0.113.9')))
+  assert.equal(logLabel(LIMITS.publicPerIp, '203.0.113.9'), '203.0.113.9')
 })
 
 test('the login throttle lets a few failures pass, then doubles the wait, and a success clears it', () => {

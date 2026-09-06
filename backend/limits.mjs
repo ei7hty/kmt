@@ -19,8 +19,19 @@
  * than remembered.
  */
 
+import { createHash } from 'node:crypto'
+
 /** A request body on a public endpoint: a form is under 3KB, so this is room. */
 export const PUBLIC_BODY_LIMIT = 8 * 1024
+
+/**
+ * How an id appears in the log: as itself for an address, as eight hex
+ * characters of its hash for anything private. Enough to see that the same
+ * id is being refused again, and nothing to read a person's address back
+ * from. The rule and the count are what an operator acts on, not the value.
+ */
+export const logLabel = (rule, id) =>
+  rule.private ? createHash('sha256').update(String(id)).digest('hex').slice(0, 8) : String(id)
 
 /**
  * What one gate run asks of the server, measured rather than estimated: the
@@ -36,10 +47,18 @@ export const AUDIT_BUDGET = { publicPosts: 24, submitsPerEmail: 20, loginFailure
 export const LIMITS = {
   /** Public POSTs (submit, pay, cancel) from one address. */
   publicPerIp: { max: 60, windowMs: 15 * 60_000 },
-  /** The same, from one browser key: a stranger with many addresses still has one key per browser. */
-  publicPerKey: { max: 20, windowMs: 15 * 60_000 },
-  /** Submissions naming one email address in a day: the cap that keeps the mail seam from relaying. */
-  submitPerEmail: { max: 30, windowMs: 24 * 3600_000 },
+  /**
+   * The same, from one browser key: a stranger with many addresses still has
+   * one key per browser. `private`: the key is the credential that reads, pays
+   * and cancels that browser's requests, so the log carries a hash of it, not it.
+   */
+  publicPerKey: { max: 20, windowMs: 15 * 60_000, private: true },
+  /**
+   * Submissions naming one email address in a day: the cap that keeps the
+   * mail seam from relaying. `private`: a customer's address is not ours to
+   * write into a third-party log because they submitted twice too often.
+   */
+  submitPerEmail: { max: 30, windowMs: 24 * 3600_000, private: true },
   /**
    * Wrong passwords from one address before the delay starts, and how it grows.
    * Per address, never per account: a lock on the account would let anyone
@@ -90,7 +109,8 @@ export class RateLimiter {
    * approaching the ceiling in normal use is visible before it is refused.
    */
   take(rule, id) {
-    const { max, windowMs } = this.rules[rule]
+    const spec = this.rules[rule]
+    const { max, windowMs } = spec
     const now = this.now()
     prune(this.windows, now)
     const key = `${rule}:${id}`
@@ -101,13 +121,14 @@ export class RateLimiter {
     }
     entry.count += 1
     const retryAfterSeconds = Math.max(1, Math.ceil((entry.resetAt - now) / 1000))
+    const label = logLabel(spec, id)
     if (entry.count > max) {
-      this.log(`rate limit: ${rule} refused for ${id} (${entry.count} in window, limit ${max}, retry in ${retryAfterSeconds}s)`)
+      this.log(`rate limit: ${rule} refused for ${label} (${entry.count} in window, limit ${max}, retry in ${retryAfterSeconds}s)`)
       return { allowed: false, retryAfterSeconds, count: entry.count }
     }
     if (!entry.warned && entry.count * 2 >= max) {
       entry.warned = true
-      this.log(`rate limit: ${rule} at ${entry.count}/${max} for ${id}`)
+      this.log(`rate limit: ${rule} at ${entry.count}/${max} for ${label}`)
     }
     return { allowed: true, retryAfterSeconds: 0, count: entry.count }
   }
