@@ -433,6 +433,38 @@ test('the owner sees every request with the tire it was quoted for', async t => 
   assert.equal(mine.request.customerPhone, '+16174108319')
 })
 
+test("the owner's row carries the supplier's stock and when it was last seen; the customer's carries no tire at all", async t => {
+  // Approval is the one human gate in the flow, and refreshes are monthly.
+  // The customer catalog strips stock and lastSeen by design (R16), so the
+  // owner was deciding against a tire it could not see the state of (#105).
+  const { inventory, quotes } = setup(t)
+  const { request } = quotes.submit(form())
+
+  const listed = quotes.listForOwner().find(row => row.request.id === request.id)
+  assert.equal(listed.tire.supplierStock, 12, 'the count the supplier last showed')
+  assert.equal(listed.tire.supplierLastSeen, '2026-09-05T15:00:00Z', 'when the supplier last showed it')
+  assert.equal(listed.tire.supplierActive, true)
+  assert.equal(listed.tire.price, 70, 'the quoted price is still the marked-up customer price, not the supplier cost')
+
+  // A complete refresh that no longer lists the tire retires it: stock is what
+  // it last was, and the row says the supplier has stopped listing it.
+  inventory.refreshSize(SIZE, [tire('giga-b', { name: 'Replacement' })])
+  const retired = quotes.listForOwner().find(row => row.request.id === request.id)
+  assert.equal(retired.tire.supplierActive, false)
+  assert.equal(retired.tire.supplierStock, 12)
+  assert.equal(retired.tire.name, 'Test Touring', 'the tire that was quoted is still named')
+
+  // A supplier that shows none in stock says so, as a number the card can warn on.
+  inventory.refreshSize(SIZE, [tire('giga-a', { inStock: false, source: { ...tire().source, stock: 0 } })])
+  assert.equal(quotes.listForOwner().find(row => row.request.id === request.id).tire.supplierStock, 0)
+
+  // The customer's shapes carry no tire object, so nothing here can leak that way.
+  assert.equal('tire' in quotes.get(request.id), false)
+  assert.equal('tire' in quotes.listForCustomer(KEY)[0], false)
+  // Nor does the owner row's tire carry the supplier's URL, SKU or list price.
+  assert.deepEqual(Object.keys(listed.tire).sort(), ['id', 'name', 'price', 'size', 'supplierActive', 'supplierLastSeen', 'supplierStock'])
+})
+
 test('a tire that has since left the catalog still shows what was quoted', async t => {
   // The owner is reviewing a decision made earlier. A blank where the tire was
   // hides the one fact that explains the row.
