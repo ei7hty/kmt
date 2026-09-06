@@ -167,7 +167,7 @@ test('the shipped robots.txt keeps the owner and customer screens out of search 
 test('the shipped sitemap lists only pages meant for an index, none of which 404', () => {
   const sitemap = readFileSync(path.join(import.meta.dirname, '..', 'public', 'sitemap.xml'), 'utf8')
   const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1])
-  assert.deepEqual(locs, ['https://kensmobiletire.com/'], '/privacy joins when it exists on the site')
+  assert.deepEqual(locs, ['https://kensmobiletire.com/', 'https://kensmobiletire.com/privacy'], 'the customer flow and the privacy notice, never a page that belongs to one customer')
   assert.equal(TYPES['.xml'], 'application/xml; charset=utf-8', 'and it is served as XML, not bytes')
 })
 
