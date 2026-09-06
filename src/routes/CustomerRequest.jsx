@@ -32,6 +32,16 @@ const FITMENT_GUIDES = {
   },
 }
 
+/**
+ * How many tires the tire step shows before asking.
+ *
+ * A real size holds a hundred supplier tires, all offered at the markup price,
+ * and a customer standing at their car is served by the cheap end of that list,
+ * not the whole of it. Twelve is a screen or two on a phone. Nothing is taken
+ * off the menu: the rest is one tap away, and every tire stays selectable.
+ */
+const TIRE_PREVIEW_COUNT = 12
+
 function CustomerRequest({ navigate }) {
   const [formData, setFormData] = useState({
     tireSize: '',
@@ -55,6 +65,7 @@ function CustomerRequest({ navigate }) {
   const [fitment, setFitment] = useState({ width: '', ratio: '', diameter: '', zip: '' })
   const [fitmentStage, setFitmentStage] = useState('width')
   const [fitmentSearch, setFitmentSearch] = useState('')
+  const [showAllTires, setShowAllTires] = useState(false)
 
   // The static catalog is the starting value rather than an empty list, so the
   // first paint is a working selector: if the backend answers, its rows replace
@@ -107,6 +118,7 @@ function CustomerRequest({ navigate }) {
 
   const handleSizeSelect = (size) => {
     setFormData(previous => ({ ...previous, tireSize: size, tireSelection: '' }))
+    setShowAllTires(false)
     setStepError('')
   }
 
@@ -205,6 +217,7 @@ function CustomerRequest({ navigate }) {
       setFitment({ width: '', ratio: '', diameter: '', zip: '' })
       setFitmentStage('width')
       setFitmentSearch('')
+      setShowAllTires(false)
       setValidationErrors({})
       setStepError('')
       setOrderStep(1)
@@ -223,6 +236,17 @@ function CustomerRequest({ navigate }) {
 
   const matchingTires = tires.filter(tire => tire.size === formData.tireSize)
   const selectedTire = tires.find(tire => tire.id === formData.tireSelection)
+  // In-stock first, cheapest first; out-of-stock tires trail, since they are
+  // shown but cannot be chosen. Only order and initial visibility change here
+  // -- what is selectable does not.
+  const orderedTires = [...matchingTires].sort((a, b) =>
+    a.inStock === b.inStock ? a.price - b.price : a.inStock ? -1 : 1)
+  const previewTires = orderedTires.slice(0, TIRE_PREVIEW_COUNT)
+  // A tire already chosen is never hidden behind the control, whatever the list
+  // does after the live catalog answers.
+  const tireListExpanded = showAllTires || (selectedTire !== undefined && !previewTires.includes(selectedTire))
+  const visibleTires = tireListExpanded ? orderedTires : previewTires
+  const hiddenTireCount = orderedTires.length - visibleTires.length
   return (
     <div className="min-h-screen customer-shell">
       <nav className="site-nav"><button className="brand-mark" onClick={() => navigate('/')} aria-label="KMT home"><img src="/kmtlogo.jpg" alt="Ken's Mobile Tire" /></button><div className="site-links"><button className="active" onClick={() => document.getElementById('order')?.scrollIntoView({ behavior: 'smooth' })}>Order Tires</button><button onClick={() => document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' })}>Services</button><button onClick={() => navigate('/status')}>My Quote</button></div><a className="phone-link" href="tel:6174108319">Call (617) 410-8319</a></nav>
@@ -231,7 +255,7 @@ function CustomerRequest({ navigate }) {
       <main className="order-section" id="order"><div className="section-heading"><p className="eyebrow">SHOP KMT</p><h2>Order tires online</h2><p>Find the right fit for your vehicle and we&apos;ll handle the rest.</p>{catalogLoading && <p className="panel-note" role="status">Checking today&apos;s prices…</p>}</div><div className="order-steps" aria-label="Order progress">{['Tire size', 'Your vehicle', 'Mobile service'].map((label, index) => <div className={orderStep === index + 1 ? 'order-step current' : orderStep > index + 1 ? 'order-step complete' : 'order-step'} key={label}><span>{index + 1}</span><b>{label}</b></div>)}</div>
         <form noValidate onSubmit={handleFormSubmit} className="order-form">
           {orderStep === 1 && <div className="fitment-modal"><div className="fitment-heading"><span className="fitment-wheel">◉</span><h3>Select your tire size</h3></div><div className="fitment-progress"><div className={fitmentStage === 'width' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Width</b><span /></div><div className={fitmentStage === 'ratio' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Ratio</b><span /></div><div className={fitmentStage === 'diameter' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Diameter</b><span /></div><div className={fitmentStage === 'zip' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Zip code</b><span /></div></div><div className="fitment-visual"><img className="fitment-guide" src={(FITMENT_GUIDES[fitmentStage] ?? FITMENT_GUIDES.width).src} alt={(FITMENT_GUIDES[fitmentStage] ?? FITMENT_GUIDES.width).alt} /></div><button type="button" className="fitment-back" onClick={goBackFitment} disabled={fitmentStage === 'width'}>← Back</button><div className="fitment-controls">{fitmentStage === 'zip' ? <div className="fitment-zip"><label htmlFor="fitmentZip">Where will we service you?</label><input id="fitmentZip" value={fitment.zip} onChange={event => setFitment(previous => ({ ...previous, zip: event.target.value }))} placeholder="Enter ZIP code (optional)" inputMode="numeric" /></div> : <><div className="fitment-search"><span>⌕</span><input value={fitmentSearch} onChange={event => setFitmentSearch(event.target.value)} placeholder="Search" aria-label="Search tire size" /></div><div className="fitment-options">{(fitmentStage === 'width' ? widthOptions : fitmentStage === 'ratio' ? ratioOptions : diameterOptions).filter(value => value.includes(fitmentSearch.trim())).map(value => <button type="button" className="fitment-option" key={value} onClick={() => selectFitmentPart(fitmentStage, value)}>{value}</button>)}</div></>}</div><div className="fitment-footer"><span>{formData.tireSize ? `Selected: ${formData.tireSize}` : 'Select width, ratio, and diameter'}</span><button type="button" className="primary-action" disabled={!formData.tireSize} onClick={continueFromSize}>Continue to tires <span>→</span></button></div></div>}
-          {orderStep === 2 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(1)}>← Change size</button><p className="panel-kicker">STEP 02 / YOUR TIRES</p><h3>Your tires. Your vehicle.</h3><p className="panel-note">Choose from tires in size <strong>{formData.tireSize}</strong>, then tell us what you drive.</p><VehicleDetails vehicle={vehicle} onVehicleChange={handleVehicleChange} value={formData.vehicleInfo} onChange={handleFormChange} /><h4 className="tire-list-heading">Choose your tire</h4>{matchingTires.length === 0 ? <div className="tire-empty"><p className="tire-empty-title">We don&apos;t stock {formData.tireSize} for online ordering.</p><p className="tire-empty-body">We can still source it. Call us and we&apos;ll sort it out, or pick a different size.</p><div className="tire-empty-actions"><a className="btn btn-primary" href="tel:6174108319">Call (617) 410-8319</a><button type="button" className="btn btn-neutral" onClick={() => { setOrderStep(1); setFitmentStage('width'); setFitment({ width: '', ratio: '', diameter: '', zip: '' }); setFormData(previous => ({ ...previous, tireSize: '', tireSelection: '' })); setStepError('') }}>Choose another size</button></div></div> : <div className="tire-options">{matchingTires.map(tire => <button type="button" className={formData.tireSelection === tire.id ? 'tire-option selected' : 'tire-option'} aria-pressed={formData.tireSelection === tire.id} onClick={() => { setFormData(previous => ({ ...previous, tireSelection: tire.id })); setStepError('') }} key={tire.id} disabled={!tire.inStock}><span className="tire-art">◉</span><span className="tire-info"><strong>{tire.name}</strong><small>{tire.description}</small><small>{tire.inStock ? 'In stock' : 'Currently unavailable'}</small></span><b>${tire.price.toFixed(2)}<i>per tire</i></b></button>)}</div>}<button type="button" className="primary-action" onClick={continueFromVehicle}>Continue to mobile service <span>→</span></button></div>}
+          {orderStep === 2 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(1)}>← Change size</button><p className="panel-kicker">STEP 02 / YOUR TIRES</p><h3>Your tires. Your vehicle.</h3><p className="panel-note">Choose from tires in size <strong>{formData.tireSize}</strong>, then tell us what you drive.</p><VehicleDetails vehicle={vehicle} onVehicleChange={handleVehicleChange} value={formData.vehicleInfo} onChange={handleFormChange} /><h4 className="tire-list-heading">Choose your tire</h4>{matchingTires.length === 0 ? <div className="tire-empty"><p className="tire-empty-title">We don&apos;t stock {formData.tireSize} for online ordering.</p><p className="tire-empty-body">We can still source it. Call us and we&apos;ll sort it out, or pick a different size.</p><div className="tire-empty-actions"><a className="btn btn-primary" href="tel:6174108319">Call (617) 410-8319</a><button type="button" className="btn btn-neutral" onClick={() => { setOrderStep(1); setFitmentStage('width'); setFitment({ width: '', ratio: '', diameter: '', zip: '' }); setFormData(previous => ({ ...previous, tireSize: '', tireSelection: '' })); setStepError('') }}>Choose another size</button></div></div> : <div className="tire-options">{visibleTires.map(tire => <button type="button" className={formData.tireSelection === tire.id ? 'tire-option selected' : 'tire-option'} aria-pressed={formData.tireSelection === tire.id} onClick={() => { setFormData(previous => ({ ...previous, tireSelection: tire.id })); setStepError('') }} key={tire.id} disabled={!tire.inStock}><span className="tire-art">◉</span><span className="tire-info"><strong>{tire.name}</strong><small>{tire.description}</small><small>{tire.inStock ? 'In stock' : 'Currently unavailable'}</small></span><b>${tire.price.toFixed(2)}<i>per tire</i></b></button>)}</div>}{hiddenTireCount > 0 && <button type="button" className="btn btn-neutral tire-show-all" onClick={() => setShowAllTires(true)}>Show all {orderedTires.length} tires</button>}<button type="button" className="primary-action" onClick={continueFromVehicle}>Continue to mobile service <span>→</span></button></div>}
           {orderStep === 3 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(2)}>← Back to tire selection</button><p className="panel-kicker">STEP 03 / WE COME TO YOU</p><h3>Let’s bring the shop to you.</h3><p className="panel-note">Tell us where to find your vehicle and when you’d prefer service.</p><div className="order-summary-line"><span>{selectedTire?.name} · {formData.tireSize}</span><b>{formData.vehicleInfo}</b></div><ServiceDetails formData={formData} onChange={handleFormChange} errors={validationErrors} /><p className="quote-reassurance">No payment now. Ken reviews your request before you pay.</p><button type="submit" className="primary-action" disabled={submitting}>{submitting ? 'Sending…' : <>Request my quote <span>→</span></>}</button></div>}
           {stepError && <p className="step-error" role="alert">{stepError}</p>}
         </form>
