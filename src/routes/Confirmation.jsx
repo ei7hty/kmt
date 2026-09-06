@@ -102,7 +102,7 @@ function Confirmation({ navigate }) {
     const outdated = state.kind === 'missing'
     panel = <>
       <p className="eyebrow">{outdated ? 'OUT OF DATE' : 'NOT FOUND'}</p>
-      <h1 className="confirmation-heading">{outdated ? 'This link is out of date' : 'We could not find that request'}</h1>
+      <h1 className="confirmation-heading">{outdated ? 'This link is out of date' : "That request wasn't found"}</h1>
       <p className="status-note status-note-bad" role="alert">
         {outdated
           ? 'This confirmation link is from an older version and no longer points at a request. Your quotes are listed on the status page.'
