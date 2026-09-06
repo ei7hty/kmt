@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `catalog-fetch-one-size` | LEAD UI ENGINEER | #154 frontend half: the customer flow fetches one size after it is chosen (`src/data/liveCatalog.js`, `src/routes/CustomerRequest.jsx`) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
