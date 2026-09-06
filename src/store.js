@@ -150,3 +150,9 @@ export async function actOnQuote(requestId, action, version, reason) {
   })
 }
 
+/** Every message the app has tried to send, or would have, newest first. */
+export async function ownerOutbox() {
+  const data = await call('/api/owner/outbox')
+  return { provider: data.provider ?? 'none', messages: data.messages ?? [] }
+}
+

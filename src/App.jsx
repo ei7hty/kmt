@@ -4,6 +4,7 @@ import './RequestFlow.css'
 import OwnerInventory from './owner/OwnerInventory.jsx'
 import CustomerRequest from './routes/CustomerRequest.jsx'
 import QuoteRequests from './routes/QuoteRequests.jsx'
+import Outbox from './routes/Outbox.jsx'
 import Status from './routes/Status.jsx'
 import Confirmation from './routes/Confirmation.jsx'
 import NotFound from './routes/NotFound.jsx'
@@ -57,6 +58,8 @@ function App() {
   if (route === '/owner/quotes') {
     return <QuoteRequests navigate={navigate} ownerVersion={ownerVersion} setOwnerVersion={setOwnerVersion} />
   }
+
+  if (route === '/owner/outbox') return <Outbox navigate={navigate} />
 
   if (route === '/confirmation') {
     return <Confirmation navigate={navigate} />
