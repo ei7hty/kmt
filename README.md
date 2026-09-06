@@ -222,10 +222,13 @@ An import writes through the same door a supplier refresh uses: owner prices,
 choices and notes are untouched, and nothing is ever deleted. A dry run reports
 new, changed and unchanged tires per size and writes nothing. By default a
 size is treated as a **partial** view, because the scraper keeps only the
-cheapest few per size, so tires the file does not mention stay listed. Pass
-`--complete` only for a scrape run with `--limit 0` over every page: then
-tires missing from the file are marked no longer listed, as a refresh would,
-with their offers kept. The result shows on `/owner` like any refresh.
+cheapest few per size, so tires the file does not mention stay listed.
+`--complete` marks tires missing from the file as no longer listed, as a
+refresh would, with their offers kept. The scraper records per size whether it
+read everything (`--limit 0`, every page), and both the CLI and the server
+refuse `--complete` for any size the file does not record as read in full,
+naming the size; a snapshot from before that record existed counts as
+partial. The result shows on `/owner` like any refresh.
 
 ```bash
 npm run import-tires -- --help
@@ -345,6 +348,7 @@ the scraper from a home connection and treat the host as serving-only.
 | `scripts/import-tires.mjs` | Pushes a snapshot into a running owner server, local or hosted. |
 | `scripts/giga-tires.mjs` | Parsing and normalising one supplier listing page. Pure, so it can be tested on saved HTML. |
 | `scripts/browser-fetch.mjs` | Fetching pages through a real browser. |
+| `scripts/worktree.mjs` | Adds and removes agent worktrees under `.worktrees/`, linking the shared `node_modules` and unlinking it before removal. |
 | `.forge/` | Project record: requirements, roadmap, decisions, task state, the owner-backend design, the audit scripts, and the protocol for agents sharing this repo. |
 | `Dockerfile`, `fly.toml`, `.github/workflows/fly-deploy.yml` | Container image, Fly config, CI. |
 | `vercel.json` | Redirects the old Vercel deployment to Fly. |
