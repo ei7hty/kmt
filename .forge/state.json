@@ -570,14 +570,16 @@
       "title": "Owner endpoints to list, approve and reject quotes",
       "description": "Under /api/owner/, session-gated like the rest of createApi: GET /api/owner/requests -> every request with its quote, newest first, with the same fields the owner screen shows today (vehicle, tire name and size resolved from the catalog the quote was drafted against, location, date, draft total, exception reasons, status). POST /api/owner/quotes/:id/approve and /reject with {version}; a stale version returns 409 like PUT /api/owner/offers/:id, and approving or rejecting anything but a draft is refused. Do not add price editing; it is an open question for the owner in requirements.md. Tests: approve moves draft to approved and the customer's GET /api/requests/:id sees it; reject likewise; 401 without a session on the hosted server; 409 on a stale version; the customer-facing endpoints from t29 are unchanged by this task (re-run their tests).",
       "milestoneId": "m9",
-      "status": "todo",
+      "status": "done",
       "priority": "medium",
       "dependsOn": [
         "t29"
       ],
-      "notes": [],
+      "notes": [
+        "Shipped in PR #29 and merged 2026-09-05: GET /api/owner/requests plus POST /api/owner/quotes/:id/approve and /reject inside createApi, session-gated, with the optimistic version saveOffer uses (409 on stale), refusing anything but a draft, and no price editing."
+      ],
       "createdAt": "2026-09-05T21:22:39.887Z",
-      "updatedAt": "2026-09-05T21:22:39.887Z"
+      "updatedAt": "2026-09-05T22:58:33.890Z"
     },
     {
       "id": "t31",

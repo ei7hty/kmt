@@ -15,8 +15,12 @@
  * how it can gate a change that moves it.
  */
 
-/** Where the owner password comes from, when the server is a hosted one. */
-const OWNER_PASSWORD = process.env.KMT_OWNER_PASSWORD || ''
+/**
+ * The owner password, read when it is needed rather than when this module
+ * loads: a caller that sets the variable after importing would otherwise get
+ * an empty string and a confusing failure about a password it did set.
+ */
+const ownerPassword = () => process.env.KMT_OWNER_PASSWORD || ''
 
 /**
  * Sign in if the server asks, and say nothing if it does not.
@@ -26,15 +30,24 @@ const OWNER_PASSWORD = process.env.KMT_OWNER_PASSWORD || ''
  * the hosted shape and a developer runs the local one.
  */
 export async function signInIfAsked(page) {
+  // Wait for the screen to decide what it is before asking whether it wants a
+  // password. The gate appears only after the screen's first call comes back
+  // 401, so checking immediately reads "no form" on a screen that is about to
+  // show one -- and the audit then waits for content that will never arrive.
+  await page
+    .waitForSelector('.oi-signin, .owner-content, .oi-results, .oi-error', { timeout: 15000 })
+    .catch(() => {})
+
   const form = page.locator('.oi-signin')
   if (!(await form.count())) return false
-  if (!OWNER_PASSWORD) {
+  const password = ownerPassword()
+  if (!password) {
     throw new Error(
       'The owner screen asked for a password and KMT_OWNER_PASSWORD is not set. ' +
       'Start the server with one and pass it to the audit.',
     )
   }
-  await page.fill('#owner-password', OWNER_PASSWORD)
+  await page.fill('#owner-password', password)
   await page.click('button:has-text("Sign in")')
   await page.waitForSelector('.oi-signin', { state: 'detached', timeout: 15000 })
   return true
@@ -53,6 +66,18 @@ export async function openOwnerQuotes(page, { from = 'customer' } = {}) {
   // The list arrives from the server on a backend build and from this browser
   // on a store build; either way it is on screen before anything is asserted.
   await page.waitForSelector('.owner-request, .panel', { timeout: 15000 })
+}
+
+/**
+ * Land on /status and wait for it to have said something.
+ *
+ * The screen used to render straight from the browser's own storage, so
+ * whatever it was going to show was there the moment the URL changed. It asks a
+ * server now. Asserting before the answer arrives reads as "no Pay action" on a
+ * quote that has one -- a false red that says nothing about the app.
+ */
+export async function waitForStatus(page) {
+  await page.waitForSelector('.owner-request, .panel, .status-note', { timeout: 15000 })
 }
 
 /**
