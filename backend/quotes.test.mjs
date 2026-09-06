@@ -1004,6 +1004,8 @@ test('the Host guard refuses a strange host, and never the health check', async 
   const allowed = ['kmt.fly.dev']
 
   assert.equal(isHostAllowed('kmt.fly.dev', '/', allowed), true)
+  assert.equal(isHostAllowed('KMT.Fly.Dev', '/', allowed), true, 'hostnames are case-insensitive, as the redirect already treats them')
+  assert.equal(isHostAllowed('kensmobiletire.com', '/', ['KensMobileTire.com']), true, 'in the allow-list too')
   assert.equal(isHostAllowed('evil.example.com', '/', allowed), false)
   assert.equal(isHostAllowed('evil.example.com', '/api/catalog', allowed), false,
     'the exemption is for the health path alone')

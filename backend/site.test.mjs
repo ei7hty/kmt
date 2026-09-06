@@ -1,7 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { CANONICAL_EXEMPT, applySecurityHeaders, canonicalRedirectTarget, isSecureRequest, parseRequestUrl, securityHeaders } from './site.mjs'
+import { CANONICAL_EXEMPT, applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, isSecureRequest, parseRequestUrl, securityHeaders } from './site.mjs'
+
+test('a canonical name the allow-list refuses is a refusal to boot, not a healthy-looking outage', () => {
+  // The canonical name would answer 403 while every other name 301s to it,
+  // and /api/health, exempt from both, would keep the checker green.
+  assert.throws(
+    () => assertCanonicalIsAllowed({ canonicalHost: 'kensmobiletire.com', allowedHosts: ['kmt.fly.dev', 'www.kensmobiletire.com'] }),
+    /KMT_CANONICAL_HOST is kensmobiletire\.com but KMT_ALLOWED_HOSTS \(kmt\.fly\.dev, www\.kensmobiletire\.com\) does not include it/,
+  )
+  // The states the cutover passes through are all legal.
+  assert.doesNotThrow(() => assertCanonicalIsAllowed({ canonicalHost: '', allowedHosts: [] }), 'nothing set')
+  assert.doesNotThrow(() => assertCanonicalIsAllowed({ canonicalHost: '', allowedHosts: ['kmt.fly.dev'] }), 'allow-list only, step 1')
+  assert.doesNotThrow(() => assertCanonicalIsAllowed({ canonicalHost: 'kensmobiletire.com', allowedHosts: [] }), 'canonical only: every name serves, the t46-before-t52 state')
+  assert.doesNotThrow(() => assertCanonicalIsAllowed({ canonicalHost: 'kensmobiletire.com', allowedHosts: ['kmt.fly.dev', 'kensmobiletire.com'] }), 'both, agreeing: step 2')
+  assert.doesNotThrow(() => assertCanonicalIsAllowed({ canonicalHost: 'KensMobileTire.com', allowedHosts: ['kensmobiletire.com'] }), 'names are case-insensitive')
+})
 
 test('a double slash is a path, not a server fault', () => {
   // GET // answered 500 on production: new URL('//', base) reads it as a

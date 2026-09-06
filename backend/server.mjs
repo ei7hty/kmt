@@ -41,7 +41,7 @@ import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHost
 import { Quotes } from './quotes.mjs'
 import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
-import { applySecurityHeaders, canonicalRedirectTarget, parseRequestUrl } from './site.mjs'
+import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl } from './site.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
@@ -99,6 +99,14 @@ const allowedHosts = (process.env.KMT_ALLOWED_HOSTS || '')
 // The one switch for the domain cutover: set it and every other name answers
 // 301 to this one. site.mjs says what is exempt and why.
 const canonicalHost = (process.env.KMT_CANONICAL_HOST || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
+// A canonical name the allow-list refuses would be a healthy-looking outage;
+// site.mjs says why this is a crash instead.
+try {
+  assertCanonicalIsAllowed({ canonicalHost, allowedHosts })
+} catch (error) {
+  console.error(error.message)
+  process.exit(1)
+}
 
 /**
  * Serve one file out of dist, falling back to index.html.

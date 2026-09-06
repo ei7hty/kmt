@@ -155,7 +155,11 @@ export function createCatalogApi(inventory) {
 export function isHostAllowed(hostname, pathname, allowedHosts) {
   if (pathname === '/api/health') return true
   if (!allowedHosts.length) return true
-  return allowedHosts.includes(hostname)
+  // Hostnames are case-insensitive. Browsers lowercase them, so no customer
+  // meets this; a hand-typed curl or a monitor could, and the redirect
+  // already compares without case.
+  const wanted = (hostname || '').toLowerCase()
+  return allowedHosts.some(host => host.toLowerCase() === wanted)
 }
 
 /**

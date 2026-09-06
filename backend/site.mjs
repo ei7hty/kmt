@@ -61,6 +61,30 @@ export function canonicalRedirectTarget({ hostname, pathname, search = '', canon
 }
 
 /**
+ * Refuse to start when the canonical name is not one the server will serve.
+ *
+ * Set KMT_CANONICAL_HOST to a name KMT_ALLOWED_HOSTS does not contain and
+ * the canonical name answers 403 while every other name 301s to it: a total
+ * outage that reports itself healthy, because /api/health is exempt from
+ * both guards and the checker keeps passing. The cutover sets both by
+ * secret, in sequence, and a secret change restarts the machine outside a
+ * deploy, so nothing downstream would notice either. The same posture
+ * readAuthConfig takes for a bad password: a wrong secret is a visible
+ * crash loop in the platform's status rather than a healthy-looking 403.
+ * An empty allow-list stays legal; that is the state between t46 and the
+ * cutover, and it serves every name.
+ */
+export function assertCanonicalIsAllowed({ canonicalHost, allowedHosts }) {
+  if (!canonicalHost || !allowedHosts.length) return
+  if (allowedHosts.some(host => host.toLowerCase() === canonicalHost.toLowerCase())) return
+  throw new Error(
+    `KMT_CANONICAL_HOST is ${canonicalHost} but KMT_ALLOWED_HOSTS (${allowedHosts.join(', ')}) does not include it. ` +
+    'Every other name would redirect to a name this server refuses, and the health check would still pass. ' +
+    'Add it to KMT_ALLOWED_HOSTS, or unset KMT_CANONICAL_HOST.',
+  )
+}
+
+/**
  * The browser-facing security headers, on every response (#67).
  *
  * The policy is written against what the built page actually does: one
