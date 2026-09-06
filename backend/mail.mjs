@@ -42,6 +42,13 @@ export const addressLabel = address => logLabel(PRIVATE, String(address || '').t
  * mode and is fine. The credential is `KMT_MAIL_SMTP_PASSWORD`: an App
  * Password or a relay credential, set by the user as a Fly secret, never
  * read by anyone else.
+ *
+ * `KMT_MAIL_FROM` must be a mailbox that actually authenticates on the
+ * sending server. A domain address sent through another provider's SMTP
+ * before the domain's SPF and DKIM exist fails authentication on the
+ * receiving side, silently: the server accepts it, the outbox marks it
+ * sent, and it is filed as spam. The message below says so at the moment
+ * the value is typed; nothing here can check it.
  */
 export function readMailConfig(env = process.env) {
   const host = (env.KMT_MAIL_SMTP_HOST || '').trim()
@@ -53,7 +60,7 @@ export function readMailConfig(env = process.env) {
   const ownerName = (env.KMT_OWNER_NAME || 'Ken\'s Mobile Tire').trim()
   const configured = Boolean(host || user || password)
   if (configured) {
-    if (!from) throw new Error('SMTP is configured but KMT_MAIL_FROM is not. Set the mailbox on the domain that mail is sent from, e.g. quotes@kensmobiletire.com.')
+    if (!from) throw new Error('SMTP is configured but KMT_MAIL_FROM is not. Set it to a mailbox that authenticates on the sending server (for Gmail, the KMT_MAIL_SMTP_USER mailbox). Until the domain has SPF and DKIM, a domain address sent through another provider fails authentication silently: filed as spam while the outbox says sent.')
     if (!ownerEmail) throw new Error('SMTP is configured but KMT_OWNER_EMAIL is not. Set the address the owner reads and customers reply to.')
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`KMT_MAIL_SMTP_PORT must be a port number, got ${JSON.stringify(env.KMT_MAIL_SMTP_PORT)}.`)
     if ((user && !password) || (!user && password)) throw new Error('KMT_MAIL_SMTP_USER and KMT_MAIL_SMTP_PASSWORD go together: set both for an authenticated mailbox or relay, or neither for an IP-allowlisted relay.')

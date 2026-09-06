@@ -47,7 +47,9 @@ test('the configuration is the environment: nothing set means the outbox-only mo
   const mailbox = readMailConfig({ KMT_MAIL_SMTP_HOST: 'smtp.gmail.com', KMT_MAIL_SMTP_USER: 'q@x.com', KMT_MAIL_SMTP_PASSWORD: 'app', KMT_MAIL_FROM: 'q@x.com', KMT_OWNER_EMAIL: 'o@x.com' })
   assert.equal(mailbox.provider, 'smtp')
   assert.equal(mailbox.user, 'q@x.com')
-  assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_HOST: 'h', KMT_OWNER_EMAIL: 'o@x.com' }), /KMT_MAIL_FROM/)
+  assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_HOST: 'h', KMT_OWNER_EMAIL: 'o@x.com' }), /KMT_MAIL_FROM.*authenticates on the sending server/)
+  assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_HOST: 'h', KMT_OWNER_EMAIL: 'o@x.com' }), /SPF and DKIM/, 'the trap is named where the value is typed')
+  try { readMailConfig({ KMT_MAIL_SMTP_HOST: 'h', KMT_OWNER_EMAIL: 'o@x.com' }) } catch (error) { assert.doesNotMatch(error.message, /@kensmobiletire\.com/, 'and no domain address is offered as an example') }
   assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_HOST: 'h', KMT_MAIL_FROM: 'q@x.com' }), /KMT_OWNER_EMAIL/)
   assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_USER: 'u', KMT_MAIL_FROM: 'q@x.com', KMT_OWNER_EMAIL: 'o@x.com' }), /go together/)
   assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_HOST: 'h', KMT_MAIL_SMTP_PORT: 'lots', KMT_MAIL_FROM: 'q@x.com', KMT_OWNER_EMAIL: 'o@x.com' }), /port number/)
