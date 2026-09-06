@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import { cleanTireFor, expandTireList, freshPage, openOwnerQuotes, waitForStatus } from './audit-ui.mjs';
+import { MOBILE_SERVICE_FEE } from '../src/pricing.js';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
 
@@ -12,7 +13,7 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 42;
+const EXPECTED_CHECKS = 44;
 
 let passed = 0;
 let failed = 0;
@@ -324,6 +325,56 @@ async function main() {
       }
     } else {
       fail('/owner: no visible Reject action found to test the rejected-quote path.');
+    }
+
+    // 8. Quantity control (#113): the tire line multiplies by quantity, the
+    //    mobile-service fee does not -- "the visit costs the same whether it
+    //    fits one tire or four" (.forge/decisions.md). Nothing else in this
+    //    gate touches the quantity picker, so a regression here does not
+    //    throw or render oddly; it silently shows a customer a total they
+    //    read as a price they are agreeing to.
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
+    await page.goto(BASE + '/');
+
+    const [qWidth, qRest] = CLEAN_TIRE.size.split('/');
+    const [qRatio, qDiameter] = qRest.split('R');
+    for (const value of [qWidth, qRatio, qDiameter]) {
+      await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
+    }
+    await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
+    await expandTireList(page);
+    await page.click(`.tire-option:has-text("${CLEAN_TIRE.tireName}")`, { timeout: 5000 });
+    await page.click('.quantity-options button:has-text("2")', { timeout: 5000 });
+
+    const setPriceText = (await page.locator('.tire-quantity-total b').first().textContent().catch(() => ''))?.trim();
+    const expectedSetPrice = `$${(CLEAN_TIRE.price * 2).toFixed(2)}`;
+    const setPriceDoubled = setPriceText === expectedSetPrice;
+
+    await page.locator('.manual-vehicle summary').click();
+    await page.fill('#vehicleInfo', '2020 Toyota Camry', { timeout: 5000 });
+    await page.click('button:has-text("Continue to mobile service")', { timeout: 5000 });
+    await page.fill('#location', '789 Demo Blvd', { timeout: 5000 });
+    await page.fill('#date', '2025-06-03', { timeout: 5000 });
+    await page.fill('#customerName', 'Jamie Rivera', { timeout: 5000 });
+    await page.fill('#customerEmail', 'jamie@example.com', { timeout: 5000 });
+    await page.click('button[type="submit"]', { timeout: 5000 });
+
+    const draftMsg = await page.locator('[role="status"]').first().textContent().catch(() => null);
+    const expectedDraftTotal = (CLEAN_TIRE.price * 2 + MOBILE_SERVICE_FEE).toFixed(2);
+    const draftMatches = draftMsg?.includes(`Draft quote total: $${expectedDraftTotal}`);
+
+    if (setPriceDoubled && draftMatches) {
+      ok(
+        `Quantity 2 on ${CLEAN_TIRE.tireName}: displayed set price doubles to ${expectedSetPrice}, and the ` +
+          `drafted total (\$${expectedDraftTotal}) is 2x the tire plus one un-multiplied service fee.`,
+      );
+    } else {
+      fail(
+        `Quantity 2 on ${CLEAN_TIRE.tireName}: expected set price ${expectedSetPrice} (got "${setPriceText}") and ` +
+          `drafted total including \$${expectedDraftTotal} (got message: "${draftMsg}"). A service fee that ` +
+          'multiplies with quantity, or a tire line that does not, would both surface here.',
+      );
     }
 
     await context.close();
