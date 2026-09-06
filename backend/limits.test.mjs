@@ -67,6 +67,12 @@ test('a private id is logged as a short hash, never as itself; an address is log
   assert.ok(logged.some(line => line.includes(`submitPerEmail refused for ${hash}`)), 'the same id is recognisable across lines by its hash')
   assert.ok(logged.some(line => line.includes('publicPerIp refused for 203.0.113.9')))
   assert.equal(logLabel(LIMITS.publicPerIp, '203.0.113.9'), '203.0.113.9')
+
+  // The label is keyed per process, not a bare digest: an address is
+  // low-entropy, so anyone holding the log and a guess could otherwise compute
+  // the prefix and confirm the guess. 'ffbe8cff' is sha256('victim@example.com').
+  assert.notEqual(hash, 'ffbe8cff', 'a bare SHA-256 prefix would confirm a guessed address')
+  assert.equal(logLabel(LIMITS.submitPerEmail, 'victim@example.com'), hash, 'stable within one process, which is all correlation needs')
 })
 
 test('the login throttle lets a few failures pass, then doubles the wait, and a success clears it', () => {
