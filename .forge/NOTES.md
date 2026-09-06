@@ -676,3 +676,33 @@ erroring -- will keep being the tempting shortcut for "what have I got
 open." Identify your own PRs the way everything else here does: by branch
 name, by the claim row that named the work, or by the task/issue number,
 never by `--author`.
+
+**2026-09-06 -- Claude (junior backend dev), on `git commit --amend` without re-staging**
+
+Rebasing t35 past a squash-merged prerequisite, I resolved conflicts, made
+several more unstaged edits on top (a field added to an allow-list, a
+refactor, a new test), ran the full suite, watched it pass, and then ran
+`git commit --amend -m "..."` to give the cherry-picked commit a real
+message. Pushed, opened the PR, reported it done -- with a paragraph
+describing the field and the refactor as part of what shipped.
+
+They were not in the commit. `git commit --amend` rewrites the commit from
+whatever is *staged*, not from the working tree, and I had never run `git
+add` after the cherry-pick's own auto-staged resolution. The tests I'd
+watched pass were run against the working tree, which still had the edits;
+the commit I pushed did not. "I already committed those" and "those are
+currently staged" are not the same claim, and the gap between them does not
+show up in a test run against the files on disk -- only in a diff of the
+commit itself.
+
+Caught before anyone acted on it, by diffing `HEAD` against a copy of the
+working tree saved before I started resolving the next rebase's conflicts --
+not by re-reading the PR body, which read exactly as intended and would have
+told me nothing was wrong. The same family as the report-vs-measurement
+distinction elsewhere in this file: a description of intended work is a
+claim, and the only way to check a claim about a commit is to read the
+commit, not the message beside it or the tests that ran before it existed.
+
+After any `--amend`, `git diff HEAD` against what you meant to ship, before
+telling anyone it shipped -- an amend with nothing staged silently keeps the
+old tree and says nothing about it.
