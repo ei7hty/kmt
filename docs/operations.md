@@ -402,3 +402,221 @@ reputation is slow to undo.
 - **The owner is asked to sign in repeatedly.** The cookie is not surviving the
   canonical host. Unset `KMT_CANONICAL_HOST` and raise it; it is a code
   question, not a DNS one.
+
+---
+
+# Operations: backups, restore, and what to do when it breaks
+
+The cutover above happens once. This half is for every day after it.
+
+Written 2026-09-06. **The restore drill in it has not been run.** Where a step
+says what to expect, that is what the code and Fly's documentation say it should
+do, not what someone watched happen -- and until the drill is performed once,
+that distinction is the whole point of this section. A backup nobody has
+restored is a hope.
+
+## What exists today, and what it is worth
+
+**Fly volume snapshots, taken automatically, kept five days.** That is the
+entire backup story right now. Three things follow from it that are easy to get
+wrong:
+
+- **Five days is not an archive.** A problem discovered on the sixth day has no
+  copy to go back to. Anything you want to keep longer has to leave Fly.
+- **They are incremental.** One taken a minute after another stores kilobytes.
+  A small snapshot is not a failed snapshot.
+- **They are on the same platform as the thing they protect.** They cover a
+  corrupted file, a bad migration, a deletion. They do not cover losing the
+  account.
+
+**What is in the file matters more than it used to.** After the supplier import,
+`/data/owner.sqlite` holds the catalogue *and* every customer request. The
+catalogue can be rebuilt -- it is a scrape, and `src/data/scraped-tires.json` is
+in the repository. The requests cannot be rebuilt from anything. When you are
+deciding how much a restore is worth, that is the number: not rows, but the
+requests nobody can reconstruct.
+
+## Taking a snapshot by hand
+
+Before anything risky -- a migration, a reset, a schema change, the cutover
+itself. `flyctl` is at `C:\Users\anune\.fly\bin\flyctl.exe` and is **not** on
+`PATH`.
+
+```bash
+flyctl volumes list -a kmt                    # the volume id
+flyctl volumes snapshots create <volume-id>   # take one now
+flyctl volumes snapshots list <volume-id>     # confirm it exists
+```
+
+**Proves it worked**: the new snapshot appears in the list with a recent
+timestamp. Watch its status rather than a summary line -- a poll that prints
+"complete" while the status still says `running` is a poll with a bug in it,
+which has happened here before.
+
+## The monthly copy that leaves Fly
+
+Snapshots expire in five days and live beside the thing they protect, so once a
+month take a copy off the platform. The user does this; no agent holds the
+credentials, and the file contains every customer's name, email, phone and
+address.
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \".backup /tmp/owner-backup.sqlite\""
+flyctl ssh sftp get /tmp/owner-backup.sqlite -a kmt
+flyctl ssh console -a kmt -C "rm /tmp/owner-backup.sqlite"
+```
+
+One command per `ssh console` call: nested quoting through `-C` breaks in ways
+that are hard to see. `Error: The handle is invalid` prints after every call on
+Windows and is a console quirk -- the output above it is real.
+
+**Use `.backup`, not `cp`.** The database is in WAL mode and is being written to
+while you copy. `cp` of a live SQLite file can produce a torn copy that opens
+fine and is missing the most recent writes; `.backup` takes a consistent
+snapshot of a live database. This is the difference between a backup and
+something shaped like one.
+
+**Where it goes matters as much as taking it.** It is the customer database:
+somewhere encrypted, not a shared drive, not an email attachment, not a folder
+that syncs to a machine other people use. And delete the copy on the server
+afterwards, as above -- leaving it in `/tmp` puts a second copy of every
+customer record inside the container.
+
+## The restore drill
+
+**This has not been run. Run it once on a quiet day.** The whole point is to
+discover the steps that are wrong while nothing is lost, and every instruction
+below is written to be checked rather than believed.
+
+It restores to a **new volume and a throwaway machine**. Nothing in this
+procedure touches the live volume, and no step of it is reversible-by-accident:
+a restore creates a new volume rather than overwriting one.
+
+1. **Pick a snapshot.**
+
+   ```bash
+   flyctl volumes list -a kmt
+   flyctl volumes snapshots list <volume-id>
+   ```
+
+   Note its id and its age. If the newest is older than you expect, stop and
+   find out why before restoring anything -- an unexplained gap in snapshots is
+   itself the finding.
+
+2. **Create a new volume from it.**
+
+   ```bash
+   flyctl volumes create kmt_restore_test --snapshot-id <snapshot-id> --region ewr --size 1 -a kmt
+   ```
+
+   A new volume, deliberately named so nobody mistakes it for the live one.
+
+3. **Get the file off it and onto your machine**, using a temporary machine with
+   that volume mounted. Fly's exact invocation for a one-off machine changes
+   between `flyctl` versions, so read `flyctl machine run --help` rather than
+   trusting a command written here months earlier. What you need is a container
+   with `kmt_restore_test` mounted at `/data` and a shell.
+
+   Then the same `.backup` and `sftp get` as the monthly copy, against the
+   restored volume.
+
+4. **Prove the file is sound**, with the read-only integrity check:
+
+   ```bash
+   node .forge/restore-integrity-check.mjs /path/to/restored.sqlite
+   ```
+
+   Fourteen checks, ending `14 OK, 0 FAIL -- 14 of 14 expected checks ran` and
+   a `SOUND:` line, exit code 0. Anything else is a `FAIL:` line and a
+   `NOT SOUND` verdict, exit non-zero. The row counts it prints vary per
+   restore, so they are counts to read rather than numbers to match.
+
+   It separates what it counts: `requests` and `quotes` are marked
+   **irreplaceable** -- nothing can reconstruct a customer's request -- while
+   the supplier tables are **rebuildable** from the scrape in the repository.
+   At 2am that distinction is the difference between a problem and an
+   inconvenience.
+
+   The script is PR #194 (DB ADMIN) and lands separately; until it does, this
+   step has no command and the drill stops at step 3.
+
+   This is the step that turns "the file came back" into "the data is sound".
+   It opens the database **read-only**, so it cannot repair the evidence it is
+   judging -- opening a damaged SQLite file read-write can silently checkpoint
+   and fix it, after which every subsequent run passes and nobody learns
+   anything.
+
+5. **Record what happened**, in `.forge/HANDOFF.md`: the snapshot id and age,
+   how long each step took, the check's output verbatim, and **every step whose
+   written instruction turned out to be wrong.** That last one is the reason to
+   do this at all. Then fix this document.
+
+6. **Destroy the test volume**, so it does not sit there costing money and
+   holding a second copy of every customer record:
+
+   ```bash
+   flyctl volumes destroy <restore-volume-id>
+   ```
+
+   And delete the local copy unless you have deliberately decided to keep it
+   somewhere encrypted.
+
+**What a successful drill proves**: that a snapshot can become a volume, that
+the file on it opens, that its schema matches what the code expects, and that
+the requests are there. **What it does not prove**: that the app runs against
+it. That is a bigger exercise and it is worth doing separately once, but a file
+that fails this check will not be fixed by pointing an app at it.
+
+## Rotating the secrets
+
+Both of these restart the machine. Set them one at a time and check the site in
+between, so you know which one broke it if something does.
+
+```bash
+flyctl secrets set KMT_OWNER_PASSWORD="<new password, 12+ characters>" -a kmt
+flyctl secrets set KMT_SESSION_SECRET="<new random value>" -a kmt
+```
+
+`KMT_OWNER_PASSWORD` is Ken's; tell him before, not after. Under twelve
+characters and the server refuses to boot, which presents as the machine failing
+to start rather than as a rejected password.
+
+`KMT_SESSION_SECRET` invalidates every existing owner session, which is the
+point when rotating it deliberately, and an unwelcome surprise when not. It also
+means Ken signs in again.
+
+**Proves it worked**: sign in on the owner screen with the new password. Do not
+assume -- a password that was set with the wrong quoting is a password nobody
+knows.
+
+## When it breaks
+
+**The site is down.** Read `flyctl status -a kmt` first: a machine that will not
+start is a different problem from a machine serving errors. If it will not start
+and a secret was changed recently, read the boot output -- `KMT_OWNER_PASSWORD`
+too short and the canonical-host contradiction both refuse to start and say so
+by name. If it is running and serving errors, `flyctl logs -a kmt`.
+
+**The machine reports unhealthy but the site works.** The health check reads
+`/api/health`, which asks SQLite a question. If the site serves pages and health
+fails, suspect the database rather than the web layer -- and check whether a
+supplier import is running: the import blocks the event loop for longer than the
+check's timeout, which is a known false alarm rather than a sick machine (see
+`fly.toml`).
+
+**A deploy went out and the site is wrong.** Roll back to the previous release
+rather than fixing forward under pressure. The image gate in CI means a deploy
+that could not boot should never have reached production, so a bad deploy that
+did is worth understanding afterwards -- but afterwards.
+
+**The database is corrupt, or data is missing.** Stop writing to it. Take a
+snapshot immediately -- even of the damaged file, because it is evidence and
+because the five-day window is running. Then restore to a new volume by the
+drill above and compare, rather than repairing the live file in place.
+
+**The supplier is blocking the scraper.** Not an outage. The catalogue in the
+database is what customers see and it does not go away when a scrape fails; see
+`docs/supplier-refresh.md`.
+
+**In every case, before acting: take a snapshot.** It costs seconds and
+kilobytes, and it is the difference between one problem and two.
