@@ -50,7 +50,7 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 51;
+const EXPECTED_CHECKS = 53;
 
 let passed = 0;
 let failed = 0;
@@ -175,6 +175,26 @@ function checkStructuredData(html, canonicalHost) {
   }
   if (!data.telephone) return { ok: false, data, reason: 'no telephone' };
   return { ok: true, data, reason: `${types.join(', ')}, ${data.name}` };
+}
+
+/**
+ * The canonical tag, which src/App.jsx sets by JavaScript because index.html
+ * is one static shell for every route and cannot carry two pages' worth of
+ * `<link rel="canonical">`. Google documents exactly this as the accepted
+ * pattern for a page that cannot set the tag in its own HTML. A page-based
+ * check rather than a `fetch()` of raw HTML, because the tag does not exist
+ * until the route's effect has run.
+ */
+async function checkCanonicalTag(page, expectedHref) {
+  await page.waitForSelector('link[rel="canonical"]', { timeout: 5000 }).catch(() => {});
+  const hrefs = await page.locator('link[rel="canonical"]')
+    .evaluateAll(links => links.map(link => link.getAttribute('href')));
+  if (hrefs.length === 0) return { ok: false, reason: 'no link rel="canonical" found' };
+  if (hrefs.length > 1) {
+    return { ok: false, reason: `${hrefs.length} canonical tags found, expected exactly one: ${JSON.stringify(hrefs)}` };
+  }
+  if (hrefs[0] !== expectedHref) return { ok: false, reason: `href is ${hrefs[0]}, expected ${expectedHref}` };
+  return { ok: true, reason: '' };
 }
 
 /**
@@ -348,6 +368,17 @@ async function main() {
     check(home?.status() === 200, '/ answers 200', `got ${home?.status()}`);
     check(await page.locator('.fitment-option').first().isVisible().catch(() => false),
       '/ renders the size selector');
+
+    // 4b. The two pages the sitemap lists each carry exactly one canonical
+    //     tag naming themselves, not the other, and not whichever host is
+    //     answering this request (see checkCanonicalTag above).
+    const homeCanonical = await checkCanonicalTag(page, `https://${CANONICAL_HOST}/`);
+    check(homeCanonical.ok, '/ carries exactly one canonical tag naming itself', homeCanonical.reason);
+
+    await page.goto(`${BASE}/privacy`, { waitUntil: 'domcontentloaded' });
+    const privacyCanonical = await checkCanonicalTag(page, `https://${CANONICAL_HOST}/privacy`);
+    check(privacyCanonical.ok, '/privacy carries exactly one canonical tag naming itself, not /',
+      privacyCanonical.reason);
 
     // 5. Hard navigation to each route returns the app, not a 404. This is the
     //    SPA fallback, it is server configuration rather than app code, and it
