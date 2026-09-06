@@ -45,6 +45,13 @@ Three things that make this safe to build on, each checked rather than assumed:
   report must never read the redactable columns anyway** (see the rule below).
 - **The row is per event, not per state**, so nothing overwrites a timestamp.
 
+**Worth keeping from how this was nearly missed.** The refusal claim in the
+proposal was checked by the product owner because it was load-bearing for an
+interesting decision. The `updated_at` claim was not, because it sounded
+routine — and **the routine-sounding claim was the broken one.** Scrutiny
+follows what is interesting, and a wrong premise that nobody finds interesting
+travels further than a contested one. The two headline metrics rested on it.
+
 ## The four questions, in the order the product owner wants them
 
 ### 1. How long a customer waits — the product's actual promise
@@ -88,6 +95,27 @@ three above; on its own it is the least interesting number here.
 
 ## Rules for whoever builds it
 
+- **Confirm the outbox rows exist before building on them.** Everything above
+  about the outbox was established by *reading* `api.mjs`, `server.mjs` and
+  `outbox.mjs` — it is a code-reading claim, not a measurement. Nobody has
+  looked at a real database and seen a `quote-sent` row. **This is the
+  assumption most likely to be wrong, and it is cheapest to test first.**
+
+  **Actual rows, on a server that has taken a real request — not the schema.**
+  Confirming the table exists satisfies nothing. `backend/inquiries.mjs` is the
+  case to keep in mind: a complete, tested module imported by nothing but its
+  own test file — not by `server.mjs`, `dev.mjs` or `api.mjs` — so every line
+  reads correctly and its table is never created in production at all. A
+  `sqlite_master` query would have agreed with the code and both would have
+  been describing something that does not run.
+
+  If the rows are not there in the shape this document assumes, **that is a
+  finding that stops the build, not something to work around.**
+- **Prove it against a fixture, not against production.** The product owner's
+  note, and the right one: it is a read-only report, so build a database with a
+  known shape where the answers are known in advance and assert on them.
+  Eyeballing production numbers proves nothing — nobody can check them, and a
+  report that is confidently wrong looks exactly like a report that is right.
 - **Read-only.** No new columns, no new writes, no migration, no dependency.
 - **Never read the personal columns.** This report needs `created_at`, `status`,
   `type`, and the two exception fields. It has no business touching names,
