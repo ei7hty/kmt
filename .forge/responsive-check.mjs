@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { CLEAN_TIRE, EXCEPTION_TIRE, freshPage, openOwnerQuotes, submitRequest } from './audit-ui.mjs';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4173';
 const VIEWPORTS = [
@@ -12,14 +13,12 @@ async function checkOverflow(page) {
     const scrollWidth = document.documentElement.scrollWidth;
     const overflowing = [];
     if (scrollWidth > docWidth + 1) {
-      // find elements wider than viewport
-      const all = document.querySelectorAll('*');
-      for (const el of all) {
+      for (const el of document.querySelectorAll('body *')) {
         const rect = el.getBoundingClientRect();
-        if (rect.right > docWidth + 1 || rect.width > docWidth + 1) {
+        if (rect.width > 0 && rect.right > docWidth + 1) {
           overflowing.push({
-            tag: el.tagName,
-            cls: el.className && el.className.toString().slice(0, 80),
+            tag: el.tagName.toLowerCase(),
+            cls: (el.className || '').toString().split(' ').filter(Boolean).slice(0, 3).join('.'),
             right: Math.round(rect.right),
             width: Math.round(rect.width),
           });
@@ -30,71 +29,98 @@ async function checkOverflow(page) {
   });
 }
 
-async function seed(page, data) {
-  await page.evaluate((d) => {
-    localStorage.setItem('kmt_store', JSON.stringify(d));
-  }, data);
-}
-
-function makeStore({ quoteStatus = 'draft', exception = false } = {}) {
-  const request = {
-    id: 'req-1',
-    vehicleInfo: '2020 Ford F-150 Pickup Truck Long Bed XLT',
-    tireSelection: 'tire-1',
-    location: '123 Very Long Street Address Name, Springfield, ST 00000',
-    date: '2025-01-01',
-    createdAt: new Date().toISOString(),
-    status: 'submitted',
-  };
-  const quote = {
-    id: 'quote-1',
-    requestId: 'req-1',
-    lineItems: [
-      { description: 'All-Season Touring Tire 225/65R17', quantity: 1, unitPrice: 129.99 },
-      { description: 'Mobile installation service', quantity: 1, unitPrice: 49.99 },
-    ],
-    total: 179.98,
-    exception,
-    exceptionReasons: exception ? ['Truck, pickup, van, and SUV requests require owner review', 'Off-road tire requires owner review'] : [],
-    createdAt: new Date().toISOString(),
-    status: quoteStatus,
-  };
-  return { requests: [request], quotes: [quote], version: 1 };
-}
-
+/**
+ * Each screen, reached the way a customer or an owner reaches it.
+ *
+ * These states used to be written straight into localStorage -- a fabricated
+ * request and quote, then a navigation to the screen that rendered them. It was
+ * quick, and it measured screens nobody could have arrived at: an owner list
+ * holding a quote for a tire that is not in the catalog, a confirmation marked
+ * paid without anything being paid. Performing the state means the screen being
+ * measured is a screen that exists.
+ */
 const screens = [
-  { path: '/', label: 'home/request-form', seedData: null },
-  { path: '/owner', label: 'owner-list (draft, exception)', seedData: makeStore({ quoteStatus: 'draft', exception: true }) },
-  { path: '/status', label: 'status (approved -> pay)', seedData: makeStore({ quoteStatus: 'approved' }) },
-  { path: '/confirmation?quoteId=quote-1', label: 'confirmation', seedData: makeStore({ quoteStatus: 'paid' }) },
+  {
+    label: 'home/request-form',
+    path: '/',
+    async reach(page) { await page.goto(BASE + '/', { waitUntil: 'networkidle' }); },
+  },
+  {
+    label: 'owner quote list (draft, exception)',
+    path: '/owner/quotes',
+    async reach(page) {
+      await submitRequest(page, {
+        base: BASE, ...EXCEPTION_TIRE,
+        vehicle: '2020 Ford F-150 Pickup Truck Long Bed XLT',
+        location: '123 Very Long Street Address Name, Springfield, ST 00000',
+        date: '2026-09-10',
+        notes: 'Behind the building, blue truck by the loading bay',
+      });
+      await openOwnerQuotes(page);
+    },
+  },
+  {
+    label: 'status (approved, payable)',
+    path: '/status',
+    async reach(page) {
+      await submitRequest(page, {
+        base: BASE, ...CLEAN_TIRE,
+        vehicle: '2020 Toyota Corolla',
+        location: '456 Demo Ave, Everett, MA 02149',
+        date: '2026-09-10',
+      });
+      await openOwnerQuotes(page);
+      await page.click('button:has-text("Approve")');
+      await page.waitForSelector('text=APPROVED', { timeout: 15000 });
+      await page.click('button:has-text("Back to Customer Flow")');
+      await page.waitForURL(BASE + '/');
+      await page.click('button:has-text("My Quote")');
+      await page.waitForURL('**/status');
+      await page.waitForSelector('button:has-text("Pay $")', { timeout: 15000 });
+    },
+  },
+  {
+    label: 'confirmation (paid)',
+    path: '/confirmation',
+    async reach(page) {
+      await screens[2].reach(page);
+      await page.click('button:has-text("Pay $")');
+      await page.waitForURL('**/confirmation**', { timeout: 15000 });
+      await page.waitForSelector('.confirmation-card', { timeout: 15000 });
+    },
+  },
 ];
 
 (async () => {
   const browser = await chromium.launch();
   let hadIssue = false;
+
   for (const viewport of VIEWPORTS) {
     for (const screen of screens) {
-      const page = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height } });
-      await page.goto(BASE + '/', { waitUntil: 'networkidle' });
-      if (screen.seedData) {
-        await seed(page, screen.seedData);
-      } else {
-        await page.evaluate(() => localStorage.removeItem('kmt_store'));
-      }
-      await page.goto(BASE + screen.path, { waitUntil: 'networkidle' });
-      const result = await checkOverflow(page);
-      const status = result.scrollWidth > result.docWidth + 1 ? 'OVERFLOW' : 'ok';
-      if (status === 'OVERFLOW') hadIssue = true;
-      console.log(`[${viewport.name} ${viewport.width}px] ${screen.label} (${screen.path}) -> ${status} (doc=${result.docWidth} scroll=${result.scrollWidth})`);
-      if (result.overflowing.length) {
+      // A context per screen, so one scenario's requests never decorate the
+      // next one's measurement.
+      const { context, page } = await freshPage(browser, viewport);
+      try {
+        await screen.reach(page);
+        const result = await checkOverflow(page);
+        const status = result.scrollWidth > result.docWidth + 1 ? 'OVERFLOW' : 'ok';
+        if (status === 'OVERFLOW') hadIssue = true;
+        console.log(`[${viewport.name} ${viewport.width}px] ${screen.label} (${screen.path}) -> ${status} (doc=${result.docWidth} scroll=${result.scrollWidth})`);
         for (const o of result.overflowing) {
           console.log(`    ${o.tag}.${o.cls} right=${o.right} width=${o.width}`);
         }
+        await page.screenshot({ path: `.forge/shots/${viewport.name}-${screen.path.replace(/[/?=&]/g, '_') || 'root'}.png`, fullPage: true });
+      } catch (error) {
+        hadIssue = true;
+        // A screen that cannot be reached is a worse result than one that
+        // overflows, and it must not read as silence.
+        console.log(`[${viewport.name} ${viewport.width}px] ${screen.label} (${screen.path}) -> UNREACHABLE: ${error.message.split('\n')[0]}`);
+      } finally {
+        await context.close();
       }
-      await page.screenshot({ path: `.forge/shots/${viewport.name}-${screen.path.replace(/[/?=&]/g, '_') || 'root'}.png`, fullPage: true });
-      await page.close();
     }
   }
+
   await browser.close();
   process.exit(hadIssue ? 1 : 0);
 })();

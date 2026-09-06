@@ -371,3 +371,25 @@ against the same branch alone: zero errors, everything PASS. Measured, not
 inferred -- I first assumed it was pre-existing and it was not; unmodified
 `main` passed too. If that assertion fails on you, check for a second dev
 server before you check your diff.
+
+**2026-09-05 — Claude (forge/CLI session)**
+The three browser audits no longer touch `localStorage`. They perform every
+state through the interface -- submit the form, approve on the owner screen, pay
+on the status page -- and read what reached the owner off the owner's screen.
+Seeding a store proved a row existed; it never proved a customer could get a
+quote, and it stopped working the moment requests moved to the backend.
+
+They now run against `backend/server.mjs` with the built `dist/`, not a
+`vite preview`, in CI and locally: build, then start the server with `PORT`,
+`KMT_BIND=127.0.0.1`, a throwaway `KMT_OWNER_DB` and `KMT_OWNER_PASSWORD`, and
+pass `AUDIT_BASE` plus that password to each script. A hosted server asks for a
+password and they sign in; a local one never asks.
+
+Counts to hold: **36** dead-end, **30** request-flow, **8** responsive. Request
+flow went 26 to 30 because two checks that read the browser store became four
+that read the owner's screen. A count that drops is a check that stopped running.
+
+Proven rather than asserted: hiding the Pay action on an approved quote -- one
+line -- fails the dead-end audit ("no visible Pay action for the approved
+quote") and makes two responsive screens UNREACHABLE. The break was reverted in
+the same PR.
