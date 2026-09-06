@@ -112,9 +112,32 @@ plain itemised form. Sketches, with the lead's mark applied to the first
 - Customer, payment received: "Payment received, thank you. I'll be at
   [location] on [date]. Your receipt: [lines, total]. Text me if anything
   changes. — Ken"
-- Customer, declined: "I can't take this one on: [reason]. You haven't
-  been charged. Text me at (617) 410-8319 if you'd like to talk it
-  through. — Ken"
+- Customer, declined, **when Ken wrote a reason**: "I can't take this one
+  on: [reason]. You haven't been charged. Text me at (617) 410-8319 if
+  you'd like to talk it through. — Ken"
+- Customer, declined, **when he left it blank**: "I can't take this one on.
+  You haven't been charged. Text me at (617) 410-8319 if you'd like to talk
+  it through. — Ken"
+
+  Two sketches, not one, because the reason is genuinely optional and this
+  list previously implied it was not. `backend/quotes.mjs:217` is explicit --
+  *"Optional means optional: nothing is a valid reason, and stores as no
+  reason"* -- and the owner's own prompt invites it: *"Leave blank to say
+  nothing."* So a template built from the single sketch sends **"I can't take
+  this one on: . You haven't been charged."** to somebody who has just
+  learned they are not getting their tires. The colon and the reason appear
+  together or neither appears.
+
+  The screen already gets this right and the email must match it:
+  `src/routes/QuoteRequests.jsx:230` renders
+  `` {CLOSED_NOTE[quote.status]}{quote.reason ? ` ${quote.reason}` : ''} ``.
+
+  **Never synthesise the missing half.** A reason Ken did not write is a
+  sentence he has to defend when the customer texts him about it, and the
+  ruling in `decisions.md` that created this message type says so: the
+  reason is carried only when he actually wrote one, never inferred and
+  never generated. Declining without explanation is a thing a person is
+  allowed to do; inventing his explanation is not.
 
 ## Checking the sweep
 
