@@ -35,7 +35,7 @@ import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
-import { createApi, createCatalogApi, createRequestsApi, isPublicApiCall, readJsonBody } from './api.mjs'
+import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isPublicApiCall, readJsonBody } from './api.mjs'
 import { Quotes } from './quotes.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
 
@@ -72,6 +72,9 @@ const importer = new PageImporter(inventory)
 const quotes = new Quotes(inventory)
 const api = createApi(inventory, refresher, importer, quotes)
 const catalogApi = createCatalogApi(inventory)
+// The platform's health check, mounted here too so the local server and the
+// hosted one answer the same routes.
+const healthApi = createHealthApi(inventory)
 // Requests and their quotes live in the same database as inventory.
 const requestsApi = createRequestsApi(quotes)
 
@@ -113,7 +116,9 @@ const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
     const hostname = (request.headers.host || '').split(':')[0]
 
-    if (allowedHosts.length && !allowedHosts.includes(hostname)) {
+    // The health check is exempt, and isHostAllowed says why. A canonical-host
+    // redirect added later has to exempt it for the same reason.
+    if (!isHostAllowed(hostname, url.pathname, allowedHosts)) {
       response.writeHead(403); response.end('Unrecognised host'); return
     }
 
@@ -138,6 +143,7 @@ const server = createServer(async (request, response) => {
         response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' }))
         return
       }
+      if (await healthApi(request, response)) return
       if (await catalogApi(request, response)) return
       if (await requestsApi(request, response)) return
       if (await api(request, response)) return
