@@ -45,6 +45,21 @@ const LIMITS = {
 
 const REQUIRED = ['vehicleInfo', 'tireSelection', 'location', 'date']
 
+/**
+ * The optional sentence attached to a cancellation.
+ *
+ * Optional means optional: nothing is a valid reason, and stores as no reason
+ * rather than as an empty string every screen would then have to test for.
+ */
+function cleanReason(value) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') throw new InputError('A reason must be text.')
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (trimmed.length > 500) throw new InputError('That reason is too long.')
+  return trimmed
+}
+
 function cleanCustomerKey(value) {
   if (typeof value !== 'string' || !/^[a-f0-9]{16,64}$/i.test(value.trim())) {
     throw new InputError('A customer key is required, and must be the one this browser was given.')
@@ -89,6 +104,33 @@ function cleanRequest(input) {
 export const QUOTE_STATUSES = [
   'draft', 'sent', 'approved', 'rejected', 'paid', 'done', 'cancelled',
 ]
+
+/**
+ * How the owner's screen groups those statuses.
+ *
+ * Named for what the owner is waiting on rather than for the status itself,
+ * because that is the question the screen answers: `attention` is work waiting
+ * on them, `awaiting` is waiting on the customer, `paid` is a job to go and do.
+ * `open` is everything not finished, which is the default because an owner
+ * opening the screen wants what is live, not the whole history.
+ *
+ * `approved` sits beside `sent` everywhere: it is the same state under the name
+ * it was written with before this change, and a filter that hid those rows
+ * would hide the requests that have been waiting longest.
+ */
+export const QUOTE_VIEWS = {
+  open: ['draft', 'sent', 'approved', 'paid'],
+  attention: ['draft'],
+  awaiting: ['sent', 'approved'],
+  paid: ['paid'],
+  closed: ['done', 'rejected', 'cancelled'],
+}
+
+/** Statuses a request can still be cancelled from: before any money moved. */
+const CANCELLABLE = ['draft', 'sent', 'approved']
+
+/** Statuses a customer may pay from. `approved` is what the deployed rows say. */
+const PAYABLE = ['sent', 'approved']
 
 /** The current shape of the quotes table, as one place both paths use. */
 const QUOTES_COLUMNS = `
@@ -267,6 +309,34 @@ export class Quotes {
   }
 
   /**
+   * The owner's screen: one view of the list, and the size of every view.
+   *
+   * The counts are for all five views, not just the one asked for, because the
+   * screen shows them on the filters themselves -- an owner should be able to
+   * see that three requests need a decision without first switching to the tab
+   * that would tell them. That costs one pass over rows already in memory.
+   *
+   * An unknown view is the default rather than an error. This is a query
+   * parameter on a screen an owner may have bookmarked, and a stale bookmark
+   * should show them their open requests, not a failure.
+   */
+  viewForOwner(view) {
+    const all = this.listForOwner()
+    const chosen = Object.prototype.hasOwnProperty.call(QUOTE_VIEWS, view) ? view : 'open'
+
+    const counts = {}
+    for (const [name, statuses] of Object.entries(QUOTE_VIEWS)) {
+      counts[name] = all.filter(row => statuses.includes(row.quote?.status)).length
+    }
+
+    return {
+      view: chosen,
+      counts,
+      requests: all.filter(row => QUOTE_VIEWS[chosen].includes(row.quote?.status)),
+    }
+  }
+
+  /**
    * Approve or reject a draft.
    *
    * The version check is the one PUT /api/owner/offers/:id already makes, for
@@ -279,9 +349,33 @@ export class Quotes {
    * was looking at something out of date, which is what the version says.
    */
   decide(id, decision, version) {
-    if (decision !== 'approved' && decision !== 'rejected') {
-      throw new InputError('A quote is either approved or rejected.')
+    if (decision !== 'sent' && decision !== 'rejected') {
+      throw new InputError('A quote is either sent to the customer or rejected.')
     }
+    return this.moveTo(id, version, {
+      to: decision,
+      from: ['draft'],
+      refused: status => `This quote is already ${status}, so there is nothing to decide.`,
+    })
+  }
+
+  /**
+   * Move one quote to a new status, with the version check every caller makes.
+   *
+   * The check is the one PUT /api/owner/offers/:id already makes, for the same
+   * reason: two owner windows, or a phone and a laptop, and the second save
+   * would otherwise silently overwrite a decision made in the first. A stale
+   * version is a 409 and the caller reloads.
+   *
+   * The transitions themselves stay in the named methods below rather than
+   * becoming arguments to `decide`. Approving, finishing and cancelling are
+   * different acts with different rules about where they may be done from, and
+   * folding them into one entry point would mean every one of those rules read
+   * as a branch inside a method whose name says it does something else. What
+   * they share is only this: a version, the statuses the move is legal from,
+   * and a sentence for when it is not.
+   */
+  moveTo(id, version, { to, from, reason = null, refused }) {
     if (!Number.isInteger(version) || version < 0) {
       throw new InputError('Send the version you were shown, so a stale screen cannot overwrite a newer decision.')
     }
@@ -292,13 +386,80 @@ export class Quotes {
       if (found.quote.version !== version) {
         throw new InputError('This quote changed in another window. Reload the list before deciding.', 409)
       }
-      if (found.quote.status !== 'draft') {
-        throw new InputError(`This quote is already ${found.quote.status}, so there is nothing to decide.`, 409)
+      if (!from.includes(found.quote.status)) {
+        throw new InputError(refused(found.quote.status), 409)
       }
 
-      this.db.prepare('UPDATE quotes SET status=?, version=version+1, updated_at=? WHERE id=?')
-        .run(decision, now(), found.quote.id)
+      // A reason is only ever added, never cleared: a row that carries why it
+      // was closed should not lose that to a later write which had none.
+      this.db.prepare(`UPDATE quotes
+          SET status=?, reason=COALESCE(?, reason), version=version+1, updated_at=?
+          WHERE id=?`)
+        .run(to, reason, now(), found.quote.id)
       return this.get(id)
+    })
+  }
+
+  /**
+   * Close a paid request once the work is done.
+   *
+   * Only from `paid`, and it is the only way out of `paid`. Payment is still
+   * the fake step that always succeeds, but the row it writes stands for money
+   * having changed hands, and nothing here can undo that -- see the roadmap.
+   */
+  finish(id, version) {
+    return this.moveTo(id, version, {
+      to: 'done',
+      from: ['paid'],
+      refused: status => status === 'done'
+        ? 'This request is already closed.'
+        : `This request is ${status}, and only a paid request can be marked done.`,
+    })
+  }
+
+  /**
+   * The owner calling a request off, before it is paid.
+   *
+   * A reason is optional and travels with the row, because a customer who opens
+   * their link and finds it cancelled should be told why rather than left to
+   * guess. Nothing is deleted: the request stays, in the closed view.
+   */
+  cancel(id, version, reason) {
+    return this.moveTo(id, version, {
+      to: 'cancelled',
+      from: CANCELLABLE,
+      reason: cleanReason(reason),
+      refused: status => status === 'paid'
+        ? 'This request has been paid, so it cannot be cancelled. Mark it done when the work is finished.'
+        : `This request is already ${status}.`,
+    })
+  }
+
+  /**
+   * The customer calling their own request off, before they pay for it.
+   *
+   * Keyed the way pay() is, and refused the same way: a wrong key is answered
+   * "no such request" rather than "not yours", because the second sentence
+   * confirms the request exists. No version either, for the same reason pay()
+   * takes none -- the customer has one screen showing one request of their own,
+   * and there is no second window of theirs for a stale view to come from.
+   */
+  cancelByCustomer(id, customerKey, reason) {
+    const key = cleanCustomerKey(customerKey)
+    const stored = this.keyFor(id)
+    if (stored === null || stored !== key) throw new InputError('No such request.', 404)
+
+    const found = this.get(id)
+    if (!found?.quote) throw new InputError('No such request.', 404)
+    if (found.quote.status === 'cancelled') return found
+    if (found.quote.status === 'paid' || found.quote.status === 'done') {
+      throw new InputError('This request has been paid for. Get in touch and we will sort it out.', 409)
+    }
+    return this.moveTo(id, found.quote.version, {
+      to: 'cancelled',
+      from: CANCELLABLE,
+      reason: cleanReason(reason),
+      refused: status => `This request is already ${status}.`,
     })
   }
 
@@ -323,8 +484,10 @@ export class Quotes {
     const found = this.get(id)
     if (!found?.quote) throw new InputError('No such request.', 404)
     if (found.quote.status === 'paid') return found
-    if (found.quote.status !== 'approved') {
-      throw new InputError('This quote has not been approved yet, so there is nothing to pay.', 409)
+    if (!PAYABLE.includes(found.quote.status)) {
+      throw new InputError(found.quote.status === 'draft'
+        ? 'This quote has not been approved yet, so there is nothing to pay.'
+        : `This request is ${found.quote.status}, so there is nothing to pay.`, 409)
     }
 
     return this.transaction(() => {

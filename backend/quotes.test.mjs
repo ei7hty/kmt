@@ -281,13 +281,13 @@ test('approving moves a draft, and the customer sees it from their own device', 
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
 
-  const decided = quotes.decide(request.id, 'approved', quote.version)
+  const decided = quotes.decide(request.id, 'sent', quote.version)
 
-  assert.equal(decided.quote.status, 'approved')
+  assert.equal(decided.quote.status, 'sent')
   assert.equal(decided.quote.version, quote.version + 1, 'the version moves with the decision')
   // The customer's own read, by id, sees the same thing.
-  assert.equal(quotes.get(request.id).quote.status, 'approved')
-  assert.equal(quotes.listForCustomer(KEY)[0].quote.status, 'approved')
+  assert.equal(quotes.get(request.id).quote.status, 'sent')
+  assert.equal(quotes.listForCustomer(KEY)[0].quote.status, 'sent')
 })
 
 test('rejecting moves a draft the same way', async t => {
@@ -304,24 +304,24 @@ test('a stale version is refused rather than overwriting the newer decision', as
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
 
-  quotes.decide(request.id, 'approved', quote.version)
+  quotes.decide(request.id, 'sent', quote.version)
 
   assert.throws(
     () => quotes.decide(request.id, 'rejected', quote.version),
     error => error.status === 409 && /changed in another window/.test(error.message),
   )
-  assert.equal(quotes.get(request.id).quote.status, 'approved', 'the first decision stands')
+  assert.equal(quotes.get(request.id).quote.status, 'sent', 'the first decision stands')
 })
 
 test('only a draft can be decided', async t => {
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
-  const approved = quotes.decide(request.id, 'approved', quote.version)
+  const sent = quotes.decide(request.id, 'sent', quote.version)
 
   // Right version, wrong state: already decided, and paid is further still.
   assert.throws(
-    () => quotes.decide(request.id, 'rejected', approved.quote.version),
-    error => error.status === 409 && /already approved/.test(error.message),
+    () => quotes.decide(request.id, 'rejected', sent.quote.version),
+    error => error.status === 409 && /already sent/.test(error.message),
   )
 
   quotes.pay(request.id, KEY)
@@ -336,10 +336,10 @@ test('a decision has to be a decision, and carry a version', async t => {
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
 
-  assert.throws(() => quotes.decide(request.id, 'maybe', quote.version), /approved or rejected/)
-  assert.throws(() => quotes.decide(request.id, 'approved', undefined), /version you were shown/)
-  assert.throws(() => quotes.decide(request.id, 'approved', -1), /version you were shown/)
-  assert.throws(() => quotes.decide('0'.repeat(32), 'approved', 1), /No such request/)
+  assert.throws(() => quotes.decide(request.id, 'maybe', quote.version), /sent to the customer or rejected/)
+  assert.throws(() => quotes.decide(request.id, 'sent', undefined), /version you were shown/)
+  assert.throws(() => quotes.decide(request.id, 'sent', -1), /version you were shown/)
+  assert.throws(() => quotes.decide('0'.repeat(32), 'sent', 1), /No such request/)
 })
 
 test('the owner endpoints need a session, and the customer endpoints are unchanged', async t => {
@@ -367,12 +367,243 @@ test('the owner endpoints need a session, and the customer endpoints are unchang
     method: 'POST', headers, body: JSON.stringify({ version: quote.version }),
   })
   assert.equal(approved.status, 200)
-  assert.equal((await approved.json()).quote.status, 'approved')
+  assert.equal((await approved.json()).quote.status, 'sent')
 
   // t29's endpoints, from a customer with no session, still behave.
   const seen = await (await fetch(`${base}/api/requests/${request.id}`)).json()
-  assert.equal(seen.quote.status, 'approved', 'the customer sees the decision from their own device')
+  assert.equal(seen.quote.status, 'sent', 'the customer sees the decision from their own device')
   const paid = await post(base, `/api/requests/${request.id}/pay`, { customerKey: KEY })
   assert.equal(paid.status, 200)
   assert.equal((await paid.json()).quote.status, 'paid')
+})
+
+/* ----------------------------------------------------- the lifecycle (t36) */
+
+/** Walk a fresh request to a status, the way the two sides actually reach it. */
+function walkTo(quotes, status, overrides = {}) {
+  const { request, quote } = quotes.submit(form(overrides))
+  if (status === 'draft') return quotes.get(request.id)
+  if (status === 'rejected') return quotes.decide(request.id, 'rejected', quote.version)
+  const sent = quotes.decide(request.id, 'sent', quote.version)
+  if (status === 'sent') return sent
+  const paid = quotes.pay(request.id, overrides.customerKey ?? KEY)
+  if (status === 'paid') return paid
+  if (status === 'done') return quotes.finish(request.id, paid.quote.version)
+  throw new Error(`walkTo does not know how to reach ${status}`)
+}
+
+test('a paid request is closed by marking it done, and only from paid', async t => {
+  const { quotes } = setup(t)
+
+  const paid = walkTo(quotes, 'paid')
+  const done = quotes.finish(paid.request.id, paid.quote.version)
+  assert.equal(done.quote.status, 'done')
+  assert.equal(done.quote.version, paid.quote.version + 1, 'the version moves with the transition')
+  assert.equal(quotes.get(paid.request.id).quote.status, 'done', 'and the customer reads it too')
+
+  // Twice is not twice as done.
+  assert.throws(
+    () => quotes.finish(paid.request.id, done.quote.version),
+    error => error.status === 409 && /already closed/.test(error.message),
+  )
+
+  for (const status of ['draft', 'sent', 'rejected']) {
+    const row = walkTo(quotes, status)
+    assert.throws(
+      () => quotes.finish(row.request.id, row.quote.version),
+      error => error.status === 409 && /only a paid request/.test(error.message),
+      `${status} should not be markable done`,
+    )
+  }
+})
+
+test('marking done takes the same version check as every other transition', async t => {
+  const { quotes } = setup(t)
+  const paid = walkTo(quotes, 'paid')
+
+  assert.throws(() => quotes.finish(paid.request.id, paid.quote.version + 5),
+    error => error.status === 409 && /changed in another window/.test(error.message))
+  assert.throws(() => quotes.finish(paid.request.id, undefined), /version you were shown/)
+  assert.throws(() => quotes.finish('0'.repeat(32), 1), error => error.status === 404)
+  assert.equal(quotes.get(paid.request.id).quote.status, 'paid', 'and none of that moved it')
+})
+
+test('the owner can cancel before payment, with a reason, and not after', async t => {
+  const { quotes } = setup(t)
+
+  for (const status of ['draft', 'sent']) {
+    const row = walkTo(quotes, status)
+    const cancelled = quotes.cancel(row.request.id, row.quote.version, ' out of stock ')
+    assert.equal(cancelled.quote.status, 'cancelled', `cancelling from ${status}`)
+    assert.equal(cancelled.quote.reason, 'out of stock', 'trimmed, and kept with the row')
+    assert.equal(quotes.get(row.request.id).quote.reason, 'out of stock', 'the customer is told why')
+  }
+
+  // A reason is optional, and nothing stands in for one.
+  const bare = walkTo(quotes, 'draft')
+  assert.equal(quotes.cancel(bare.request.id, bare.quote.version).quote.reason, null)
+  const blank = walkTo(quotes, 'draft')
+  assert.equal(quotes.cancel(blank.request.id, blank.quote.version, '   ').quote.reason, null)
+
+  const paid = walkTo(quotes, 'paid')
+  assert.throws(
+    () => quotes.cancel(paid.request.id, paid.quote.version),
+    error => error.status === 409 && /Mark it done/.test(error.message),
+    'money has moved; the way out is done, not cancelled',
+  )
+  const done = walkTo(quotes, 'done')
+  assert.throws(() => quotes.cancel(done.request.id, done.quote.version),
+    error => error.status === 409 && /already done/.test(error.message))
+})
+
+test('nothing is deleted: a cancelled request is still there to read', async t => {
+  const { quotes } = setup(t)
+  const row = walkTo(quotes, 'sent')
+  quotes.cancel(row.request.id, row.quote.version, 'the van broke down')
+
+  const found = quotes.get(row.request.id)
+  assert.equal(found.request.vehicleInfo, '2021 Honda Civic', 'the request it was made from')
+  assert.equal(found.quote.total, row.quote.total, 'and the quote it was given')
+  assert.equal(quotes.listForCustomer(KEY).length, 1)
+  assert.equal(quotes.listForOwner().length, 1)
+})
+
+test('a customer can call off their own request, and only their own', async t => {
+  const { quotes } = setup(t)
+
+  const row = walkTo(quotes, 'sent')
+  assert.throws(
+    () => quotes.cancelByCustomer(row.request.id, OTHER_KEY),
+    error => error.status === 404 && /No such request/.test(error.message),
+    'a wrong key is answered as though the request does not exist',
+  )
+  assert.equal(quotes.get(row.request.id).quote.status, 'sent', 'and nothing moved')
+
+  const cancelled = quotes.cancelByCustomer(row.request.id, KEY, 'sold the car')
+  assert.equal(cancelled.quote.status, 'cancelled')
+  assert.equal(cancelled.quote.reason, 'sold the car')
+  // Asking twice is the same answer, not an error: a phone that lost the reply.
+  assert.equal(quotes.cancelByCustomer(row.request.id, KEY).quote.status, 'cancelled')
+})
+
+test('a customer cannot call off what they have already paid for', async t => {
+  const { quotes } = setup(t)
+  const paid = walkTo(quotes, 'paid')
+
+  assert.throws(
+    () => quotes.cancelByCustomer(paid.request.id, KEY),
+    error => error.status === 409 && /been paid for/.test(error.message),
+  )
+  assert.equal(quotes.get(paid.request.id).quote.status, 'paid')
+
+  const done = walkTo(quotes, 'done')
+  assert.throws(() => quotes.cancelByCustomer(done.request.id, KEY),
+    error => error.status === 409 && /been paid for/.test(error.message))
+})
+
+test('a quote approved before this change is still payable and still readable', async t => {
+  // The deployed database holds one of these: the t33 proof row, approved on
+  // the owner device before the decision was named `sent`. It has to keep
+  // behaving, which is why `approved` was not renamed out of existence.
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form())
+  quotes.db.prepare('UPDATE quotes SET status=? WHERE request_id=?').run('approved', request.id)
+
+  const stored = quotes.get(request.id)
+  assert.equal(stored.quote.status, 'approved')
+  assert.equal(quotes.viewForOwner('awaiting').requests.length, 1, 'it waits with the sent ones')
+  assert.equal(quotes.viewForOwner('open').requests.length, 1, 'and it is open, not closed')
+
+  const paid = quotes.pay(request.id, KEY)
+  assert.equal(paid.quote.status, 'paid')
+  assert.equal(quotes.finish(request.id, paid.quote.version).quote.status, 'done',
+    'and it can be closed the day this lands')
+})
+
+test('the owner list is filtered by view, and every view is counted', async t => {
+  const { quotes } = setup(t)
+  walkTo(quotes, 'draft')
+  walkTo(quotes, 'sent', { vehicleInfo: 'sent one' })
+  walkTo(quotes, 'paid', { vehicleInfo: 'paid one' })
+  walkTo(quotes, 'done', { vehicleInfo: 'done one' })
+  walkTo(quotes, 'rejected', { vehicleInfo: 'rejected one' })
+  const toCancel = walkTo(quotes, 'draft', { vehicleInfo: 'cancelled one' })
+  quotes.cancel(toCancel.request.id, toCancel.quote.version, 'no van that day')
+
+  const open = quotes.viewForOwner()
+  assert.equal(open.view, 'open', 'no view asked for is the open one')
+  assert.deepEqual(open.counts, { open: 3, attention: 1, awaiting: 1, paid: 1, closed: 3 },
+    'every view is counted, not only the one being shown')
+  assert.equal(open.requests.length, 3)
+
+  assert.deepEqual(quotes.viewForOwner('attention').requests.map(row => row.quote.status), ['draft'])
+  assert.deepEqual(quotes.viewForOwner('awaiting').requests.map(row => row.quote.status), ['sent'])
+  assert.deepEqual(quotes.viewForOwner('paid').requests.map(row => row.quote.status), ['paid'])
+  assert.deepEqual(
+    quotes.viewForOwner('closed').requests.map(row => row.quote.status).sort(),
+    ['cancelled', 'done', 'rejected'],
+  )
+
+  // Newest first, the order the whole list already keeps.
+  const closed = quotes.viewForOwner('closed').requests
+  assert.deepEqual(closed.map(row => row.request.vehicleInfo),
+    ['cancelled one', 'rejected one', 'done one'])
+
+  // A bookmark from before these views existed still shows something useful.
+  assert.equal(quotes.viewForOwner('everything').view, 'open')
+  assert.equal(quotes.viewForOwner(null).view, 'open')
+})
+
+test('the lifecycle over HTTP: the owner acts with a session, the customer with a key', async t => {
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory)
+  const { cookie } = await signIn(base)
+  const headers = { cookie, 'Content-Type': 'application/json' }
+  const asOwner = (path, body) => fetch(base + path, { method: 'POST', headers, body: JSON.stringify(body) })
+
+  const paid = walkTo(quotes, 'paid')
+  // Shut without a cookie, exactly like every other owner route.
+  assert.equal((await post(base, `/api/owner/quotes/${paid.request.id}/done`,
+    { version: paid.quote.version })).status, 401)
+  assert.equal((await post(base, `/api/owner/quotes/${paid.request.id}/cancel`,
+    { version: paid.quote.version })).status, 401)
+
+  const done = await asOwner(`/api/owner/quotes/${paid.request.id}/done`, { version: paid.quote.version })
+  assert.equal(done.status, 200)
+  assert.equal((await done.json()).quote.status, 'done')
+
+  const sent = walkTo(quotes, 'sent', { vehicleInfo: 'to cancel' })
+  const cancelled = await asOwner(`/api/owner/quotes/${sent.request.id}/cancel`,
+    { version: sent.quote.version, reason: 'no van that day' })
+  assert.equal(cancelled.status, 200)
+  const body = await cancelled.json()
+  assert.equal(body.quote.status, 'cancelled')
+  assert.equal(body.quote.reason, 'no van that day')
+
+  // The view the screen asks for, over the wire, with its counts.
+  const view = await (await fetch(`${base}/api/owner/requests?view=closed`, { headers })).json()
+  assert.equal(view.view, 'closed')
+  assert.equal(view.requests.length, 2)
+  assert.equal(view.counts.closed, 2)
+
+  // And the customer cancelling their own, with no session at all.
+  const mine = walkTo(quotes, 'sent', { vehicleInfo: 'mine to cancel' })
+  assert.equal((await post(base, `/api/requests/${mine.request.id}/cancel`,
+    { customerKey: OTHER_KEY })).status, 404)
+  const own = await post(base, `/api/requests/${mine.request.id}/cancel`,
+    { customerKey: KEY, reason: 'changed my mind' })
+  assert.equal(own.status, 200)
+  assert.equal((await own.json()).quote.reason, 'changed my mind')
+})
+
+test('cancel is public by name, and only as a POST', async () => {
+  // The allow-list is the whole protection here: a route under /api/requests
+  // is reachable without a session only because it is written down.
+  assert.equal(isPublicApiCall('POST', '/api/requests/abc/cancel'), true)
+  assert.equal(isPublicApiCall('GET', '/api/requests/abc/cancel'), false,
+    'an action is not something a GET performs')
+  assert.equal(isPublicApiCall('POST', '/api/requests/abc/done'), false,
+    'the owner closes a request, and that is not a public call')
+  assert.equal(isPublicApiCall('POST', '/api/owner/quotes/abc/cancel'), false)
+  assert.equal(isPublicApiCall('GET', '/api/requests/abc'), true, 'reading one still works')
 })

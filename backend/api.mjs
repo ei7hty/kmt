@@ -28,6 +28,9 @@ const IMPORT_BODY_LIMIT = 4 * 1024 * 1024
  */
 const SNAPSHOT_BODY_LIMIT = 8 * 1024 * 1024
 
+/** The owner's four actions on one quote, as one pattern the route reads twice. */
+const QUOTE_ACTION = /^\/api\/owner\/quotes\/([^/]+)\/(approve|reject|done|cancel)$/
+
 /** The only origins allowed to post pages back. Nothing else gets CORS at all. */
 const IMPORT_ORIGINS = new Set(['https://www.giga-tires.com', 'https://giga-tires.com'])
 
@@ -45,19 +48,32 @@ export const PUBLIC_API_PATHS = new Set(['/api/catalog'])
  * Public request paths, which a customer reaches without signing in.
  *
  * A prefix rather than a list of ids, because a request path carries one. Still
- * closed by method: GET for reading a request, and POST only for the two calls
- * a customer makes -- submitting, and paying an approved quote. Everything else
- * under the prefix, including anything added later, stays behind the session.
+ * closed by method: GET for reading a request, and POST only for the three
+ * calls a customer makes -- submitting, paying an approved quote, and calling
+ * their own request off before they have paid for it. Everything else under the
+ * prefix, including anything added later, stays behind the session.
+ *
+ * Each POST is written out rather than matched by a wildcard. That is the point
+ * of the list: adding a route under this prefix should not make it public, and
+ * `cancel` is public only because this line says so.
  */
 const PUBLIC_REQUEST_PREFIX = '/api/requests'
-const PUBLIC_POST_PATHS = [/^\/api\/requests$/, /^\/api\/requests\/[^/]+\/pay$/]
+const PUBLIC_POST_PATHS = [
+  /^\/api\/requests$/,
+  /^\/api\/requests\/[^/]+\/pay$/,
+  /^\/api\/requests\/[^/]+\/cancel$/,
+]
+
+/** The action suffixes a GET must not answer, whatever else the prefix allows. */
+const REQUEST_ACTIONS = ['/pay', '/cancel']
 
 /** Whether this request is one of the public calls, by path and by method. */
 export function isPublicApiCall(method, pathname) {
   if (method === 'GET') {
     return PUBLIC_API_PATHS.has(pathname) ||
       pathname === PUBLIC_REQUEST_PREFIX ||
-      (pathname.startsWith(PUBLIC_REQUEST_PREFIX + '/') && !pathname.endsWith('/pay'))
+      (pathname.startsWith(PUBLIC_REQUEST_PREFIX + '/') &&
+        !REQUEST_ACTIONS.some(action => pathname.endsWith(action)))
   }
   if (method === 'POST') return PUBLIC_POST_PATHS.some(pattern => pattern.test(pathname))
   return false
@@ -140,6 +156,13 @@ export function createRequestsApi(quotes) {
         return true
       }
 
+      const cancelMatch = url.pathname.match(/^\/api\/requests\/([^/]+)\/cancel$/)
+      if (request.method === 'POST' && cancelMatch) {
+        const body = await readJsonBody(request)
+        send(200, quotes.cancelByCustomer(decodeURIComponent(cancelMatch[1]), body?.customerKey, body?.reason))
+        return true
+      }
+
       const oneMatch = url.pathname.match(/^\/api\/requests\/([^/]+)$/)
       if (request.method === 'GET' && oneMatch) {
         const found = quotes.get(decodeURIComponent(oneMatch[1]))
@@ -215,12 +238,18 @@ export function createApi(inventory, refresher, importer = null, quotes = null) 
       // for: routes that require the owner session.
       if (request.method === 'GET' && url.pathname === '/api/owner/requests') {
         if (!quotes) throw new InputError('Owner endpoint not found', 404)
-        send(200, { requests: quotes.listForOwner() })
-      } else if (request.method === 'POST' && /^\/api\/owner\/quotes\/[^/]+\/(approve|reject)$/.test(url.pathname)) {
+        send(200, quotes.viewForOwner(url.searchParams.get('view')))
+      } else if (request.method === 'POST' && QUOTE_ACTION.test(url.pathname)) {
         if (!quotes) throw new InputError('Owner endpoint not found', 404)
-        const [, id, action] = url.pathname.match(/^\/api\/owner\/quotes\/([^/]+)\/(approve|reject)$/)
+        const [, raw, action] = url.pathname.match(QUOTE_ACTION)
+        const id = decodeURIComponent(raw)
         const body = await readJsonBody(request)
-        send(200, quotes.decide(decodeURIComponent(id), action === 'approve' ? 'approved' : 'rejected', body?.version))
+        // One route per act, dispatched here rather than inside the store: the
+        // store's methods say what each transition is allowed to do, and this
+        // line only says which one the owner asked for.
+        if (action === 'done') send(200, quotes.finish(id, body?.version))
+        else if (action === 'cancel') send(200, quotes.cancel(id, body?.version, body?.reason))
+        else send(200, quotes.decide(id, action === 'approve' ? 'sent' : 'rejected', body?.version))
       } else if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
         send(200, { ...inventory.list(Object.fromEntries(url.searchParams)), summary: inventory.summary() })
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/')) {
