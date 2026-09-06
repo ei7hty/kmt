@@ -48,7 +48,8 @@ function CustomerRequest({ navigate }) {
     vehicleInfo: '',
     tireSelection: '',
     location: '',
-    date: '', locationType: 'Home', serviceZip: '', locationNotes: ''
+    date: '', locationType: 'Home', serviceZip: '', locationNotes: '',
+    customerName: '', customerEmail: '', customerPhone: '',
   })
   const [vehicle, setVehicle] = useState({ year: '', make: '', model: '' })
   const [validationErrors, setValidationErrors] = useState({})
@@ -183,6 +184,9 @@ function CustomerRequest({ navigate }) {
     if (!formData.tireSelection) errors.tireSelection = 'Please select a tire'
     if (!formData.location.trim()) errors.location = 'Service location is required'
     if (!formData.date) errors.date = 'Preferred date is required'
+    if (!formData.customerName.trim()) errors.customerName = 'Your name is required'
+    if (!formData.customerEmail.trim()) errors.customerEmail = 'An email address is required'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail.trim())) errors.customerEmail = 'Enter a valid email address'
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors)
@@ -212,7 +216,7 @@ function CustomerRequest({ navigate }) {
       const { request, quote } = await submitRequest(submission)
       setSubmissionMessage(`Quote request submitted. Draft quote total: $${quote.total.toFixed(2)}. Ken reviews it before anything is charged.`)
       setLastSubmission(null)
-      setFormData({ tireSize: '', vehicleInfo: '', tireSelection: '', location: '', date: '', locationType: 'Home', serviceZip: '', locationNotes: '' })
+      setFormData({ tireSize: '', vehicleInfo: '', tireSelection: '', location: '', date: '', locationType: 'Home', serviceZip: '', locationNotes: '', customerName: '', customerEmail: '', customerPhone: '' })
       setVehicle({ year: '', make: '', model: '' })
       setFitment({ width: '', ratio: '', diameter: '', zip: '' })
       setFitmentStage('width')

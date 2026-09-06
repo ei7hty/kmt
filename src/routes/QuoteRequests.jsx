@@ -81,6 +81,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                   <div><dt>Tire:</dt> <dd>{tire?.name ? `${tire.name} · ${tire.size}` : `${tire?.id ?? request.tireSelection} (no longer in the catalog)`}</dd></div>
                   <div><dt>Location:</dt> <dd>{request.location}</dd></div>
                   <div><dt>Preferred Date:</dt> <dd>{request.date}</dd></div>
+                  <div><dt>Contact:</dt> <dd>{request.customerName} · <a href={`mailto:${request.customerEmail}`}>{request.customerEmail}</a>{request.customerPhone && <> · <a href={`tel:${request.customerPhone}`}>{request.customerPhone}</a></>}</dd></div>
                 </dl>
                 {quote && <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
                   <div className="owner-quote-summary"><div><p className="text-secondary">Draft Quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{quote.status}</span></div>
