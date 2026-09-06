@@ -136,7 +136,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
     <div className="app-shell owner-shell">
       <nav className="internal-nav">
         <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
-        <div className="internal-nav-links"><button className="btn btn-neutral" onClick={() => navigate('/owner')}>← Inventory</button><button className="btn btn-neutral" onClick={() => navigate('/')}>Back to Customer Flow</button><button className="btn btn-neutral" onClick={leave}>Sign out</button></div>
+        <div className="internal-nav-links"><button className="btn btn-neutral" onClick={() => navigate('/owner')}>← Inventory</button><button className="btn btn-neutral" onClick={() => navigate('/owner/outbox')}>Outbox</button><button className="btn btn-neutral" onClick={() => navigate('/')}>Back to Customer Flow</button><button className="btn btn-neutral" onClick={leave}>Sign out</button></div>
       </nav>
       <div className="owner-content">
         <p className="eyebrow">OWNER</p>
