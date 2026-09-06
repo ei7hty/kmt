@@ -38,8 +38,23 @@ secrets/
 # (a later git rm does not remove it), and referencing one from the app would
 # ship a source-quality file to a customer instead of the optimised asset.
 # Matched by exact path so the rest of public/brand/, the real assets, is
-# never blocked. Path is public/brand/, not public/ -- the files moved there
-# and these three went stale until this line, silently matching nothing.
+# never blocked. Both public/brand/ and the old /public/ root are listed for
+# each file: the files live in public/brand/ today, but the previous version
+# of this block only matched /public/ and silently stopped covering anything
+# when they moved -- keeping both is deliberate margin against the next move,
+# not dead weight.
+/public/Kens mobile tire logo.jpg
 /public/brand/Kens mobile tire logo.jpg
+/public/icm_fullxfull.681608358_isz0wre9asgk00wkwsgo.jpg
 /public/brand/icm_fullxfull.681608358_isz0wre9asgk00wkwsgo.jpg
+/public/icm_fullxfull.685139857_m8dvmt2fkxwgo8gs4448.jpg
 /public/brand/icm_fullxfull.685139857_m8dvmt2fkxwgo8gs4448.jpg
+
+# Uncommitted originals a delivery dropped straight into public/brand/, not
+# ours to publish -- not derived assets, not sourced from the seller files
+# above. Same rule as the block above: never referenced by filename, never
+# committed.
+/public/brand/IMG_0068.jpg
+/public/brand/IMG_0074.jpg
+/public/brand/IMG_0092.jpg
+/public/brand/IMG_7943.PNG
