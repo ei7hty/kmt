@@ -189,6 +189,11 @@ Rows come out in the shape `src/data/catalog.js` uses (`id`, `name`, `size`,
 the SKU, stock count, list price and product URL, so any row can be traced back
 to the page it came from.
 
+Running this across all 910 selector sizes rather than a handful is a
+monthly process, not a single command -- see
+[`docs/supplier-refresh.md`](docs/supplier-refresh.md) for the batch order,
+time expectations and the checks to run before each batch ships.
+
 ### Pushing a scrape into a running server
 
 The snapshot seeds a new database once and is otherwise never read again, so
@@ -350,6 +355,7 @@ the scraper from a home connection and treat the host as serving-only.
 | `scripts/browser-fetch.mjs` | Fetching pages through a real browser. |
 | `scripts/worktree.mjs` | Adds and removes agent worktrees under `.worktrees/`, linking the shared `node_modules` and unlinking it before removal. |
 | `.forge/` | Project record: requirements, roadmap, decisions, task state, the owner-backend design, the audit scripts, and the protocol for agents sharing this repo. |
+| `docs/supplier-refresh.md` | The monthly runbook for scraping all 910 selector sizes in batches and getting a batch into production. |
 | `Dockerfile`, `fly.toml`, `.github/workflows/fly-deploy.yml` | Container image, Fly config, CI. |
 | `vercel.json` | Redirects the old Vercel deployment to Fly. |
 
