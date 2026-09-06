@@ -1225,6 +1225,11 @@
   font: inherit;
   font-size: 14px;
   cursor: pointer;
+  /* Every other .link-action's text already exceeds 44px on its own
+     ("Track this quote →", "Text (xxx) xxx-xxxx"); "Remove" alone sat at
+     42.8px, a render-dependent near-miss with nothing guaranteeing it --
+     min-height already existed for this class, min-width did not. */
+  min-width: 44px;
 }
 
 .link-action:hover { text-decoration: underline; }
