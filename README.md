@@ -329,6 +329,7 @@ Environment for the hosted server:
 | `KMT_MAIL_SMTP_USER`, `KMT_MAIL_SMTP_PASSWORD` | Together or not at all: the mailbox and its App Password, or the relay credential. Unset for an IP-allow-listed relay. The password is set by the owner as a Fly secret and read by nothing else. |
 | `KMT_MAIL_FROM` | Required with any SMTP setting: a mailbox that authenticates on the sending server (for Gmail, the `KMT_MAIL_SMTP_USER` mailbox). Until the domain has SPF and DKIM, a domain address sent through another provider fails authentication silently, filed as spam while the outbox says sent. |
 | `KMT_OWNER_EMAIL` | Required with any SMTP setting: where the owner's copy goes and what customers reply to. |
+| `KMT_OWNER_NAME` | Optional display name for the owner recipient; defaults to `Ken's Mobile Tire`. |
 | `KMT_PUBLIC_ORIGIN` | The origin links in emails point at. Unset, `https://` plus `KMT_CANONICAL_HOST`. |
 
 First-time Fly setup, `fly launch` pitfalls and the Docker commands are in
