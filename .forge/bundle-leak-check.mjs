@@ -12,14 +12,22 @@ import path from 'node:path'
  * `GET /api/catalog`, never the static build. This greps `dist/` after
  * `npm run build` for the shapes that import would have left behind.
  *
- * The markers are the JSON-object shape (`"sku":`, quoted key and colon, as a
- * bundled JSON import renders), not the bare words `sku` or `listPrice` --
- * those also appear as legitimate property-access identifiers in the owner
- * screen's own code (`tire.source?.listPrice`), which ships in the same
- * single-bundle app and is not the leak. Likewise `giga-tires.com` alone
- * matches the owner screen's supplier-link allowlist and bookmarklet, both
- * intentional; the real marker is a concrete scraped value that has no
- * reason to exist anywhere in the app's own source.
+ * The markers are object-key shape, `key:` with no quotes -- not `sku` or
+ * `listPrice` alone, and not the quoted `"sku":` shape either. Measured
+ * against this toolchain, not assumed: esbuild minifies a bundled JSON
+ * import into an object literal with bare identifier keys --
+ * `source:{sku:"WATF...",stock:4,listPrice:38.93,...}` -- never a quoted
+ * key. A first version of this check used the quoted form and passed 3 of 3
+ * against a build that still had 1083 SKUs in it; this version is proven
+ * against that same leaking build below it merged only after failing on.
+ * The bare *words* `sku` and `listPrice` are not used either, because both
+ * also appear as legitimate property-access identifiers in the owner
+ * screen's own code (`tire.source?.listPrice`), which minifies to
+ * `.listPrice`/`?.listPrice` -- never `listPrice:` with a colon -- and ships
+ * in the same single-bundle app. `src/` and `backend/` were checked: neither
+ * writes `sku`, `listPrice` or `stock` as an object key anywhere a browser
+ * bundle would see it. Likewise `giga-tires.com` alone matches the owner
+ * screen's supplier-link allowlist and bookmarklet, both intentional.
  */
 const DIST = process.env.DIST_DIR || path.join(process.cwd(), 'dist')
 
@@ -33,12 +41,12 @@ const DIST = process.env.DIST_DIR || path.join(process.cwd(), 'dist')
 const EXPECTED_CHECKS = 3
 
 /**
- * Shapes that should never appear in a built bundle: the quoted JSON keys a
- * bundled `scraped-tires.json` import would render as. Structural, not a
- * value from today's snapshot, so it still catches the leak after the next
- * scrape changes every SKU and price in the file.
+ * Shapes that should never appear in a built bundle: the bare-key form a
+ * bundled `scraped-tires.json` import would render as after minification.
+ * Structural, not a value from today's snapshot, so it still catches the
+ * leak after the next scrape changes every SKU and price in the file.
  */
-const FORBIDDEN = ['"sku":', '"listPrice":', '"scrapedAt":']
+const FORBIDDEN = ['sku:', 'listPrice:', 'scrapedAt:']
 
 let passed = 0
 let failed = 0
