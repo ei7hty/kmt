@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `scraper-pacing` | scraper/import lane agent | `scripts/scrape-tires.mjs`, `scripts/browser-fetch.mjs`, `docs/supplier-refresh.md`, `.forge/NOTES.md` -- restore pacing after the 429 | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
