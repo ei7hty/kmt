@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| a11y-85-report | JUNIOR FRONT END DEV (local_376e0377) | .forge/a11y-85-report.md, .forge/a11y-85-measure.mjs (docs and the script only) | 2026-09-06 |
+| _none_ | | | |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
