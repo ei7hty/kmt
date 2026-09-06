@@ -22,6 +22,13 @@ import { sizeUrl } from './giga-tires.mjs'
 const READY_SELECTOR = '.plp-list__item-container'
 
 /**
+ * The supplier's own words for a size it does not carry, e.g. "Unfortunately,
+ * the size is not available at this time." Confirmed by reading a real empty
+ * page rather than inferred from the absence of results.
+ */
+const EMPTY_TEXT = 'is not available at this time'
+
+/**
  * Launch one browser and hand back a fetcher over it.
  *
  * One context for the whole run, reused across sizes: the WAF cookie it picks
@@ -62,12 +69,20 @@ export async function createBrowserFetcher(options = {}) {
       const url = sizeUrl(size, pageNumber)
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout })
 
-      // The grid is server-rendered, so this is a check that the real page came
-      // back rather than a wait for hydration. A size with no results never
-      // renders it, which is a legitimate outcome -- hence the soft catch.
-      await page.waitForSelector(READY_SELECTOR, { timeout: 20000 }).catch(() => {})
+      // Neither the grid nor the "not available" message is present at
+      // domcontentloaded -- both render client-side, at about the same
+      // speed (measured: ~1.7s for either). Racing them means a genuinely
+      // empty size returns as fast as a hit, instead of waiting out the
+      // full 20s below to conclude the grid was never coming. Each side
+      // catches its own timeout so the loser of the race never becomes an
+      // unhandled rejection.
+      await Promise.race([
+        page.waitForSelector(READY_SELECTOR, { timeout: 20000 }).catch(() => {}),
+        page.getByText(EMPTY_TEXT).waitFor({ timeout: 20000 }).catch(() => {}),
+      ])
 
       const html = await page.content()
+      if (html.includes(EMPTY_TEXT)) return { html, url }
       if (!html.includes('window.productPrices') && !html.includes(READY_SELECTOR)) {
         const title = await page.title()
         throw new Error(`Blocked or unexpected page (title: ${title || 'none'})`)

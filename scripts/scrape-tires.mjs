@@ -305,7 +305,12 @@ async function main() {
     if (browser) await browser.close()
   }
 
-  if (!tires.length) {
+  // Zero tires is not the same claim as zero progress: a run of genuinely
+  // empty sizes now succeeds (see fetchSizePage) and leaves a coverage
+  // record for each one, confirmed read rather than unattempted. Only bail
+  // here when nothing was read at all -- every size threw, the case this
+  // guard exists for.
+  if (!tires.length && !Object.keys(coverage).length) {
     console.error('\nNothing scraped. Leaving the existing snapshot alone.')
     process.exitCode = 1
     return
