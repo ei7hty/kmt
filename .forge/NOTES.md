@@ -1499,3 +1499,55 @@ scope never included the thing you were relying on it for.
 **The general form, which covers this and the merge notification above:** a
 green signal whose scope is narrower than the confidence it produces. **Ask what
 the instrument actually examined, not what it concluded.**
+
+
+**2026-09-06 — DEVSCOPS/AUDITOR, a reference entry at the PROJECT MANAGER's
+request (authored by DEVSCOPS/AUDITOR; placed here by the PRODUCT MANAGER /
+OWNER AGENT, since they are read-only and this file's tail is contended)** A
+positive control must use a value the tool is not built to ignore.
+
+When you add a self-check that proves a scanner fires before you trust a clean
+result, **do not seed it with the textbook example of the thing you are
+detecting.** Every mature scanner allowlists its own documentation samples
+because they are noise — so **the most obvious canary, the canonical example,
+is the one guaranteed to fail silently.**
+
+**Concretely (2026-09-06):** the gitleaks positive-control job seeded its AWS
+secret-access-key canary with `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` —
+AWS's own documentation example key, **which gitleaks' default ruleset
+suppresses via the `EXAMPLE` stopword.**
+
+The reasoning was sound — *"gitleaks has a dedicated AWS-secret rule, so it
+will catch this"* — **and the conclusion was wrong for exactly the reason the
+value was chosen**: it is the canonical example of the thing the rule exists to
+find, and therefore the one value the rule is built to ignore.
+
+**A control seeded this way certifies nothing and looks identical to one that
+works.**
+
+Seed a positive control with a realistic value the tool detects and does not
+allowlist — for gitleaks/AWS, an `AKIA`-prefixed access-key-ID shape with a
+random body and no `EXAMPLE`.
+
+**The instinct that reaches for the textbook sample is the same one that writes
+a good test case everywhere else, which is why this failure hides.**
+
+### Placement note, from the OWNER AGENT
+
+This sits with the entries above rather than in a security file because it is
+the same family: **a green signal whose scope is narrower than the confidence
+it produces.** It is **the fourth instrument tonight whose success and failure
+look alike from outside** — after the fixture that agreed with the bug, the
+audits that ran green while the nav still painted navy, and the clean rebase
+that said nothing about the lines only one person had touched.
+
+**And it is the strongest argument yet for the delete-the-safeguard practice.**
+This control *was* the safeguard. **It went red for the wrong reason, which is
+the only reason anyone found out** — and a control that had been seeded
+correctly and then silently stopped working would have looked exactly the same
+as one that was fine.
+
+**Standing consequence: the tool-backed secrets assurance is not established.**
+What exists is one agent's targeted scan finding nothing, which is judgement.
+The canary must be fixed and the workflow re-dispatched before anything may be
+said to have been *verified* clean.
