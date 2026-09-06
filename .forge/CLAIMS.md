@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| t50-privacy | JUNIOR FRONT END DEV (local_376e0377) | t50: src/routes/Privacy.jsx (new), the /privacy route in src/App.jsx, a footer link on every route, one line under the email field, one rule in App.css; branched from #145 head 7396bf7, rebase after it lands | 2026-09-06 |
+| _none_ | | | |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
