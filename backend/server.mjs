@@ -36,7 +36,8 @@ import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
 import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isPublicApiCall, readJsonBody } from './api.mjs'
 import { Quotes } from './quotes.mjs'
-import { createAuth, readAuthConfig } from './auth.mjs'
+import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
+import { LoginThrottle, RateLimiter } from './limits.mjs'
 import { createStaticHandler } from './static.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -47,9 +48,11 @@ if (!existsSync(path.join(dist, 'index.html'))) {
   process.exit(1)
 }
 
-let auth
+// The password is checked before the database is opened, so a misconfigured
+// deploy fails on the first line of its log rather than after a migration.
+let authConfig
 try {
-  auth = createAuth(readAuthConfig())
+  authConfig = readAuthConfig()
 } catch (error) {
   console.error(error.message)
   process.exit(1)
@@ -60,6 +63,13 @@ mkdirSync(path.dirname(dbPath), { recursive: true })
 
 const inventory = new Inventory(dbPath, TIRE_CATALOG.map(tire => tire.size))
 inventory.importSnapshot(JSON.parse(readFileSync(path.join(root, 'src/data/scraped-tires.json'), 'utf8')))
+// Live sessions are in the database so a deploy does not sign the owner out;
+// wrong passwords are slowed per address (#66). The health check is exempt
+// from both by never passing through either: it is answered below on its own.
+const auth = createAuth(authConfig, {
+  sessions: createSessionStore(inventory.db),
+  throttle: new LoginThrottle(),
+})
 const refresher = new Refresher(inventory)
 const importer = new PageImporter(inventory)
 const quotes = new Quotes(inventory)
@@ -68,8 +78,9 @@ const catalogApi = createCatalogApi(inventory)
 // The platform's health check, mounted here too so the local server and the
 // hosted one answer the same routes.
 const healthApi = createHealthApi(inventory)
-// Requests and their quotes live in the same database as inventory.
-const requestsApi = createRequestsApi(quotes)
+// Requests and their quotes live in the same database as inventory. The three
+// public writes are limited per address, per browser key and per email (#63).
+const requestsApi = createRequestsApi(quotes, { limiter: new RateLimiter() })
 
 const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'

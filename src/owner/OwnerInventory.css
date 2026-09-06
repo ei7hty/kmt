@@ -22,6 +22,7 @@
 .oi-metrics > div { border: 1px solid #303036; border-radius: 6px; padding: 20px 24px; background: #151518; }
 .oi-metrics strong { display: block; font-size: 30px; color: #fafafa; line-height: 1.2; }
 .oi-metrics span { display: block; margin-top: 6px; font-size: 12px; }
+.oi-metrics small { display: block; margin-top: 4px; font-size: 11px; color: #9c9ca6; }
 .oi-refresh { border-top: 2px solid #ce1d27; background: #18181b; padding: 22px; display: flex; gap: 28px; align-items: center; margin-bottom: 16px; }
 .oi-shell h2 { font-family: 'Segoe UI', sans-serif; font-size: 18px; font-weight: 650; line-height: 1.3; text-transform: none; letter-spacing: 0; margin: 0 0 9px; }
 .oi-refresh p { font-size: 12px; line-height: 1.7; max-width: 730px; }
