@@ -1001,3 +1001,40 @@ brand-file ignore rule rather than here (see the `.gitignore` history around
 PR #309): a green `git check-ignore` against a file's old path stood as
 "covered" while the file's actual current path matched nothing — check the
 path you mean to ask about, not the one that used to be true.
+**2026-09-06 — Claude (MARKETING AGENT), after the brand-licensing sweep**
+Grepping for a phrase finds the documents. It does not find the idea.
+
+A false claim about the brand art — that the business did not own it — had to
+come out of a public repository tonight. I was handed four locations, and
+searched for the words instead of fixing the four: `unlicensed`, `licensed`,
+`watermark`, the supplier's name. That found six. It missed a seventh.
+
+`backend/static.test.mjs` fetches `/brand/SOURCES.md` and asserts a content
+type on it. `public/brand/SOURCES.md` was deleted weeks ago — so the test
+encodes an expectation about a file that no longer exists, and passes anyway
+because it writes its own fixture first. It contains none of the four words.
+**No honest search for them could ever have reached it.**
+
+This is the seventh instrument failure in a day of them and **the first where
+the instrument was working perfectly.** `grep -P`, `dig`, the empty counts, the
+stale `gh run view`, `gh pr list --author "@me"`, `$?` after a pipe: in every
+one of those the tool answered a question other than the one asked. Here `grep`
+answered exactly what it was asked. **The query was the defect.**
+
+The practical form, because "search harder" is not a technique:
+
+- **After a phrase-grep, grep for the artifacts the idea touches** — filenames,
+  routes, constants, env vars, table names. `SOURCES.md` is what found the
+  seventh instance, and it is the thing that survived a rephrasing the prose
+  did not.
+- **Prefer several searches that share no word** over one clever pattern. An
+  idea that has been written about more than once has been worded more than
+  once; a single regex is a bet that everyone reached for the same vocabulary.
+- **Ask what would still be true if the wording had drifted.** A path, an
+  identifier and a number survive paraphrase. Adjectives do not.
+
+The general rule from the `dig` and `grep -P` entries above is that a
+verification returning nothing is agreeing with whatever you already feared.
+**This is its neighbour: a verification returning *something* can still be
+silent about the part you needed, and it will look complete while it does it.**
+Six hits felt like a finished sweep. It was 86% of one.
