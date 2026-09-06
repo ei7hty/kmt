@@ -40,7 +40,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `deployed-site-check` | forge (Claude) | `.forge/deployed-site-check.mjs` (new), the verify job in `.github/workflows/fly-deploy.yml`, `.forge/AGENTS.md`, `.forge/decisions.md` | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
