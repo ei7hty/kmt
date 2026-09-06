@@ -54,7 +54,7 @@
     },
     {
       "id": "m8",
-      "title": "m8 — Customer quotes are priced from the owner's real inventory, not the static demo catalog",
+      "title": "m8 \u2014 Customer quotes are priced from the owner's real inventory, not the static demo catalog",
       "description": "A separate effort already built a real owner backend (SQLite: supplier inventory, owner-set prices/offers, a markup fallback rule) at /owner, reachable via node backend/dev.mjs. It was deliberately scoped as \"customer catalog integration is a separate, deliberate step\" (see .forge/owner-backend.md) and never wired up: the customer flow at / and the quote engine in pricing.js still read the fully-generated static catalog (src/data/catalog.js's buildCatalog() with no options), and requests/quotes still live in localStorage (src/store.js), untouched by the backend. This milestone closes that gap: when the real backend is running, a customer sees and gets quoted the tires the owner actually chose to offer, at the prices he actually set (falling back to markup where he has not priced a tire), and falls back to today's generated catalog when the backend is not reachable (e.g. the static Vercel deployment). No changes to the quote/request storage mechanism, the exception rules, or payment in this milestone -- those are flagged as open questions in roadmap.md because they need an owner decision, not assumed here.",
       "status": "done",
       "order": 7
@@ -663,14 +663,17 @@
       "title": "A request has an end, and the owner list is usable with real requests in it",
       "description": "Statuses become: draft, sent (was approved), paid, done, rejected, cancelled. Owner endpoints: POST /api/owner/quotes/:id/done (only from paid) and /cancel (from draft or sent, with an optional reason the customer sees); customer endpoint: POST /api/requests/:id/cancel with the key, only before payment. Keep the old 'approved' value readable so nothing already stored breaks; write 'sent' from now on. Owner list, GET /api/owner/requests?view=open|attention|awaiting|paid|closed, default open (draft, sent, paid), newest first, with counts per view; the screen gets those filters in the existing style and shows open by default. The /status stepper gains the done state and shows rejected or cancelled plainly with the reason. Nothing is deleted. Tests for every transition, allowed and refused, and for the view filters.",
       "milestoneId": "m10",
-      "status": "todo",
+      "status": "done",
       "priority": "medium",
       "dependsOn": [
         "t35"
       ],
-      "notes": [],
+      "notes": [
+        "The quotes table CHECK constraint listed only the four original statuses, and SQLite cannot ALTER a CHECK. Every test and both CI jobs build the table fresh, so nothing would have caught it; the deployed database mounts a volume and would have refused the first write of sent -- the owner Approve button. PR #55 lands a table-rebuild migration as its first commit, with a test that builds the old schema by hand and carries the approved-then-paid row across.",
+        "Shipped in PR #55: statuses draft, sent (was approved), paid, done, rejected, cancelled. POST /api/owner/quotes/:id/done (only from paid) and /cancel (from draft or sent, optional reason), POST /api/requests/:id/cancel keyed like paying and 404 through keyFor, added to the public POST allow-list by name. Each transition is its own method over one shared version check; reason is a new column, through shapeRow. GET /api/owner/requests?view= with counts for every view, default open, and the filters on the screen; /status gained a fourth beat and shows rejected or cancelled with the reason. approved stays readable, payable and closable, which the stored t33 proof row depends on."
+      ],
       "createdAt": "2026-09-05T21:52:40.692Z",
-      "updatedAt": "2026-09-05T21:52:40.692Z"
+      "updatedAt": "2026-09-06T01:33:45.066643Z"
     },
     {
       "id": "t37",
