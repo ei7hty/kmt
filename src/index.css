@@ -3,20 +3,27 @@
 @tailwind utilities;
 
 :root {
-  --text: #b9b9bc;
-  --text-h: #f5f5f5;
-  --bg: #080808;
-  --panel: #121212;
-  --panel-soft: #171717;
-  --border: #303033;
+  /* The ground is the navy behind the logo; panels and borders step up from
+     it. Text is cool grey. Measured against these on #85 and in t59. */
+  --text: #c3cdd3;
+  --text-h: #f5f7f8;
+  --muted: #96a6b0;
+  --bg: #0d1b24;
+  --bg-deep: #08131a;
+  --panel: #122430;
+  --panel-soft: #16303c;
+  --border: #27404d;
+  /* Chrome, for the page headline and the logo only: the logo's silver
+     lettering, as a vertical sheen. Never on body text. */
+  --chrome: linear-gradient(180deg, #ffffff 0%, #e3e8ec 38%, #a9b3bb 52%, #f2f4f6 100%);
   --accent: #ed1c24;
   --accent-dark: #b80e14;
   /* White text on the brand red is 4.38:1, under AA's 4.5. Fills that carry
-     white text use this darker red (5.18:1); red text on a dark panel uses
-     the lighter one below (5.06:1 on --panel). Brand red stays for borders,
-     rings and decoration, where contrast is not read. Measured, see #85. */
+     white text use this darker red (5.18:1); red text on the navy uses the
+     lighter one below (6.3:1 on --bg, 4.5:1 on the lightest card). Brand red stays
+     for borders, rings and decoration, where contrast is not read. See #85. */
   --accent-solid: #d9121a;
-  --accent-text: #f2434a;
+  --accent-text: #ff6b72;
   --accent-bg: rgba(237, 28, 36, 0.12);
   --accent-border: rgba(237, 28, 36, 0.8);
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
