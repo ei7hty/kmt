@@ -58,6 +58,16 @@ const CLOSED_NOTE = {
   cancelled: 'Cancelled before payment.',
 }
 
+/**
+ * A request opened from a link (the Outbox panel, or one mailed to Ken)
+ * rather than by browsing. Read once at mount: the query string is not part
+ * of this screen's own navigation, so nothing here needs it to react to
+ * later changes.
+ */
+function linkedRequestId() {
+  return new URLSearchParams(window.location.search).get('request') || ''
+}
+
 function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
   useNoIndex()
   const [view, setView] = useState('open')
@@ -67,6 +77,13 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
   const [error, setError] = useState('')
   const [needsSignIn, setNeedsSignIn] = useState(false)
   const [busyId, setBusyId] = useState('')
+  const [linkedId] = useState(linkedRequestId)
+  // 'open' (draft/sent/paid) and 'closed' (done/rejected/cancelled) between
+  // them cover every request, so a linked id missing from 'open' -- the
+  // screen's default -- needs exactly one more look, at 'closed', before
+  // concluding it truly is not there. Sits outside `requests`/`view` so it
+  // survives the owner switching tabs by hand afterwards.
+  const [linkedSearch, setLinkedSearch] = useState(linkedId ? 'pending' : 'none')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -74,15 +91,29 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
       const data = await ownerRequests(view)
       // Newest first everywhere, except that what needs the owner is shown
       // longest-waiting first: the API returns every view newest first.
-      setRequests(view === 'attention' ? [...data.requests].reverse() : data.requests)
+      const list = view === 'attention' ? [...data.requests].reverse() : data.requests
+      setRequests(list)
       setCounts(data.counts)
       setError('')
       setNeedsSignIn(false)
+
+      if (linkedId && linkedSearch === 'pending') {
+        if (list.some(({ request }) => request.id === linkedId)) setLinkedSearch('found')
+        else if (view === 'open') setView('closed')
+        else setLinkedSearch('missing')
+      }
     } catch (err) {
       if (err instanceof NeedsSignIn) { setNeedsSignIn(true); setError('') }
       else setError(err.message)
     } finally { setLoading(false) }
-  }, [view])
+  }, [view, linkedId, linkedSearch])
+
+  // Once found, scroll the owner straight to the card a link promised them,
+  // rather than leaving them to find it in a list that may run to two screens.
+  useEffect(() => {
+    if (linkedSearch !== 'found') return
+    document.getElementById(`request-${linkedId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [linkedSearch, linkedId])
 
   // Scheduled rather than called in the effect body, the way OwnerInventory
   // does it: a synchronous setState here cascades a render.
@@ -154,6 +185,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
           ))}
         </div>
         {error && <div className="panel"><p className="status-note status-note-bad" role="alert">{error}</p><button className="btn btn-neutral" onClick={load}>Try again</button></div>}
+        {linkedSearch === 'missing' && <div className="panel"><p className="status-note status-note-bad" role="alert">Could not find request #{linkedId.slice(0, 8)}. It may have come from a different environment.</p></div>}
         {!loading && !error && requests.length === 0 ? <div className="panel"><p className="text-secondary">{view === 'open' ? 'No open requests. Go to the customer flow and submit one.' : 'Nothing here right now.'}</p></div> : (
           <div className="owner-list">
             {requests.map(({ request, quote, tire }) => {
@@ -162,7 +194,8 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
               // same quantity the quote was actually priced for.
               const tireLine = quote?.lineItems?.find(item => item.description !== 'Mobile installation service')
               return (
-              <div key={request.id} className="panel owner-request">
+              <div key={request.id} id={`request-${request.id}`}
+                className={request.id === linkedId && linkedSearch === 'found' ? 'panel owner-request owner-request-linked' : 'panel owner-request'}>
                 <div className="owner-request-head">
                   <p className="owner-request-vehicle">{request.vehicleInfo}</p>
                   <code className="owner-request-ref" title={`Request ${request.id}`}>#{request.id.slice(0, 8)}</code>

@@ -638,6 +638,14 @@
   text-align: left;
 }
 
+/* The one card a ?request= link pointed at, so a scroll that lands mid-list
+   still tells the owner which row is theirs. Same accent used for a focus
+   ring elsewhere, not a new colour meaning. */
+.owner-request-linked {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
+
 /* Exception variant: amber, distinct from brand red and success green (R9). */
 .panel-exception {
   border-color: rgba(245, 158, 11, 0.55);
