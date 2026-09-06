@@ -318,6 +318,7 @@ the scraper from a home connection and treat the host as serving-only.
 | `scripts/import-tires.mjs` | Pushes a snapshot into a running owner server, local or hosted. |
 | `scripts/giga-tires.mjs` | Parsing and normalising one supplier listing page. Pure, so it can be tested on saved HTML. |
 | `scripts/browser-fetch.mjs` | Fetching pages through a real browser. |
+| `scripts/worktree.mjs` | Adds and removes agent worktrees under `.worktrees/`, linking the shared `node_modules` and unlinking it before removal. |
 | `.forge/` | Project record: requirements, roadmap, decisions, task state, the owner-backend design, the audit scripts, and the protocol for agents sharing this repo. |
 | `Dockerfile`, `fly.toml`, `.github/workflows/fly-deploy.yml` | Container image, Fly config, CI. |
 | `vercel.json` | Redirects the old Vercel deployment to Fly. |
