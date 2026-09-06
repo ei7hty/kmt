@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Quotes } from './quotes.mjs'
 import { Outbox, OUTBOX_PERSONAL_DATA_KEYS } from './outbox.mjs'
-import { Mailer, NullAdapter, ResendAdapter, addressLabel, readMailConfig } from './mail.mjs'
+import { Mailer, NullAdapter, SmtpAdapter, addressLabel, readMailConfig } from './mail.mjs'
 import { MAIL_TYPES, TEMPLATES } from './mail-templates.mjs'
 import { createApi, createRequestsApi } from './api.mjs'
 
@@ -16,7 +16,8 @@ const KEY = 'a'.repeat(32)
 const form = () => ({ customerKey: KEY, tireSize: SIZE, tireSelection: 'giga-a', quantity: 4, vehicleInfo: '2020 Toyota Corolla',
   location: '456 Demo Ave, Everett, MA 02149', locationType: 'Home', serviceZip: '02149', locationNotes: 'Blue sedan, gate code 1234',
   date: '2026-09-10', customerName: 'Jamie Rivera', customerEmail: 'Jamie@Example.com', customerPhone: '6175550100' })
-const CONFIG = { provider: 'resend', apiKey: 'k', from: 'quotes@kensmobiletire.com', ownerEmail: 'owner@example.com', ownerName: 'Ken' }
+const CONFIG = { provider: 'smtp', host: 'smtp-relay.gmail.com', port: 587, user: 'quotes@kensmobiletire.com', password: 'app-password',
+  from: 'quotes@kensmobiletire.com', ownerEmail: 'owner@example.com', ownerName: 'Ken' }
 
 function world(t, { adapter, log } = {}) {
   const inventory = new Inventory(':memory:', [SIZE])
@@ -29,18 +30,35 @@ function world(t, { adapter, log } = {}) {
   return { inventory, quotes, outbox, mailer, lines }
 }
 
-/** A Resend that remembers what it was asked and answers as told. */
-function fakeResend(reply = { status: 200, body: { id: 'msg_1' } }) {
+/** A transporter that remembers what it was asked and answers as told; no socket is ever opened. */
+function fakeSmtp(reply = { messageId: '<msg1@kensmobiletire.com>' }) {
   const calls = []
-  const fetchImpl = async (url, init) => { calls.push({ url, init, body: JSON.parse(init.body) }); return { ok: reply.status < 300, status: reply.status, json: async () => reply.body } }
-  return { calls, adapter: new ResendAdapter({ apiKey: 'k', fetch: fetchImpl }) }
+  const transporter = { async sendMail(message) { calls.push(message); if (reply instanceof Error) throw reply; return reply } }
+  return { calls, adapter: new SmtpAdapter({ host: 'smtp-relay.gmail.com', port: 587, user: 'u', password: 'p', transporter }) }
 }
 
-test('the configuration is the environment: no key means the outbox-only mode, a key needs its two addresses', () => {
+test('the configuration is the environment: nothing set means the outbox-only mode; SMTP settings need their two addresses', () => {
   assert.equal(readMailConfig({}).provider, 'none')
-  assert.equal(readMailConfig({ KMT_MAIL_API_KEY: 'k', KMT_MAIL_FROM: 'q@x.com', KMT_OWNER_EMAIL: 'o@x.com' }).provider, 'resend')
-  assert.throws(() => readMailConfig({ KMT_MAIL_API_KEY: 'k', KMT_OWNER_EMAIL: 'o@x.com' }), /KMT_MAIL_FROM/)
-  assert.throws(() => readMailConfig({ KMT_MAIL_API_KEY: 'k', KMT_MAIL_FROM: 'q@x.com' }), /KMT_OWNER_EMAIL/)
+  const relay = readMailConfig({ KMT_MAIL_SMTP_HOST: 'smtp-relay.gmail.com', KMT_MAIL_FROM: 'q@x.com', KMT_OWNER_EMAIL: 'o@x.com' })
+  assert.equal(relay.provider, 'smtp', 'an allow-listed relay needs no credential')
+  assert.equal(relay.port, 587)
+  const mailbox = readMailConfig({ KMT_MAIL_SMTP_HOST: 'smtp.gmail.com', KMT_MAIL_SMTP_USER: 'q@x.com', KMT_MAIL_SMTP_PASSWORD: 'app', KMT_MAIL_FROM: 'q@x.com', KMT_OWNER_EMAIL: 'o@x.com' })
+  assert.equal(mailbox.provider, 'smtp')
+  assert.equal(mailbox.user, 'q@x.com')
+  assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_HOST: 'h', KMT_OWNER_EMAIL: 'o@x.com' }), /KMT_MAIL_FROM/)
+  assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_HOST: 'h', KMT_MAIL_FROM: 'q@x.com' }), /KMT_OWNER_EMAIL/)
+  assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_USER: 'u', KMT_MAIL_FROM: 'q@x.com', KMT_OWNER_EMAIL: 'o@x.com' }), /go together/)
+  assert.throws(() => readMailConfig({ KMT_MAIL_SMTP_HOST: 'h', KMT_MAIL_SMTP_PORT: 'lots', KMT_MAIL_FROM: 'q@x.com', KMT_OWNER_EMAIL: 'o@x.com' }), /port number/)
+})
+
+test('the SMTP adapter is STARTTLS on 587 and implicit TLS on 465, with auth only when a user is given', () => {
+  const relay = new SmtpAdapter({ host: 'smtp-relay.gmail.com', port: 587 })
+  assert.equal(relay.options.secure, false)
+  assert.equal(relay.options.auth, undefined)
+  const mailbox = new SmtpAdapter({ host: 'smtp.gmail.com', port: 465, user: 'q@x.com', password: 'app' })
+  assert.equal(mailbox.options.secure, true)
+  assert.deepEqual(mailbox.options.auth, { user: 'q@x.com', pass: 'app' })
+  assert.throws(() => new SmtpAdapter({}), /needs a host/)
 })
 
 test('every template names its personal fields the way the outbox redacts them, and every type has one', () => {
@@ -56,6 +74,16 @@ test('every template names its personal fields the way the outbox redacts them, 
   assert.match(rendered.text, /T × 4 @ \$50\.00 = \$200\.00/)
   assert.match(rendered.text, /https:\/\/x\/status\?request=r1/)
   assert.doesNotMatch(rendered.html, /<script/)
+})
+
+test('the owner alert shows what the customer added under "Anything else I should know?", and nothing when they added nothing', () => {
+  const ctx = { request: { id: 'r1', vehicleInfo: 'v', quantity: 4, date: 'd' }, quote: { lines: [], total: 1 }, tire: { name: 'T', size: SIZE }, origin: 'https://x', to: 'o@x.com', toName: 'Ken' }
+  const arrived = TEMPLATES['request-arrived']
+  assert.doesNotMatch(arrived.render(arrived.data(ctx)).text, /Anything else/)
+  assert.doesNotMatch(arrived.render(arrived.data({ ...ctx, request: { ...ctx.request, customerNotes: '   ' } })).text, /Anything else/)
+  const spoken = arrived.render(arrived.data({ ...ctx, request: { ...ctx.request, customerNotes: 'Spare is on already, please hurry' } }))
+  assert.match(spoken.text, /Anything else I should know\?\nSpare is on already, please hurry/)
+  assert.equal(arrived.data({ ...ctx, request: { ...ctx.request, customerNotes: 'x' } }).customerNotes, 'x', 'stored as its own key, ready for redaction')
 })
 
 test('with the null adapter a message is recorded queued, with the data the template renders from, and nothing is sent', async t => {
@@ -87,35 +115,34 @@ test('the owner message goes to the configured owner address, the customer messa
   assert.equal(customer.to, 'jamie@example.com')
 })
 
-test('with Resend the message is one POST, the id comes back onto the row, and the row is sent', async t => {
-  const { calls, adapter } = fakeResend()
+test('over SMTP the message is one sendMail, the server\'s message id comes back onto the row, and the row is sent', async t => {
+  const { calls, adapter } = fakeSmtp()
   const { quotes, mailer } = world(t, { adapter })
   const { request } = quotes.submit(form())
   const row = await mailer.notify('request-received', request.id)
   assert.equal(row.status, 'sent')
-  assert.equal(row.providerId, 'msg_1')
+  assert.equal(row.providerId, '<msg1@kensmobiletire.com>')
   assert.equal(calls.length, 1)
-  assert.equal(calls[0].url, 'https://api.resend.com/emails')
-  assert.equal(calls[0].init.headers.Authorization, 'Bearer k')
-  assert.equal(calls[0].body.from, 'quotes@kensmobiletire.com')
-  assert.deepEqual(calls[0].body.to, ['Jamie Rivera <jamie@example.com>'])
-  assert.equal(calls[0].body.reply_to, 'owner@example.com')
-  assert.match(calls[0].body.subject, /Jamie/)
-  assert.match(calls[0].body.text, /Test Touring/)
+  assert.equal(calls[0].from, 'quotes@kensmobiletire.com')
+  assert.deepEqual(calls[0].to, { name: 'Jamie Rivera', address: 'jamie@example.com' })
+  assert.equal(calls[0].replyTo, 'owner@example.com')
+  assert.match(calls[0].subject, /Jamie/)
+  assert.match(calls[0].text, /Test Touring/)
+  assert.match(calls[0].html, /<!doctype html>/)
 })
 
-test('a provider failure is a failed row with the provider\'s words, and nothing else changes', async t => {
-  const { adapter } = fakeResend({ status: 422, body: { message: 'domain not verified' } })
+test('a provider failure is a failed row with the server\'s words, and nothing else changes', async t => {
+  const { adapter } = fakeSmtp(new Error('535-5.7.8 Username and Password not accepted'))
   const { quotes, mailer } = world(t, { adapter })
   const { request } = quotes.submit(form())
   const row = await mailer.notify('quote-sent', request.id)
   assert.equal(row.status, 'failed')
-  assert.match(row.error, /422.*domain not verified/)
+  assert.match(row.error, /535.*not accepted/)
   assert.equal(quotes.get(request.id).quote.status, 'draft', 'the request is untouched')
 })
 
 test('no log line ever carries an address; correlation is the keyed hash', async t => {
-  const { adapter } = fakeResend({ status: 500, body: {} })
+  const { adapter } = fakeSmtp(new Error('connection refused'))
   const { quotes, mailer, lines } = world(t, { adapter })
   const { request } = quotes.submit(form())
   await mailer.notify('request-received', request.id)
@@ -148,8 +175,7 @@ test('the API sends after it answers: submit records two messages, sending the q
 
   const submitted = await (await post('/api/requests', form())).json()
   await mailer.idle()
-  const afterSubmit = outbox.forRequest(submitted.request.id).map(row => row.type).sort()
-  assert.deepEqual(afterSubmit, ['request-arrived', 'request-received'])
+  assert.deepEqual(outbox.forRequest(submitted.request.id).map(row => row.type).sort(), ['request-arrived', 'request-received'])
 
   const { version } = quotes.get(submitted.request.id).quote
   const decided = await (await post(`/api/owner/quotes/${submitted.request.id}/approve`, { version })).json()
@@ -160,13 +186,12 @@ test('the API sends after it answers: submit records two messages, sending the q
   const paid = await (await post(`/api/requests/${submitted.request.id}/pay`, { customerKey: KEY })).json()
   assert.equal(paid.quote.status, 'paid')
   await mailer.idle()
-  const types = outbox.forRequest(submitted.request.id).map(row => row.type).sort()
-  assert.deepEqual(types, ['payment-recorded', 'quote-sent', 'request-arrived', 'request-received'])
+  assert.deepEqual(outbox.forRequest(submitted.request.id).map(row => row.type).sort(), ['payment-recorded', 'quote-sent', 'request-arrived', 'request-received'])
 
-  const rejected = await (await post(`/api/owner/quotes/${submitted.request.id}/reject`, { version: quotes.get(submitted.request.id).quote.version })).json()
-  assert.equal(rejected.error !== undefined || rejected.quote?.status !== 'sent', true, 'a rejection after payment is refused and sends nothing')
+  const refused = await post(`/api/owner/quotes/${submitted.request.id}/reject`, { version: quotes.get(submitted.request.id).quote.version })
+  assert.equal(refused.status, 409, 'a rejection after payment is refused')
   await mailer.idle()
-  assert.equal(outbox.forRequest(submitted.request.id).length, 4, 'no message for a refused transition')
+  assert.equal(outbox.forRequest(submitted.request.id).length, 4, 'and sends nothing')
 
   const listed = await (await fetch(base + '/api/owner/outbox?limit=10')).json()
   assert.equal(listed.provider, 'none')

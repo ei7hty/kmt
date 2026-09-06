@@ -44,6 +44,9 @@ function baseData({ request, quote, tire, origin, to, toName }) {
     customerPhone: request.customerPhone ?? null,
     location: request.location ?? null,
     locationNotes: request.locationNotes ?? null,
+    // t64's "Anything else I should know?": free text the customer wrote, so
+    // it belongs with the personal keys if the request's redaction takes it.
+    customerNotes: request.customerNotes ?? null,
     requestId: request.id,
     vehicleInfo: request.vehicleInfo ?? null,
     tireName: tire?.name ?? quote?.lines?.[0]?.description ?? null,
@@ -77,7 +80,8 @@ export const TEMPLATES = {
     audience: 'owner',
     data: baseData,
     render: d => {
-      const text = `A new request is waiting for you.\n\n${d.quantity} × ${d.tireName}${d.tireSize ? ` (${d.tireSize})` : ''}\nVehicle: ${d.vehicleInfo}\nWhere: ${d.locationType || ''} ${d.serviceZip || ''}\nWhen: ${d.date}\n\nDraft total: ${d.total == null ? '(none)' : money(d.total)}\n\nReview it here:\n${d.ownerUrl}`
+      const notes = d.customerNotes && String(d.customerNotes).trim() ? `\n\nAnything else I should know?\n${String(d.customerNotes).trim()}` : ''
+      const text = `A new request is waiting for you.\n\n${d.quantity} × ${d.tireName}${d.tireSize ? ` (${d.tireSize})` : ''}\nVehicle: ${d.vehicleInfo}\nWhere: ${d.locationType || ''} ${d.serviceZip || ''}\nWhen: ${d.date}${notes}\n\nDraft total: ${d.total == null ? '(none)' : money(d.total)}\n\nReview it here:\n${d.ownerUrl}`
       return { subject: `New request: ${d.quantity} × ${d.tireName}${d.tireSize ? ` ${d.tireSize}` : ''}`, text, html: htmlOf(text) }
     },
   },
