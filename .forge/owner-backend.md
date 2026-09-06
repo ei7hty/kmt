@@ -315,6 +315,80 @@ owner's own connection and needs no server access to the supplier at all. Do not
 respond by adding stealth plugins or residential proxies -- that is evading the
 supplier's bot detection rather than being a well-behaved client.
 
+## Schema migrations
+
+**Merge is deploy.** Every push to `main` deploys, and the deploy runs against
+the real database on the Fly volume on first boot -- there is no staging
+copy, no gate between merge and that boot, and no second chance if the
+migration is wrong. Get it right before it merges, not after.
+
+The reason this needs a contract at all: `node --test` and both CI jobs build
+every table from today's code, so they agree with whatever shape that code
+happens to write. The one database that does not agree is the one with
+customers on it -- it was created by an earlier version of the code, and it
+persists. `CREATE TABLE IF NOT EXISTS` is a no-op against a table that
+already exists, and SQLite cannot `ALTER` a `CHECK` constraint. So a changed
+status list, a renamed column, or a new required field can pass every test
+and both CI jobs and then fail on production's first write -- which, for
+`quotes.status`, was the owner's own Approve button (#55, 2026-09-06).
+
+A schema change needs a migration when it:
+- widens or narrows a `CHECK` constraint (SQLite cannot `ALTER` one),
+- renames or drops a column,
+- adds a column that is `NOT NULL` with no usable default for existing rows.
+
+It does not need one to add a nullable column, or one with a `DEFAULT` that
+is correct for every row already there (`ALTER TABLE ... ADD COLUMN` handles
+both). Most of what will actually come up here is the first case: a status
+vocabulary that grows.
+
+**The required shape**, following `Quotes.migrate()` in `backend/quotes.mjs`
+as the pattern rather than restating it:
+
+1. **Decide by reading the stored schema, not a version counter.** There is
+   no migration framework here to hang a counter on, and the question that
+   actually matters -- what constraint does this table carry right now -- is
+   answered directly by `sqlite_master.sql`. Check for the thing the new code
+   needs (e.g. every new status name present in the `CHECK`), not for the
+   absence of the old shape: a table from any earlier day should read as
+   needing the rebuild, and a table already migrated (by this run or an
+   earlier one) should read as not needing it, so opening the file twice
+   changes nothing.
+2. **Foreign keys off, outside the transaction.** `PRAGMA foreign_keys=OFF`
+   before the transaction starts and back `ON` in a `finally` after -- the
+   pragma is a no-op if issued inside one. Off because the rebuild drops a
+   table another table references.
+3. **Rebuild with SQLite's documented pattern**, inside that transaction:
+   create a new table under a scratch name with the full new shape, copy the
+   old rows into it, drop the old table, rename the scratch table into place,
+   and recreate any index the old table carried. **Copy by named column, not
+   `SELECT *`**: the old table is missing at least one column the new shape
+   has (that is usually the whole reason for the migration), and a positional
+   copy shifts every later column over by one instead of failing loudly.
+4. **A migration test that starts from the old schema, written by hand.**
+   Not from the pre-migration version of the code -- from a literal `CREATE
+   TABLE` string carrying the exact old shape, as `backend/migration.test.mjs`
+   does. Seed it with a row shaped like a real one already in production
+   (status, version, and enough of the payload to be recognizable), open it
+   through today's code, and assert: the row is still there under the same
+   id, its `version` and `status` are unchanged, a field the old schema never
+   had reads as a sane default rather than throwing, every new value the
+   `CHECK` is supposed to accept is now writable, a value it should still
+   refuse is still refused, the scratch table is not left behind, and opening
+   the file a **second** time changes nothing further. A test that never
+   proves the old schema actually rejects what the new one accepts (i.e.
+   never fails against the *un-migrated* file) is not proving the migration
+   ran -- it may be passing because nothing needed doing.
+5. **Prove the guard is load-bearing before calling it done.** Comment out
+   the migration call and confirm the old-schema tests fail. A test that
+   passes with the migration removed is decoration, not coverage.
+
+**Before merging anything nontrivial**, ask the user to take a volume
+snapshot first (`fly volumes snapshots create <vol> -a <app>`) -- the
+snapshot is the only rollback, since redeploying an earlier commit restores
+code, not data. This was done before #55 and should be the default for any
+migration that is not a one-line, obviously-safe widening.
+
 ## Verification
 
 ```powershell
