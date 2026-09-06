@@ -54,8 +54,10 @@ extract the supported-size list first so missing supplier stock cannot shrink it
 `backend/zip-centroids.json` is a cut of the US Census Bureau's ZCTA
 Gazetteer (public domain): the interior-point latitude and longitude of
 every ZIP Code Tabulation Area whose prefix is 010-069 (Massachusetts, Rhode
-Island, New Hampshire, Maine, Vermont, Connecticut) or 120-139 (New York
-north of the city). Its header carries the source URL, the vintage and the
+Island, New Hampshire, Maine, Vermont, Connecticut) or 100-139 (New York:
+the city, Long Island and the state north of them; the city is far outside
+any radius but a visitor from there should be told the distance, not that
+their ZIP is unrecognised). Its header carries the source URL, the vintage and the
 date it was cut. `backend/service-area.mjs` reads it to say how far a
 customer's ZIP is from the base and whether the request is inside the
 radius, in the review band, or refused (t48, #95).

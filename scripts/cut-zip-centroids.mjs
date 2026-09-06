@@ -7,9 +7,12 @@
  * Bureau publishes one for every ZIP Code Tabulation Area in its Gazetteer
  * Files, public domain, about 34,000 rows. Only New England and eastern New
  * York are within any radius the business would set, so this keeps the
- * prefixes 010-069 (MA, RI, NH, ME, VT, CT) and 120-139 (NY north of the city)
- * and writes them to backend/zip-centroids.json with a header saying where
- * they came from and when.
+ * prefixes 010-069 (MA, RI, NH, ME, VT, CT) and 100-139 (New York City, Long
+ * Island and the state north of them) and writes them to
+ * backend/zip-centroids.json with a header saying where they came from and
+ * when. The city is in the cut although it is well outside any radius: a
+ * visitor from there should be told they are 190 miles away, not that their
+ * ZIP is unrecognised.
  *
  * Rerunnable:  node scripts/cut-zip-centroids.mjs [--vintage 2024]
  *
@@ -33,7 +36,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const OUTPUT = path.join(ROOT, 'backend/zip-centroids.json')
 
 /** Three-digit prefixes to keep, as inclusive ranges. */
-const PREFIX_RANGES = [[10, 69], [120, 139]]
+const PREFIX_RANGES = [[10, 69], [100, 139]]
 
 const vintageFlag = process.argv.indexOf('--vintage')
 const VINTAGE = vintageFlag > -1 ? process.argv[vintageFlag + 1] : '2024'

@@ -114,11 +114,21 @@ export function readServiceAreaConfig(env = process.env) {
   }
 }
 
-/** The one line the server prints at boot about this. */
+/**
+ * The one line the server prints at boot about this.
+ *
+ * An unset radius is said loudly. The bug this replaces was a ZIP that was
+ * collected and never read; a check that boots, refuses nobody and looks
+ * healthy would be the same bug wearing the fix's name, so the log line must
+ * be impossible to read as "working" when it means "not configured".
+ */
 export function describeServiceArea(config) {
   const { vintage, count } = centroidProvenance()
-  const radius = config.radiusMiles === null ? 'no radius (every ZIP accepted)' : `${config.radiusMiles} mile radius`
-  return `Service area: base ${config.baseZip}, ${radius}, review beyond ${config.reviewMiles} miles; ${count} ZIP centroids (Census ${vintage}).`
+  if (config.radiusMiles === null) {
+    return `Service area check INACTIVE: KMT_SERVICE_RADIUS_MILES is unset, so every known ZIP is accepted ` +
+      `(base ${config.baseZip}, review beyond ${config.reviewMiles} miles still flagged; ${count} ZIP centroids, Census ${vintage}).`
+  }
+  return `Service area: base ${config.baseZip}, ${config.radiusMiles} mile radius, review beyond ${config.reviewMiles} miles; ${count} ZIP centroids (Census ${vintage}).`
 }
 
 /**

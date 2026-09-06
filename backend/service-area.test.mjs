@@ -17,7 +17,7 @@ test('the centroid table says where it came from', () => {
   assert.match(provenance.source, /^https:\/\/www2\.census\.gov\/geo\/docs\/maps-data\/data\/gazetteer\//)
   assert.match(provenance.vintage, /^\d{4}$/)
   assert.match(provenance.cutOn, /^\d{4}-\d{2}-\d{2}$/)
-  assert.deepEqual(provenance.prefixes, ['010-069', '120-139'])
+  assert.deepEqual(provenance.prefixes, ['010-069', '100-139'])
   assert.ok(provenance.count > 2000, `a New England cut is thousands of ZIPs, not ${provenance.count}`)
 })
 
@@ -35,8 +35,8 @@ test('distance is zero at home and roughly right to the places the van would go'
   near(ZIPS.hartfordCT, 95)
   near(ZIPS.bangor, 200)
   near(ZIPS.albany, 138)
+  near(ZIPS.newYorkCity, 190, 5)
   assert.equal(distanceMiles(ZIPS.malden, '99999'), null, 'a ZIP the table lacks is null, not zero')
-  assert.equal(distanceMiles(ZIPS.malden, ZIPS.newYorkCity), null, 'the city is outside the cut prefixes')
 })
 
 test('inside the radius is served; the review band names the miles; beyond is refused with the miles', () => {
@@ -58,7 +58,10 @@ test('inside the radius is served; the review band names the miles; beyond is re
   assert.equal(worcester.miles, 40)
   assert.match(worcester.message, /About 40 miles/, 'the owner is told how far, not just that it is far')
 
-  for (const zip of [ZIPS.bangor, ZIPS.albany]) {
+  // The city is in the cut on purpose: a visitor from there is told they are
+  // about 190 miles away, which is true, rather than that their ZIP is not
+  // recognised, which reads as a broken form.
+  for (const zip of [ZIPS.bangor, ZIPS.albany, ZIPS.newYorkCity]) {
     const far = isServiceable(zip, AREA)
     assert.equal(far.serviceable, false, `${zip} is beyond 100 miles`)
     assert.equal(far.reason, REASONS.BEYOND_RADIUS)
@@ -66,13 +69,6 @@ test('inside the radius is served; the review band names the miles; beyond is re
     assert.match(far.message, new RegExp(`about ${far.miles} miles`))
     assert.match(far.message, /100 mile area/)
   }
-
-  // New York City is refused too, though as a ZIP the table does not carry:
-  // the cut stops at prefix 139, and 100xx is the city. Widening the cut
-  // would turn this into a beyond-radius refusal with the miles named.
-  const city = isServiceable(ZIPS.newYorkCity, AREA)
-  assert.equal(city.serviceable, false)
-  assert.equal(city.reason, REASONS.UNKNOWN)
 })
 
 test('an unknown or malformed ZIP is refused before any distance is computed', () => {
@@ -98,7 +94,9 @@ test('with no radius set every known ZIP is accepted, and the review band still 
   assert.equal(bangor.reason, REASONS.REVIEW, 'accepted, but the owner is shown 200 miles')
   assert.equal(bangor.miles, 200)
   assert.equal(isServiceable('99999', open).serviceable, false, 'unknown is still unknown')
-  assert.match(describeServiceArea(open), /no radius \(every ZIP accepted\)/)
+  // The boot line must not be readable as "working" when it means "not configured".
+  assert.match(describeServiceArea(open), /INACTIVE: KMT_SERVICE_RADIUS_MILES is unset, so every known ZIP is accepted/)
+  assert.doesNotMatch(describeServiceArea(AREA), /INACTIVE/)
   assert.match(describeServiceArea(AREA), /100 mile radius, review beyond 25 miles; \d+ ZIP centroids \(Census \d{4}\)/)
 })
 
