@@ -70,7 +70,7 @@
 }
 
 .min-h-screen > .max-w-2xl > p {
-  color: #7d8e98;
+  color: var(--muted);
 }
 
 .min-h-screen form {
@@ -120,7 +120,7 @@
 .min-h-screen .text-gray-500,
 .min-h-screen .text-gray-600,
 .min-h-screen .text-gray-700 {
-  color: #7d8e98 !important;
+  color: var(--muted) !important;
 }
 
 .min-h-screen .text-gray-800,
@@ -425,7 +425,7 @@
   letter-spacing: 1px;
 }
 
-.section-heading > p:last-child { margin-top: 8px; color: #7d8e98; }
+.section-heading > p:last-child { margin-top: 8px; color: var(--muted); }
 
 .order-steps {
   display: grid;
@@ -441,7 +441,7 @@
   align-items: center;
   gap: 12px;
   padding: 17px 8px;
-  color: #7d8e98;
+  color: var(--muted);
   font-size: 12px;
   text-transform: uppercase;
 }
@@ -456,13 +456,13 @@
 .order-form { margin-top: 0 !important; }
 .step-panel { padding: 30px; border: 1px solid #1d3745; border-radius: 4px; background: linear-gradient(145deg, #122430, #0d1b24); }
 .step-panel h3 { margin: 0; color: #f4f4f4; font-family: var(--heading); font-size: clamp(1.8rem, 4vw, 2.9rem); letter-spacing: 0.5px; text-transform: uppercase; }
-.panel-note { margin-top: 7px; color: #7d8e98; font-size: 14px; }
+.panel-note { margin-top: 7px; color: var(--muted); font-size: 14px; }
 .size-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
 .size-card { display: flex; flex-direction: column; align-items: flex-start; min-height: 132px; padding: 18px !important; border: 1px solid #27404d !important; border-radius: 3px !important; background: #122430 !important; color: #fff !important; text-align: left; }
 .size-card:hover, .size-card.selected { border-color: var(--accent) !important; background: var(--accent-bg) !important; transform: translateY(-2px); }
 .size-icon { color: var(--accent-text); font-size: 27px; }
 .size-card strong { margin-top: 14px; font-family: var(--mono); font-size: 17px; }
-.size-card small { margin-top: 4px; color: #7d8e98; font-size: 11px; }
+.size-card small { margin-top: 4px; color: var(--muted); font-size: 11px; }
 .fitment-modal { overflow: hidden; border: 1px solid #16303c; border-radius: 5px; background: #f8f8f8; color: #16303c; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38); }
 .fitment-heading { display: flex; align-items: center; gap: 10px; padding: 20px 22px 12px; }
 .fitment-heading h3 { margin: 0; color: #122430; font-family: var(--sans); font-size: 24px; font-weight: 800; letter-spacing: -0.4px; text-transform: none; }
@@ -509,10 +509,10 @@
 .tire-art { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; border: 9px solid #1d3745; outline: 2px solid #5c7382; color: #0d1b24; background: radial-gradient(circle, #5c7382 0 9%, #16303c 10% 26%, #7d8e98 27% 31%, #122430 32% 100%); font-size: 0; }
 .tire-info { display: grid; gap: 3px; }
 .tire-info strong { font-size: 15px; }
-.tire-info small { color: #7d8e98; font-size: 11px; }
+.tire-info small { color: var(--muted); font-size: 11px; }
 .tire-info small:last-child { color: #58d77c; }
 .tire-option > b { display: grid; color: #f3f3f3; font-family: var(--mono); font-size: 17px; text-align: right; }
-.tire-option > b i { color: #7d8e98; font-family: var(--sans); font-size: 10px; font-style: normal; font-weight: 400; }
+.tire-option > b i { color: var(--muted); font-family: var(--sans); font-size: 10px; font-style: normal; font-weight: 400; }
 .vehicle-inline, .service-fields { display: grid; gap: 8px; margin-top: 26px; }
 .service-fields { grid-template-columns: 1.5fr 1fr; gap: 15px; }
 .vehicle-inline label, .service-fields label { display: block; color: #c9d3d9; font-size: 11px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
@@ -521,10 +521,19 @@
 .order-summary-line b { color: #f1f1f1; }
 .step-error { margin-top: 16px; color: #ff7077; font-size: 13px; }
 .success-message { margin-top: 16px; padding: 16px; border: 1px solid #3ca75b; background: rgba(60, 167, 91, 0.1); color: #71df8b; }
-.site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #1d3745; color: #7d8e98; font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
+.site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #1d3745; color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
 /* A text-only control, but a full-height one: it was 12px tall, which is not
    a touch target for anyone, let alone at a roadside (#85). */
 .site-footer button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent-text) !important; font-size: 11px; }
+/* The privacy notice's link at the foot of every screen (t50): text-only,
+   but a full-height touch target like the footer control above it. */
+.page-footer { padding: 6px 24px 28px; text-align: center; font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
+.page-footer a, .site-footer .privacy-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-text); text-decoration: none; }
+.page-footer a:hover, .site-footer .privacy-link:hover { text-decoration: underline; }
+.privacy-panel h2 { margin: 22px 0 6px; font-size: 18px; letter-spacing: 0.5px; }
+.privacy-panel h2:first-child { margin-top: 0; }
+.privacy-panel p { margin: 0; color: var(--text); font-size: 15px; line-height: 1.55; }
+.privacy-panel a { color: var(--accent-text); white-space: nowrap; }
 
 @media (max-width: 760px) {
   .customer-shell > .site-nav { flex-wrap: wrap; gap: 14px; }
@@ -641,7 +650,7 @@
 }
 
 .text-secondary {
-  color: #7d8e98;
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -773,7 +782,7 @@
 }
 
 .owner-details dt {
-  color: #7d8e98;
+  color: var(--muted);
   font-weight: 800;
 }
 
@@ -1106,7 +1115,8 @@
 
 .status-note-wait { color: #d9a441; }
 .status-note-ok { color: #4bb96c; }
-.status-note-bad { color: #e8636b; }
+/* #ef7a80: 5.1:1 on the panel's lightest stop, where #e8636b read 4.22 (#85). */
+.status-note-bad { color: #ef7a80; }
 
 .status-paid {
   margin-top: 12px;
@@ -1170,7 +1180,7 @@
 }
 
 .confirmation-detail dt {
-  color: #7d8e98;
+  color: var(--muted);
   font-size: 13px;
 }
 
