@@ -48,7 +48,12 @@ jobs:
       # Every backend test file, not one named file: a new suite that CI does not
       # run is a suite that passes locally and guards nothing.
       - run: node --test backend/*.test.mjs
-      - run: npx eslint src backend
+      # The whole tree, not just src and backend: scripts/ and .forge/ are .mjs
+      # too, and the audits under .forge/ are the files that decide whether
+      # everything else is correct. An undefined name in one of them should fail
+      # here, as a named lint error, not at runtime as a mysterious audit error.
+      # eslint.config.js already scopes what it covers.
+      - run: npx eslint .
       - run: npm run build
 
       # The built bundle is public. Supplier data is not supposed to be in it.
@@ -158,6 +163,12 @@ jobs:
   image:
     name: The image builds and boots
     runs-on: ubuntu-latest
+    # The scope decision below is also what tells deploy whether to ship and
+    # verify whether to re-audit: a docs-only push builds no image, deploys
+    # nothing, and re-audits nothing, rather than replacing the machine to carry
+    # a Markdown change.
+    outputs:
+      build: ${{ steps.scope.outputs.build }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -204,7 +215,11 @@ jobs:
       # the build context, which is invisible unless the context is the real one.
       - name: Build the image
         if: steps.scope.outputs.build == 'true'
-        run: docker build -t kmt-gate .
+        # The same --build-arg the real deploy passes, so the gate builds the
+        # image production builds. Without it the gate would prove an image that
+        # carries no release header while production carries one -- a header that
+        # differs between the two is worse than none, because it is trusted.
+        run: docker build --build-arg GIT_SHA=${GITHUB_SHA::7} -t kmt-gate .
 
       # Booted the way Fly boots it: a volume at /data, the database inside it,
       # a throwaway password. If the image ever cannot write there -- which is
@@ -293,9 +308,23 @@ jobs:
       # Bump deliberately: check what changed, then move the SHA.
       # ed8efb3 = master as of 2026-04-08.
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
-      - run: flyctl deploy --remote-only --ha=false
+      # Skip the flyctl step, not the deploy job: verify needs deploy, and a
+      # skipped job skips its dependents. So on a docs-only push the job runs
+      # and succeeds with nothing shipped, and the running release stands rather
+      # than being replaced to carry a Markdown change (t53, #103). The signal
+      # is the image job's scope decision, the same one that governed the build.
+      #
+      # --build-arg GIT_SHA: the seven-character commit, baked into the image as
+      # KMT_RELEASE, which the server answers as X-KMT-Release. It rides here and
+      # on the gate's docker build both, so a cutover step reads with one curl.
+      - name: Deploy the release
+        if: needs.image.outputs.build == 'true'
+        run: flyctl deploy --remote-only --ha=false --build-arg GIT_SHA=${GITHUB_SHA::7}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Nothing reached the image
+        if: needs.image.outputs.build != 'true'
+        run: echo "No file that reaches the image changed; the running release stands (t53)."
 
   # The browser audits are the project's actual contract, and they only mean
   # anything against a real deployment -- this build passed every local check
@@ -304,7 +333,13 @@ jobs:
   # remember to check, and a failure here is the signal to roll back.
   verify:
     name: Audit the deployed site
-    needs: deploy
+    # deploy runs on every main push -- its flyctl step is what skips on a
+    # docs-only change -- so this audit is gated on the same scope decision.
+    # When nothing shipped there is nothing new to read, and checking
+    # X-KMT-Release against a SHA that was never deployed would read as a stale
+    # image when the truth is that nothing deployed. So verify skips too.
+    needs: [deploy, image]
+    if: needs.image.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -315,12 +350,18 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Wait for the new release to answer
+        # The deployed origin, a repository variable so the cutover changes it in
+        # one place rather than in this file. Unset, it falls back to the Fly
+        # name that has been the deployed origin all along. Read into an env var,
+        # not inlined into the script, so the value cannot break the shell.
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS -o /dev/null https://kmt.fly.dev/; then exit 0; fi
+            if curl -fsS -o /dev/null "$DEPLOY_URL/"; then exit 0; fi
             sleep 5
           done
-          echo "kmt.fly.dev did not respond within 150s"; exit 1
+          echo "$DEPLOY_URL did not respond within 150s"; exit 1
       # What this run proves is the deploy, not the flow.
       #
       # The three flow audits perform the journey -- submit, approve, pay --
@@ -339,4 +380,34 @@ jobs:
       # production password belongs in this workflow.
       - run: node .forge/deployed-site-check.mjs
         env:
-          AUDIT_BASE: https://kmt.fly.dev
+          AUDIT_BASE: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
+
+      # The one thing deployed-site-check cannot prove, because it is what this
+      # run just built: that the release now answering is this commit. The
+      # server answers X-KMT-Release when the image carries KMT_RELEASE, which
+      # the deploy step baked in with --build-arg. Two failures with different
+      # fixes, so the messages name which: an ABSENT header is a build-arg that
+      # was not passed; a header that lags the commit is a stale image, the one
+      # this run built not being the one now serving. It retries because a Fly
+      # rollover can still be answering from the old machine for a few seconds.
+      - name: Confirm the deployed release answers as X-KMT-Release
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
+        run: |
+          expected="${GITHUB_SHA::7}"
+          got=''
+          for i in $(seq 1 12); do
+            got="$(curl -fsS -D - -o /dev/null "$DEPLOY_URL/" | tr -d '\r' | grep -i '^x-kmt-release:' | awk '{print $2}')"
+            if [ "$got" = "$expected" ]; then
+              echo "OK: the deployed release answers X-KMT-Release: $expected"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "expected X-KMT-Release: $expected; got: ${got:-<absent>}"
+          if [ -z "$got" ]; then
+            echo "FAIL: no X-KMT-Release header after 60s -- the image was built without --build-arg GIT_SHA, or the server is not emitting it. This is a build-arg-not-passed failure, not a stale image."
+          else
+            echo "FAIL: X-KMT-Release is $got but this deploy is $expected -- the header is present, so the arg was passed; a value that lags the commit means the running image is not the one this run built. This is a stale image, not a missing arg."
+          fi
+          exit 1
