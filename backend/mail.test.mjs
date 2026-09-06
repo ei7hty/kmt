@@ -278,6 +278,27 @@ test('rejecting a draft records a quote-declined message, the sibling of quote-s
   assert.equal(outbox.forRequest(submitted.request.id).filter(row => row.type === 'quote-sent').length, 0, 'and never both for the same decision')
 })
 
+test('a decline reason typed through the API actually reaches the customer email (#78: the reason box was dead code without this)', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const requestsApi = createRequestsApi(quotes, { mailer })
+  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer })
+  const server = createServer(async (req, res) => { if (await requestsApi(req, res)) return; if (await ownerApi(req, res)) return; res.writeHead(404); res.end() })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  const base = `http://127.0.0.1:${server.address().port}`
+  const post = (path, body) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
+  const submitted = await (await post('/api/requests', form())).json()
+  await mailer.idle()
+  const { version } = quotes.get(submitted.request.id).quote
+  const decided = await (await post(`/api/owner/quotes/${submitted.request.id}/reject`, { version, reason: '  Out of stock by the time I checked  ' })).json()
+  assert.equal(decided.quote.reason, 'Out of stock by the time I checked', 'the API response carries the trimmed reason')
+  await mailer.idle()
+  const declined = outbox.forRequest(submitted.request.id).find(row => row.type === 'quote-declined')
+  assert.equal(declined.data.reason, 'Out of stock by the time I checked', "the reason typed in the owner's reason box reaches the outbox row the email renders from")
+  assert.match(TEMPLATES['quote-declined'].render(declined.data).text, /Out of stock by the time I checked/, 'and the rendered email actually says it')
+})
+
 test('a provider outage never reaches the customer: the submit still answers 201', async t => {
   const adapter = { name: 'broken', async send() { throw new Error('provider down') } }
   const { quotes, outbox, mailer } = world(t, { adapter })

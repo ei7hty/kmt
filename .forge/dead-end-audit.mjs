@@ -13,7 +13,7 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 66;
+const EXPECTED_CHECKS = 70;
 
 /**
  * Preferred dates, always ahead of today. The server refuses anything inside
@@ -393,7 +393,10 @@ async function main() {
       fail(`/owner: the review-band request (${ZIP_REVIEW}) did not show the review reason with the miles. Got: ${reviewText.slice(0, 200)}`);
     }
 
-    // 7. Rejected quote path: does the customer have a next action, or a dead end?
+    // 7. Declined quote path (R28's sibling, #78's second half): does the
+    //    customer have a next action, or a dead end -- and now that Decline
+    //    asks in-page (reusing #264's reason-box component), does the reason
+    //    Ken types actually reach the customer, with a way to reply?
     await context.close();
     ({ context, page } = await freshPage(browser, viewport));
     await submitRequest(page, {
@@ -403,9 +406,18 @@ async function main() {
       date: LATER,
     });
     await openOwnerQuotes(page);
-    const rejectVisible = await page.locator('button:has-text("Reject")').first().isVisible().catch(() => false);
-    if (rejectVisible) {
-      await page.click('button:has-text("Reject")');
+    const declineCard = page.locator('.owner-request', { hasText: 'Honda Civic' }).first();
+    const declineVisible = await declineCard.locator('button:has-text("Decline")').first().isVisible().catch(() => false);
+    if (declineVisible) {
+      await declineCard.locator('button:has-text("Decline")').click();
+      const declineReasonPromiseVisible = await declineCard.locator('text=The customer will see this').isVisible().catch(() => false);
+      if (declineReasonPromiseVisible) {
+        ok('/owner: declining asks for a reason in-page, with "the customer will see this" visible at the point of typing, not window.prompt.');
+      } else {
+        fail('/owner: declining did not show an in-page reason box with the promise text visible.');
+      }
+      await declineCard.locator('textarea').fill('That size is back-ordered until next month.');
+      await declineCard.locator('button:has-text("Decline request")').click();
       await page.waitForTimeout(200);
       await page.click('button:has-text("Back to Customer Flow")');
       await page.waitForURL(BASE + '/');
@@ -413,19 +425,26 @@ async function main() {
       await page.waitForURL('**/status');
     await waitForStatus(page);
       const rejectedMsgVisible = await page.locator('text=This quote was declined').isVisible().catch(() => false);
-      if (rejectedMsgVisible) {
-        ok('/status: rejected quote shows a clear message explaining the outcome.');
+      const reasonReachedCustomer = await page.locator('text=That size is back-ordered until next month').isVisible().catch(() => false);
+      if (rejectedMsgVisible && reasonReachedCustomer) {
+        ok('/status: declined quote shows a clear message explaining the outcome, including the reason Ken typed.');
       } else {
-        fail('/status: rejected quote has no visible explanation -- reads as a dead end.');
+        fail(`/status: declined quote's explanation or reason was not visible (message: ${rejectedMsgVisible}, reason: ${reasonReachedCustomer}).`);
+      }
+      const textLinkVisible = await page.locator('.status-outcome a[href^="sms:"]').isVisible().catch(() => false);
+      if (textLinkVisible) {
+        ok('/status: a declined quote offers a way to reach Ken, matching what the decline email itself says.');
+      } else {
+        fail('/status: a declined quote has no way to reach Ken, though the email that led here offers one.');
       }
       const newRequestNavVisible = await page.locator('button:has-text("New Request")').isVisible().catch(() => false);
       if (newRequestNavVisible) {
-        ok('/status: "New Request" nav is present as the next action for a rejected quote.');
+        ok('/status: "New Request" nav is present as the next action for a declined quote.');
       } else {
-        fail('/status: no visible next action after a rejected quote.');
+        fail('/status: no visible next action after a declined quote.');
       }
     } else {
-      fail('/owner: no visible Reject action found to test the rejected-quote path.');
+      fail('/owner: no visible Decline action found to test the declined-quote path.');
     }
 
     // 7b. The customer cancels their own draft (R27, #78). This used to live

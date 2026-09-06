@@ -943,6 +943,13 @@
   margin-top: 8px;
 }
 
+/* The declined and cancelled outcomes on /status: a customer just got the
+   final word and had no way to reach Ken from this screen, though the email
+   that led them here already offered one. */
+.status-outcome .tire-empty-actions {
+  margin-top: 8px;
+}
+
 .quote-editor { margin-top: 16px; }
 .quote-lines { display: grid; gap: 10px; margin-top: 14px; }
 .quote-line-edit {

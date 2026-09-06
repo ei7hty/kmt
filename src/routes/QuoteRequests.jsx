@@ -42,12 +42,23 @@ const VIEWS = [
 /** What the screen offers to do with a request in each state. */
 const ACTIONS = {
   draft: [
-    { action: 'reject', label: 'Reject', className: 'btn btn-reject' },
+    { action: 'reject', label: 'Decline', className: 'btn btn-reject', asks: true },
     { action: 'cancel', label: 'Cancel', className: 'btn btn-neutral', asks: true },
   ],
   sent: [{ action: 'cancel', label: 'Cancel', className: 'btn btn-neutral', asks: true }],
   approved: [{ action: 'cancel', label: 'Cancel', className: 'btn btn-neutral', asks: true }],
   paid: [{ action: 'done', label: 'Mark done', busy: 'Closing…', className: 'btn btn-approve' }],
+}
+
+/**
+ * The one reason box (#264's cancelDraft, reused for reject/#78's sibling):
+ * the owner's typed text is a promise the customer reads, on a decline as
+ * much as on a cancellation, so the copy names the actual act rather than a
+ * generic "why". Keyed by ACTIONS' own action name.
+ */
+const REASON_PROMPT = {
+  cancel: { question: 'Why is this being cancelled?', confirmLabel: 'Cancel request', confirmBusy: 'Cancelling…' },
+  reject: { question: 'Why is this being declined?', confirmLabel: 'Decline request', confirmBusy: 'Declining…' },
 }
 
 const money = value => Number.isFinite(Number(value)) ? Number(value).toFixed(2) : '0.00'
@@ -81,9 +92,17 @@ function QuoteEditor({ request, quote, busy, onSave }) {
 /** What a closed request says about itself, before any reason it carries. */
 const CLOSED_NOTE = {
   done: 'Fitted and closed.',
-  rejected: 'Rejected, so the customer was not charged.',
+  rejected: 'Declined, so the customer was not charged.',
   cancelled: 'Cancelled before payment.',
 }
+
+/**
+ * The status badge in Ken's words: he's declining a job, not rejecting a
+ * person, and the internal status name ('rejected', the value the database
+ * and the API keep -- renaming it would touch the schema, the mail
+ * templates and every test that asserts it) is not the word for that.
+ */
+const STATUS_LABEL = { rejected: 'declined' }
 
 /**
  * A request opened from a link (the Outbox panel, or one mailed to Ken)
@@ -104,13 +123,13 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
   const [error, setError] = useState('')
   const [needsSignIn, setNeedsSignIn] = useState(false)
   const [busyId, setBusyId] = useState('')
-  // The reason box for the one action that asks something (cancel): which
-  // request it belongs to and what's typed so far. Not window.prompt (#78) --
-  // Playwright cannot drive a native prompt, so nothing had ever exercised
-  // this path, and the promise the text makes ("the customer will see it")
-  // has to stay visible at the point of typing, not live in a placeholder
-  // that vanishes on the first keystroke.
-  const [cancelDraft, setCancelDraft] = useState(null)
+  // The reason box for whichever action asks for one (cancel, decline): which
+  // request it belongs to, which action, and what's typed so far. Not
+  // window.prompt (#78) -- Playwright cannot drive a native prompt, so
+  // nothing had ever exercised this path, and the promise the text makes
+  // ("the customer will see it") has to stay visible at the point of typing,
+  // not live in a placeholder that vanishes on the first keystroke.
+  const [reasonDraft, setReasonDraft] = useState(null)
   const [linkedId] = useState(linkedRequestId)
   // 'open' (draft/sent/paid) and 'closed' (done/rejected/cancelled) between
   // them cover every request, so a linked id missing from 'open' -- the
@@ -171,17 +190,18 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
     } finally { setBusyId('') }
   }
 
-  /** Cancelling is the one action with something to say, and the customer is
-      the one who reads it. Nothing else asks, because nothing else needs to. */
+  /** Cancelling and declining are the two actions with something to say, and
+      the customer is the one who reads it. Approving and marking done don't
+      ask, because there is nothing to explain. */
   function act(request, quote, { action, asks }) {
-    if (asks) { setCancelDraft({ requestId: request.id, action, reason: '' }); return }
+    if (asks) { setReasonDraft({ requestId: request.id, action, reason: '' }); return }
     runAction(request, quote, action)
   }
 
-  function confirmCancel(request, quote) {
-    const reason = cancelDraft.reason.trim()
-    const action = cancelDraft.action
-    setCancelDraft(null)
+  function confirmReason(request, quote) {
+    const reason = reasonDraft.reason.trim()
+    const action = reasonDraft.action
+    setReasonDraft(null)
     runAction(request, quote, action, reason)
   }
 
@@ -277,17 +297,18 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                     card's other judgements, not a labelled fact inside it. */}
                 {tire?.supplierStock === 0 && tire?.supplierActive !== false && <p className="status-note status-note-wait owner-stock-warning" role="status">Supplier shows none in stock. Check before sending.</p>}
                 {quote && <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
-                  <div className="owner-quote-summary"><div><p className="text-secondary">{quote.status === 'draft' ? 'Draft Quote' : ['sent', 'approved', 'paid', 'done'].includes(quote.status) ? 'Sent Quote' : 'Quote'}</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{quote.status}</span></div>
+                  <div className="owner-quote-summary"><div><p className="text-secondary">{quote.status === 'draft' ? 'Draft Quote' : ['sent', 'approved', 'paid', 'done'].includes(quote.status) ? 'Sent Quote' : 'Quote'}</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{STATUS_LABEL[quote.status] ?? quote.status}</span></div>
                   {quote.exception && quote.status === 'draft' && <div className="owner-exception-note"><p>Owner review required</p><ul>{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
-                  {/* Editing and confirming a cancellation both want this card's
-                      attention at once, so while the cancel prompt is open for
-                      this request the editor steps aside for the read-only lines
-                      -- otherwise two textareas ("Note for customer" and "Why is
-                      this being cancelled?") sit on screen together, and price
-                      fields the owner is about to cancel out of stay editable
-                      underneath a confirmation asking whether to do that. */}
-                  {quote.status === 'draft' && cancelDraft?.requestId !== request.id && <QuoteEditor key={quote.version} request={request} quote={quote} busy={busyId === request.id} onSave={saveAdjustment} />}
-                  {(quote.status !== 'draft' || cancelDraft?.requestId === request.id) && <div className="quote-lines quote-lines-readonly">
+                  {/* Editing and confirming a decision (cancel or decline) both
+                      want this card's attention at once, so while a reason
+                      prompt is open for this request the editor steps aside
+                      for the read-only lines -- otherwise two textareas
+                      ("Note for customer" and "Why is this being cancelled/
+                      declined?") sit on screen together, and price fields the
+                      owner is about to close out of stay editable underneath
+                      a confirmation asking whether to do that. */}
+                  {quote.status === 'draft' && reasonDraft?.requestId !== request.id && <QuoteEditor key={quote.version} request={request} quote={quote} busy={busyId === request.id} onSave={saveAdjustment} />}
+                  {(quote.status !== 'draft' || reasonDraft?.requestId === request.id) && <div className="quote-lines quote-lines-readonly">
                     {quote.lineItems?.map((item, index) => <div className="quote-line-readonly" key={`${index}-${item.description}`}><span>{item.quantity} × {item.description}</span><strong>${money(item.quantity * item.unitPrice)}</strong></div>)}
                     {quote.note && <p className="quote-customer-note"><strong>Customer note:</strong> {quote.note}</p>}
                   </div>}
@@ -295,15 +316,15 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                     {CLOSED_NOTE[quote.status]}{quote.reason ? ` ${quote.reason}` : ''}
                   </p>}
                   {ACTIONS[quote.status] && <div className="owner-actions">
-                    {cancelDraft?.requestId === request.id ? (
+                    {reasonDraft?.requestId === request.id ? (
                       <div className="owner-cancel-draft">
-                        <label htmlFor={`cancel-reason-${request.id}`}>Why is this being cancelled? <span className="optional">The customer will see this. Leave blank to say nothing.</span></label>
-                        <textarea id={`cancel-reason-${request.id}`} rows={2} value={cancelDraft.reason}
-                          onChange={event => setCancelDraft(draft => ({ ...draft, reason: event.target.value }))} />
+                        <label htmlFor={`cancel-reason-${request.id}`}>{REASON_PROMPT[reasonDraft.action].question} <span className="optional">The customer will see this. Leave blank to say nothing.</span></label>
+                        <textarea id={`cancel-reason-${request.id}`} rows={2} value={reasonDraft.reason}
+                          onChange={event => setReasonDraft(draft => ({ ...draft, reason: event.target.value }))} />
                         <div className="owner-cancel-draft-actions">
-                          <button type="button" className="btn btn-neutral" disabled={busyId === request.id} onClick={() => setCancelDraft(null)}>Back</button>
-                          <button type="button" className="btn btn-reject" disabled={busyId === request.id} onClick={() => confirmCancel(request, quote)}>
-                            {busyId === request.id ? 'Cancelling…' : 'Cancel request'}
+                          <button type="button" className="btn btn-neutral" disabled={busyId === request.id} onClick={() => setReasonDraft(null)}>Back</button>
+                          <button type="button" className="btn btn-reject" disabled={busyId === request.id} onClick={() => confirmReason(request, quote)}>
+                            {busyId === request.id ? REASON_PROMPT[reasonDraft.action].confirmBusy : REASON_PROMPT[reasonDraft.action].confirmLabel}
                           </button>
                         </div>
                       </div>
