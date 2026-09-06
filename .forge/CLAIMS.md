@@ -10,7 +10,6 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
-| service-area-submit | LEAD BACKEND DEV | backend/quotes.mjs (submit: ZIP, date, service area, exception reason), backend/api.mjs, backend/server.mjs and dev.mjs boot line, backend tests, .forge/dead-end-audit.mjs scenarios with the repo agent (t48 part two, #95, #70) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
