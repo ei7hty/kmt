@@ -271,6 +271,7 @@ function CustomerRequest({ navigate }) {
         {submissionMessage && <div className="success-message" role="status">
           {submissionMessage}
           {submittedId && <button type="button" className="link-action" onClick={() => navigate(`/status?request=${encodeURIComponent(submittedId)}`)}>Track this quote →</button>}
+          {submittedId && <p className="text-secondary">Save this link; it is how you find your quote again.</p>}
         </div>}
         {submitError && <div className="panel submit-failure" role="alert">
           <p className="status-note status-note-bad">{submitError}</p>

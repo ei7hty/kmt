@@ -143,3 +143,12 @@
   .oi-results-heading { margin: 12px 0; }
   .oi-filters { padding: 12px 0; gap: 10px; }
 }
+
+/* Tap targets on the owner workspace (#85): the inline "Use $x" action, the
+   Details and supplier-details summaries, the offer checkbox's label and the
+   supplier links all reach 44px tall. */
+.oi-button.oi-inline { min-height: 44px; padding: 10px 12px; }
+.oi-shell summary { display: flex; align-items: center; min-height: 44px; padding: 0; }
+.oi-shell .oi-check { min-height: 44px; margin-bottom: 0; }
+.oi-shell dd a, .oi-source a { display: inline-flex; align-items: center; min-height: 44px; }
+.oi-brand { min-height: 44px; }

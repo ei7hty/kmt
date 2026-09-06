@@ -86,6 +86,7 @@ function Status({ navigate }) {
       <div className="owner-content">
         <p className="eyebrow">YOUR QUOTE</p>
         <h1 className="owner-heading">Quote Status</h1>
+        <p className="text-secondary" role="note">Save this link; it is how you find your quote again.</p>
         <p className="text-secondary owner-subhead" role="status">
           {loading ? 'Checking with the shop…' : 'Track your request and the shop’s decision.'}
         </p>

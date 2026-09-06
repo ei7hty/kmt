@@ -59,7 +59,7 @@
   padding: 34px !important;
   border: 1px solid var(--border);
   border-radius: 4px !important;
-  background: linear-gradient(145deg, rgba(28, 28, 28, 0.96), rgba(13, 13, 13, 0.96)) !important;
+  background: linear-gradient(145deg, rgba(22, 48, 60, 0.96), rgba(13, 27, 36, 0.96)) !important;
   box-shadow: var(--shadow);
   text-align: left;
 }
@@ -164,7 +164,7 @@
 
   .min-h-screen > nav button {
     flex: 1;
-    min-height: 42px;
+    min-height: 44px;
     padding-inline: 10px !important;
     font-size: 11px;
   }
@@ -619,7 +619,7 @@
   padding: 30px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: linear-gradient(145deg, rgba(28, 28, 28, 0.96), rgba(13, 13, 13, 0.96));
+  background: linear-gradient(145deg, rgba(22, 48, 60, 0.96), rgba(13, 27, 36, 0.96));
   box-shadow: var(--shadow);
   text-align: left;
 }
@@ -627,7 +627,7 @@
 /* Exception variant: amber, distinct from brand red and success green (R9). */
 .panel-exception {
   border-color: rgba(245, 158, 11, 0.55);
-  background: linear-gradient(145deg, rgba(58, 44, 10, 0.55), rgba(13, 13, 13, 0.96));
+  background: linear-gradient(145deg, rgba(58, 44, 10, 0.55), rgba(13, 27, 36, 0.96));
 }
 
 /* Heading/eyebrow/secondary text, generalized for card content. */
@@ -1363,4 +1363,40 @@
   .internal-nav-links { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .internal-nav-links .btn { min-height: 44px; padding: 8px 6px; font-size: 10px; line-height: 1.2; white-space: normal; }
   .internal-nav-links:has(> :only-child), .internal-nav-links:has(> :nth-child(2):last-child) { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+}
+
+/* Tap targets (#85, measured by the a11y pass: 55 of 353 controls under 44px
+   on main, all by height). Every control a thumb has to hit is at least 44px
+   tall; padding rather than margin, so nothing moves sideways. */
+.btn,
+.site-links button,
+.fitment-back,
+.customer-shell summary,
+.link-action {
+  min-height: 44px;
+}
+
+.link-action,
+.customer-shell summary {
+  display: inline-flex;
+  align-items: center;
+}
+
+.fitment-search input,
+#fitmentZip {
+  min-height: 44px;
+}
+
+.owner-request a,
+.owner-request .link-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.owner-request-age { margin-top: 0; }
+
+.internal-nav .brand-word,
+.brand-mark {
+  min-height: 44px;
 }
