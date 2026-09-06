@@ -15,6 +15,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | product-record-reconcile | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/state.json, .forge/sprint-live.md, .forge/roadmap.md, .forge/decisions.md (product record only: task/milestone status verified against merged code, t57-t66 entered, m13 added, stage gates marked, two product rulings appended; no code, no audit scripts) | 2026-09-06 |
 | ops-inquiries-correction | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | docs/operations.md, one paragraph only (the removal checklist calls inquiries a live table; it is wired into no entry point). Assigned by the PROJECT MANAGER; DEV OPS owns the rest of this file and I touch nothing else in it. | 2026-09-06 |
 | owner-inventory-supplier-link-tap-target | BUG FIXER (local_8ba9f198) | src/owner/OwnerInventory.jsx (supplier link only), src/owner/OwnerInventory.css (covering here for TERRA/#245, not taking the lane) | 2026-09-06 |
+| doc-staleness-note | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/NOTES.md, one appended entry (the three stale-record instances of 2026-09-06 and a detection proposal). At the PROJECT MANAGER's request. | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
