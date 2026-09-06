@@ -10,7 +10,6 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
 | claims-direct-commit-rule | TEMP REPO AGENT (local_b2ab10bb) | .forge/AGENTS.md (docs only, one paragraph) | 2026-09-06 |
-| t63-text-controls | BUG FIXER (local_8ba9f198) | second rebase of PR #210 onto main after #228 merged; conflict in .forge/dead-end-audit.mjs | 2026-09-06 |
 | owner-quotes-deep-link | JUNIOR FULL STACK ENGINEER (kmt-e8) | src/routes/QuoteRequests.jsx, src/App.css (t47 owner-side ?request= deep link, closing my #234 Outbox link's promise) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
