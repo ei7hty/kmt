@@ -23,7 +23,6 @@ function NotFound({ navigate, path }) {
           <div className="tire-empty-actions">
             <a href="/" onClick={go('/')} className="btn btn-primary">Order tires</a>
             <a href="/status" onClick={go('/status')} className="btn btn-neutral">My quote</a>
-            <a href="/owner" onClick={go('/owner')} className="btn btn-neutral">Owner review</a>
           </div>
         </div>
       </div>

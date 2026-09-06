@@ -284,7 +284,7 @@ function CustomerRequest({ navigate }) {
           </div>
         </div>}
       </main>
-      <footer className="site-footer"><span>KMT / KEN&apos;S MOBILE TIRE</span><span>Fast. Reliable. Always on the move.</span><button onClick={() => navigate('/owner')}>Owner review →</button></footer>
+      <footer className="site-footer"><span>KMT / KEN&apos;S MOBILE TIRE</span><span>Fast. Reliable. Always on the move.</span></footer>
     </div>
   )
 }
