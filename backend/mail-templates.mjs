@@ -14,8 +14,12 @@
 // t61; they replace `render()` here and nothing else changes. Bump `version`
 // when a template's data shape changes, so an old row says which shape it is.
 
+// The number and its sms: link come from the one place that owns them, so the
+// email and the screens can never offer different ones (t63, src/contact.js).
+import { SHOP_NUMBER, TEXT_HREF } from '../src/contact.js'
+
 const MOBILE = 'Ken\'s Mobile Tire'
-const PHONE = '(617) 410-8319'
+const PHONE = SHOP_NUMBER
 
 export const MAIL_TYPES = ['request-received', 'request-arrived', 'quote-sent', 'payment-recorded', 'quote-declined']
 
@@ -27,9 +31,29 @@ function invoice(lines, total) {
   return `${rows.join('\n')}\nTotal: ${money(total)}`
 }
 
+/**
+ * The HTML part, which is the one a mail client actually shows when both are
+ * present. It used to escape the body into a `<pre>` and stop there, so the
+ * two things every message asks the reader to do -- open their status page,
+ * text Ken -- arrived as bare text. Whether either was tappable depended on
+ * the client guessing, and `sms:` is never guessed. t63 had already made
+ * texting the only way to reach him, so the email offered no working route
+ * at all: a person at hour six could read the number and not dial it.
+ *
+ * Both patterns are our own content and are matched after escaping: the
+ * status URL the template built from `origin`, and the number `src/contact.js`
+ * owns. The plain-text part is deliberately left alone -- a client showing
+ * that part linkifies bare URLs itself, and an anchor there would be markup
+ * the reader can see.
+ */
 function htmlOf(text) {
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return `<!doctype html><html><body style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#111"><pre style="font:inherit;white-space:pre-wrap">${escaped}</pre></body></html>`
+  const smsHref = TEXT_HREF.replace(/&/g, '&amp;')
+  const number = SHOP_NUMBER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const linked = escaped
+    .replace(/https:\/\/\S+/g, url => `<a href="${url}">${url}</a>`)
+    .replace(new RegExp(number, 'g'), match => `<a href="${smsHref}">${match}</a>`)
+  return `<!doctype html><html><body style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#111"><pre style="font:inherit;white-space:pre-wrap">${linked}</pre></body></html>`
 }
 
 /**
