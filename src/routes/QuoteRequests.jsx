@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import SignIn from '../owner/SignIn.jsx'
 import { useNoIndex } from '../noindex.js'
-import { NeedsSignIn, actOnQuote, ownerRequests } from '../store'
+import { NeedsSignIn, actOnQuote, adjustQuote, ownerRequests } from '../store'
 import { signOut } from '../owner/session.js'
 import { exactTime, timeAgo } from '../owner/timeAgo.js'
 import { PrivacyFooter } from './Privacy.jsx'
@@ -42,13 +42,40 @@ const VIEWS = [
 /** What the screen offers to do with a request in each state. */
 const ACTIONS = {
   draft: [
-    { action: 'approve', label: 'Approve & Send', busy: 'Sending…', className: 'btn btn-approve' },
     { action: 'reject', label: 'Reject', className: 'btn btn-reject' },
     { action: 'cancel', label: 'Cancel', className: 'btn btn-neutral', asks: true },
   ],
   sent: [{ action: 'cancel', label: 'Cancel', className: 'btn btn-neutral', asks: true }],
   approved: [{ action: 'cancel', label: 'Cancel', className: 'btn btn-neutral', asks: true }],
   paid: [{ action: 'done', label: 'Mark done', busy: 'Closing…', className: 'btn btn-approve' }],
+}
+
+const money = value => Number.isFinite(Number(value)) ? Number(value).toFixed(2) : '0.00'
+
+function QuoteEditor({ request, quote, busy, onSave }) {
+  const [lineItems, setLineItems] = useState(() => quote.lineItems.map(item => ({ ...item })))
+  const [note, setNote] = useState(quote.note ?? '')
+  const total = lineItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0)
+  const change = (index, field, value) => setLineItems(items => items.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item))
+
+  return <div className="quote-editor">
+    <div className="quote-lines">
+      {lineItems.map((item, index) => <div className="quote-line-edit" key={index}>
+        <label>Description<input aria-label={`Line ${index + 1} description`} value={item.description} maxLength={200} disabled={busy} onChange={event => change(index, 'description', event.target.value)} /></label>
+        <label>Qty<input aria-label={`Line ${index + 1} quantity`} type="number" min="1" max="100" step="1" value={item.quantity} disabled={busy} onChange={event => change(index, 'quantity', event.target.value)} /></label>
+        <label>Unit price<input aria-label={`Line ${index + 1} unit price`} type="number" min="0" max="100000" step="0.01" value={item.unitPrice} disabled={busy} onChange={event => change(index, 'unitPrice', event.target.value)} /></label>
+        <strong>${money((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}</strong>
+        <button type="button" className="link-action quote-line-remove" disabled={busy || lineItems.length === 1} onClick={() => setLineItems(items => items.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
+      </div>)}
+    </div>
+    <button type="button" className="btn btn-neutral quote-add-line" disabled={busy || lineItems.length >= 25} onClick={() => setLineItems(items => [...items, { description: '', quantity: 1, unitPrice: 0 }])}>Add line</button>
+    <label className="quote-note">Note for customer <span className="optional">optional</span><textarea rows="3" maxLength={1000} value={note} disabled={busy} onChange={event => setNote(event.target.value)} placeholder="Anything the customer should know about this quote" /></label>
+    <div className="owner-quote-summary quote-editor-total"><p>Total</p><p className="owner-quote-total">${money(total)}</p></div>
+    <div className="owner-actions">
+      <button type="button" className="btn btn-neutral" disabled={busy} onClick={() => onSave(request, quote, lineItems, note, false)}>{busy ? 'Saving…' : 'Save changes'}</button>
+      <button type="button" className="btn btn-approve" disabled={busy} onClick={() => onSave(request, quote, lineItems, note, true)}>{busy ? 'Sending…' : 'Approve & Send'}</button>
+    </div>
+  </div>
 }
 
 /** What a closed request says about itself, before any reason it carries. */
@@ -158,6 +185,20 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
     runAction(request, quote, action, reason)
   }
 
+  async function saveAdjustment(request, quote, lineItems, note, send) {
+    setBusyId(request.id)
+    setError('')
+    try {
+      const adjusted = await adjustQuote(request.id, lineItems, note, quote.version)
+      if (send) await actOnQuote(request.id, 'approve', adjusted.quote.version)
+      await load()
+      setOwnerVersion?.(version => version + 1)
+    } catch (err) {
+      setError(err.message)
+      if (/reload/i.test(err.message)) await load()
+    } finally { setBusyId('') }
+  }
+
   if (needsSignIn) {
     return <SignIn onSignedIn={load} navigate={navigate} from="quotes"
       what="This screen holds customers' requests: their vehicle, address and preferred date." />
@@ -236,8 +277,20 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                     card's other judgements, not a labelled fact inside it. */}
                 {tire?.supplierStock === 0 && tire?.supplierActive !== false && <p className="status-note status-note-wait owner-stock-warning" role="status">Supplier shows none in stock. Check before sending.</p>}
                 {quote && <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
-                  <div className="owner-quote-summary"><div><p className="text-secondary">Draft Quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{quote.status}</span></div>
-                  {quote.exception && <div className="owner-exception-note"><p>Owner review required</p><ul>{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
+                  <div className="owner-quote-summary"><div><p className="text-secondary">{quote.status === 'draft' ? 'Draft Quote' : ['sent', 'approved', 'paid', 'done'].includes(quote.status) ? 'Sent Quote' : 'Quote'}</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{quote.status}</span></div>
+                  {quote.exception && quote.status === 'draft' && <div className="owner-exception-note"><p>Owner review required</p><ul>{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
+                  {/* Editing and confirming a cancellation both want this card's
+                      attention at once, so while the cancel prompt is open for
+                      this request the editor steps aside for the read-only lines
+                      -- otherwise two textareas ("Note for customer" and "Why is
+                      this being cancelled?") sit on screen together, and price
+                      fields the owner is about to cancel out of stay editable
+                      underneath a confirmation asking whether to do that. */}
+                  {quote.status === 'draft' && cancelDraft?.requestId !== request.id && <QuoteEditor key={quote.version} request={request} quote={quote} busy={busyId === request.id} onSave={saveAdjustment} />}
+                  {(quote.status !== 'draft' || cancelDraft?.requestId === request.id) && <div className="quote-lines quote-lines-readonly">
+                    {quote.lineItems?.map((item, index) => <div className="quote-line-readonly" key={`${index}-${item.description}`}><span>{item.quantity} × {item.description}</span><strong>${money(item.quantity * item.unitPrice)}</strong></div>)}
+                    {quote.note && <p className="quote-customer-note"><strong>Customer note:</strong> {quote.note}</p>}
+                  </div>}
                   {CLOSED_NOTE[quote.status] && <p className="status-note status-note-wait">
                     {CLOSED_NOTE[quote.status]}{quote.reason ? ` ${quote.reason}` : ''}
                   </p>}

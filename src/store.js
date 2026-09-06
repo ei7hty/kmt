@@ -156,3 +156,11 @@ export async function ownerOutbox() {
   return { provider: data.provider ?? 'none', messages: data.messages ?? [] }
 }
 
+/** Save editable draft lines and the customer-facing note before sending. */
+export async function adjustQuote(requestId, lineItems, note, version) {
+  return call(`/api/owner/quotes/${encodeURIComponent(requestId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ lineItems, note, version }),
+  })
+}
+

@@ -155,3 +155,107 @@ test('a fresh database is already right and is not rebuilt', t => {
   for (const status of QUOTE_STATUSES) assert.ok(sql.includes(`'${status}'`), `missing ${status}`)
   assert.ok(sql.includes('reason'), 'the reason column is part of the current shape')
 })
+
+/* --------------------------------------- the t35 column-add case (#233's follow-up) */
+
+/**
+ * The quotes table exactly as t36 (#55) left it: every current status, the
+ * `reason` column -- but before t35 added `draft_line_items` and
+ * `draft_total_cents`. This is the deployed database's actual shape today,
+ * and it is a different migration path from `OLD_SCHEMA` above: the CHECK
+ * constraint already lists every status, so `migrate()`'s rebuild branch is
+ * skipped entirely and only the `ALTER TABLE ADD COLUMN` + backfill path
+ * runs. Nothing above exercises that path -- every fixture in this file uses
+ * `OLD_SCHEMA`, which always takes the rebuild branch, and the rebuild
+ * incidentally creates the new columns as part of recreating the table from
+ * today's `QUOTES_COLUMNS`. A database that is current on statuses but one
+ * column-add behind takes a route none of those tests touch.
+ */
+const T36_SCHEMA = `
+  CREATE TABLE requests (
+    id TEXT PRIMARY KEY, customer_key TEXT NOT NULL, payload TEXT NOT NULL,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE INDEX requests_customer ON requests(customer_key, created_at);
+  CREATE TABLE quotes (
+    id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES requests(id),
+    payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
+    version INTEGER NOT NULL DEFAULT 1, reason TEXT,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    CHECK(status IN (${QUOTE_STATUSES.map(status => `'${status}'`).join(', ')}))
+  );
+  CREATE INDEX quotes_request ON quotes(request_id);
+`
+
+const T36_REQUEST_ID = 'a35b2c1d0e9f887766554433221100ff'
+const T36_QUOTE_PAYLOAD = JSON.stringify({
+  total: 249.97,
+  tireSelection: 'giga-a',
+  lineItems: [
+    { description: 'Four tires', quantity: 4, unitPrice: 48.74 },
+    { description: 'Mobile installation service', quantity: 1, unitPrice: 55 },
+  ],
+})
+
+/** A t36-shaped file, plus the two ways to open it -- same pattern as `deployedDatabase` above. */
+function t36Database(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'kmt-migration-t36-'))
+  const opened = []
+  t.after(() => {
+    for (const handle of opened.reverse()) { try { handle.close() } catch { /* already closed */ } }
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  const file = join(dir, 'kmt.db')
+  const seed = new DatabaseSync(file)
+  seed.exec(T36_SCHEMA)
+  seed.prepare('INSERT INTO requests VALUES (?, ?, ?, ?, ?)')
+    .run(T36_REQUEST_ID, 'b1c2d3e4f5061708', JSON.stringify({ vehicleInfo: 'TEST 2022 Toyota Corolla' }), STAMP, STAMP)
+  seed.prepare('INSERT INTO quotes VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('q-t36', T36_REQUEST_ID, T36_QUOTE_PAYLOAD, 'sent', 2, null, STAMP, STAMP)
+  seed.close()
+
+  const open = () => {
+    const inventory = new Inventory(file, ['215/60R16'])
+    opened.push(inventory)
+    return { inventory, quotes: new Quotes(inventory) }
+  }
+  return { open }
+}
+
+test('a t36 database takes the column-add path, not the rebuild, and the row is untouched', t => {
+  const { quotes } = t36Database(t).open()
+  assert.equal(
+    quotes.db.prepare("SELECT count(*) n FROM sqlite_master WHERE name='quotes_migrating'").get().n, 0,
+    'a database already current on statuses must not take the rebuild branch',
+  )
+  const found = quotes.get(T36_REQUEST_ID)
+  assert.equal(found.quote.status, 'sent', 'the row itself is untouched by the column add')
+  assert.equal(found.quote.version, 2)
+  assert.equal(found.quote.total, 249.97, 'the live quote payload is not rewritten')
+})
+
+test('the column-add path backfills draftLineItems and draftTotal from the existing payload', t => {
+  const { quotes } = t36Database(t).open()
+  // Owner audience: draftLineItems/draftTotal are owner-only (the immutable
+  // original draft), gated out of the customer shape in shapeRow.
+  const found = quotes.get(T36_REQUEST_ID, 'owner')
+  assert.deepEqual(found.quote.draftLineItems, [
+    { description: 'Four tires', quantity: 4, unitPrice: 48.74 },
+    { description: 'Mobile installation service', quantity: 1, unitPrice: 55 },
+  ], 'a row from before draft_line_items existed reads its lineItems from the live payload')
+  assert.equal(found.quote.draftTotal, 249.97, 'and its total the same way, in dollars, not the stored cents')
+})
+
+test('reopening a t36 database a second time changes nothing further', t => {
+  const database = t36Database(t)
+  database.open().inventory.close()
+  const { quotes } = database.open()
+  const found = quotes.get(T36_REQUEST_ID, 'owner')
+  assert.equal(found.quote.draftTotal, 249.97, 'the backfilled columns are not recomputed on a second open')
+  assert.equal(
+    quotes.db.prepare('SELECT count(*) n FROM quotes WHERE draft_line_items IS NULL OR draft_total_cents IS NULL').get().n,
+    0,
+    'nothing is left unbackfilled after the first open',
+  )
+})

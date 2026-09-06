@@ -80,6 +80,10 @@ function Confirmation({ navigate }) {
         {request?.vehicleInfo && <div><dt>Vehicle</dt><dd>{request.vehicleInfo}</dd></div>}
         <div><dt>Amount paid</dt><dd className="confirmation-total">${quote.total.toFixed(2)}</dd></div>
       </dl>
+      <div className="quote-lines quote-lines-readonly">
+        {quote.lineItems?.map((item, index) => <div className="quote-line-readonly" key={`${index}-${item.description}`}><span>{item.quantity} × {item.description}</span><strong>${(item.quantity * item.unitPrice).toFixed(2)}</strong></div>)}
+        {quote.note && <p className="quote-customer-note"><strong>Note from Ken:</strong> {quote.note}</p>}
+      </div>
       <a href="/" onClick={go('/')} className="btn btn-primary confirmation-action">Start a New Request</a>
     </>
   } else if (state.kind === 'loaded') {
