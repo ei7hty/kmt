@@ -273,10 +273,8 @@ try {
   {
     const { context, page } = await freshPage(browser, VIEWPORT)
     await submitRequest(page, { base: BASE, ...EXCEPTION_TIRE, vehicle: '2020 Ford F-150 Pickup Truck', location: '12 Example St, Everett, MA 02149', date: '2026-09-10', notes: 'Behind the building' })
-    // R4 retired the customer-facing "Owner review" link; direct navigation
-    // replaces the click (same fix as #188, duplicated here since that PR
-    // has not merged yet -- it will merge cleanly, since it's the same
-    // change on the same line).
+    // R4 retires the customer-facing "Owner review" link; direct navigation
+    // replaces the click, the same fix openOwnerQuotes() got in audit-ui.mjs.
     await page.goto(`${new URL(page.url()).origin}/owner`)
     await page.waitForSelector('.oi-signin, .owner-content, .oi-results, .oi-error', { timeout: 15000 }).catch(() => {})
     if (await page.locator('.oi-signin').count()) results.push(await measure(page, '/owner sign-in form'))
