@@ -351,7 +351,7 @@ export default function OwnerInventory({ navigate }) {
       <div className="oi-metrics">
         <div><strong>{summary?.supplierCount ?? '—'}</strong><span>Supplier tires saved</span></div>
         <div><strong>{summary?.offeredCount ?? '—'}</strong><span>Chosen for KMT</span></div>
-        <div><strong>{summary ? `${summary.fullSizeCount} / ${summary.refreshableSizes.length}` : '—'}</strong><span>Sizes with supplier data fully refreshed</span></div>
+        <div><strong>{summary ? summary.fullSizeCount + summary.importedSizeCount : '—'}</strong><span>Sizes with supplier tires</span>{summary && <small title="The deep pass reads the rest.">Read to the last page: {summary.fullSizeCount} of {summary.fullSizeCount + summary.importedSizeCount}</small>}</div>
       </div>
       <section className="oi-refresh" aria-label="Supplier refresh">
         <div><h2>Supplier inventory</h2><p>{summary?.importedSizeCount ? `${summary.importedSizeCount} sizes started from a limited snapshot. ` : ''}Refresh reads every results page for the selected size and opens a browser on this computer. Refresh all covers the {summary?.refreshableSizes.length ?? '…'} sizes that already have supplier data, not the {summary?.sizes.length ?? '…'} sizes a customer can choose. To walk every size, run the scrape from a home connection (npm run scrape-tires -- --from-catalog), then push it in with npm run import-tires.</p><p className="oi-muted">Supplier prices and stock are last-seen listings, not guaranteed quotes. Your saved KMT prices stay under your control.</p></div>
