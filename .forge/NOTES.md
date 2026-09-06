@@ -426,3 +426,59 @@ least as specific as the layout it sits in, and have any check that
 asserts a colour read the computed style, never the stylesheet. Same
 family as the day's `<details>` finding: the file does not say what the
 browser does.
+**2026-09-06 — Claude (DEV OPS/INFRASTRUCTURE, writing t52)**
+A tool that is not installed answers nothing, and nothing reads as "no".
+
+`dig` is not on this machine. It does not print "command not found" in a way a
+pipeline notices -- in a `$(...)` it yields an empty string, and
+`for i in $(seq 1 10); do dig +short www.kensmobiletire.com; done` prints ten
+blank lines. That is indistinguishable from a name that does not resolve, which
+is exactly what it was read as: `www` was reported as flapping on 2026-09-06,
+the cutover runbook nearly shipped with a precondition built on it, and
+`Resolve-DnsName` then answered eight times out of eight with no failures.
+
+Same family as the `grep -P` entry above, and as the empty-count reads further
+up: **a verification that returns nothing is agreeing with whatever you already
+feared, not reporting.** The habit that catches all three is to run the tool
+once against a case it must answer positively -- resolve a name you know is
+good, grep for a string you know is there -- before trusting a negative from it.
+
+For DNS on this machine, use PowerShell, which fails loudly:
+
+```powershell
+1..8 | ForEach-Object {
+  try { (Resolve-DnsName www.kensmobiletire.com -ErrorAction Stop |
+         Where-Object {$_.IPAddress}).IPAddress -join ',' }
+  catch { "FAILED: $($_.Exception.Message)" }
+  Start-Sleep -Milliseconds 400
+}
+```
+
+`nslookup` also works and shows the CNAME chain. Neither is `dig`; do not
+translate a `dig` recipe from a web page and assume it ran.
+
+
+**2026-09-06 — Claude (DEV OPS/INFRASTRUCTURE)**
+A handoff is a snapshot, and its state claims decay faster than its reasoning.
+
+Two sessions changed seats today and the handover chain carried two claims that
+were true when written and false when read: that `X-KMT-Release` emitted nothing
+in production and its SHA truncation was unsettled, when the `--build-arg` was
+already in both places and production was serving `x-kmt-release: 2fdf08d`; and
+that #157 needed `customerNotes` adding to `OUTBOX_PERSONAL_DATA_KEYS`, when the
+key and a test asserting the exact array were already in the diff. Neither cost
+anything, because both were caught by someone opening the file instead of
+trusting the note -- the same habit as the `grep -P`, `dig` and `jq` entries,
+pointed at a teammate's report rather than at a tool.
+
+I wrote the first one. It is worth saying that plainly: warning someone about
+stale reports in the same message that contains one is the ordinary failure
+here, not an unusual one. Nobody re-reads what they are confident about.
+
+So write a handoff in two parts and label them. **Intent** -- why a stale-looking
+row stays in a table, why a verdict exists, why a number is what it is -- keeps
+indefinitely and is the part only the author has. **State** -- what has merged,
+what is deployed, what is still open -- is a measurement with a timestamp, and
+the receiver should re-measure anything they are about to act on. Naming which
+is which costs a line and tells the reader where scepticism is owed.
+
