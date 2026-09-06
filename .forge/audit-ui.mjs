@@ -168,5 +168,5 @@ export async function cleanTireFor(base) {
       'This is a gap in the gate database or the live catalog, not a UI regression.',
     )
   }
-  return { size: CLEAN_SIZE, tireName: supplierTire.name }
+  return { size: CLEAN_SIZE, tireName: supplierTire.name, price: supplierTire.price }
 }

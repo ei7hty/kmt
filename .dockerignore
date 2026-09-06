@@ -1,10 +1,49 @@
+# What must never reach the build context.
+#
+# CI deploys `--remote-only` from a clean checkout, so the images it builds are
+# already fine. This file is for the other case: `fly deploy` run from a working
+# copy, which carries things a clean checkout does not. A file copied into a
+# layer stays in that layer even if a later one deletes it, so an image built
+# from a developer's checkout can carry a password that appears nowhere in the
+# filesystem that image produces.
+#
+# Being in .gitignore is not being in this file. Git and Docker read different
+# lists, and most of what is added below is precisely what git already ignores
+# -- which is why it is sitting on disk to be copied.
+
 node_modules
 dist
 .git
-.worktrees
 .vercel
+
+# Worktrees: hundreds of megabytes of other branches, and each one is a second
+# copy of the repository carrying everything else named in this file.
+.worktrees
+
+# Real credentials. secrets/ holds the owner password in plain text on this
+# machine right now. It is the reason this file was revisited.
+secrets
+
+# Agent state. The transcripts and conversations are working notes that quote
+# file contents back at length, and .claude is session configuration. None of it
+# is the product, and none of it should travel to whoever can pull an image.
+.claude
+.forge/transcripts
+.forge/conversations
+
+# The walk output: supplier-run screenshots, large and nobody's business but ours.
 .forge/shots
+
+# Local databases and anything shaped like one. The real database lives on the
+# mounted volume; a copy baked into the image would be stale customer records
+# travelling with the release.
 backend/data
 *.sqlite*
+
 *.log
 .env*
+
+# Deliberately NOT ignored: src/data/scraped-tires.json. backend/server.mjs
+# reads it at boot to seed the catalog, so a rule like `data` or `**/data` would
+# build an image that starts, serves, and shows an empty catalog. If you ever
+# add a data-shaped rule here, name the directory exactly.
