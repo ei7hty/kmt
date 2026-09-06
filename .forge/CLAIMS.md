@@ -9,7 +9,6 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| tire-list-pages | LEAD UI ENGINEER | src/routes/CustomerRequest.jsx tire list paging (Show 24 more), .forge/audit-ui.mjs expandTireList with QA agreement; on top of #183 | 2026-09-06 |
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
