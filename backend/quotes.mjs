@@ -1,8 +1,45 @@
 import { randomBytes } from 'node:crypto'
 
 import { InputError } from './inventory.mjs'
+import { REASONS, isServiceable, normalizeZip, readServiceAreaConfig } from './service-area.mjs'
 import { catalogFromLiveRows } from '../src/data/catalog.js'
 import { ALLOWED_QUANTITIES, calculateDraftQuote } from '../src/pricing.js'
+
+/** The number a refusal offers. The same one the wizard's call button dials. */
+const SHOP_PHONE = '(617) 410-8319'
+
+/**
+ * Today, where the van is.
+ *
+ * A date the customer picks is a day in Massachusetts, not a UTC instant, so
+ * "today or later" is judged against the calendar there: a request typed at
+ * 11pm should not be refused because it is already tomorrow in Greenwich.
+ */
+export function todayInServiceArea(at = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(at)
+}
+
+const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
+
+/**
+ * The preferred date, as YYYY-MM-DD, a real calendar day, today or later.
+ *
+ * Anything up to forty characters used to be accepted, and the audits
+ * themselves submitted a day in 2025 and passed (#70). A date the calendar
+ * does not have (the 31st of June) is refused as such rather than being
+ * quietly rolled into July.
+ */
+function cleanDate(value, today) {
+  const match = DATE_PATTERN.exec(value)
+  if (!match) throw new InputError('Enter the preferred date as YYYY-MM-DD.')
+  const [, year, month, day] = match.map(Number)
+  const probe = new Date(Date.UTC(year, month - 1, day))
+  if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) {
+    throw new InputError('That date is not on the calendar.')
+  }
+  if (value < today) throw new InputError('Choose today or a later date.')
+  return value
+}
 
 /**
  * Requests and the quotes drafted for them.
@@ -137,7 +174,7 @@ function cleanCustomerPhone(value) {
  * a person could act on, rather than storing something the rest of the system
  * has to keep making excuses for.
  */
-function cleanRequest(input) {
+function cleanRequest(input, today) {
   if (!input || typeof input !== 'object') throw new InputError('Send the request as an object.')
 
   const cleaned = {}
@@ -159,6 +196,14 @@ function cleanRequest(input) {
   if (cleaned.customerEmail && !EMAIL_PATTERN.test(cleaned.customerEmail)) {
     throw new InputError('customerEmail must be a valid email address.')
   }
+  cleaned.date = cleanDate(cleaned.date, today)
+
+  // The ZIP is where the van goes, and the service-area check needs it. Five
+  // digits, or ZIP+4 read as its five; the wizard carries the fitment ZIP into
+  // this field, so a customer who typed it once is not asked twice (#70, #95).
+  const zip = normalizeZip(cleaned.serviceZip)
+  if (!zip) throw new InputError('Enter the five-digit ZIP code where we will meet you.')
+  cleaned.serviceZip = zip
   return cleaned
 }
 
@@ -211,8 +256,16 @@ const QUOTES_COLUMNS = `
 `
 
 export class Quotes {
-  constructor(inventory) {
+  /**
+   * `serviceArea` is the radius rule from backend/service-area.mjs (the
+   * server reads it from the environment; tests pass one). `today` answers
+   * the calendar day a preferred date is judged against, injectable so a
+   * test can stand at a chosen day.
+   */
+  constructor(inventory, { serviceArea = readServiceAreaConfig({}), today = todayInServiceArea } = {}) {
     this.inventory = inventory
+    this.serviceArea = serviceArea
+    this.today = today
     this.db = inventory.db
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS requests (
@@ -293,7 +346,23 @@ export class Quotes {
    */
   submit(input) {
     const customerKey = cleanCustomerKey(input?.customerKey)
-    const request = cleanRequest(input)
+    const request = cleanRequest(input, this.today())
+
+    // Is this somewhere the van goes? Beyond the radius, or a ZIP nobody can
+    // place, is refused here with the phone number, before anything is stored
+    // and before a quote exists for a job nobody will do (#95). Inside the
+    // radius but past the review distance, the request goes through and the
+    // owner is told how far, on the same path every other reason for review
+    // takes, so the card reads it like any other.
+    const area = isServiceable(request.serviceZip, this.serviceArea)
+    if (!area.serviceable) {
+      // "Text", not "call": every customer-facing control promotes texting
+      // (t63), and the panel that shows this sentence carries the text button.
+      throw new InputError(`${area.message} Text us at ${SHOP_PHONE} and we will see what we can do.`)
+    }
+    // The distance rides with the request for the owner's card. It is not in
+    // the customer shape: the customer knows where they are.
+    request.serviceMiles = area.miles
 
     const catalog = this.catalog()
     if (!catalog.some(tire => tire.id === request.tireSelection)) {
@@ -303,6 +372,10 @@ export class Quotes {
     const id = newId()
     const stamp = now()
     const draft = calculateDraftQuote({ ...request, id }, catalog)
+    if (area.reason === REASONS.REVIEW) {
+      draft.exceptionReasons = [...draft.exceptionReasons, `Service address is ${area.message.replace(/^About/, 'about')}`]
+      draft.exception = true
+    }
 
     return this.transaction(() => {
       this.db.prepare('INSERT INTO requests VALUES (?, ?, ?, ?, ?)')

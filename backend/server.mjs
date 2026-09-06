@@ -40,6 +40,7 @@ import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
 import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { Quotes } from './quotes.mjs'
+import { describeServiceArea, readServiceAreaConfig } from './service-area.mjs'
 import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
 import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl, readRelease } from './site.mjs'
@@ -107,7 +108,24 @@ const auth = createAuth(authConfig, {
 })
 const refresher = new Refresher(inventory)
 const importer = new PageImporter(inventory)
-const quotes = new Quotes(inventory)
+// Where the van goes (t48). ACTIVE BY DEFAULT ON THIS SERVER: with nothing
+// set, this reads base 02148, a 100 mile radius and a 25 mile review band,
+// and a customer beyond the radius is refused at submit from the moment
+// this deploys. The lead ruled it on by default and the user gave the
+// number. Only backend/dev.mjs defaults the radius to off, for a laptop
+// elsewhere; that comment describes the local server, not this one. To
+// accept every ZIP here, set KMT_SERVICE_RADIUS_MILES=off explicitly, and
+// the boot line will say so. A base ZIP the table does not know, or a
+// radius that is not a distance, is refused here at boot rather than at the
+// first submit, the way a bad password is.
+let serviceArea
+try {
+  serviceArea = readServiceAreaConfig()
+} catch (error) {
+  console.error(error.message)
+  process.exit(1)
+}
+const quotes = new Quotes(inventory, { serviceArea })
 // Every message about a request is recorded here whether or not a provider is
 // configured; the mailer decides whether anything is actually sent.
 const outbox = new Outbox(inventory.db)
@@ -220,6 +238,7 @@ server.listen(port, bind, () => {
   if (!process.env.KMT_SESSION_SECRET) {
     console.log('KMT_SESSION_SECRET unset: sessions will not survive a restart.')
   }
+  console.log(describeServiceArea(serviceArea))
 })
 
 let stopping = false

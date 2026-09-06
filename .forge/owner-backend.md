@@ -75,6 +75,16 @@ To recut it, for a new vintage or wider prefixes:
 node scripts/cut-zip-centroids.mjs --vintage 2024
 ```
 
+At submit, `backend/quotes.mjs` requires a five-digit ZIP (ZIP+4 is read as
+its five) and a preferred date of today or later, judged on the Massachusetts
+calendar; beyond the radius, or a ZIP the table lacks, is refused with the
+distance and the shop's number and nothing is stored; inside the radius but
+past the review distance goes through with "Service address is about N miles
+from base" added to the quote's exception reasons, and the owner's row carries
+`serviceMiles` (the customer's does not). `backend/dev.mjs` switches the
+radius off by default so a laptop elsewhere is not refused; its boot line
+says so.
+
 The script fetches the archive from census.gov, reads the one text file in
 it, keeps the prefixes named at its top, and rewrites the JSON; commit the
 result. A layout change at the Census (a renamed column) fails the script

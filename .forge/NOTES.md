@@ -413,6 +413,15 @@ diff that caused it was about something else entirely (here, honesty about
 empty results). If a fix changes how long an operation takes, ask what was
 depending on the old timing before shipping the new one.
 
+**2026-09-06 — LEAD BACKEND DEV (t48 part two)**
+The three audits share one email address, and the server caps submissions per
+address at 30 a day in process memory (#63). One gate run uses about 14, so a
+second full run against the same server, plus a few curls, trips the cap: the
+symptom is "no visible submission acknowledgement" partway through the second
+run and a `rate limit: submitPerEmail refused` line in the server log. Restart
+the server between local runs; the gate boots a fresh one per run, so CI never
+meets this.
+
 **2026-09-06 — JUNIOR FRONT END DEV (session local_376e0377)**
 A second instance of the specificity trap at the top of this file, from the
 other direction: a rule scoped to a container outranks a semantic class.

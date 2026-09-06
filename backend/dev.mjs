@@ -12,6 +12,7 @@ import { Quotes } from './quotes.mjs'
 import { Outbox } from './outbox.mjs'
 import { createMailer } from './mail.mjs'
 import { RateLimiter } from './limits.mjs'
+import { describeServiceArea, readServiceAreaConfig } from './service-area.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const filename = process.env.KMT_OWNER_DB || path.join(root, 'backend/data/owner.sqlite')
@@ -19,7 +20,11 @@ mkdirSync(path.dirname(filename), { recursive: true })
 const inventory = new Inventory(filename, TIRE_CATALOG.map(tire => tire.size))
 inventory.importSnapshot(JSON.parse(readFileSync(path.join(root, 'src/data/scraped-tires.json'), 'utf8')))
 const refresher = new Refresher(inventory)
-const quotes = new Quotes(inventory)
+// The service-area check is off here unless the environment says otherwise:
+// this is the only place off is a default, so a laptop debugging the form in
+// another state is not refused. The boot line below says which it is.
+const serviceArea = readServiceAreaConfig({ ...process.env, KMT_SERVICE_RADIUS_MILES: process.env.KMT_SERVICE_RADIUS_MILES ?? 'off' })
+const quotes = new Quotes(inventory, { serviceArea })
 const outbox = new Outbox(inventory.db)
 const mailer = createMailer({ outbox, quotes, origin: `http://127.0.0.1:${process.env.KMT_OWNER_PORT || 4180}` })
 const api = createApi(inventory, refresher, new PageImporter(inventory), quotes, { mailer })
@@ -51,7 +56,10 @@ const server = createHttpServer(async (request, response) => {
   }
   vite.middlewares(request, response)
 })
-server.listen(port, '127.0.0.1', () => console.log(`Owner workspace: http://127.0.0.1:${port}/owner`))
+server.listen(port, '127.0.0.1', () => {
+  console.log(`Owner workspace: http://127.0.0.1:${port}/owner`)
+  console.log(describeServiceArea(serviceArea))
+})
 
 let stopping = false
 async function shutdown() {
