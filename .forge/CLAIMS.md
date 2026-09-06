@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `contact-fields` | SWE agent 4 | t34: customer form + `backend/quotes.mjs` submit validation/`shapeRow` (not touching status/transition logic, which SWE agent 1 owns in the same file for t36) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
