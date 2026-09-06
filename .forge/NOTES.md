@@ -1471,3 +1471,31 @@ rather than accepted.
 **That is the same rule working, one entry after being written down.** Which is
 the argument for writing these at all: **check the premise at the moment it
 becomes load-bearing, not at the moment it is offered.**
+
+
+### The same rule in a second instrument: a clean rebase
+
+**From QA ENGINEER, the same night.** Rebasing a test branch onto `main` picked
+up a fix that corrected a **sibling** test's fixture in the same file. Their own
+new test — added after that sibling but before the fix landed — carried the
+same wrong key.
+
+**The rebase fixed the sibling for free and left theirs wrong, silently.**
+There was nothing to reconcile against for a line only they had added, so git
+had nothing to say about it. The verdict did not change — the test still failed
+correctly — **but it now failed for a confusing incidental reason underneath,
+and "the rebase succeeded cleanly" said nothing at all about that.**
+
+**A clean rebase is evidence about lines other people also touched. It is no
+evidence whatever about lines you added yourself** — which is exactly where your
+own stale assumption lives. **"No conflict" and "no problem" are
+indistinguishable from outside.**
+
+**Note the difference from a stale-head check.** That is comparing against a
+branch that has moved. **This is stale content surviving *through* a successful
+merge of that same branch** — the instrument ran, reported success, and its
+scope never included the thing you were relying on it for.
+
+**The general form, which covers this and the merge notification above:** a
+green signal whose scope is narrower than the confidence it produces. **Ask what
+the instrument actually examined, not what it concluded.**
