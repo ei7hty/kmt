@@ -72,6 +72,10 @@ jobs:
       - name: Audit the built frontend against the real server
         env:
           AUDIT_BASE: http://localhost:4173
+          # Must stay at least 12 characters: server.mjs refuses to boot on a
+          # shorter one, and the failure surfaces as the wait loop below timing
+          # out with "server did not start", which reads like a hang rather than
+          # a rejected password.
           KMT_OWNER_PASSWORD: audit-only-password-not-a-secret
         run: |
           # node directly, not `npx`: npx spawns the server as a grandchild, so
@@ -79,13 +83,22 @@ jobs:
           # does not matter here -- the runner is destroyed at the end of the
           # job -- but this file gets copied as an example, and the form that
           # leaks locally should not be the one on display.
-          KMT_OWNER_DB="$(mktemp -d)/audit.sqlite" \
+          # Captured in a variable rather than inlined, so the trap below can
+          # remove it. Inline, the path exists only in the backgrounded node's
+          # environment and nothing left in this shell knows what to clean up.
+          dbdir="$(mktemp -d)"
+
+          KMT_OWNER_DB="$dbdir/audit.sqlite" \
           KMT_SESSION_SECRET=audit-only-session-secret \
           PORT=4173 \
           KMT_BIND=127.0.0.1 \
           node backend/server.mjs &
           server=$!
-          trap 'kill $server 2>/dev/null || true' EXIT
+          # Both, and on any exit including a failed audit. The runner is
+          # destroyed either way, so this is not for GitHub's benefit: it is so
+          # the same block is safe on a self-hosted runner and safe to copy, and
+          # a failed run cannot leave a listener holding 4173 for the next one.
+          trap 'kill $server 2>/dev/null || true; rm -rf "$dbdir"' EXIT
 
           # stderr is dropped because the first attempts legitimately fail while
           # the server boots, and "connection refused" in the log reads like a
