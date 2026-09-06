@@ -1278,8 +1278,8 @@
   color: var(--accent-text);
 }
 
-/* The horizontal lockup in the customer nav: the mark beside the name, until
-   the licensed horizontal file lands in public/brand/. */
+/* The primary lockup in the customer nav and the hero, from public/brand;
+   SOURCES.md there says which file is which. */
 .brand-mark {
   flex-direction: row;
   align-items: center;
@@ -1288,34 +1288,27 @@
 }
 
 .brand-mark img {
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  border: 2px solid var(--accent);
+  width: auto;
+  height: 62px;
+  object-fit: contain;
+  border-radius: 0;
 }
 
-.brand-mark .brand-lockup {
-  display: grid;
-  gap: 3px;
-  font-family: var(--heading);
-  font-size: 22px;
-  line-height: 1;
-  letter-spacing: 1px;
-  color: #eef1f3;
-  text-align: left;
-}
-
-.brand-mark .brand-lockup em {
-  font-family: var(--sans);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 900;
-  letter-spacing: 2.2px;
-  color: var(--accent-text);
+.hero-logo {
+  width: min(72%, 420px);
+  /* The width and height attributes on the img (there for layout stability)
+     would otherwise fix its height; the ratio does that instead. */
+  height: auto;
+  aspect-ratio: 1200 / 1028;
+  border: 0;
+  border-radius: 10px;
+  object-fit: contain;
+  box-shadow: 0 24px 45px rgba(0, 0, 0, 0.55);
+  transform: translate(-50%, -50%);
 }
 
 /* The compact lockup on the internal screens and the owner workspace: the
-   wheel mark and the name. */
+   wheel alone beside the name. */
 .brand-mark-icon {
   width: 28px;
   height: 28px;
@@ -1349,3 +1342,10 @@
 
 /* Focus rings on the navy. */
 .oi-shell :focus-visible { outline-color: var(--accent-text); }
+
+/* On a phone the hero visual is a short band; the lockup sits inside it with
+   room for the caption below. This follows the block above so it wins. */
+@media (max-width: 760px) {
+  .hero-visual { min-height: 268px; }
+  .hero-logo { width: 200px; }
+}

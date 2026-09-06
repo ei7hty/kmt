@@ -336,7 +336,7 @@ export default function OwnerInventory({ navigate }) {
     setPage(1)
   }
   return <div className="oi-shell">
-    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}><img src="/brand-mark.svg" alt="" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button><span>OWNER WORKSPACE</span><button className="oi-button" onClick={() => navigate('/owner/quotes')}>Quote requests →</button></nav>
+    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button><span>OWNER WORKSPACE</span><button className="oi-button" onClick={() => navigate('/owner/quotes')}>Quote requests →</button></nav>
     <main className="oi-content">
       <header className="oi-heading"><div><p className="oi-kicker">YOUR INVENTORY. YOUR PRICES.</p><h1>Build your tire offering</h1><p>Explore Giga Tires, choose what you want to offer, and set your price.</p></div><span className="oi-owner-badge">Owner only · local workspace</span></header>
       <div className="oi-metrics">
