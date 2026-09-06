@@ -136,17 +136,20 @@ async function main() {
       fail(`Customer form: no visible submission acknowledgement. Got: ${submissionMsg}`);
     }
 
-    // Visible next action from / after submitting. The nav carries "My Quote"
-    // to /status; the owner entry point sits alongside it for the demo.
+    // Visible next action from / after submitting. R4 retired the
+    // customer-facing "Owner Review" link (a live site collecting a name,
+    // email and phone should not advertise its admin door on the same
+    // page), so "My Quote" -- the customer's own route back to what they
+    // just submitted -- is the one that must not silently vanish.
     const statusLinkVisible = await page.locator('button:has-text("My Quote")').isVisible();
-    const ownerLinkVisible = await page.locator('button:has-text("Owner Review")').isVisible();
-    if (statusLinkVisible && ownerLinkVisible) {
-      ok('Customer form screen: visible next actions (Owner Review, My Quote) after submit.');
+    if (statusLinkVisible) {
+      ok('Customer form screen: visible next action (My Quote) after submit.');
     } else {
       fail('Customer form screen: missing visible next action after submit.');
     }
 
-    // 2. Owner review: navigate via visible nav button (not URL typing).
+    // 2. Owner review: reached directly, since R4 removed the customer-facing
+    //    link -- see openOwnerQuotes() in audit-ui.mjs.
     await openOwnerQuotes(page);
 
     const exceptionBadge = await page.locator('text=Owner review required').first().isVisible().catch(() => false);
