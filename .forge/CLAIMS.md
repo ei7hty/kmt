@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `lead-handoff-v1` | KMT LEAD AGENT | `.forge/HANDOFF.md`, `.forge/roles/lead.md`, `.forge/state.json`, `.forge/decisions.md`, `.forge/order-flow-refinement.md` | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
