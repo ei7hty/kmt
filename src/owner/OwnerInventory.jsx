@@ -371,6 +371,10 @@ export default function OwnerInventory({ navigate }) {
       <div className={toolsOpen ? 'oi-tools is-open' : 'oi-tools'}>
         <button type="button" className="oi-tools-toggle" aria-expanded={toolsOpen} aria-controls="owner-tools" onClick={toggleTools}>Supplier refresh, browser import and markup rule</button>
         <div id="owner-tools" className="oi-tools-body" inert={!toolsOpen}>
+      {/* What the supplier data for the selected size is: state about the
+          data, so it sits with the refresh controls rather than above the
+          list, where it cost the one-screen target 2 px once a size was set. */}
+      {size && <p className="oi-coverage">{size}: {coverage ? `${coverage.completeness === 'full' ? 'Full refresh' : coverage.completeness === 'snapshot' ? 'Limited snapshot' : 'Not refreshed'} · ${dateLabel(coverage.last_success)}` : 'Not refreshed yet. Select Refresh below to fetch its tires.'}{coverage?.error && ` · Last attempt failed: ${coverage.error}`}</p>}
       <section className="oi-refresh" aria-label="Supplier refresh">
         <div><h2>Supplier inventory</h2><p>{summary?.importedSizeCount ? `${summary.importedSizeCount} sizes started from a limited snapshot. ` : ''}Refresh reads every results page for the selected size and opens a browser on this computer. Refresh all covers the {summary?.refreshableSizes.length ?? '…'} sizes that already have supplier data, not the {summary?.sizes.length ?? '…'} sizes a customer can choose. To walk every size, run the scrape from a home connection (npm run scrape-tires -- --from-catalog), then push it in with npm run import-tires.</p><p className="oi-muted">Supplier prices and stock are last-seen listings, not guaranteed quotes. Your saved KMT prices stay under your control.</p></div>
         <div className="oi-refresh-actions"><button className="oi-button oi-primary" onClick={refresh} disabled={!data || busy || jobRunning || sizePending || (!size && !summary?.refreshableSizes.length)}>{size ? `Refresh ${size}` : sizePending ? 'Finish choosing a size to refresh it' : summary && !summary.refreshableSizes.length ? 'No sizes with supplier data to refresh yet' : `Refresh all ${summary?.refreshableSizes.length ?? '…'} sizes with supplier data`}</button>{jobRunning && <button className="oi-button" onClick={cancel} disabled={busy}>Stop refresh</button>}</div>
@@ -394,7 +398,6 @@ export default function OwnerInventory({ navigate }) {
             {sizeMatches.slice(0, SHOWN_MATCHES).map(value => <button type="button" key={value} className="oi-size-match" onClick={() => pickSize(value)}>{value}</button>)}
           </>}
       </div>}
-      {size && <p className="oi-coverage">{size}: {coverage ? `${coverage.completeness === 'full' ? 'Full refresh' : coverage.completeness === 'snapshot' ? 'Limited snapshot' : 'Not refreshed'} · ${dateLabel(coverage.last_success)}` : 'Not refreshed yet. Select Refresh above to fetch its tires.'}{coverage?.error && ` · Last attempt failed: ${coverage.error}`}</p>}
       {error && <div className="oi-error oi-notice" role="alert">{error}</div>}
       {notice && <div className="oi-notice" role="status">{notice}</div>}
       <div className="oi-results-heading"><p>{data ? `${data.total} matching tires · page ${data.page} of ${Math.max(1, Math.ceil(data.total / data.pageSize))}` : 'Loading inventory…'}</p><span>{loading ? 'Updating…' : 'Selections and prices are saved, and offered tires reach the customer catalog.'}</span></div>
