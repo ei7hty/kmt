@@ -51,6 +51,36 @@ primary_region = "ewr"          # Secaucus NJ, nearest Fly region to Everett MA.
     soft_limit = 200
     hard_limit = 400
 
+# Is the machine actually serving, or only listening?
+#
+# A top-level check, deliberately NOT [[http_service.checks]]. A service check
+# governs routing: a machine failing one is taken out of the proxy and is not
+# restarted, so on a single machine -- which this is, because a Fly volume
+# attaches to one -- a false failure is an outage with no recovery path.
+# Independent checks report health without touching routing. Revisit if there
+# is ever a second machine.
+#
+# timeout is sized for a blocked event loop, not for the query. The query takes
+# microseconds; a supplier import runs synchronously in this one Node process
+# and can block it for more than five seconds, during which /api/health cannot
+# answer at all. Ten seconds keeps a large import from reading as a sick
+# machine. The real fix is an import that does not block the request loop
+# (t43); until then this number is the honest one.
+#
+# grace_period covers the first boot after a deploy, which runs the migration
+# and the seed. Both are silent -- the only boot lines are the listening line
+# and the database path -- so a check that starts too early reports a failure
+# whose cause prints nothing.
+[checks]
+  [checks.health]
+    type = "http"
+    port = 8080
+    method = "GET"
+    path = "/api/health"
+    interval = "15s"
+    timeout = "10s"
+    grace_period = "60s"
+
 [[vm]]
   size = "shared-cpu-1x"
 

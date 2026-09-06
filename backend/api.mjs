@@ -42,7 +42,7 @@ const IMPORT_ORIGINS = new Set(['https://www.giga-tires.com', 'https://giga-tire
  * -- so adding a route never quietly makes it reachable, and the set of things
  * the public can call is one line to read.
  */
-export const PUBLIC_API_PATHS = new Set(['/api/catalog'])
+export const PUBLIC_API_PATHS = new Set(['/api/catalog', '/api/health'])
 
 /**
  * Public request paths, which a customer reaches without signing in.
@@ -109,6 +109,72 @@ export function createCatalogApi(inventory) {
       console.error(error)
       response.writeHead(500, { 'Content-Type': 'application/json' })
       response.end(JSON.stringify({ error: 'Could not load the catalog.' }))
+    }
+    return true
+  }
+}
+
+/**
+ * May a request with this Host header be served?
+ *
+ * The rule itself is server.mjs's, but the decision lives here so it can be
+ * tested: server.mjs starts listening the moment it is imported, so nothing in
+ * the suite can reach a branch written inline there.
+ *
+ * `/api/health` is exempt. The platform's check reaches this process on the
+ * internal network, so its Host header is never the public hostname; refusing
+ * it would answer 403 to the one caller whose job is to say whether this
+ * machine is well, and monitoring would read a healthy machine as sick. The
+ * exemption is safe only because that endpoint discloses nothing but `ok` --
+ * anything reachable this way has to stay that boring.
+ */
+export function isHostAllowed(hostname, pathname, allowedHosts) {
+  if (pathname === '/api/health') return true
+  if (!allowedHosts.length) return true
+  return allowedHosts.includes(hostname)
+}
+
+/**
+ * Is this machine actually serving?
+ *
+ * Its own handler, for the reason createCatalogApi is, and public for a reason
+ * of its own: the platform health check arrives with no cookie, so a route
+ * behind the session gate answers 401, the check never passes, and the machine
+ * is marked unhealthy for as long as it runs. `/api/health` is in
+ * PUBLIC_API_PATHS beside `/api/catalog` and nowhere near `/api/owner`.
+ *
+ * It asks SQLite one question rather than returning a constant. A process that
+ * is listening but cannot read its database is exactly the failure worth
+ * restarting for -- a missing volume mount, a file the container cannot open --
+ * and a health check that answers 200 through it is worse than none, because it
+ * reports healthy while every real request fails. The query reads the schema:
+ * cheap enough for a 15-second interval, and it touches the file.
+ *
+ * It says nothing but `ok`. A health endpoint is unauthenticated by necessity,
+ * so it is not the place for a version, a row count, or a path on disk.
+ */
+export function createHealthApi(inventory) {
+  return async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (url.pathname !== '/api/health') return false
+    // Answered here rather than falling through: a POST to this path must not
+    // reach another handler, and 405 says which part was wrong.
+    if (request.method !== 'GET') {
+      response.writeHead(405, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Allow: 'GET' })
+      response.end(JSON.stringify({ ok: false, error: 'Health is a GET.' }))
+      return true
+    }
+
+    try {
+      inventory.db.prepare('SELECT 1 FROM sqlite_master LIMIT 1').get()
+      response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+      response.end(JSON.stringify({ ok: true }))
+    } catch (error) {
+      // Logged, because this is the one endpoint whose failure nobody is
+      // watching a screen for.
+      console.error('health check failed:', error.message)
+      response.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+      response.end(JSON.stringify({ ok: false }))
     }
     return true
   }
