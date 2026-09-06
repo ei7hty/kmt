@@ -451,7 +451,7 @@ test('a customer with no session can submit, read and pay; the owner API still c
   assert.equal((await fetch(`${base}/api/owner/markup`)).status, 401)
 })
 
-test('the public rule opens the customer paths and nothing else', async t => {
+test('the public rule opens the customer paths and nothing else', async () => {
   // The allow-list is a prefix, so this pins what the prefix does and does not
   // reach -- a route added under it later stays behind the session by default.
   assert.equal(isPublicApiCall('GET', '/api/catalog'), true)
