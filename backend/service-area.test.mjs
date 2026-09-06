@@ -2,8 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { REASONS, centroidProvenance, describeServiceArea, distanceMiles, isServiceable, normalizeZip, readServiceAreaConfig } from './service-area.mjs'
 
-/** The area the business is expected to run with: Malden, 100 miles, review past 25. */
-const AREA = readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: '100' })
+/** The area the business runs with by default: Malden, 100 miles, review past 25. */
+const AREA = readServiceAreaConfig({})
 
 /** Places a customer might type, by their downtown ZIP. */
 const ZIPS = {
@@ -82,29 +82,40 @@ test('an unknown or malformed ZIP is refused before any distance is computed', (
   assert.equal(normalizeZip(2148), null, 'a number that lost its leading zero is not a ZIP')
 })
 
-test('with no radius set every known ZIP is accepted, and the review band still flags', () => {
-  const open = readServiceAreaConfig({})
-  assert.equal(open.radiusMiles, null)
-  assert.equal(open.baseZip, '02148', 'Malden by default')
-  assert.equal(open.reviewMiles, 25)
-  assert.equal(readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: '' }).radiusMiles, null, 'empty is unset')
+test('the check is on by default: unset applies 100 miles and a 25 mile review band', () => {
+  // A fix that ships inactive is #95 wearing the fix's clothes: the ZIP was
+  // collected and nothing read it. Accepting every ZIP is an explicit opt-out.
+  assert.deepEqual(AREA, { baseZip: '02148', radiusMiles: 100, reviewMiles: 25 })
+  assert.deepEqual(readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: '', KMT_SERVICE_REVIEW_MILES: '' }), AREA, 'empty is unset')
+  assert.equal(isServiceable(ZIPS.bangor, AREA).serviceable, false, 'with nothing set, Bangor is refused')
+  assert.equal(describeServiceArea(AREA), 'service-area check ON: base 02148, radius 100 mi, review beyond 25 mi')
+})
 
-  const bangor = isServiceable(ZIPS.bangor, open)
-  assert.equal(bangor.serviceable, true)
-  assert.equal(bangor.reason, REASONS.REVIEW, 'accepted, but the owner is shown 200 miles')
-  assert.equal(bangor.miles, 200)
-  assert.equal(isServiceable('99999', open).serviceable, false, 'unknown is still unknown')
-  // The boot line must not be readable as "working" when it means "not configured".
-  assert.match(describeServiceArea(open), /INACTIVE: KMT_SERVICE_RADIUS_MILES is unset, so every known ZIP is accepted/)
-  assert.doesNotMatch(describeServiceArea(AREA), /INACTIVE/)
-  assert.match(describeServiceArea(AREA), /100 mile radius, review beyond 25 miles; \d+ ZIP centroids \(Census \d{4}\)/)
+test('"off" accepts every known ZIP, says so at boot, and the review band still flags unless it is off too', () => {
+  for (const value of ['off', 'OFF', '0']) {
+    const open = readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: value })
+    assert.equal(open.radiusMiles, null, `${value} switches the radius off`)
+    assert.equal(open.reviewMiles, 25)
+    const bangor = isServiceable(ZIPS.bangor, open)
+    assert.equal(bangor.serviceable, true)
+    assert.equal(bangor.reason, REASONS.REVIEW, 'accepted, but the owner is shown 200 miles')
+    assert.equal(bangor.miles, 200)
+    assert.equal(isServiceable('99999', open).serviceable, false, 'unknown is still unknown')
+    assert.equal(describeServiceArea(open), 'service-area check OFF: accepting every ZIP')
+  }
+
+  const noReview = readServiceAreaConfig({ KMT_SERVICE_REVIEW_MILES: 'off' })
+  assert.equal(noReview.reviewMiles, null)
+  assert.equal(isServiceable(ZIPS.worcester, noReview).reason, null, 'forty miles raises nothing when the band is off')
+  assert.equal(isServiceable(ZIPS.bangor, noReview).reason, REASONS.BEYOND_RADIUS, 'the radius still refuses')
+  assert.equal(describeServiceArea(noReview), 'service-area check ON: base 02148, radius 100 mi, no review band')
 })
 
 test('the configuration refuses a base the table does not know and a radius that is not a distance', () => {
   assert.throws(() => readServiceAreaConfig({ KMT_SERVICE_BASE_ZIP: '99999' }), /KMT_SERVICE_BASE_ZIP/)
   assert.throws(() => readServiceAreaConfig({ KMT_SERVICE_BASE_ZIP: 'home' }), /KMT_SERVICE_BASE_ZIP/)
   assert.throws(() => readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: 'far' }), /KMT_SERVICE_RADIUS_MILES/)
-  assert.throws(() => readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: '0' }), /KMT_SERVICE_RADIUS_MILES/)
+  assert.throws(() => readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: '-100' }), /KMT_SERVICE_RADIUS_MILES/)
   assert.throws(() => readServiceAreaConfig({ KMT_SERVICE_REVIEW_MILES: '-5' }), /KMT_SERVICE_REVIEW_MILES/)
   const boston = readServiceAreaConfig({ KMT_SERVICE_BASE_ZIP: '02108', KMT_SERVICE_RADIUS_MILES: '50', KMT_SERVICE_REVIEW_MILES: '10' })
   assert.deepEqual(boston, { baseZip: '02108', radiusMiles: 50, reviewMiles: 10 })

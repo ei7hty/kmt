@@ -169,8 +169,8 @@ Everything comes from the environment, so the same image runs anywhere:
 | `KMT_ALLOWED_HOSTS` | Comma-separated hostnames to accept. Unset accepts any, which is fine behind a host terminating its own TLS. |
 | `KMT_SESSION_HOURS` | Session lifetime, default 12. |
 | `KMT_SERVICE_BASE_ZIP` | Where the van starts, default `02148` (Malden). Must be in the centroid table. |
-| `KMT_SERVICE_RADIUS_MILES` | Straight-line miles beyond which a request is refused. Unset accepts every known ZIP; 100 is the intended setting. Read by t48 part two once wired. |
-| `KMT_SERVICE_REVIEW_MILES` | Miles beyond which a request is flagged for the owner with its distance, default 25. |
+| `KMT_SERVICE_RADIUS_MILES` | Straight-line miles beyond which a request is refused, default 100. `off` (or `0`) accepts every known ZIP and the boot line says so; the only place that is a default is `backend/dev.mjs`, so a laptop in another state is not refused. Read by t48 part two once wired. |
+| `KMT_SERVICE_REVIEW_MILES` | Miles beyond which a request is flagged for the owner with its distance, default 25; `off` flags nothing. |
 
 ### Deploying
 

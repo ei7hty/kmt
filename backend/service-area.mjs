@@ -9,8 +9,15 @@
  * (scripts/cut-zip-centroids.mjs) and three environment settings:
  *
  *   KMT_SERVICE_BASE_ZIP      where the van starts, default 02148 (Malden)
- *   KMT_SERVICE_RADIUS_MILES  beyond this a request is refused; unset accepts all
- *   KMT_SERVICE_REVIEW_MILES  beyond this a request is flagged for the owner, default 25
+ *   KMT_SERVICE_RADIUS_MILES  beyond this a request is refused, default 100;
+ *                             `off` or `0` accepts every known ZIP
+ *   KMT_SERVICE_REVIEW_MILES  beyond this a request is flagged for the owner,
+ *                             default 25; `off` or `0` flags nothing
+ *
+ * The check is on by default. The bug this replaces was a ZIP that was
+ * collected and never read, and a fix that ships inactive would be that bug
+ * wearing the fix's clothes; accepting every ZIP is an explicit opt-out, for
+ * a laptop debugging the form in another state.
  *
  * Distance is the great-circle distance between ZIP interior points, which
  * is not the drive. It is a straight line under the road distance by a third
@@ -31,13 +38,11 @@ import { fileURLToPath } from 'node:url'
 const DATA = path.join(path.dirname(fileURLToPath(import.meta.url)), 'zip-centroids.json')
 
 const DEFAULT_BASE_ZIP = '02148'
-/**
- * The radius the business is expected to run with, for the deployment
- * configuration to set. The code's own default is no radius at all, so the
- * check can ship before the number is decided and refuse nobody until it is.
- */
-export const SUGGESTED_RADIUS_MILES = 100
-const DEFAULT_REVIEW_MILES = 25
+export const DEFAULT_RADIUS_MILES = 100
+export const DEFAULT_REVIEW_MILES = 25
+
+/** The values that switch a distance setting off. */
+const OFF = new Set(['off', '0'])
 
 /** The reasons a ZIP is refused or flagged, as the names the API and the owner card read. */
 export const REASONS = Object.freeze({
@@ -91,44 +96,40 @@ export function distanceMiles(zipA, zipB) {
  *
  * A base ZIP the table does not know is refused at boot rather than at the
  * first submit: every distance would be null and every request would read
- * as unknown. A radius that is not a positive number is refused the same
- * way; unset means no radius, which is today's behaviour, so the switch can
- * be deployed before the number is decided.
+ * as unknown. A distance that is not a positive number is refused the same
+ * way, unless it is the explicit `off` (or `0`), which is null: no radius,
+ * or no review band.
  */
 export function readServiceAreaConfig(env = process.env) {
   const baseZip = normalizeZip(env.KMT_SERVICE_BASE_ZIP ?? DEFAULT_BASE_ZIP)
   if (!baseZip || !centroids().zips[baseZip]) {
     throw new Error(`KMT_SERVICE_BASE_ZIP must be a five-digit ZIP in the centroid table; got ${JSON.stringify(env.KMT_SERVICE_BASE_ZIP)}.`)
   }
-  const number = (name, fallback) => {
+  const miles = (name, fallback) => {
     const raw = env[name]
     if (raw === undefined || raw === '') return fallback
+    if (OFF.has(String(raw).trim().toLowerCase())) return null
     const value = Number(raw)
-    if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be a positive number of miles; got ${JSON.stringify(raw)}.`)
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`${name} must be a positive number of miles, or "off"; got ${JSON.stringify(raw)}.`)
+    }
     return value
   }
   return {
     baseZip,
-    radiusMiles: number('KMT_SERVICE_RADIUS_MILES', null),
-    reviewMiles: number('KMT_SERVICE_REVIEW_MILES', DEFAULT_REVIEW_MILES),
+    radiusMiles: miles('KMT_SERVICE_RADIUS_MILES', DEFAULT_RADIUS_MILES),
+    reviewMiles: miles('KMT_SERVICE_REVIEW_MILES', DEFAULT_REVIEW_MILES),
   }
 }
 
 /**
- * The one line the server prints at boot about this.
- *
- * An unset radius is said loudly. The bug this replaces was a ZIP that was
- * collected and never read; a check that boots, refuses nobody and looks
- * healthy would be the same bug wearing the fix's name, so the log line must
- * be impossible to read as "working" when it means "not configured".
+ * The one line the server prints at boot about this, in words an operator
+ * cannot read as "working" when the check is switched off.
  */
 export function describeServiceArea(config) {
-  const { vintage, count } = centroidProvenance()
-  if (config.radiusMiles === null) {
-    return `Service area check INACTIVE: KMT_SERVICE_RADIUS_MILES is unset, so every known ZIP is accepted ` +
-      `(base ${config.baseZip}, review beyond ${config.reviewMiles} miles still flagged; ${count} ZIP centroids, Census ${vintage}).`
-  }
-  return `Service area: base ${config.baseZip}, ${config.radiusMiles} mile radius, review beyond ${config.reviewMiles} miles; ${count} ZIP centroids (Census ${vintage}).`
+  if (config.radiusMiles === null) return 'service-area check OFF: accepting every ZIP'
+  const review = config.reviewMiles === null ? 'no review band' : `review beyond ${config.reviewMiles} mi`
+  return `service-area check ON: base ${config.baseZip}, radius ${config.radiusMiles} mi, ${review}`
 }
 
 /**
@@ -156,7 +157,7 @@ export function isServiceable(zip, config) {
       message: `That address is about ${rounded} miles from us, outside the ${config.radiusMiles} mile area we serve.`,
     }
   }
-  if (miles > config.reviewMiles) {
+  if (config.reviewMiles !== null && miles > config.reviewMiles) {
     return {
       serviceable: true, reason: REASONS.REVIEW, miles: rounded,
       message: `About ${rounded} miles from base, beyond the ${config.reviewMiles} mile review distance.`,
