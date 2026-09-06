@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import SignIn from '../owner/SignIn.jsx'
+import { useNoIndex } from '../noindex.js'
 import { NeedsSignIn, actOnQuote, ownerRequests } from '../store'
 import { signOut } from '../owner/session.js'
 import { exactTime, timeAgo } from '../owner/timeAgo.js'
@@ -58,6 +59,7 @@ const CLOSED_NOTE = {
 }
 
 function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
+  useNoIndex()
   const [view, setView] = useState('open')
   const [requests, setRequests] = useState([])
   const [counts, setCounts] = useState({})

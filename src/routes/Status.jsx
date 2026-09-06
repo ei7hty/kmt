@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { cancelRequest, myRequests, payRequest, requestById } from '../store'
+import { useNoIndex } from '../noindex.js'
 import { PrivacyFooter } from './Privacy.jsx'
 
 /**
@@ -23,6 +24,7 @@ const STAGE = { draft: 2, sent: 3, approved: 3, paid: 4, done: 4 }
 const CANCELLABLE = ['draft', 'sent', 'approved']
 
 function Status({ navigate }) {
+  useNoIndex()
   const requested = new URLSearchParams(window.location.search).get('request')
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
