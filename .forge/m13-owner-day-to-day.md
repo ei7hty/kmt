@@ -139,6 +139,45 @@ the inventory search. Measured below: 10 ms per keystroke at the post-import
 count and 34 ms at 25,000 rows, both fine; beyond that it is not, and the
 deep pass (2,681 unread pages) is where it stops being fine.
 
+### m13.6 The inventory summary once, not on every page
+
+Recorded on the PROJECT MANAGER's ruling of 2026-09-06, measured by LEAD
+FULL STACK under Slow 3G (,
+PR #180): every page of  carries the same
+, and the summary is most of the response.
+
+| part of one inventory response | raw |
+| --- | --- |
+| the 24 tire cards asked for | 10 KB |
+| , the 910 supported sizes | 11 KB |
+| , 511 rows | 72 KB |
+| whole response | 98 KB; about 3 KB brotli on a synthetic database, which is a floor, since uniform invented coverage rows compress better than real ones |
+
+Resent on every filter change and every page turn: moving from page 1 to
+page 2 of a size re-downloads 83 KB of metadata that did not change to
+fetch 10 KB of cards. The same shape as the customer catalog's whole-world
+response, in the owner's endpoint; the fix is the same kind, a transfer
+question and not a query one. It grows with every size the walk adds (235
+sizes remain, and the deep pass is post-launch), and the real wire figure
+today is above the 3 KB floor by an amount nobody has measured.
+
+Shape of the fix, for the lanes that own it (LEAD BACKEND DEV and the UI
+lane): fetch the summary once, on open and after a save or a job, and let
+the list pages travel alone; the coverage list only needs the committed
+size's row. Not built during launch week: Ken's measured experience is
+fine, and it is an API shape change plus a UI change.
+
+What that measurement also settled, so this milestone is read correctly:
+nothing on Ken's side is slow today. Cold  to the password field
+is 3.7 s on production (111 KB, four requests, all bundle and brand image,
+no data); sign-in to the first tire card is estimated at 1 to 1.5 s;
+committing  with its 281 tires reaches the first card in 2.7 s
+locally under the same throttle;  with five requests is
+1.0 s and 5 KB. m13.1 to m13.3 are about the shape of Ken's work, the
+scrolling, the 281 saves and the missing search, not about waiting. The
+customer-side pass of the same day is in PR #179 (t61), cited rather than
+restated here.
+
 ## Out of scope
 
 Pricing logic, tax, disposal, TPMS and valve lines (#94, deferred by the
