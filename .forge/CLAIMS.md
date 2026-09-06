@@ -12,6 +12,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | m13-inventory-summary | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md (docs only) | 2026-09-06 |
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
 | t63-text-controls | JUNIOR FRONTEND DEV 2 (83b42a) | rebase onto current main, no new file changes | 2026-09-06 |
+| wizard-zip-and-date | TEMP REPO AGENT (local_b2ab10bb) | rebase onto current main + re-run gate, no new file changes | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
