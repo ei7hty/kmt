@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import SignIn from '../owner/SignIn.jsx'
 import { NeedsSignIn, actOnQuote, ownerRequests } from '../store'
 import { signOut } from '../owner/session.js'
+import { exactTime, timeAgo } from '../owner/timeAgo.js'
 
 /** A stored US number, +16174108319, as a person reads it: (617) 410-8319. Anything else as stored. */
 const formatPhone = (phone) => {
@@ -68,7 +69,9 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
     setLoading(true)
     try {
       const data = await ownerRequests(view)
-      setRequests(data.requests)
+      // Newest first everywhere, except that what needs the owner is shown
+      // longest-waiting first: the API returns every view newest first.
+      setRequests(view === 'attention' ? [...data.requests].reverse() : data.requests)
       setCounts(data.counts)
       setError('')
       setNeedsSignIn(false)
@@ -157,7 +160,11 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
               const tireLine = quote?.lineItems?.find(item => item.description !== 'Mobile installation service')
               return (
               <div key={request.id} className="panel owner-request">
-                <p className="owner-request-vehicle">{request.vehicleInfo}</p>
+                <div className="owner-request-head">
+                  <p className="owner-request-vehicle">{request.vehicleInfo}</p>
+                  <code className="owner-request-ref" title={`Request ${request.id}`}>#{request.id.slice(0, 8)}</code>
+                </div>
+                {request.createdAt && <p className="owner-request-age" title={exactTime(request.createdAt)}>Submitted {timeAgo(request.createdAt)}</p>}
                 <dl className="owner-details">
                   <div><dt>Tire:</dt> <dd>{tire?.name ? `${tireLine ? `${tireLine.quantity} × ` : ''}${tire.name} · ${tire.size}` : `${tire?.id ?? request.tireSelection} (no longer in the catalog)`}</dd></div>
                   <div><dt>Location:</dt> <dd>{request.location}</dd></div>

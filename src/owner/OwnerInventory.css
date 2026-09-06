@@ -107,3 +107,39 @@
 .oi-import-steps li { margin-bottom: 4px; }
 .oi-bookmarklet { display: inline-block; margin-top: 6px; padding: 10px 14px; border: 1px dashed #5c7382; border-radius: 5px; background: #16303c; color: #f3f3f3 !important; font-weight: 700; font-size: 13px; cursor: grab; text-decoration: none; }
 .oi-bookmarklet:hover { border-color: var(--accent); }
+
+/* List first (t59). The tools fold above the list and remember their state
+   per device; the card shows what a decision needs, the rest behind Details. */
+.oi-tools { margin-bottom: 16px; }
+.oi-tools-toggle { display: flex; align-items: center; width: 100%; min-height: 44px; padding: 12px 16px; border: 1px solid #1d3745; border-radius: 6px; background: #122430; color: #f5f5f5; font-size: 13px !important; font-weight: 600 !important; text-align: left; }
+.oi-tools-toggle::before { content: '▸'; margin-right: 10px; color: var(--accent-text); }
+.oi-tools.is-open > .oi-tools-toggle { border-radius: 6px 6px 0 0; }
+.oi-tools.is-open > .oi-tools-toggle::before { content: '▾'; }
+/* Folded: still laid out, so what is inside stays measurable, but clipped to
+   nothing and inert, so it is neither seen nor reachable. */
+.oi-tools-body { display: grid; gap: 16px; padding-top: 16px; }
+.oi-tools:not(.is-open) > .oi-tools-body { height: 0; padding: 0; overflow: hidden; }
+.oi-tools .oi-refresh { margin-bottom: 0; }
+.oi-tire-price { color: #c9d3d9; font-weight: 600; }
+.oi-tire-more { margin-top: 8px; }
+.oi-tire-more > summary { color: #c9d3d9; }
+.oi-offer-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: end; }
+.oi-offer-row > .oi-check { margin-bottom: 11px; }
+@media (max-width: 480px) {
+  .oi-content { padding-top: 14px; }
+  .oi-heading { margin-bottom: 14px; }
+  .oi-heading h1 { font-size: 24px; margin: 4px 0; }
+  /* The sentence under the heading and the "Owner only" badge say nothing a
+     phone screen needs before the list; the first tire is what does. */
+  .oi-heading > div > p:last-child, .oi-owner-badge { display: none; }
+  .oi-metrics { margin-bottom: 14px; }
+  .oi-metrics > div { padding: 10px 8px; }
+  .oi-metrics strong { font-size: 20px; }
+  .oi-tire-main, .oi-offer { padding: 14px; }
+  .oi-offer { gap: 8px; }
+  .oi-offer > .oi-kicker { display: none; }
+  .oi-shell .oi-tire h2 { font-size: 16px; margin-bottom: 4px; }
+  .oi-tire-tags { margin-bottom: 6px; }
+  .oi-results-heading { margin: 12px 0; }
+  .oi-filters { padding: 12px 0; gap: 10px; }
+}
