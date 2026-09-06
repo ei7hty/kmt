@@ -141,6 +141,24 @@ adapter lands); `KMT_OWNER_EMAIL` / `KMT_OWNER_NAME` are settings, the
 user's own for testing ("test with mine first"), Ken's later; the user's
 address is also the customer identity on every TEST request.
 
+**On that key path, added 2026-09-06 after it cost a wrong conclusion.** The
+file was on disk as `secrets/resaend.txt` -- `r-e-s-a-e-n-d` -- and this line
+was read as stale because a `find -iname "*resend*"` could not match it. It has
+been renamed to the path above, so the line is now true; the lesson is not.
+
+**A name that does not match is not a key that is absent.** `ls` and `find` are
+answering the question you typed, and when the thing you are looking for is
+itself misspelled, a clean negative reads exactly like a missing file. The check
+that separates them is `ls secrets/` -- read what is there, rather than asking
+whether what you expected is there. It costs one command and it is the only one
+that can surprise you.
+
+Same shape as the `grep -P`, `dig` and stale-audit-port entries in `NOTES.md`,
+pointed at a filename instead of a tool: **a search that finds nothing agrees
+with whatever you already believed.** Here the belief was "the key was never
+saved," and the truth was a typo in a directory nobody lists because its
+contents are secret.
+
 ### Only the user can do these
 
 Restore the Google mail records and fix the Resend rows at Squarespace
