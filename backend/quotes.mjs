@@ -35,21 +35,44 @@ const FORM_FIELDS = [
   'locationType',
   'serviceZip',
   'locationNotes',
+  'customerName',
+  'customerEmail',
 ]
 
 /** Bounded so a request cannot carry an essay. */
 const LIMITS = {
   vehicleInfo: 200, tireSelection: 200, location: 300, date: 40,
   locationType: 40, serviceZip: 20, locationNotes: 1000,
+  customerName: 200, customerEmail: 254,
 }
 
-const REQUIRED = ['vehicleInfo', 'tireSelection', 'location', 'date']
+const REQUIRED = ['vehicleInfo', 'tireSelection', 'location', 'date', 'customerName', 'customerEmail']
+
+/** Deliberately permissive: catches typos, not RFC edge cases. */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function cleanCustomerKey(value) {
   if (typeof value !== 'string' || !/^[a-f0-9]{16,64}$/i.test(value.trim())) {
     throw new InputError('A customer key is required, and must be the one this browser was given.')
   }
   return value.trim().toLowerCase()
+}
+
+/**
+ * A US number typed the ways people type it, stored E.164.
+ *
+ * Optional: an empty value returns ''. Anything else must resolve to ten
+ * digits (with or without a leading 1, spaces, dashes, dots or parens).
+ */
+function cleanCustomerPhone(value) {
+  if (value === undefined || value === null || value === '') return ''
+  if (typeof value !== 'string') throw new InputError('customerPhone must be text.')
+  const digits = value.replace(/\D/g, '')
+  const tenDigits = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+  if (tenDigits.length !== 10) {
+    throw new InputError('customerPhone must be a US phone number.')
+  }
+  return '+1' + tenDigits
 }
 
 /**
@@ -71,9 +94,14 @@ function cleanRequest(input) {
     if (trimmed.length > LIMITS[field]) throw new InputError(field + ' is too long.')
     cleaned[field] = trimmed
   }
+  cleaned.customerEmail = cleaned.customerEmail.toLowerCase()
+  cleaned.customerPhone = cleanCustomerPhone(input.customerPhone)
 
   for (const field of REQUIRED) {
     if (!cleaned[field]) throw new InputError(field + ' is required.')
+  }
+  if (cleaned.customerEmail && !EMAIL_PATTERN.test(cleaned.customerEmail)) {
+    throw new InputError('customerEmail must be a valid email address.')
   }
   return cleaned
 }
