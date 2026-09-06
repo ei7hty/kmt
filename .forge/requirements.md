@@ -102,26 +102,31 @@ The three questions above were answered on 2026-09-05 by the client's
 representative: build all three. m10 follows m9; it depends on requests living
 in the backend.
 
-_R23._ A request carries the customer's name and mobile number (required) and
-email (optional), collected at the service-details step, validated on the
-server (US numbers, stored normalised), shown to the owner with the request,
-and never returned to any other customer.
+_R23._ A request carries the customer's name and email address (both required)
+and a mobile number (optional, for the owner to call), collected at the
+service-details step, validated on the server (email syntactically, phone as
+a US number stored normalised), shown to the owner with the request, and never
+returned to any other customer.
 
 _R24._ Before sending, the owner can change the tire unit price, change the
 service fee, add or remove a line (with a description and amount) and write a
 note to the customer. Approve & Send sends the adjusted quote; the original
 draft is kept alongside it. The customer sees the sent total and the note.
 
-_R25._ The owner is told by text message when a request arrives, with a link to
-review it. The customer is told by text when their quote is sent, with the
-link to their request, and again when payment is recorded. Texts go through a
-real SMS provider configured by environment; with no provider configured, the
-server records each message in an outbox the owner screen shows, so the flow is
-verifiable without an account.
+_R25._ Four emails, each sent by the server when the event happens: to the
+customer when their request is received (what they asked for, and that the
+shop will reply); to the owner when a request arrives (the request, with a
+link to review it); to the customer when the quote is sent (the quote itself,
+itemised like an invoice, the owner's note, and the link to view and pay); and
+to the customer when payment is recorded (a receipt). Emails go through a real
+provider configured by environment; with no provider configured, the server
+records each message in an outbox the owner screen shows, so the flow is
+verifiable without an account, and the quote email can be read before a real
+one is ever sent.
 
-_R26._ The customer is told on the form that they will be texted about this
-quote and must tick to agree before submitting. No marketing use; one
-conversation per request.
+_R26._ Every email is about that one request and nothing else. The form says,
+in one line, that the address is used to send the quote. No marketing use, no
+list, no unsubscribe machinery needed because nothing recurs.
 
 _R27._ A request has an end: after payment the owner marks the job done, or
 rejects or cancels at any earlier point. The owner list shows open requests
@@ -133,10 +138,14 @@ device, and the stepper on `/status` reflects the new states.
 
 ## m10 non-functional
 
-- **No SMS SDK.** The provider's REST API is called with `fetch` and a
+- **No email SDK.** The provider's REST API is called with `fetch` and a
   credential from the environment; the provider is one small module that can be
-  swapped. Provider, number and owner phone are configuration, never code.
+  swapped. Provider, sending address and the owner's address are configuration,
+  never code.
 - **Secrets stay out of the repository** and out of the frontend. The owner's
-  own number and the provider credential live only in the server environment.
+  address and the provider credential live only in the server environment.
+- **Deliverability is configuration the client owns**: a sending domain with
+  SPF and DKIM set at the provider. Until that is done, mail goes to spam or
+  nowhere, and no code change fixes it.
 - **Verification against the real server**, as in t32. Notification tests use
   the outbox, not the provider.

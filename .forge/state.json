@@ -69,7 +69,7 @@
     {
       "id": "m10",
       "title": "The quote is a real exchange between two people",
-      "description": "Second phase 4 milestone, after m9. The request carries a name and mobile number; the owner can adjust the price and add lines and a note before sending; both parties are told by text message when a request arrives, a quote is sent, a payment lands and a job is done; a request has a lifecycle with an end, and the owner list is usable once real requests arrive. SMS goes through a provider behind a one-module seam with an outbox fallback so nothing waits on the account. R23-R28.",
+      "description": "Second phase 4 milestone, after m9. The request carries a name and an email address (mobile optional); the owner can adjust the price and add lines and a note before sending; the customer is emailed when the request is received, when the quote is sent (the quote itself, itemised, with a link to view and pay) and when payment is recorded (a receipt); the owner is emailed when a request arrives; a request has a lifecycle with an end, and the owner list is usable once real requests arrive. Email goes through a provider's REST API behind a one-module seam with an outbox fallback so nothing waits on the account. R23-R28. Revised from text messages to email on 2026-09-05 on the client's direction.",
       "status": "planned",
       "order": 9
     }
@@ -626,8 +626,8 @@
     },
     {
       "id": "t34",
-      "title": "The request carries a name, a mobile number and an optional email",
-      "description": "Add customerName (required), customerPhone (required, US mobile; accept the ways people type it and store E.164, +1XXXXXXXXXX, validated server-side in backend/quotes.mjs the way other fields are), and customerEmail (optional, syntactically checked) to the request. Collect them at the service-details step in src/components/RequestDetails.jsx / the customer route, under a short 'How do we reach you?' heading, with autoComplete name/tel/email so phones fill them in one tap, inline validation in the existing style, and the consent line from R26 as a required checkbox: 'Text me about this quote' with one sentence saying it is about this request only. Store consent (boolean and timestamp) on the request. Show name and phone (tel: link) and email on the owner's request card in the quote-review screen; never return them from the customer-facing endpoints to anyone but the holder of that request's key or id (they are the customer's own details, so returning them to that holder is fine). Update .forge/request-flow-check.mjs and the dead-end audit to fill the new fields and tick consent, and record the new counts. Tests: a submit without name, phone or consent is refused with a field-specific message; a phone typed as (617) 410-8319 is stored as +16174108319; the owner list shows the contact; another customer's key cannot read it.",
+      "title": "The request carries a name and an email address, and optionally a mobile number",
+      "description": "Add customerName (required), customerEmail (required, syntactically validated and stored lower-cased and trimmed) and customerPhone (optional; when given, a US number accepted the ways people type it and stored E.164, +1XXXXXXXXXX) to the request, validated server-side in backend/quotes.mjs the way other fields are. Collect them at the service-details step in src/components/RequestDetails.jsx / the customer route, under a short 'Where do we send your quote?' heading, with autoComplete name/email/tel so phones fill them in one tap, inline validation in the existing style, and one plain sentence under the email field: the quote is sent to this address. No checkbox. Show name, email (mailto: link) and phone (tel: link) on the owner's request card in the quote-review screen; the customer-facing endpoints return them only to the holder of that request's key or id. Update .forge/request-flow-check.mjs and the dead-end audit to fill the new fields, and record the new counts. Tests: a submit without name or email is refused with a field-specific message; a malformed email is refused; a phone typed as (617) 410-8319 is stored as +16174108319 and a missing phone is fine; the owner list shows the contact; another customer's key cannot read it.",
       "milestoneId": "m10",
       "status": "todo",
       "priority": "medium",
@@ -636,7 +636,7 @@
       ],
       "notes": [],
       "createdAt": "2026-09-05T21:52:40.692Z",
-      "updatedAt": "2026-09-05T21:52:40.692Z"
+      "updatedAt": "2026-09-05T23:36:35.812Z"
     },
     {
       "id": "t35",
@@ -668,8 +668,8 @@
     },
     {
       "id": "t37",
-      "title": "Text messages to the owner and the customer, through a provider behind a seam with an outbox",
-      "description": "One module, backend/sms.mjs: send({to, body}) that, when SMS_PROVIDER=twilio and the credentials are set (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM), POSTs to the provider's Messages REST endpoint with fetch and basic auth, no SDK; and when unset, writes the message to an outbox table with status 'unsent'. Every send, real or not, is recorded in the outbox (to, body, status sent/failed/unsent, provider id, error, timestamp); a provider failure is recorded, logged, and never breaks the request that triggered it. Messages, each short and each carrying one link: to the owner (KMT_OWNER_PHONE) on a new request, with the link to /owner/quotes; to the customer when the quote is sent, with /status?request=<id> and the total; to the customer when payment is recorded; to the customer when the job is marked done. Public URL for links from KMT_PUBLIC_URL (https://kmt.fly.dev). Owner screen: an 'Outbox' panel (session-gated endpoint GET /api/owner/outbox) listing recent messages with status, so the flow is verifiable with no account and a failed send is visible. Document the variables in .forge/owner-backend.md's configuration table and README's environment table. Tests use the outbox only: each event produces exactly one message to the right number with the right link; a failing provider marks the message failed and the triggering request still succeeds; no message is sent to a customer who did not consent (t34) -- refuse the request at submit rather than silently not texting.",
+      "title": "Email to the customer and the owner, through a provider behind a seam with an outbox",
+      "description": "One module, backend/mail.mjs: send({to, subject, text, html}) that, when EMAIL_PROVIDER and its credential are set (start with one provider, e.g. EMAIL_PROVIDER=resend with EMAIL_API_KEY and EMAIL_FROM as 'Ken's Mobile Tire <quotes@domain>'), POSTs to the provider's send endpoint with fetch, no SDK; and when unset, writes the message to an outbox table with status 'unsent'. Every send, real or not, is recorded in the outbox (to, subject, body, status sent/failed/unsent, provider id, error, timestamp); a provider failure is recorded, logged, and never breaks the request that triggered it. Four messages, each plain text with a simple HTML version in the existing brand colours and each carrying one link built from KMT_PUBLIC_URL: (1) to the customer on submit, 'We received your request', restating vehicle, tire, size, location and preferred date, saying the shop will reply with a quote, with the /status?request=<id> link; (2) to the owner (KMT_OWNER_EMAIL) on submit, the same details plus the customer's name, email and phone, with the link to /owner/quotes; (3) to the customer when the quote is sent, the quote itself laid out as an invoice -- each line with description, quantity, unit price and amount, the total, the owner's note -- and the link to view and pay; (4) to the customer when payment is recorded, a receipt with the same lines marked paid and the request id as the reference. Owner screen: an 'Outbox' panel (session-gated GET /api/owner/outbox) listing recent messages with status and a way to open one and read it, so the flow is verifiable with no account and a failed send is visible. Document the variables in .forge/owner-backend.md's configuration table and README's environment table. Tests use the outbox only: each event produces exactly one message to the right address with the right subject and link; the quote email's lines and total equal the sent quote's; a failing provider marks the message failed and the triggering request still succeeds; nothing is sent to an address the request does not carry.",
       "milestoneId": "m10",
       "status": "todo",
       "priority": "medium",
@@ -678,12 +678,12 @@
       ],
       "notes": [],
       "createdAt": "2026-09-05T21:52:40.692Z",
-      "updatedAt": "2026-09-05T21:52:40.692Z"
+      "updatedAt": "2026-09-05T23:36:35.812Z"
     },
     {
       "id": "t38",
-      "title": "Deploy, configure the provider, and prove the exchange with real texts on two phones",
-      "description": "Merge to main, let CI deploy, and confirm the post-deploy audit job on its own. The client opens the SMS provider account and sets the secrets on Fly (fly secrets set, values never in the repo or the PR); until then, prove every step with the outbox on the live site. Then with the provider configured: on phone A, submit a request with phone A's number; phone B (owner) receives the text, opens the link, signs in, adjusts a line, adds a note, sends; phone A receives the text, opens the link, sees the adjusted total and note, pays; phone A receives the receipt; phone B marks the job done; phone A receives the final text; the owner list shows the request under closed. Record each step as its own line with the device. Close m10.",
+      "title": "Deploy, configure the email provider, and prove the exchange between two inboxes",
+      "description": "Merge to main, let CI deploy, and confirm the post-deploy audit job on its own. The client opens the email provider account, verifies the sending domain (SPF and DKIM records at the DNS host) and sets the secrets on Fly (fly secrets set, values never in the repo or the PR); until then, prove every step with the outbox on the live site. Then with the provider configured: from phone A, submit a request with inbox A's address; inbox A receives the acknowledgement and inbox B (owner) receives the alert; on device B open the link, sign in, adjust a line, add a note, send; inbox A receives the quote email with the right lines and total, open its link, pay; inbox A receives the receipt; on device B mark the job done; the owner list shows the request under closed. Check each email lands in the inbox and not spam, and say so. Record each step as its own line with the device or inbox. Close m10.",
       "milestoneId": "m10",
       "status": "todo",
       "priority": "medium",
@@ -692,9 +692,9 @@
       ],
       "notes": [],
       "createdAt": "2026-09-05T21:52:40.692Z",
-      "updatedAt": "2026-09-05T21:52:40.692Z"
+      "updatedAt": "2026-09-05T23:36:35.812Z"
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-05T22:58:33.890Z"
+  "updatedAt": "2026-09-05T23:36:35.812Z"
 }

@@ -1,4 +1,5 @@
 import { chromium } from 'playwright'
+import { openOwnerQuotes } from './audit-ui.mjs'
 import assert from 'node:assert/strict'
 
 const base = process.env.AUDIT_BASE || 'http://localhost:4183'
@@ -42,15 +43,18 @@ try {
     check(await overflow(), 'service controls fit within viewport')
     await page.locator('.step-panel').screenshot({ path: `.forge/shots/request-service-${width}.png` })
     await page.getByRole('button', { name: 'Request my quote' }).click()
-    const request = await page.evaluate(() => JSON.parse(localStorage.getItem('kmt_store')).requests.at(-1))
-    check(request.vehicleInfo === '2020 Toyota Corolla' && request.location.includes('02149') && request.location.includes('Blue sedan'), 'submitted request keeps vehicle, ZIP and access instructions')
-    await page.getByRole('button', { name: 'Owner review' }).click()
-    // /owner is the inventory workspace now; the quote list moved to
-    // /owner/quotes. Follow the visible link rather than typing the URL, the
-    // same way the dead-end audit does.
-    await page.getByRole('button', { name: 'Quote requests' }).click()
-    await page.waitForURL('**/owner/quotes')
-    check(await page.getByText(request.location, { exact: false }).isVisible(), 'owner can read the complete service location')
+    await page.waitForSelector('.success-message')
+    check(await page.locator('.success-message').isVisible(), 'submitting acknowledges the request on screen')
+
+    // What the customer typed is checked where it matters -- on the owner's
+    // screen. Reading it back out of the browser's own storage proved that a
+    // row existed, not that the request reached the person who has to act on
+    // it, and it stopped working the moment requests moved to the server.
+    await openOwnerQuotes(page)
+    const ownerText = await page.locator('.owner-content').first().innerText()
+    check(ownerText.includes('2020 Toyota Corolla'), 'owner sees the vehicle the customer entered')
+    check(ownerText.includes('02149'), 'owner sees the ZIP the customer entered')
+    check(ownerText.includes('Blue sedan'), 'owner sees the access instructions the customer entered')
     check(errors.length === 0, 'no browser runtime errors')
     await page.close()
   }

@@ -22,6 +22,12 @@ export async function readJsonBody(request, limitBytes = 32768) {
  */
 const IMPORT_BODY_LIMIT = 4 * 1024 * 1024
 
+/**
+ * A scraped snapshot is about 500 bytes per tire, so this is room for some
+ * sixteen thousand -- every page of every supported size, several times over.
+ */
+const SNAPSHOT_BODY_LIMIT = 8 * 1024 * 1024
+
 /** The only origins allowed to post pages back. Nothing else gets CORS at all. */
 const IMPORT_ORIGINS = new Set(['https://www.giga-tires.com', 'https://giga-tires.com'])
 
@@ -230,6 +236,14 @@ export function createApi(inventory, refresher, importer = null, quotes = null) 
       } else if (request.method === 'POST' && url.pathname === '/api/owner/refresh/cancel') {
         await readJsonBody(request)
         send(200, refresher.cancel())
+      } else if (request.method === 'POST' && url.pathname === '/api/owner/import-snapshot') {
+        // A snapshot scraped elsewhere, pushed in by scripts/import-tires.mjs.
+        // Behind the session like every other write here; a CLI signs in with
+        // the owner password and sends the cookie. Refused mid-refresh, because
+        // both write the same sizes and the job status can only tell one story.
+        const input = await readJsonBody(request, SNAPSHOT_BODY_LIMIT)
+        if (refresher.active) throw new InputError('A supplier refresh is running. Wait for it to finish before importing.', 409)
+        send(200, inventory.applySnapshot(input.snapshot, { complete: input.complete === true, dryRun: input.dryRun === true }))
       } else { send(404, { error: 'Owner endpoint not found' }) }
     } catch (error) {
       if (!error.status) console.error(error)

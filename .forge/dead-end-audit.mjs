@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { freshPage, openOwnerQuotes } from './audit-ui.mjs';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
 
@@ -81,12 +82,10 @@ async function main() {
     { name: 'desktop', width: 1280, height: 900 },
   ]) {
     console.log(`\n=== Viewport: ${viewport.name} (${viewport.width}x${viewport.height}) ===`);
-    const context = await browser.newContext({ viewport });
-    const page = await context.newPage();
+    let { context, page } = await freshPage(browser, viewport);
 
-    // Start clean.
-    await page.goto(BASE + '/');
-    await page.evaluate(() => localStorage.removeItem('kmt_store'));
+    // Start clean. A fresh context is the reset: nothing is cleared by hand,
+    // because the state this audit cares about may not live in this browser.
     await page.goto(BASE + '/');
 
     // 1. Customer submits a request that will trigger an exception (truck + off-road tire)
@@ -116,10 +115,7 @@ async function main() {
     }
 
     // 2. Owner review: navigate via visible nav button (not URL typing).
-    await page.click('button:has-text("Owner Review")');
-    await page.waitForURL('**/owner');
-    await page.getByRole('button', { name: 'Quote requests' }).click();
-    await page.waitForURL('**/owner/quotes');
+    await openOwnerQuotes(page);
 
     const exceptionBadge = await page.locator('text=Owner review required').first().isVisible().catch(() => false);
     if (exceptionBadge) {
@@ -211,7 +207,8 @@ async function main() {
     // 5. Validation dead-end check. On a wizard the risk is not a failed submit,
     //    it is a step that refuses to advance without saying why: the tester
     //    clicks Continue, nothing moves, and there is no visible reason.
-    await page.evaluate(() => localStorage.removeItem('kmt_store'));
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
     await page.goto(BASE + '/');
 
     const [w, r] = CLEAN_TIRE.size.split('/');
@@ -236,7 +233,6 @@ async function main() {
     //    list. Sampled here; the exhaustive walk of all 290 paths is a one-off,
     //    too slow to run every time.
     for (const [w, r, d] of [['175', '70', '14'], ['225', '45', '17'], ['275', '40', '20']]) {
-      await page.evaluate(() => localStorage.removeItem('kmt_store'));
       await page.goto(BASE + '/');
       for (const value of [w, r, d]) {
         await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
@@ -253,17 +249,15 @@ async function main() {
     }
 
     // 7. Rejected quote path: does the customer have a next action, or a dead end?
-    await page.evaluate(() => localStorage.removeItem('kmt_store'));
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
     await submitRequest(page, {
       ...CLEAN_TIRE,
       vehicle: '2021 Honda Civic',
       location: '456 Demo Ave',
       date: '2025-06-02',
     });
-    await page.click('button:has-text("Owner Review")');
-    await page.waitForURL('**/owner');
-    await page.getByRole('button', { name: 'Quote requests' }).click();
-    await page.waitForURL('**/owner/quotes');
+    await openOwnerQuotes(page);
     const rejectVisible = await page.locator('button:has-text("Reject")').first().isVisible().catch(() => false);
     if (rejectVisible) {
       await page.click('button:has-text("Reject")');

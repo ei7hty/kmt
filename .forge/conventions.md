@@ -29,8 +29,18 @@ React + Vite + Tailwind, plus a Node backend under `backend/` (SQLite via
   fallback. Check it on a real phone.
 - CI runs the browser audits on every pull request and again against the
   deployed site after a merge. Run them locally first anyway -- a red PR costs
-  a round trip: `dead-end-audit.mjs`, `responsive-check.mjs` and
-  `request-flow-check.mjs`, with `AUDIT_BASE` pointed at your preview.
+  a round trip.
+- The audits drive the real server, not a `vite preview`: build, then start
+  `backend/server.mjs` with `PORT`, `KMT_BIND=127.0.0.1`, a throwaway
+  `KMT_OWNER_DB` and `KMT_OWNER_PASSWORD`, and pass `AUDIT_BASE` and the same
+  password to each script. They sign in when the owner screen asks.
+- They seed nothing. Every state is performed through the interface -- submit
+  the form, approve on the owner screen, pay on the status page -- and what
+  reached the owner is read off the owner's screen. Nothing touches
+  `localStorage`, so the audits hold whether the data lives in the browser or
+  on the server.
+- The counts to hold: **36** dead-end checks, **30** request-flow checks, **8**
+  responsive screens. A number that drops is a check that stopped running.
 - Start a preview on a port you have confirmed is free and stop it when you are
   done. A leaked server is bound by the next audit, which then reports a failure
   that is not there. CI does this with a trap; locally it is on you.
