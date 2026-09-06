@@ -130,6 +130,14 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
   // ("the customer will see it") has to stay visible at the point of typing,
   // not live in a placeholder that vanishes on the first keystroke.
   const [reasonDraft, setReasonDraft] = useState(null)
+  // Which drafts have their editor open. Collapsed by default (sprint item
+  // 4): most quotes need no adjustment, so a screen whose primary action is
+  // "approve as drafted" should not present seven fields as though every one
+  // did. A request id, not a boolean, so opening one card's editor never
+  // affects another's.
+  const [expandedIds, setExpandedIds] = useState(() => new Set())
+  const expandEditor = (id) => setExpandedIds(ids => new Set(ids).add(id))
+  const collapseEditor = (id) => setExpandedIds(ids => { const next = new Set(ids); next.delete(id); return next })
   const [linkedId] = useState(linkedRequestId)
   // 'open' (draft/sent/paid) and 'closed' (done/rejected/cancelled) between
   // them cover every request, so a linked id missing from 'open' -- the
@@ -296,46 +304,67 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                     delisted tire, whose own row already says so. A note after the list, like the
                     card's other judgements, not a labelled fact inside it. */}
                 {tire?.supplierStock === 0 && tire?.supplierActive !== false && <p className="status-note status-note-wait owner-stock-warning" role="status">Supplier shows none in stock. Check before sending.</p>}
-                {quote && <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
-                  <div className="owner-quote-summary"><div><p className="text-secondary">{quote.status === 'draft' ? 'Draft Quote' : ['sent', 'approved', 'paid', 'done'].includes(quote.status) ? 'Sent Quote' : 'Quote'}</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{STATUS_LABEL[quote.status] ?? quote.status}</span></div>
-                  {quote.exception && quote.status === 'draft' && <div className="owner-exception-note"><p>Owner review required</p><ul>{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
-                  {/* Editing and confirming a decision (cancel or decline) both
-                      want this card's attention at once, so while a reason
-                      prompt is open for this request the editor steps aside
-                      for the read-only lines -- otherwise two textareas
-                      ("Note for customer" and "Why is this being cancelled/
-                      declined?") sit on screen together, and price fields the
-                      owner is about to close out of stay editable underneath
-                      a confirmation asking whether to do that. */}
-                  {quote.status === 'draft' && reasonDraft?.requestId !== request.id && <QuoteEditor key={quote.version} request={request} quote={quote} busy={busyId === request.id} onSave={saveAdjustment} />}
-                  {(quote.status !== 'draft' || reasonDraft?.requestId === request.id) && <div className="quote-lines quote-lines-readonly">
-                    {quote.lineItems?.map((item, index) => <div className="quote-line-readonly" key={`${index}-${item.description}`}><span>{item.quantity} × {item.description}</span><strong>${money(item.quantity * item.unitPrice)}</strong></div>)}
-                    {quote.note && <p className="quote-customer-note"><strong>Customer note:</strong> {quote.note}</p>}
-                  </div>}
-                  {CLOSED_NOTE[quote.status] && <p className="status-note status-note-wait">
-                    {CLOSED_NOTE[quote.status]}{quote.reason ? ` ${quote.reason}` : ''}
-                  </p>}
-                  {ACTIONS[quote.status] && <div className="owner-actions">
-                    {reasonDraft?.requestId === request.id ? (
-                      <div className="owner-cancel-draft">
-                        <label htmlFor={`cancel-reason-${request.id}`}>{REASON_PROMPT[reasonDraft.action].question} <span className="optional">The customer will see this. Leave blank to say nothing.</span></label>
-                        <textarea id={`cancel-reason-${request.id}`} rows={2} value={reasonDraft.reason}
-                          onChange={event => setReasonDraft(draft => ({ ...draft, reason: event.target.value }))} />
-                        <div className="owner-cancel-draft-actions">
-                          <button type="button" className="btn btn-neutral" disabled={busyId === request.id} onClick={() => setReasonDraft(null)}>Back</button>
-                          <button type="button" className="btn btn-reject" disabled={busyId === request.id} onClick={() => confirmReason(request, quote)}>
-                            {busyId === request.id ? REASON_PROMPT[reasonDraft.action].confirmBusy : REASON_PROMPT[reasonDraft.action].confirmLabel}
-                          </button>
+                {quote && (() => {
+                  // A draft with its editor closed: most quotes need no
+                  // adjustment, so the default view is the read-only lines
+                  // and Approve & Send, not seven input fields (sprint item
+                  // 4). Opening the editor is a deliberate second step.
+                  const draftCollapsed = quote.status === 'draft' && reasonDraft?.requestId !== request.id && !expandedIds.has(request.id)
+                  const draftExpanded = quote.status === 'draft' && reasonDraft?.requestId !== request.id && expandedIds.has(request.id)
+                  return (
+                  <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
+                    <div className="owner-quote-summary"><div><p className="text-secondary">{quote.status === 'draft' ? 'Draft Quote' : ['sent', 'approved', 'paid', 'done'].includes(quote.status) ? 'Sent Quote' : 'Quote'}</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{STATUS_LABEL[quote.status] ?? quote.status}</span></div>
+                    {quote.exception && quote.status === 'draft' && <div className="owner-exception-note"><p>Owner review required</p><ul>{quote.exceptionReasons.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
+                    {/* Editing and confirming a decision (cancel or decline) both
+                        want this card's attention at once, so while a reason
+                        prompt is open for this request the editor steps aside
+                        for the read-only lines -- otherwise two textareas
+                        ("Note for customer" and "Why is this being cancelled/
+                        declined?") sit on screen together, and price fields the
+                        owner is about to close out of stay editable underneath
+                        a confirmation asking whether to do that. */}
+                    {draftExpanded && <>
+                      <QuoteEditor key={quote.version} request={request} quote={quote} busy={busyId === request.id} onSave={saveAdjustment} />
+                      <button type="button" className="link-action quote-editor-collapse" disabled={busyId === request.id} onClick={() => collapseEditor(request.id)}>Cancel adjusting</button>
+                    </>}
+                    {(quote.status !== 'draft' || reasonDraft?.requestId === request.id || draftCollapsed) && <div className="quote-lines quote-lines-readonly">
+                      {quote.lineItems?.map((item, index) => <div className="quote-line-readonly" key={`${index}-${item.description}`}><span>{item.quantity} × {item.description}</span><strong>${money(item.quantity * item.unitPrice)}</strong></div>)}
+                      {quote.note && <p className="quote-customer-note"><strong>Customer note:</strong> {quote.note}</p>}
+                    </div>}
+                    {CLOSED_NOTE[quote.status] && <p className="status-note status-note-wait">
+                      {CLOSED_NOTE[quote.status]}{quote.reason ? ` ${quote.reason}` : ''}
+                    </p>}
+                    {ACTIONS[quote.status] && <div className="owner-actions">
+                      {reasonDraft?.requestId === request.id ? (
+                        <div className="owner-cancel-draft">
+                          <label htmlFor={`cancel-reason-${request.id}`}>{REASON_PROMPT[reasonDraft.action].question} <span className="optional">The customer will see this. Leave blank to say nothing.</span></label>
+                          <textarea id={`cancel-reason-${request.id}`} rows={2} value={reasonDraft.reason}
+                            onChange={event => setReasonDraft(draft => ({ ...draft, reason: event.target.value }))} />
+                          <div className="owner-cancel-draft-actions">
+                            <button type="button" className="btn btn-neutral" disabled={busyId === request.id} onClick={() => setReasonDraft(null)}>Back</button>
+                            <button type="button" className="btn btn-reject" disabled={busyId === request.id} onClick={() => confirmReason(request, quote)}>
+                              {busyId === request.id ? REASON_PROMPT[reasonDraft.action].confirmBusy : REASON_PROMPT[reasonDraft.action].confirmLabel}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ) : ACTIONS[quote.status].map(item => (
-                      <button key={item.action} className={item.className} disabled={busyId === request.id}
-                        onClick={() => act(request, quote, item)}>
-                        {busyId === request.id && item.busy ? item.busy : item.label}
-                      </button>
-                    ))}
-                  </div>}
-                </div>}
+                      ) : (<>
+                        {draftCollapsed && <>
+                          <button type="button" className="btn btn-approve" disabled={busyId === request.id} onClick={() => runAction(request, quote, 'approve')}>
+                            {busyId === request.id ? 'Sending…' : 'Approve & Send'}
+                          </button>
+                          <button type="button" className="btn btn-neutral" disabled={busyId === request.id} onClick={() => expandEditor(request.id)}>Adjust quote</button>
+                        </>}
+                        {ACTIONS[quote.status].map(item => (
+                          <button key={item.action} className={item.className} disabled={busyId === request.id}
+                            onClick={() => act(request, quote, item)}>
+                            {busyId === request.id && item.busy ? item.busy : item.label}
+                          </button>
+                        ))}
+                      </>)}
+                    </div>}
+                  </div>
+                  )
+                })()}
               </div>
               )
             })}

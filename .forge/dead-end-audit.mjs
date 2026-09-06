@@ -207,6 +207,10 @@ async function main() {
       fail('/owner: no visible Approve action found.');
     }
 
+    // The editor is collapsed by default (sprint item 4): most quotes need
+    // no adjustment, so "Adjust quote" is a deliberate second step before
+    // the price fields exist on the page at all.
+    await page.click('button:has-text("Adjust quote")');
     const firstPrice = page.locator('input[aria-label="Line 1 unit price"]').first();
     await firstPrice.fill('60.00');
     await page.locator('label.quote-note textarea').first().fill('Audit adjustment included.');
