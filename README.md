@@ -17,10 +17,10 @@ Live at **https://kmt.fly.dev** (the older Vercel URL redirects there).
 
 | Area | Today |
 | --- | --- |
-| Customer flow (`/`, `/status`, `/confirmation`) | Working demo. Requests, draft quotes and payments live in the browser's `localStorage`; payment always succeeds. |
-| Quote review (`/owner/quotes`) | Same browser-local demo state, seen from the owner's side. |
+| Customer flow (`/`, `/status`, `/confirmation`) | Real. Requests and draft quotes are stored by the backend and drafted server-side by the pricing rules. `/status` lists this device's requests by its per-browser key, or opens one by id from a link. Payment is still a fake step that always succeeds, recorded by the backend. |
+| Quote review (`/owner/quotes`) | Real. Reads the same requests from the API; Approve & Send and Reject write back. Needs the owner sign-in when hosted. |
 | Owner inventory (`/owner`) | Real. SQLite database, supplier refresh from giga-tires.com, per-tire owner prices, a default markup rule. Password-protected when hosted. |
-| Tire catalog the customer sees | Assembled from three sources: six seed tires, the scraped supplier snapshot, and generated coverage for every other plausible size. Prices come from a placeholder markup over supplier cost. The owner's real inventory does **not** reach the customer yet; that is the next phase. |
+| Tire catalog the customer sees | Real when the backend answers: the owner's enabled tires at his price or the markup price, composed into the static catalog (seed tires, the scraped snapshot, generated coverage for every other plausible size). The static catalog alone when it does not. The markup rate is still a placeholder, not the owner's number. |
 | Hosting | Real. One container on Fly.io serving the built frontend and the owner API from a single origin, deployed from CI. |
 
 ## Getting started
@@ -38,8 +38,9 @@ Two ways to run it locally:
 npm run dev
 ```
 
-Frontend only, on Vite's default port. `/owner` will say its backend is not
-connected.
+Frontend only, on Vite's default port. Sizes and tires browse from the static
+catalog, but submitting a request fails with the shop's phone number, and
+`/owner` and `/owner/quotes` say their backend is not connected.
 
 ```bash
 node backend/dev.mjs
@@ -51,19 +52,20 @@ API so both share one origin, binds to loopback only, and needs no password.
 `KMT_OWNER_PORT` overrides the port and `KMT_OWNER_DB` the database path
 (default `backend/data/owner.sqlite`, ignored by Git). The database is seeded
 once from `src/data/scraped-tires.json`; restarting never reimports over saved
-offers.
+offers. The same file holds every request, draft quote and payment.
 
 ## Screens
 
 | Route | Who | What |
 | --- | --- | --- |
-| `/` | Customer | Landing page and a three-step order wizard: pick a tire size (width, ratio, diameter), pick a tire and describe the vehicle, then give the service location and preferred date. Submitting saves the request and drafts a quote immediately. |
-| `/status` | Customer | Every request with its position in Requested, Owner review, Pay & confirm. An approved quote has a Pay button. |
-| `/confirmation?quoteId=…` | Customer | The paid end state. |
+| `/` | Customer | Landing page and a three-step order wizard: pick a tire size (width, ratio, diameter), pick a tire and describe the vehicle, then give the service location and preferred date. Submitting sends the request to the backend, which drafts the quote and answers with it. |
+| `/status` | Customer | The requests made from this device, found by its per-browser key, each with its position in Requested, Owner review, Pay & confirm. `?request=<id>` opens that one request from any device. An approved quote has a Pay button. |
+| `/confirmation?request=…` | Customer | The paid end state. |
 | `/owner` | Owner | The inventory workspace: supplier tires by size, refresh from the supplier, choose what KMT offers, set a price per tire, set the default markup. Requires the owner backend. |
-| `/owner/quotes` | Owner | The drafted quotes, each with Approve & Send and Reject. Quotes needing attention are flagged as exceptions in amber. Reads `localStorage`, so it works without the backend. |
+| `/owner/quotes` | Owner | The drafted quotes, each with Approve & Send and Reject. Quotes needing attention are flagged as exceptions in amber. Reads the API; needs the owner sign-in when hosted. |
 
-Routing is a `pathname` switch in `src/App.jsx`; there is no router library.
+Routing is a `pathname` switch in `src/App.jsx` over the screens in
+`src/routes/`; there is no router library.
 Every screen has a visible way forward, and `.forge/dead-end-audit.mjs` proves
 it.
 
@@ -96,8 +98,10 @@ owner's number. The backend imports the same module so the two cannot disagree.
 ## The owner backend
 
 `backend/` is a small Node server over SQLite. It stores every parsed supplier
-row, the owner's offer for each (price in integer cents, enabled, notes), and
-per-size coverage. Owner prices are never inferred from supplier prices.
+row, the owner's offer for each (price in integer cents, enabled, notes),
+per-size coverage, and every customer request with its draft quote, the
+owner's decision and its payment state. Owner prices are never inferred from
+supplier prices.
 
 | Endpoint | Does |
 | --- | --- |
@@ -107,7 +111,20 @@ per-size coverage. Owner prices are never inferred from supplier prices.
 | `POST /api/owner/refresh` | Start a background supplier refresh for `{sizes}`. One job at a time. |
 | `POST /api/owner/refresh/cancel` | Stop after the current page. Incomplete sizes are not applied. |
 | `POST /api/owner/import-snapshot` | Apply a scraped snapshot `{snapshot, complete, dryRun}` to the live database. What `scripts/import-tires.mjs` calls. Refused while a refresh is running. |
+| `GET /api/owner/requests` | Every request with its draft quote, newest first. |
+| `POST /api/owner/quotes/:id/approve`, `.../reject` | The owner's decision, with `{version}`; a stale version gets 409. |
 | `POST /api/owner/login`, `POST /api/owner/logout`, `GET /api/owner/session` | Hosted server only. |
+
+Four routes are public, because a customer never signs in; they are named in
+an allow-list in `backend/api.mjs` and everything else under `/api/` is
+refused without a session:
+
+| Endpoint | Does |
+| --- | --- |
+| `GET /api/catalog` | What a customer may be shown: offered tires at KMT's price, never the supplier's. |
+| `POST /api/requests` | Submit a request with this browser's customer key; the server drafts the quote and answers with it. |
+| `GET /api/requests?customer=<key>`, `GET /api/requests/:id` | This device's requests, or one request by its unguessable id. |
+| `POST /api/requests/:id/pay` | The fake payment, recorded server-side. |
 
 A refresh drives a **visible** Chromium window through Playwright, reads every
 listing page for a size with a pause between pages, and applies a complete size
@@ -121,7 +138,8 @@ There are two entry points. `backend/dev.mjs` is local development, described
 above. `backend/server.mjs` is the hosted one: it serves the built `dist/` and
 the API, binds a real interface, and refuses to start without
 `KMT_OWNER_PASSWORD`. The password guards the API, not the pages: the customer
-flow is public and `/owner/quotes` never contacts the server.
+flow and its four public routes need no sign-in, and `/owner` and
+`/owner/quotes` show the sign-in form when their API answers 401.
 
 The full design, data contract and refresh rules are in
 [`.forge/owner-backend.md`](.forge/owner-backend.md).
@@ -219,7 +237,7 @@ Nothing is done until these pass. CI runs the first three on every push to
 `main` and on every pull request.
 
 ```bash
-node --test backend/owner.test.mjs
+node --test backend/*.test.mjs
 ```
 
 ```bash
@@ -233,6 +251,10 @@ npm run build
 The browser audits need a running app. They all read `AUDIT_BASE`, and each
 falls back to a **different** default port, so always set it explicitly, and
 check what is actually listening there before believing a result either way.
+Run them against `backend/server.mjs`, the hosted shape CI uses: build, start
+it with a throwaway `KMT_OWNER_DB` and a `KMT_OWNER_PASSWORD`, and pass that
+password to each audit so it can sign in at the owner step. A local
+`backend/dev.mjs` works too and never asks for one.
 
 ```bash
 AUDIT_BASE=http://localhost:4173 node .forge/dead-end-audit.mjs
@@ -258,8 +280,9 @@ submitted data reaching the owner.
 node .forge/owner-inventory-audit.mjs
 ```
 
-The `/owner` workspace: save, reload, filters and navigation. Expects
-`node backend/dev.mjs` on port 4180.
+The `/owner` workspace: save, reload, filters and navigation. Reads
+`AUDIT_BASE` like the others, falling back to `node backend/dev.mjs` on port
+4180, and signs in with `KMT_OWNER_PASSWORD` when the server asks.
 
 Run the dead-end audit against the live URL before calling a deploy good. This
 project has already shipped a build that passed every local check and 404'd in
@@ -268,9 +291,11 @@ production on a missing SPA fallback.
 ## Deployment
 
 Pushing to `main` runs `.github/workflows/fly-deploy.yml`: tests, lint and
-build first; deploy to Fly only if they pass; then the three browser audits
-against https://kmt.fly.dev. Nothing deploys from any other branch or from a
-pull request.
+build first, with the three flow audits against a throwaway database; deploy to
+Fly only if they pass; then `.forge/deployed-site-check.mjs`, a read-only check
+of https://kmt.fly.dev that never posts or signs in, because the flow audits
+would leave fabricated, paid requests in the owner's list. Nothing deploys from
+any other branch or from a pull request.
 
 The `Dockerfile` is host-agnostic: a Node 24 image with Chromium and Xvfb
 (supplier refreshes need a headful browser even on a server), listening on
@@ -299,21 +324,23 @@ the scraper from a home connection and treat the host as serving-only.
 
 | Path | Job |
 | --- | --- |
-| `src/App.jsx`, `src/App.css` | The customer flow and the quote screens, all routes in one file. `src/RequestFlow.css` styles the vehicle and service-location steps. |
+| `src/App.jsx`, `src/App.css` | The route switch and the shared styles. `src/RequestFlow.css` styles the vehicle and service-location steps. |
+| `src/routes/` | One file per screen: the customer flow, `/status`, `/confirmation` and the owner's quote list. |
 | `src/components/RequestDetails.jsx` | Vehicle entry and service-location sections of the order wizard. |
 | `src/owner/OwnerInventory.jsx` | The `/owner` inventory workspace, including the hosted sign-in gate. |
-| `src/store.js` | The `localStorage` store for requests and quotes. |
+| `src/store.js` | The API client for requests, quotes and payment. The only thing it keeps in the browser is the per-device customer key. |
 | `src/pricing.js` | Draft quote and exception rules. |
 | `src/markup.js` | Supplier price to KMT price: owner override, markup rule, disabled tires. |
 | `src/data/catalog.js` | Assembles the catalog from seeds, the scraped snapshot and generated coverage. |
 | `src/data/fitment.js` | The width, ratio and diameter ranges the size selector offers. |
 | `src/data/scraped-tires.json` | The tracked supplier snapshot. Written by the scraper, read by the catalog and used to seed a new owner database. |
 | `backend/inventory.mjs` | SQLite schema, offers, markup, coverage, snapshot import. |
+| `backend/quotes.mjs` | Requests, draft quotes, the owner's decisions and payment, in the same database. |
 | `backend/refresh.mjs` | The background supplier refresh job. |
 | `backend/api.mjs` | The owner HTTP API. |
 | `backend/auth.mjs` | Password gate and signed session cookie for the hosted server. |
 | `backend/dev.mjs`, `backend/server.mjs` | Local and hosted entry points. |
-| `backend/owner.test.mjs` | Backend tests, run with `node --test`. |
+| `backend/*.test.mjs` | Backend tests, run with `node --test backend/*.test.mjs`. |
 | `scripts/scrape-tires.mjs` | Snapshot CLI: arguments, the run loop, the diff. |
 | `scripts/import-tires.mjs` | Pushes a snapshot into a running owner server, local or hosted. |
 | `scripts/giga-tires.mjs` | Parsing and normalising one supplier listing page. Pure, so it can be tested on saved HTML. |

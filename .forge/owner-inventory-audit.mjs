@@ -1,16 +1,47 @@
 import { chromium } from 'playwright'
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
-const base = 'http://127.0.0.1:4180'
+import { signInIfAsked } from './audit-ui.mjs'
+
+// AUDIT_BASE like the other three audits, so one server can serve the whole
+// gate. The fallback is the local dev server; a hosted-shape server on any
+// port works too, with KMT_OWNER_PASSWORD set to what it was started with.
+const base = process.env.AUDIT_BASE || 'http://127.0.0.1:4180'
+
+/**
+ * The owner API from outside the browser, signed in when the server asks.
+ *
+ * backend/server.mjs answers 401 to everything under /api/owner without a
+ * session; backend/dev.mjs has no login route at all and answers 404 to the
+ * attempt. Either way the calls below have to work, because they read the
+ * first tire before the run and put its offer back after.
+ */
+const session = await (async () => {
+  const password = process.env.KMT_OWNER_PASSWORD || ''
+  if (!password) return ''
+  const response = await fetch(base + '/api/owner/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),
+  })
+  if (response.status === 404) return ''
+  assert.equal(response.status, 200, 'owner sign-in for the API calls')
+  return response.headers.get('set-cookie').split(';')[0]
+})()
+const ownerFetch = (path, init = {}) => fetch(base + path, {
+  ...init, headers: { ...(init.headers || {}), ...(session ? { Cookie: session } : {}) },
+})
+
 const browser = await chromium.launch()
 const errors = []
-const initial = (await (await fetch(base + '/api/owner/inventory')).json()).items[0]
+const inventory = await ownerFetch('/api/owner/inventory')
+assert.equal(inventory.status, 200, 'the owner inventory API answered ' + inventory.status + ' -- is KMT_OWNER_PASSWORD set to what the server was started with?')
+const initial = (await inventory.json()).items[0]
 mkdirSync('.forge/shots', {recursive:true})
 try {
   for (const viewport of [{width:1280,height:900},{width:375,height:812}]) {
     const page = await browser.newPage({viewport})
     page.on('pageerror', e => errors.push(e.message))
     await page.goto(base + '/owner')
+    await signInIfAsked(page)
     await page.locator('.oi-tire').first().waitFor()
     assert.equal(await page.locator('vite-error-overlay').count(), 0)
     const card = page.locator('.oi-tire').first()
@@ -28,6 +59,7 @@ try {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
     assert.equal(overflow, false, 'Owner viewport overflow')
     await page.getByRole('button', {name:'Quote requests'}).click()
+    await signInIfAsked(page)
     await page.locator('h1').filter({hasText:'Quote Requests'}).waitFor()
     await page.getByRole('button', {name:'Inventory', exact:false}).click()
     await page.locator('.oi-tire').first().waitFor()
@@ -41,7 +73,7 @@ try {
   assert.deepEqual(errors, [])
   console.log('PASS no browser runtime errors')
 } finally {
-  const latest = (await (await fetch(base + '/api/owner/inventory?search=' + encodeURIComponent(initial.id))).json()).items.find(t => t.id === initial.id)
-  if (latest) await fetch(base + '/api/owner/offers/' + encodeURIComponent(initial.id), {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...initial.offer, version:latest.offer.version})})
+  const latest = (await (await ownerFetch('/api/owner/inventory?search=' + encodeURIComponent(initial.id))).json()).items.find(t => t.id === initial.id)
+  if (latest) await ownerFetch('/api/owner/offers/' + encodeURIComponent(initial.id), {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...initial.offer, version:latest.offer.version})})
   await browser.close()
 }
