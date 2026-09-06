@@ -12,7 +12,7 @@ function NotFound({ navigate, path }) {
   return (
     <div className="app-shell status-shell">
       <nav className="internal-nav">
-        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
+        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
       </nav>
       <div className="owner-content">
         <p className="eyebrow">NOT FOUND</p>

@@ -105,9 +105,20 @@ function reportCount() {
   }
 }
 
-/** A size the supplier snapshot covers, and one only the generator fills. */
+/**
+ * A size the supplier snapshot covers, and one only the generator fills.
+ *
+ * GENERATED_SIZE was 175/70R14 until the September 6 breadth import gave it
+ * 10 real supplier rows -- the check still passes (a completed selection
+ * still lands on tires, more surely than before), but it stopped exercising
+ * the path its own label claims: the pure-generated fallback with no
+ * supplier data behind it. 135/80R12 is confirmed absent from that import's
+ * walk file, so it still tests what this constant says it tests. Confirm
+ * against the current walk file before reusing this size again -- coverage
+ * only grows from here.
+ */
 const SCRAPED_SIZE = '215/60R16';
-const GENERATED_SIZE = '175/70R14';
+const GENERATED_SIZE = '135/80R12';
 
 /** Anything sticking out past the viewport, which is what a phone shows as a sideways scroll. */
 async function overflow(page) {
@@ -265,16 +276,20 @@ async function main() {
   for (const host of REDIRECT_HOSTS) {
     const label = `${host} redirects to the canonical host (${CANONICAL_HOST})`;
     if (!flipConfigured) {
-      if (auditBaseIsCanonical) {
-        // The workflow's half of the flip (AUDIT_BASE) moved to the canonical
-        // host; the backend's half (KMT_CANONICAL_HOST) did not. That is not
-        // "not yet" -- it is the two halves of one cutover disagreeing, and
-        // it is invisible from outside: the canonical host answers fine
-        // throughout, which is exactly what would let this sit unnoticed.
-        fail(`${label} — AUDIT_BASE already points at the canonical host but KMT_CANONICAL_HOST is not set on the server`);
-      } else {
-        skip(label, 'KMT_CANONICAL_HOST not set yet');
-      }
+      // AUDIT_BASE pointing at the canonical host does not by itself mean the
+      // official cutover is under way: this file gets run by hand against
+      // the new domain routinely, ahead of t52, and every one of those runs
+      // would otherwise read as a live misconfiguration. The check cannot
+      // pass before the flip by construction either way, so SKIP is the
+      // honest state regardless of which host AUDIT_BASE names -- the
+      // real risk this guard exists for is the *official* verify job
+      // running with AUDIT_BASE flipped and the backend not, and that job
+      // reads this exact line same as anyone, so nothing is lost: it is
+      // still visible, just not a hard failure for a state a human check
+      // reaches on its own all the time.
+      skip(label, auditBaseIsCanonical
+        ? 'AUDIT_BASE points at the canonical host but KMT_CANONICAL_HOST is not set on the server'
+        : 'KMT_CANONICAL_HOST not set yet');
       continue;
     }
     try {

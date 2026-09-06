@@ -172,17 +172,23 @@ export function sizeCoverage({ limit, pagesRead, totalPages, scrapedAt }) {
 export function buildSnapshot({ previous = null, tires, coverage, replace = false, scrapedAt = new Date().toISOString() }) {
   const scrapedSizes = new Set(Object.keys(coverage))
   const carried = replace ? [] : (previous?.tires || []).filter(tire => !scrapedSizes.has(tire.size))
-  const carriedCoverage = {}
-  for (const size of new Set(carried.map(tire => tire.size))) {
-    if (previous?.coverage?.[size]) carriedCoverage[size] = previous.coverage[size]
-  }
+
+  // Coverage carries forward by its own key, not by riding along on a tire.
+  // A confirmed-empty size (read in full, genuinely nothing there) has no
+  // tire to anchor it -- keying this off `carried`'s tire sizes, as an
+  // earlier version did, silently dropped every empty size's record on the
+  // next run that did not re-scrape it, which is exactly the outcome #81
+  // exists to prevent.
+  const carriedCoverage = replace ? {} : Object.fromEntries(
+    Object.entries(previous?.coverage || {}).filter(([size]) => !scrapedSizes.has(size)),
+  )
   const merged = { ...carriedCoverage, ...coverage }
   return {
     carried,
     snapshot: {
       source: 'giga-tires.com',
       scrapedAt,
-      sizes: [...new Set([...carried.map(tire => tire.size), ...scrapedSizes])].sort(),
+      sizes: Object.keys(merged).sort(),
       coverage: Object.fromEntries(Object.keys(merged).sort().map(size => [size, merged[size]])),
       tires: [...tires, ...carried]
         .sort((a, b) => a.size.localeCompare(b.size) || a.price - b.price),
