@@ -43,6 +43,16 @@
  */
 export const DEFAULT_MARKUP_SETTINGS = {
   rate: 1.35,
+  // What Ken pays a supplier to get one tire to Malden, per tire, folded into
+  // the landed cost before the rate multiplies it (pricing-settings.md,
+  // "Shipping"): markup applies to what the tire actually cost him to have in
+  // hand, not to the supplier's sticker price with freight passed through at
+  // cost. Zero rather than a guessed dollar figure -- unlike the mobile fee,
+  // nothing has ever charged a separate shipping amount before this existed,
+  // so an invented number would move live prices on a guess; zero preserves
+  // today's pricing until Ken supplies a real one, and `isPlaceholder` still
+  // marks it as not his.
+  shippingPerTire: 0,
   /** False once a human has actually chosen these numbers. */
   isPlaceholder: true,
 }
@@ -52,6 +62,9 @@ const roundCurrency = (amount) => Math.round(amount * 100) / 100
 const isUsableAmount = (value) =>
   typeof value === 'number' && Number.isFinite(value) && value > 0
 
+const isUsableShipping = (value) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0
+
 /**
  * Fill in anything the caller left out, and refuse a rate that would produce
  * nonsense. A backend returning a malformed rule should not silently reprice
@@ -59,7 +72,7 @@ const isUsableAmount = (value) =>
  */
 export function normalizeMarkupSettings(settings) {
   const merged = { ...DEFAULT_MARKUP_SETTINGS, ...(settings || {}) }
-  if (!isUsableAmount(merged.rate)) {
+  if (!isUsableAmount(merged.rate) || !isUsableShipping(merged.shippingPerTire)) {
     return { ...DEFAULT_MARKUP_SETTINGS, isPlaceholder: true }
   }
   return merged
@@ -68,17 +81,26 @@ export function normalizeMarkupSettings(settings) {
 /**
  * What markup proposes for a tire we source at `supplierPrice`.
  *
- * `tire` is unused today and is passed because every rule listed above needs
- * it -- category, size and cost all feed the real logic. Taking it from the
- * start means adding a rule is a change to this function alone.
+ * `tire` carries per-tire shipping when a scraper has actually confirmed one
+ * exists (pricing-settings.md: "the honest answer is a configured average
+ * rather than a scraped figure" until that is known) -- `tire.shippingPerTire`
+ * falls back to the flat setting so adding a real per-tire number later is a
+ * change to this function alone, not to any caller. `tire.category` and
+ * `tire.size` remain unread; every other rule listed above still needs them.
+ *
+ * Shipping lands inside the multiplier, not outside it: `(supplierPrice +
+ * shipping) × rate`, because markup is on landed cost, not on the supplier's
+ * price with freight passed through separately (pricing-settings.md,
+ * "The formula, and the one decision inside it").
  *
  * Returns null for a price it cannot work from, rather than inventing one: a
  * tire with no usable cost is not something the quoting flow should price.
  */
-// eslint-disable-next-line no-unused-vars
 export function retailPrice(supplierPrice, tire = {}, settings = DEFAULT_MARKUP_SETTINGS) {
   if (!isUsableAmount(supplierPrice)) return null
-  return roundCurrency(supplierPrice * normalizeMarkupSettings(settings).rate)
+  const normalized = normalizeMarkupSettings(settings)
+  const shipping = isUsableShipping(tire?.shippingPerTire) ? tire.shippingPerTire : normalized.shippingPerTire
+  return roundCurrency((supplierPrice + shipping) * normalized.rate)
 }
 
 /**

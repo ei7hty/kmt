@@ -164,7 +164,7 @@ const REQUIRED = ['vehicleInfo', 'tireSelection', 'location', 'date', 'customerN
  * which is free text where people write where a key is hidden or what the
  * gate code is. The owner reads the full payload.
  */
-const CUSTOMER_REQUEST_FIELDS = ['vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip']
+const CUSTOMER_REQUEST_FIELDS = ['vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip', 'disposeOldTires']
 
 /**
  * What a customer-facing read of a quote carries, from inside `quotes.payload`.
@@ -192,7 +192,11 @@ const CUSTOMER_REQUEST_FIELDS = ['vehicleInfo', 'tireSelection', 'quantity', 'da
  * permission are reviewed together rather than the permission arriving
  * later where nobody is looking at what it names.
  */
-const CUSTOMER_QUOTE_FIELDS = ['lineItems', 'total', 'exception', 'exceptionReasons', 'note']
+// subtotal/tax (pricing-settings.md, #289): both are the quote's own numbers,
+// the reason the customer is looking, the same standing as lineItems/total.
+// tax ships disabled by default, so most quotes never carry the key at all --
+// `field in quotePayload` already handles an absent key correctly.
+const CUSTOMER_QUOTE_FIELDS = ['lineItems', 'subtotal', 'tax', 'total', 'exception', 'exceptionReasons', 'note']
 
 /** Deliberately permissive: catches typos, not RFC edge cases. */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -216,6 +220,18 @@ function cleanQuantity(value) {
     throw new InputError(`quantity must be one of ${ALLOWED_QUANTITIES.join(', ')}.`)
   }
   return quantity
+}
+
+/**
+ * Whether the customer opted in to old-tire disposal (pricing-settings.md,
+ * #289) -- a real choice, not a form field to trim, so it goes through its
+ * own strict boolean check the way `quantity` gets its own numeric one
+ * rather than passing through the FORM_FIELDS string loop.
+ */
+function cleanDisposeOldTires(value) {
+  if (value === undefined || value === null || value === '') return false
+  if (typeof value !== 'boolean') throw new InputError('disposeOldTires must be true or false.')
+  return value
 }
 
 /**
@@ -307,6 +323,7 @@ function cleanRequest(input, today) {
   cleaned.customerEmail = cleaned.customerEmail.toLowerCase()
   cleaned.customerPhone = cleanCustomerPhone(input.customerPhone)
   cleaned.quantity = cleanQuantity(input.quantity)
+  cleaned.disposeOldTires = cleanDisposeOldTires(input.disposeOldTires)
 
   for (const field of REQUIRED) {
     if (!cleaned[field]) throw new InputError(field + ' is required.')
@@ -500,7 +517,7 @@ export class Quotes {
 
     const id = newId()
     const stamp = now()
-    const draft = calculateDraftQuote({ ...request, id }, catalog)
+    const draft = calculateDraftQuote({ ...request, id }, catalog, this.inventory.getPricingSettings())
     if (area.reason === REASONS.REVIEW) {
       draft.exceptionReasons = [...draft.exceptionReasons, `Service address is ${area.message.replace(/^About/, 'about')}`]
       draft.exception = true

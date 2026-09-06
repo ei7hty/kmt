@@ -58,11 +58,15 @@ async function loadLive(path, signal, select) {
 
     // Composed, not substituted: the endpoint answers with what the owner
     // curated, which is a part of the catalog rather than all of it.
-    return { tires: catalogFromLiveRows(select(data.tires)), source: 'live' }
+    // disposalFee rides along the same way markup rides along the owner
+    // screen's summary (#289): one round trip, not two. `null` -- Ken has not
+    // set one -- means the wizard does not offer the opt-in at all.
+    return { tires: catalogFromLiveRows(select(data.tires)), source: 'live', disposalFee: data.disposalFee ?? null }
   } catch (error) {
     // An abort is the component going away, not a backend failure, and
     // answering it with a catalog nobody will read hides real cancellation.
     if (error?.name === 'AbortError') throw error
-    return { tires: getAllTires(), source: 'static' }
+    // No live answer means no confirmed price for anything, disposal included.
+    return { tires: getAllTires(), source: 'static', disposalFee: null }
   }
 }

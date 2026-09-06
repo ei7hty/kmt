@@ -140,11 +140,17 @@ export function createCatalogApi(inventory) {
 
     try {
       const size = url.searchParams.get('size') || ''
+      // The one setting the wizard needs before the owner backend is anywhere
+      // near it: whether disposal is offered, and at what price. Everything
+      // else Ken sets (the mobile fee, tax, shipping) never needs to reach an
+      // unauthenticated caller -- it only shapes numbers the server itself
+      // computes at submit time.
+      const pricing = inventory.getPricingSettings()
       response.writeHead(200, {
         'Content-Type': 'application/json',
         'Cache-Control': 'public, max-age=300',
       })
-      response.end(JSON.stringify({ tires: inventory.catalog({ size }) }))
+      response.end(JSON.stringify({ tires: inventory.catalog({ size }), disposalFee: pricing.disposalFee }))
     } catch (error) {
       console.error(error)
       response.writeHead(500, { 'Content-Type': 'application/json' })
@@ -440,6 +446,10 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
         send(200, inventory.getMarkup())
       } else if (request.method === 'PUT' && url.pathname === '/api/owner/markup') {
         send(200, inventory.saveMarkup(await readJsonBody(request)))
+      } else if (request.method === 'GET' && url.pathname === '/api/owner/pricing') {
+        send(200, inventory.getPricingSettings())
+      } else if (request.method === 'PUT' && url.pathname === '/api/owner/pricing') {
+        send(200, inventory.savePricingSettings(await readJsonBody(request)))
       } else if (request.method === 'POST' && url.pathname === '/api/owner/refresh') {
         const input = await readJsonBody(request)
         send(202, refresher.start(input.sizes))
