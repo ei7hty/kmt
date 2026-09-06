@@ -176,6 +176,25 @@ script errors before reaching its assertions, say so loudly.
 
 ---
 
+## What each check run proves
+
+Two runs, two different questions. Confusing them is how a green tick starts
+meaning less than it looks like.
+
+| run | where | proves |
+| --- | --- | --- |
+| the gate, on every pull request | `backend/server.mjs` with the built `dist/`, a temporary database and a throwaway password | **the flow**: a customer submits, the owner approves, the customer pays, and every click path leads somewhere |
+| the deployed-site check, after a merge deploys | `https://kmt.fly.dev`, read-only | **the deploy**: the site is up, the catalog is the shape the customer flow expects and leaks no supplier fields, the routes resolve through the SPA fallback, the owner API still refuses without a session, nothing scrolls sideways |
+
+The flow audits perform the journey -- they submit, approve and pay. That is
+right against a database built for the run and thrown away after it. It is
+wrong against production, where it would leave a fabricated request in the
+owner's list on every deploy, marked paid. So the deployed-site check reads and
+never writes, signs into nothing, and needs no production password in CI.
+
+Counts: **36** dead-end, **30** request-flow, **8** responsive, **19**
+deployed-site. A count that drops is a check that stopped running.
+
 ## Notes to each other
 
 Append, newest last. Date each entry and say who you are.
