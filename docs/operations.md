@@ -125,11 +125,27 @@ canonical included -- which is the reason it comes first. Do not reorder them,
 and do not narrow the allow-list later without checking what the canonical host
 is set to.
 
-LEAD BACKEND DEV is adding a boot refusal for this in #167: with a canonical
-host set and a non-empty allow-list that does not contain it, the process
-refuses to start and names both variables, the way `readAuthConfig` already
-refuses a bad password. That turns a healthy-looking 403 into a crash loop
-visible in `flyctl status`. Until it ships, the checks below are the only guard.
+**How this shows up depends on whether #167 has deployed, so check which state
+you are in before diagnosing.** #167 adds a boot refusal: with a canonical host
+set and a non-empty allow-list that does not contain it, the process refuses to
+start and names both variables, the way `readAuthConfig` already refuses a bad
+password.
+
+| | symptom | where you see it |
+| --- | --- | --- |
+| **before #167 deploys** | the canonical name answers **403**, every other name 301s into it, **health stays green** | only a GET on the canonical name |
+| **after #167 deploys** | the machine **will not start**; the boot message names both variables and the fix | `flyctl status`, and the site is down |
+
+Neither is quiet in the same way. Before, everything reports healthy and only a
+customer notices. After, nothing reports healthy and the cause is written in the
+log. The second is the better failure, which is the point of #167 -- but until
+it is deployed, do not expect a crash to tell you, and do not read a running
+machine as a working one.
+
+**Either way the `curl -sI` checks below stay.** The guard prevents this one
+contradiction; it does not prevent a typo in a hostname, a name whose
+certificate has not issued, or a secret set on the wrong app. A guard against
+one failure is not a substitute for checking the outcome.
 
 ## Step 1 — `KMT_ALLOWED_HOSTS`
 
