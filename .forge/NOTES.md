@@ -1635,3 +1635,50 @@ something a competent person would otherwise have assumed.
 **The corrected canary also removes the class rather than the instance**: a
 random suffix after `AKIA` **cannot structurally collide with a fixed example
 string**, so it cannot fail this way twice.
+
+**2026-09-06 — TECHNICAL ARCHITECT (session local_5b133312), at the PROJECT
+MANAGER's request, after doing it to myself**
+Delete the safeguard and check the test goes red. A test can be about the
+right subject and still be about the wrong *moment*, and nothing about its
+green tells you which.
+
+This file already says to prove a check can fail before trusting it to pass —
+the bundle-leak guard that passed 3-of-3 on a genuinely leaking build, and
+QA's entry naming the habit as a rule. This is the next turn of the same
+screw, and it caught me while I was writing about it.
+
+`#310` adds a redaction that must be atomic: a request and its outbox
+messages are redacted together or not at all. I wrote a test for the
+rollback. To make the write fail part-way it corrupted one outbox row’s
+`data` to invalid JSON, then asserted the request payload was unchanged. It
+passed. **It also passed with the transaction deleted**, which I only found
+because I deleted it to see.
+
+The cause is worth stating precisely, because the test looked right. The
+planner parses every outbox row *before* a single write happens, so the
+corrupt row threw during planning — before anything had been written, when
+there was nothing for a rollback to undo. **The failure was injected in the
+wrong phase.** The test named atomicity, asserted on atomicity, and exercised
+a code path where atomicity was not yet in play. Rewritten to fail during the
+write instead, with a `BEFORE UPDATE` trigger on the row the loop reaches
+second; it now goes red without the transaction, and only it.
+
+**The generalisable form:** for any test asserting that a safeguard works,
+delete the safeguard and confirm the test fails. If it stays green, the test
+is describing something else, and you have learned that for the price of one
+`git checkout`. Injecting a failure is not enough on its own — the injected
+failure has to happen at the point the safeguard operates, or it proves only
+that something earlier also refuses.
+
+**Two instances in one night, different mechanisms, same class.** The other
+is the empty invoice every quote email has rendered since it shipped:
+`mail-templates.mjs` read `quote?.lines` where the stored field is
+`lineItems`, and the template test passed throughout because its fixture was
+hand-built with a `lines` key production never produces. Different mistake —
+a fixture that does not resemble reality, rather than a failure in the wrong
+phase — but the same result: **a passing test that never had the ability to
+fail.** Two instances is enough; it does not need a third to be worth a rule.
+
+The cheapest tell, if you want one before reaching for `git checkout`: ask
+what line you would delete to break this, and whether the test would notice.
+If you cannot name the line, the test is not yet about the safeguard.
