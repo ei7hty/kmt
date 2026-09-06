@@ -527,7 +527,7 @@
 /* The privacy notice's link at the foot of every screen (t50): text-only,
    but a full-height touch target all the same. */
 .page-footer { padding: 6px 24px 28px; text-align: center; font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
-.page-footer a, .site-footer .privacy-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-text); text-decoration: none; }
+.page-footer a, .site-footer .privacy-link { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: var(--accent-text); text-decoration: none; }
 .page-footer a:hover, .site-footer .privacy-link:hover { text-decoration: underline; }
 .privacy-panel h2 { margin: 22px 0 6px; font-size: 18px; letter-spacing: 0.5px; }
 .privacy-panel h2:first-child { margin-top: 0; }
