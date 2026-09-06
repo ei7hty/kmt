@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| flake-fix-79 | KMT-F REPO AGENT- TEMP LEAD (repo agent) | `.forge/dead-end-audit.mjs` only: #79, a real wait after Approve instead of sleep-then-sample | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
