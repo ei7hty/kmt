@@ -1,6 +1,7 @@
 /* global document */ // used inside page.evaluate, which runs in the browser
 import { chromium } from 'playwright';
-import { EXCEPTION_TIRE, cleanTireFor, freshPage, openOwnerQuotes, submitRequest } from './audit-ui.mjs';
+import { EXCEPTION_TIRE, cleanTireFor, freshPage, openOwnerQuotes, signInIfAsked, submitRequest } from './audit-ui.mjs';
+import { dedupe, measure } from './contrast-measure.mjs';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4173';
 /**
@@ -25,7 +26,24 @@ const VIEWPORTS = [
  * means screens stopped being measured -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 8;
+const EXPECTED_CHECKS = 10;
+
+/**
+ * #107: the same baseline, but for the AA-contrast and 44px-tap-target gate.
+ * One per screen, at the phone viewport only -- that pairing (contrast and
+ * tap targets, at 375px) is the scope #85 measured and #107 gates, and
+ * running it a second time at desktop would mean asserting a touch-target
+ * rule against a pointer that isn't a finger.
+ *
+ * No element is exempted by position or purpose: not an inline contact
+ * link, not a link to another site, not a checkbox. A rule with a carve-out
+ * for "this kind of element doesn't really count" needs a classifier to
+ * decide what counts, and the classifier is where a real failure goes to
+ * hide. If a specific element can't reasonably be fixed, that is a decision
+ * for whoever owns that screen to make and record -- not a filter in here.
+ */
+const EXPECTED_A11Y_CHECKS = 5;
+function usesA11y(v) { return v.name === 'phone'; }
 
 async function checkOverflow(page) {
   return page.evaluate(() => {
@@ -66,6 +84,27 @@ const screens = [
     async reach(page) { await page.goto(BASE + '/', { waitUntil: 'networkidle' }); },
   },
   {
+    label: 'owner inventory',
+    path: '/owner',
+    async reach(page) {
+      await submitRequest(page, {
+        base: BASE, ...EXCEPTION_TIRE,
+        vehicle: '2020 Ford F-150 Pickup Truck Long Bed XLT',
+        location: '123 Very Long Street Address Name, Springfield, ST 00000',
+        date: SOON,
+        notes: 'Behind the building, blue truck by the loading bay',
+      });
+      // Stop at the inventory table itself, one step short of the quotes
+      // list openOwnerQuotes() lands on -- the two are different screens
+      // with different elements, and the inventory table is where #85 found
+      // its tap-target failures.
+      const origin = new URL(page.url()).origin;
+      await page.goto(`${origin}/owner`);
+      await signInIfAsked(page);
+      await page.waitForSelector('.owner-content, .oi-results, .oi-error, [role="tablist"]', { timeout: 15000 }).catch(() => {});
+    },
+  },
+  {
     label: 'owner quote list (draft, exception)',
     path: '/owner/quotes',
     async reach(page) {
@@ -103,7 +142,9 @@ const screens = [
     label: 'confirmation (paid)',
     path: '/confirmation',
     async reach(page) {
-      await screens[2].reach(page);
+      // By label, not position: inserting a screen above this one has
+      // already once shifted every numeric index below it silently.
+      await screens.find(s => s.label === 'status (sent, payable)').reach(page);
       await page.click('button:has-text("Pay $")');
       await page.waitForURL('**/confirmation**', { timeout: 15000 });
       await page.waitForSelector('.confirmation-card', { timeout: 15000 });
@@ -115,6 +156,7 @@ const screens = [
   const browser = await chromium.launch();
   let hadIssue = false;
   let measured = 0;
+  let a11yMeasured = 0;
 
   for (const viewport of VIEWPORTS) {
     for (const screen of screens) {
@@ -132,6 +174,34 @@ const screens = [
           console.log(`    ${o.tag}.${o.cls} right=${o.right} width=${o.width}`);
         }
         await page.screenshot({ path: `.forge/shots/${viewport.name}-${screen.path.replace(/[/?=&]/g, '_') || 'root'}.png`, fullPage: true });
+
+        // #107: AA contrast and 44px tap targets, at the phone viewport,
+        // hard-failing the run rather than only reporting -- the numbers
+        // themselves come from contrast-measure.mjs, the same fixed logic
+        // a11y-85-measure.mjs's report uses, so a fix or a regression in
+        // that logic shows up in both places at once, not just one.
+        if (usesA11y(viewport)) {
+          const a11y = await measure(page, screen.label);
+          a11yMeasured += 1;
+          // Text over a background image is flagged as not computed, same
+          // as the report: it is not a passing result standing in for a
+          // real check, so it cannot fail one either.
+          const contrastFails = a11y.texts.filter(t => !t.pass && !t.image);
+          const tapFails = a11y.interactive.filter(i => !i.tapPass);
+          if (contrastFails.length || tapFails.length) hadIssue = true;
+          const a11yStatus = contrastFails.length || tapFails.length ? 'FAIL' : 'ok';
+          console.log(`[${viewport.name} ${viewport.width}px] ${screen.label} (${screen.path}) -> a11y ${a11yStatus} (contrast ${contrastFails.length}, tap-target ${tapFails.length})`);
+          // Deduped for the log only -- twenty identical checkboxes print as
+          // one line. The count above, and the fail/pass verdict, are off
+          // the raw list: a screen full of the same broken checkbox is still
+          // a screen full of broken checkboxes.
+          for (const t of dedupe(contrastFails, x => [x.fgHex, x.bgHex, x.tag, x.cls, x.size, x.weight].join('|'))) {
+            console.log(`    contrast: <${t.tag}${t.cls ? '.' + t.cls : ''}> "${t.text}" fg ${t.fgHex} on bg ${t.bgHex} @ ${t.size}px/${t.weight} -> ${t.ratio}:1, needs ${t.threshold}:1`);
+          }
+          for (const i of dedupe(tapFails, x => [x.tag, x.cls, x.id, x.text, Math.round(x.w), Math.round(x.h)].join('|'))) {
+            console.log(`    tap target: <${i.tag}${i.cls ? '.' + i.cls : ''}> "${i.text}" -> ${i.w} x ${i.h} px, needs 44 x 44`);
+          }
+        }
       } catch (error) {
         hadIssue = true;
         // A screen that cannot be reached is a worse result than one that
@@ -153,6 +223,15 @@ const screens = [
     hadIssue = true;
   } else if (measured > EXPECTED_CHECKS) {
     console.error(`FAIL: ${measured} screens measured but EXPECTED_CHECKS is ${EXPECTED_CHECKS}. Update it in the same commit as the new screen.`);
+    hadIssue = true;
+  }
+
+  console.log(`${a11yMeasured} of ${EXPECTED_A11Y_CHECKS} expected #107 (a11y) checks measured`);
+  if (a11yMeasured < EXPECTED_A11Y_CHECKS) {
+    console.error(`FAIL: only ${a11yMeasured} of ${EXPECTED_A11Y_CHECKS} #107 checks ran. A screen that was not measured did not pass.`);
+    hadIssue = true;
+  } else if (a11yMeasured > EXPECTED_A11Y_CHECKS) {
+    console.error(`FAIL: ${a11yMeasured} #107 checks ran but EXPECTED_A11Y_CHECKS is ${EXPECTED_A11Y_CHECKS}. Update it in the same commit as the new screen.`);
     hadIssue = true;
   }
   process.exit(hadIssue ? 1 : 0);
