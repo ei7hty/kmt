@@ -417,6 +417,13 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
         send(200, { provider: mailer.adapter.name, messages: mailer.outbox.list({ limit }) })
       } else if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
         send(200, { ...inventory.list(Object.fromEntries(url.searchParams)), summary: inventory.summary() })
+      } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/by-brand/')) {
+        // Checked before the single-offer route below: that one treats
+        // everything after 'offers/' as one id, and 'by-brand/hankook' would
+        // otherwise be read as a (nonexistent) supplier id named that.
+        const brand = decodeURIComponent(url.pathname.slice('/api/owner/offers/by-brand/'.length))
+        const { enabled } = await readJsonBody(request)
+        send(200, inventory.setBrandEnabled(brand, enabled))
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/')) {
         const id = decodeURIComponent(url.pathname.slice('/api/owner/offers/'.length))
         send(200, inventory.saveOffer(id, await readJsonBody(request)))

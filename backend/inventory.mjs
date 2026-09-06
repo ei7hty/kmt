@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 // rule. Importing it rather than restating 1.35 here means the two cannot
 // drift into disagreeing about what an unconfigured catalog costs.
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
+import { deriveBrand } from '../src/data/brand.js'
 
 const DEFAULT_MARKUP_RATE = DEFAULT_MARKUP_SETTINGS.rate
 
@@ -276,6 +277,78 @@ export class Inventory {
   }
 
   /**
+   * Every brand with at least one supplier row, most tires first -- the
+   * ones a bulk action saves the most taps on come first. Brand is not a
+   * column: it is derived from `source.url` at read time (see
+   * `src/data/brand.js`), which at 1,083 rows is sub-millisecond and needs
+   * no migration. This is the data a brand picker and its confirmation
+   * numbers are built from; it changes nothing.
+   */
+  brandSummary() {
+    const rows = this.db.prepare(`
+      SELECT s.id, json_extract(s.payload,'$.source.url') AS url, s.size, o.enabled, o.price_cents
+      FROM supplier s LEFT JOIN offers o ON o.id=s.id
+    `).all()
+    const byBrand = new Map()
+    for (const row of rows) {
+      const brand = deriveBrand(row.url)
+      if (!brand) continue
+      if (!byBrand.has(brand.slug)) {
+        byBrand.set(brand.slug, { brand: brand.slug, label: brand.label, count: 0, sizes: new Set(), enabledCount: 0, missingPriceCount: 0 })
+      }
+      const entry = byBrand.get(brand.slug)
+      entry.count++
+      entry.sizes.add(row.size)
+      if (row.enabled) entry.enabledCount++
+      if (row.price_cents == null) entry.missingPriceCount++
+    }
+    return [...byBrand.values()]
+      .map(({ sizes, ...entry }) => ({ ...entry, sizeCount: sizes.size }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+  }
+
+  /**
+   * Enable or disable every supplier row for one brand, in one transaction.
+   *
+   * Touches only `enabled`, `version` and `updated_at` on each row -- never
+   * `price_cents` or `notes` -- so a price Ken already set survives a bulk
+   * toggle untouched (proven below: an upsert that lists those two columns
+   * in its `ON CONFLICT` `SET` clause is the one bug this method cannot
+   * afford, so they are not there.)
+   *
+   * Deliberately does NOT reuse `saveOffer`'s "enabled requires a price"
+   * rule. That rule exists so a single-row save cannot silently leave a
+   * tire enabled with nothing to sell it at; here the equivalent question --
+   * how many of these have no price and will be priced by markup -- is
+   * answered by `brandSummary()` and shown to the owner *before* this runs,
+   * not enforced by refusing the write. A bulk-enable of an unpriced brand
+   * is exactly what the confirmation screen exists to make an informed
+   * choice about, not a case this method blocks.
+   */
+  setBrandEnabled(brandSlug, enabled) {
+    if (typeof enabled !== 'boolean') throw new InputError('enabled must be true or false')
+    return this.transaction(() => {
+      const rows = this.db.prepare(`
+        SELECT s.id, json_extract(s.payload,'$.source.url') AS url, o.price_cents
+        FROM supplier s LEFT JOIN offers o ON o.id=s.id
+      `).all()
+      const matched = rows.filter(row => deriveBrand(row.url)?.slug === brandSlug)
+      if (!matched.length) throw new InputError(`No supplier tires found for brand "${brandSlug}"`, 404)
+      const at = now()
+      const upsert = this.db.prepare(`
+        INSERT INTO offers (id, price_cents, enabled, notes, version, updated_at) VALUES (?, NULL, ?, '', 1, ?)
+        ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, version=offers.version+1, updated_at=excluded.updated_at
+      `)
+      let missingPriceCount = 0
+      for (const row of matched) {
+        upsert.run(row.id, Number(enabled), at)
+        if (row.price_cents == null) missingPriceCount++
+      }
+      return { brand: brandSlug, enabled, updated: matched.length, missingPriceCount }
+    })
+  }
+
+  /**
    * What a customer may be shown: every tire that is offered and has a price,
    * optionally narrowed to one size.
    *
@@ -377,6 +450,9 @@ export class Inventory {
       // Carried on the inventory response so the screen can show the rule and
       // each tire's suggested price without a second round trip.
       markup: this.getMarkup(),
+      // Same reasoning: the brand picker's counts ride along rather than
+      // needing their own request.
+      brands: this.brandSummary(),
     }
   }
 

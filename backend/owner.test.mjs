@@ -44,6 +44,11 @@ function setup(t) {
   return db
 }
 const offer = (extra = {}) => ({ priceCents: 8999, enabled: true, notes: 'Owner choice', version: 0, ...extra })
+/** A tire whose URL carries a real brand slug -- brandTire() rather than tire(), since setup()'s fixture URL has no /<brand>-tires/ segment. */
+const brandTire = (id, brand, overrides = {}) => tire(id, {
+  source: { ...tire().source, url: `https://www.giga-tires.com/215-60-16/${brand}-tires/model/tirecode/${id}` },
+  ...overrides,
+})
 
 test('snapshot import is partial and idempotent; no tires are automatically offered', t => {
   const db = setup(t)
@@ -236,6 +241,38 @@ test('owner HTTP API persists offers, validates input, and refuses foreign origi
   const result = await (await fetch(`${base}/inventory?filter=offered`)).json()
   assert.equal(result.items[0].offer.priceCents, 8999)
   assert.equal(result.summary.offeredCount, 1)
+})
+
+test('the bulk by-brand route is matched before the single-offer route, over real HTTP', async t => {
+  const db = new Inventory(':memory:', [SIZE, otherSize])
+  t.after(() => db.close())
+  db.importSnapshot(snapshot([
+    brandTire('giga-a', 'hankook'),
+    brandTire('giga-b', 'hankook', { size: otherSize }),
+  ], { [SIZE]: fullRead, [otherSize]: fullRead }))
+  const api = createApi(db, new Refresher(db))
+  const server = createServer((req, res) => api(req, res))
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  const base = `http://127.0.0.1:${server.address().port}/api/owner`
+  const call = enabled => fetch(`${base}/offers/by-brand/hankook`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
+  })
+
+  const response = await call(true)
+  assert.equal(response.status, 200, 'not swallowed by the single-offer route reading "by-brand/hankook" as one id')
+  assert.deepEqual(await response.json(), { brand: 'hankook', enabled: true, updated: 2, missingPriceCount: 2 })
+
+  const result = await (await fetch(`${base}/inventory?filter=offered`)).json()
+  assert.equal(result.total, 2)
+  assert.deepEqual(result.summary.brands.find(b => b.brand === 'hankook'), { brand: 'hankook', label: 'Hankook', count: 2, enabledCount: 2, missingPriceCount: 2, sizeCount: 2 })
+
+  assert.equal((await call(false)).status, 200)
+  assert.equal((await (await fetch(`${base}/inventory?filter=offered`)).json()).total, 0)
+
+  assert.equal((await fetch(`${base}/offers/by-brand/no-such-brand`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true }),
+  })).status, 404)
 })
 
 test('markup starts as the shared placeholder and survives being saved', t => {
@@ -766,6 +803,88 @@ test('an offer cannot be enabled without a price, which is why there are only tw
   // see are owner-priced ones and ones markup priced on their own.
   const db = setup(t)
   assert.throws(() => db.saveOffer('giga-a', offer({ priceCents: null })), /positive KMT price/)
+})
+
+test('brandSummary groups supplier rows by brand, most tires first, with per-brand price and enabled counts', t => {
+  const db = new Inventory(':memory:', [SIZE, otherSize])
+  t.after(() => db.close())
+  db.importSnapshot(snapshot([
+    brandTire('giga-a', 'hankook'),
+    brandTire('giga-b', 'hankook', { size: otherSize }),
+    brandTire('giga-c', 'nokian'),
+  ], { [SIZE]: fullRead, [otherSize]: fullRead }))
+  db.saveOffer('giga-a', offer({ priceCents: 8999, version: 0 }))
+
+  const brands = db.brandSummary()
+  assert.deepEqual(brands.map(b => b.brand), ['hankook', 'nokian'], 'more tires first')
+  const hankook = brands.find(b => b.brand === 'hankook')
+  assert.equal(hankook.label, 'Hankook')
+  assert.equal(hankook.count, 2)
+  assert.equal(hankook.sizeCount, 2, 'across both sizes it was imported under')
+  assert.equal(hankook.enabledCount, 1, 'only giga-a has an offer, and it is enabled')
+  assert.equal(hankook.missingPriceCount, 1, 'giga-b has never been priced')
+  const nokian = brands.find(b => b.brand === 'nokian')
+  assert.equal(nokian.count, 1)
+  assert.equal(nokian.enabledCount, 0)
+  assert.equal(nokian.missingPriceCount, 1)
+})
+
+test('setBrandEnabled enables every row for a brand in one call, creating an offer for a tire that never had one', t => {
+  const db = new Inventory(':memory:', [SIZE, otherSize])
+  t.after(() => db.close())
+  db.importSnapshot(snapshot([
+    brandTire('giga-a', 'hankook'),
+    brandTire('giga-b', 'hankook', { size: otherSize }),
+    brandTire('giga-c', 'nokian'),
+  ], { [SIZE]: fullRead, [otherSize]: fullRead }))
+
+  const result = db.setBrandEnabled('hankook', true)
+  assert.deepEqual(result, { brand: 'hankook', enabled: true, updated: 2, missingPriceCount: 2 })
+
+  const rows = Object.fromEntries(db.list({ filter: 'all' }).items.map(t => [t.id, t]))
+  assert.equal(rows['giga-a'].offer.enabled, true)
+  assert.equal(rows['giga-a'].offer.priceCents, null, 'enabling with no price does not invent one -- this is the confirmed-by-the-owner exception to saveOffer\'s rule above')
+  assert.equal(rows['giga-b'].offer.enabled, true)
+  assert.equal(rows['giga-c'].offer.enabled, false, 'a different brand is untouched')
+})
+
+test('setBrandEnabled leaves an existing price and notes alone, and bumps version rather than resetting it', t => {
+  const db = new Inventory(':memory:', [SIZE, otherSize])
+  t.after(() => db.close())
+  db.importSnapshot(snapshot([brandTire('giga-a', 'hankook')]))
+  db.saveOffer('giga-a', offer({ priceCents: 8999, notes: 'Ken’s pick', version: 0 }))
+
+  db.setBrandEnabled('hankook', false)
+  const disabled = db.list().items.find(t => t.id === 'giga-a')
+  assert.equal(disabled.offer.enabled, false)
+  assert.equal(disabled.offer.priceCents, 8999, 'price survives a bulk toggle')
+  assert.equal(disabled.offer.notes, 'Ken’s pick', 'notes survive a bulk toggle')
+  assert.equal(disabled.offer.version, 2, 'bumped from the version saveOffer left it at (1), not reset to 1')
+
+  db.setBrandEnabled('hankook', true)
+  const reenabled = db.list().items.find(t => t.id === 'giga-a')
+  assert.equal(reenabled.offer.enabled, true)
+  assert.equal(reenabled.offer.priceCents, 8999)
+  assert.equal(reenabled.offer.version, 3)
+})
+
+test('setBrandEnabled on a brand with no matching rows refuses rather than silently updating nothing', t => {
+  const db = setup(t)
+  assert.throws(() => db.setBrandEnabled('no-such-brand', true), /No supplier tires found/)
+})
+
+test('setBrandEnabled rejects a non-boolean enabled value', t => {
+  const db = new Inventory(':memory:', [SIZE])
+  t.after(() => db.close())
+  db.importSnapshot(snapshot([brandTire('giga-a', 'hankook')]))
+  assert.throws(() => db.setBrandEnabled('hankook', 'yes'), /enabled must be true or false/)
+})
+
+test('summary().brands matches brandSummary(), so the owner screen gets it in the same round trip as the inventory list', t => {
+  const db = new Inventory(':memory:', [SIZE])
+  t.after(() => db.close())
+  db.importSnapshot(snapshot([brandTire('giga-a', 'hankook')]))
+  assert.deepEqual(db.summary().brands, db.brandSummary())
 })
 
 test('a snapshot applied to a live database upserts rows and leaves offers and unlisted tires alone', t => {
