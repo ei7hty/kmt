@@ -9,8 +9,10 @@ production facts before acting on them. The earlier pause-point handoff (at
 and `roles/`, and its production claims were superseded by what this push
 found.
 
-Open with the user at the time of writing: what "supplier price" is (retail
-listing or dealer cost), and what the renamed sessions (QA ENGINEER, DB ADMIN,
+Answered by the user while this was being written: Ken buys at the
+supplier's public listed price today, so the markup sits on retail by design,
+and the supplier integration is to be revisited when he gets a commercial or
+dealer account. Still open: what the renamed sessions (QA ENGINEER, DB ADMIN,
 KMT-O PROJECT MANAGER) are meant to become; the outgoing lead kept them in the
 roles they had served.
 
@@ -133,9 +135,9 @@ without a session; no horizontal overflow on / and /status at 375.
   monitoring, the client's own domain, every merge redeploying production,
   screens that never refresh, and whether "supplier price" is retail or
   dealer cost. Quantity is decided: the form asks, default four (t41,
-  assigned third). Whether the supplier price is retail or dealer cost is
-  still open with the user and must be answered before the markup rate is
-  set.
+  assigned third). The supplier price is the public retail listing, which
+  is what Ken pays today (user, 2026-09-06); the markup is on retail by
+  design until he has a commercial or dealer account.
 - `state.json` had t34 as todo after #53 merged it; corrected in this update.
   m10 stays planned: t35, t37 and t38 remain.
 - The owner-inventory audit is real but ungated (no workflow runs it).

@@ -94,3 +94,8 @@ The tracked snapshot was compiled into the client bundle for the static fallback
 
 **Rejected:** Building a customer-safe public JSON for the fallback, which would still ship a growing file to every phone and keep two copies of the catalog in step by hand. Also rejected: removing the seed and generated tires outright, which would dead-end every size the walk has not reached; the walk is the real fix and the guard is the bridge.
 
+## 2026-09-06 — The supplier price is the public retail listing, and the markup sits on it by design
+Ken buys tires at giga-tires.com's public listed price today. So the scraped price is his cost, the markup rule is what turns it into a customer price, and a customer who checks the supplier's site will find the number the markup was applied to. That is accepted for now. When Ken has a commercial or dealer account, the supplier integration is to be revisited so that the stored cost reflects what he actually pays. Recorded because the scrutiny agent's second pass found the assumption unwritten and the markup rate is set on top of it.
+
+**Rejected:** Treating the listed price as a dealer cost, or hiding the supplier's identity from customers as a substitute for a real cost basis.
+
