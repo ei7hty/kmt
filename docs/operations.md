@@ -256,6 +256,12 @@ curl -s -o /dev/null -w 'bogus host -> %{http_code}\n' -H 'Host: nope.example.co
 
 Expected: `200` four times, then `403`.
 
+Note: this expects `200` because it runs **before Step 2**. After Step 2 (the
+flip), the three non-canonical names correctly answer **301** redirecting to
+the canonical host -- that is the working state, not a failure. If you are
+re-running this during a rollback or an incident, read `301` on
+www/order/kmt.fly.dev as healthy; only the canonical name should be `200`.
+
 **Measured 2026-09-06, before this step:** all four names `200`, and the bogus
 Host also `200` -- the guard is inert while `KMT_ALLOWED_HOSTS` is unset, which
 is the state this step changes. That bogus-Host line going from `200` to `403`
