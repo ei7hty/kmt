@@ -191,10 +191,10 @@ the PR body as before and after.
   out of draft. Not abandoned.
 - The junior's **#210** (t63: every phone control is a text control; plus
   t62's app half, the approved list applied in a later commit). This lane's
-  first-reader approval covers the t63 head  only; the t62 commit
-   (26 rows, including two error strings in ) is the
-  repo agent's read. Approved on that head: zero  and zero "call" on
-  every customer route, one sms module, the owner card's  to the
+  first-reader approval covers the t63 head `ebe4733` only; the t62 commit
+  `b11819e` (26 rows, including two error strings in `src/store.js`) is the
+  repo agent's read. Approved on that head: zero `tel:` and zero "call" on
+  every customer route, one sms module, the owner card's `tel:` to the
   customer as the one deliberate exception.
 
 ## What this lane would do next
