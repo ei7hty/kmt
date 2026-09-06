@@ -68,6 +68,29 @@ const PUBLIC_POST_PATHS = [
 /** The action suffixes a GET must not answer, whatever else the prefix allows. */
 const REQUEST_ACTIONS = ['/pay', '/cancel']
 
+/**
+ * Whether an `/api/` path is one the server has any handler for.
+ *
+ * Every unmatched `/api/*` path used to answer 401 with the owner sign-in
+ * message, because the session gate ran before anything asked whether the
+ * path existed: a customer with a typo in a link was told to sign in to a
+ * workspace they do not have. The gate is for the owner's area; a path that
+ * is neither public nor under it is nobody's, and nobody's is 404. An
+ * unknown path under /api/owner/ still reads 401 when signed out, because
+ * saying which owner endpoints exist is the owner's business.
+ *
+ * By path, not by method: a public path asked with a method it does not
+ * take (a POST to the health check, a DELETE on a request) is still a real
+ * place, and the gate's 401 for it is what the baseline records and what
+ * keeps "does this endpoint exist" and "may you call it this way" apart.
+ */
+export function isKnownApiPath(pathname) {
+  return PUBLIC_API_PATHS.has(pathname) ||
+    pathname === PUBLIC_REQUEST_PREFIX ||
+    pathname.startsWith(PUBLIC_REQUEST_PREFIX + '/') ||
+    pathname.startsWith('/api/owner/')
+}
+
 /** Whether this request is one of the public calls, by path and by method. */
 export function isPublicApiCall(method, pathname) {
   if (method === 'GET') {
@@ -88,6 +111,18 @@ export function isPublicApiCall(method, pathname) {
  * same-origin check on everything else, and hanging a public route off it
  * would mean every future change to those rules silently applies to the
  * public one too.
+ *
+ * Cached for five minutes (#84): the cost of this endpoint was never SQLite's
+ * query time -- measured on a table sized for tonight's import, the full
+ * catalog is tens of milliseconds -- it is the size of the response, sent
+ * uncached on every visit. A price the owner just saved can be up to five
+ * minutes stale on someone's screen; the draft it produces is server-computed
+ * from the live row at submit time regardless (src/pricing.js never trusts a
+ * client-supplied price), so a stale display corrects itself the moment a
+ * quote is actually drafted. `?size=<size>` narrows the response to one size,
+ * for the customer flow to fetch after a size is chosen rather than the whole
+ * catalog on first paint; omitting it answers everything, unchanged, for the
+ * audits and anything else that still wants the full list.
  */
 export function createCatalogApi(inventory) {
   return async (request, response) => {
@@ -99,13 +134,12 @@ export function createCatalogApi(inventory) {
     if (request.method !== 'GET' || url.pathname !== '/api/catalog') return false
 
     try {
+      const size = url.searchParams.get('size') || ''
       response.writeHead(200, {
         'Content-Type': 'application/json',
-        // Prices change the moment the owner saves one. A cached catalog quotes
-        // a price he has already changed his mind about.
-        'Cache-Control': 'no-store',
+        'Cache-Control': 'public, max-age=300',
       })
-      response.end(JSON.stringify({ tires: inventory.catalog() }))
+      response.end(JSON.stringify({ tires: inventory.catalog({ size }) }))
     } catch (error) {
       console.error(error)
       response.writeHead(500, { 'Content-Type': 'application/json' })
@@ -132,7 +166,11 @@ export function createCatalogApi(inventory) {
 export function isHostAllowed(hostname, pathname, allowedHosts) {
   if (pathname === '/api/health') return true
   if (!allowedHosts.length) return true
-  return allowedHosts.includes(hostname)
+  // Hostnames are case-insensitive. Browsers lowercase them, so no customer
+  // meets this; a hand-typed curl or a monitor could, and the redirect
+  // already compares without case.
+  const wanted = (hostname || '').toLowerCase()
+  return allowedHosts.some(host => host.toLowerCase() === wanted)
 }
 
 /**

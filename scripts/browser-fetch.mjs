@@ -29,6 +29,22 @@ const READY_SELECTOR = '.plp-list__item-container'
 const EMPTY_TEXT = 'is not available at this time'
 
 /**
+ * The supplier telling us the rate is too high, as an actual HTTP status
+ * rather than inferred from a page's title -- title text is guessable, a
+ * status code is not. Carries Retry-After when the response sends one, so
+ * the caller can log it. Distinguished from every other error because it
+ * means one thing: stop the whole run, do not retry, do not continue past
+ * it. See docs/supplier-refresh.md.
+ */
+export class RateLimitedError extends Error {
+  constructor(message, retryAfter = null) {
+    super(message)
+    this.name = 'RateLimitedError'
+    this.retryAfter = retryAfter
+  }
+}
+
+/**
  * Launch one browser and hand back a fetcher over it.
  *
  * One context for the whole run, reused across sizes: the WAF cookie it picks
@@ -67,7 +83,12 @@ export async function createBrowserFetcher(options = {}) {
   return {
     async fetchSizePage(size, pageNumber = 1) {
       const url = sizeUrl(size, pageNumber)
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout })
+      const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout })
+
+      if (response?.status() === 429) {
+        const retryAfter = response.headers()['retry-after'] ?? null
+        throw new RateLimitedError(`429 from ${url}`, retryAfter)
+      }
 
       // Neither the grid nor the "not available" message is present at
       // domcontentloaded -- both render client-side, at about the same
