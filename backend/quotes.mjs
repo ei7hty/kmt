@@ -35,6 +35,7 @@ const FORM_FIELDS = [
   'locationType',
   'serviceZip',
   'locationNotes',
+  'customerNotes',
   'customerName',
   'customerEmail',
 ]
@@ -43,6 +44,11 @@ const FORM_FIELDS = [
 const LIMITS = {
   vehicleInfo: 200, tireSelection: 200, location: 300, date: 40,
   locationType: 40, serviceZip: 20, locationNotes: 1000,
+  // "Anything else I should know?" (t64): special instructions, timing, where
+  // the car is. Free text, so it is the field most likely to hold something a
+  // customer would want gone: owner-only, like locationNotes, and redacted
+  // with it on a removal request.
+  customerNotes: 500,
   customerName: 200, customerEmail: 254,
 }
 
