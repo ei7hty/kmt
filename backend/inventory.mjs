@@ -90,10 +90,22 @@ export class Inventory {
    * into the rate's own multiplication, so a proposed price is only as
    * decided as its least-decided input (#finding-3, the scrutiny agent's
    * third pass -- a save of one field used to silently ratify the other,
-   * whichever it happened to be sitting at). A record saved before these two
-   * fields existed carries only the old combined flag; read as both fields
-   * sharing that one value, since at that time either everything was decided
-   * or nothing was.
+   * whichever it happened to be sitting at).
+   *
+   * A record saved before these two fields existed reads its old combined
+   * flag two different ways, and the difference is not academic -- it is the
+   * shape of a real row on the production database. `rateIsPlaceholder`
+   * falls back to the old flag: rate has always been required, so an old
+   * record's `isPlaceholder: false` really did mean the rate was chosen.
+   * `shippingPerTireIsPlaceholder` only does that when the record actually
+   * has a `shippingPerTire` key -- an old record with the key entirely
+   * absent (saved before shipping was a field at all, not merely before it
+   * was asked about) is read as still a placeholder regardless of what the
+   * combined flag said, because that flag was never asked the question. A
+   * fallback that ignored this distinction would read a pre-shipping row's
+   * `isPlaceholder: false` as "shipping decided too" -- the exact defect
+   * this method exists to close, reappearing at read time for any row this
+   * old.
    */
   getMarkup() {
     const stored = this.getMeta('markup')
@@ -101,9 +113,16 @@ export class Inventory {
       rate: DEFAULT_MARKUP_RATE, shippingPerTire: DEFAULT_SHIPPING_PER_TIRE,
       rateIsPlaceholder: true, shippingPerTireIsPlaceholder: true, isPlaceholder: true, updatedAt: null,
     }
+    const hasShippingKey = Object.prototype.hasOwnProperty.call(stored, 'shippingPerTire')
     const rateIsPlaceholder = stored.rateIsPlaceholder ?? stored.isPlaceholder
-    const shippingPerTireIsPlaceholder = stored.shippingPerTireIsPlaceholder ?? stored.isPlaceholder
-    return { ...stored, rateIsPlaceholder, shippingPerTireIsPlaceholder, isPlaceholder: rateIsPlaceholder || shippingPerTireIsPlaceholder }
+    const shippingPerTireIsPlaceholder = stored.shippingPerTireIsPlaceholder ?? (hasShippingKey ? stored.isPlaceholder : true)
+    return {
+      ...stored,
+      shippingPerTire: stored.shippingPerTire ?? DEFAULT_SHIPPING_PER_TIRE,
+      rateIsPlaceholder,
+      shippingPerTireIsPlaceholder,
+      isPlaceholder: rateIsPlaceholder || shippingPerTireIsPlaceholder,
+    }
   }
 
   saveMarkup(input) {

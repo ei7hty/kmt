@@ -325,6 +325,28 @@ test('a record saved before per-field markup flags existed reads as fully decide
   assert.equal(legacy.isPlaceholder, false)
 })
 
+test('a record saved before shipping was a field at all -- no key, not a zero -- still reads shipping as undecided (production, #finding-3)', t => {
+  const db = setup(t)
+  // The actual shape of the production row: Ken saved a rate before #299
+  // added shippingPerTire, so the key was never written -- not defaulted,
+  // absent. The old combined isPlaceholder: false is honest about the rate
+  // and silent about a field that did not exist yet to be silent about.
+  db.setMeta('markup', { rate: 1.5, isPlaceholder: false, updatedAt: '2026-09-06T16:16:36.853Z' })
+  const legacy = db.getMarkup()
+  assert.equal(legacy.rate, 1.5, 'the rate Ken actually chose')
+  assert.equal(legacy.rateIsPlaceholder, false, 'and it reads as chosen')
+  assert.equal(legacy.shippingPerTire, DEFAULT_MARKUP_SETTINGS.shippingPerTire, 'resolves to the default, same as normalizeMarkupSettings would -- no price moves')
+  assert.equal(legacy.shippingPerTireIsPlaceholder, true, 'but is NOT read as a decision -- the key was never there to decide')
+  assert.equal(legacy.isPlaceholder, true, 'so the rule as a whole is still not fully decided')
+
+  // The row self-corrects the moment Ken next touches the markup form,
+  // which always sends both fields (OwnerInventory.jsx) -- no migration
+  // needed, per the OWNER AGENT's ruling: fix the read, not the row.
+  const resaved = db.saveMarkup({ rate: 1.5, shippingPerTire: 0 })
+  assert.equal(resaved.shippingPerTireIsPlaceholder, false)
+  assert.equal(resaved.isPlaceholder, false)
+})
+
 test('markup rejects rates that would quote below cost or reprice by typo', t => {
   const db = setup(t)
   for (const rate of [0, 0.9, -2, 11, Number.NaN, Infinity, '1.5', null, undefined]) {
