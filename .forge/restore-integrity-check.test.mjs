@@ -80,7 +80,25 @@ test('a sound, fully-seeded database passes every check', () => withTmpDir(dir =
   assert.equal(status, 0, stdout);
   assert.match(stdout, /14 of 14 expected checks ran/);
   assert.match(stdout, /SOUND: this file passed every check/);
+  assert.match(stdout, /PRAGMA user_version: 0/);
   assert.doesNotMatch(stdout, /FAIL:/);
+  assert.doesNotMatch(stdout, /OLDER SCHEMA:/);
+}));
+
+test('a real failure alongside an older-schema table still exits NOT SOUND (1), not OLDER SCHEMA (2) -- a real problem always wins the verdict', () => withTmpDir(dir => {
+  const file = soundDatabase(dir, db => {
+    // outbox missing entirely (OLDER SCHEMA on its own) plus a genuine FK
+    // violation (NOT SOUND on its own): the worse claim must win the exit
+    // code and the summary word, in whichever order the checks run.
+    db.exec('DROP TABLE outbox');
+    db.exec('PRAGMA foreign_keys=OFF');
+    db.exec("INSERT INTO offers VALUES ('ghost-id', 4000, 1, '', 1, '2026-09-06')");
+  });
+  const { status, stdout } = run(file);
+  assert.equal(status, 1, stdout);
+  assert.match(stdout, /OLDER SCHEMA: table outbox/);
+  assert.match(stdout, /FAIL: PRAGMA foreign_key_check/);
+  assert.match(stdout, /\nNOT SOUND: see FAIL lines above\./);
 }));
 
 test('a missing file fails on the first check and reports the short count honestly', () => withTmpDir(dir => {
@@ -91,15 +109,30 @@ test('a missing file fails on the first check and reports the short count honest
   assert.match(stdout, /NOT SOUND/);
 }));
 
-test('a table missing entirely (e.g. a pre-outbox-merge restore) fails only that table\'s check', () => withTmpDir(dir => {
+test('a later-added table missing entirely (e.g. a pre-outbox-merge restore) is OLDER SCHEMA, not NOT SOUND', () => withTmpDir(dir => {
   const file = soundDatabase(dir);
   const db = new DatabaseSync(file);
   db.exec('DROP TABLE outbox');
   db.close();
   const { status, stdout } = run(file);
-  assert.equal(status, 1);
-  assert.match(stdout, /FAIL: table outbox \(operational\).*missing entirely/);
+  assert.equal(status, 2, stdout);
+  assert.match(stdout, /OLDER SCHEMA: table outbox \(operational\) predates this file/);
+  assert.doesNotMatch(stdout, /FAIL:/);
   assert.match(stdout, /OK: table supplier/);
+  assert.match(stdout, /\nOLDER SCHEMA: intact, but restore it and let the app's own migration run/);
+}));
+
+test('an original-schema table missing entirely (e.g. requests) is NOT SOUND, not OLDER SCHEMA -- it has no later-migration story', () => withTmpDir(dir => {
+  const file = soundDatabase(dir);
+  const db = new DatabaseSync(file);
+  db.exec('PRAGMA foreign_keys=OFF');
+  db.exec('DROP TABLE quotes');
+  db.exec('DROP TABLE requests');
+  db.close();
+  const { status, stdout } = run(file);
+  assert.equal(status, 1);
+  assert.match(stdout, /FAIL: table requests \(irreplaceable\).*missing entirely/);
+  assert.doesNotMatch(stdout, /OLDER SCHEMA: table requests/);
 }));
 
 test('a table missing an expected column fails with the column named', () => withTmpDir(dir => {
@@ -128,22 +161,29 @@ test('a foreign key violation (an offer for a supplier row that no longer exists
   assert.match(stdout, /violating row/);
 }));
 
-test('a quotes table with a pre-widening CHECK constraint fails, naming the missing statuses', () => withTmpDir(dir => {
-  const file = path.join(dir, 'stale-check.sqlite');
-  const db = new DatabaseSync(file);
-  db.exec(`
-    CREATE TABLE requests (id TEXT PRIMARY KEY, customer_key TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE quotes (
-      id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES requests(id),
-      payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
-      version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-      CHECK(status IN ('draft', 'sent', 'rejected', 'paid', 'done', 'cancelled'))
-    );
-  `);
-  db.close();
+test('a quotes table with a pre-widening (pre-t36) CHECK constraint is OLDER SCHEMA, not NOT SOUND -- migrate() fixes it losslessly on next boot', () => withTmpDir(dir => {
+  // Otherwise-sound database, just with quotes rebuilt onto the CHECK
+  // constraint quotes.mjs used before t36 widened it -- the same rebuild
+  // migrate() itself performs, run here by hand so the row survives intact.
+  const file = soundDatabase(dir, db => {
+    db.exec('PRAGMA foreign_keys=OFF');
+    db.exec(`
+      CREATE TABLE quotes_old (
+        id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES requests(id),
+        payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
+        version INTEGER NOT NULL DEFAULT 1, reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        CHECK(status IN ('draft', 'sent', 'rejected', 'paid', 'done', 'cancelled'))
+      );
+      INSERT INTO quotes_old SELECT * FROM quotes;
+      DROP TABLE quotes;
+      ALTER TABLE quotes_old RENAME TO quotes;
+    `);
+  });
   const { status, stdout } = run(file);
-  assert.equal(status, 1);
-  assert.match(stdout, /FAIL: quotes\.status CHECK constraint includes every current status.*missing: approved.*predates a status-widening migration/);
+  assert.equal(status, 2, stdout);
+  assert.match(stdout, /OLDER SCHEMA: quotes\.status CHECK constraint predates a status-widening migration -- missing approved; migrate\(\) will widen it losslessly/);
+  assert.doesNotMatch(stdout, /FAIL:/);
+  assert.match(stdout, /OK: table quotes \(irreplaceable\) is present with its expected columns and readable: 1 row\(s\)/);
 }));
 
 test('metadata.seeded set with an empty supplier table fails, naming the silent-no-op risk', () => withTmpDir(dir => {

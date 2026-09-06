@@ -56,12 +56,35 @@ import { QUOTE_STATUSES } from '../backend/quotes.mjs';
  * is not "ok", nothing below it can be trusted either, so it runs first and
  * everything after it still runs regardless -- a second problem is still
  * worth naming even once the first one has failed the run.
+ *
+ * ## Three verdicts, not two
+ *
+ * A schema mismatch and a broken database are not the same claim, and
+ * training an operator to read them as the same thing is dangerous in
+ * exactly the way a flaky check is dangerous, with higher stakes: the drill
+ * exists to be run scared, and the whole value of SOUND/NOT SOUND is that
+ * NOT SOUND always means stop. Every Fly snapshot is a file from the past by
+ * construction (five-day retention), and this project has added a table or
+ * widened a constraint on consecutive days, so "the file predates a
+ * migration" is not a today problem, it is the permanent shape of restoring
+ * anything. So a table added later than the file (`owner_sessions`,
+ * `outbox` -- see `label: 'operational'` below) being entirely absent, or
+ * `quotes.status`'s CHECK predating a widening it has a tested, lossless
+ * `migrate()` for, is its own verdict: **OLDER SCHEMA**. The file is intact;
+ * it needs the app's own migration to run once, the same as any deploy.
+ * That is the t36 lesson from the other direction -- a file that fails a
+ * schema comparison is not necessarily damaged, the same way a file that
+ * passes one is not necessarily current. Everything else that can go wrong
+ * here (integrity_check, foreign_key_check, a column actually missing from
+ * a table that exists, the seeded-but-empty trap) has no such migration to
+ * fall back on and stays **NOT SOUND**.
  */
 
 const EXPECTED_CHECKS = 14;
 
 let passed = 0;
 let failed = 0;
+let staled = 0;
 
 function ok(message) {
   passed += 1;
@@ -72,6 +95,20 @@ function fail(message) {
   failed += 1;
   console.error(`FAIL: ${message}`);
   process.exitCode = 1;
+}
+
+/**
+ * Intact, but from before a specific migration this codebase already knows
+ * how to run losslessly on next boot -- not a claim that the file is
+ * damaged. Still a non-zero exit (a drill should not silently pass an old
+ * file), but exit code 2 rather than 1, and its own word in the summary, so
+ * a person or a script reading the result is not trained to treat this the
+ * same as the thing this whole tool exists to catch.
+ */
+function stale(message) {
+  staled += 1;
+  console.log(`OLDER SCHEMA: ${message}`);
+  if (!process.exitCode) process.exitCode = 2;
 }
 
 function check(condition, message, detail = '') {
@@ -137,6 +174,11 @@ function main() {
   try {
     db = new DatabaseSync(path, { readOnly: true });
     ok('opens as a SQLite database in read-only mode');
+    // Printed, not asserted: this codebase has never set it, so there is
+    // nothing to compare it against, but it costs nothing and it is the
+    // fastest way for whoever reads this output pasted into a message to
+    // tell which migration generation the file belongs to.
+    console.log(`PRAGMA user_version: ${db.prepare('PRAGMA user_version').get()?.user_version}`);
   } catch (error) {
     fail(`opens as a SQLite database in read-only mode — ${error.message}`);
     reportCount();
@@ -165,7 +207,19 @@ function main() {
     for (const [table, { label, columns }] of Object.entries(EXPECTED_TABLES)) {
       const exists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table);
       if (!exists) {
-        fail(`table ${table} (${label}) is present with its expected columns — missing entirely`);
+        // A whole table added after this file was written is not the same
+        // claim as one that should always have been there: `operational`
+        // marks the tables this codebase added on a specific later day, with
+        // no prior rows anywhere to have lost -- `CREATE TABLE IF NOT
+        // EXISTS` recreates it empty on next boot, which is exactly what
+        // "predates this feature" should mean. `supplier`/`offers`/
+        // `coverage`/`metadata`/`requests`/`quotes` have existed since this
+        // app's first schema; their total absence has no such story.
+        if (label === 'operational') {
+          stale(`table ${table} (${label}) predates this file -- intact, will be created fresh on next boot`);
+        } else {
+          fail(`table ${table} (${label}) is present with its expected columns — missing entirely`);
+        }
         continue;
       }
       const actualColumns = tableColumns(db, table);
@@ -188,13 +242,20 @@ function main() {
     //   or does this file predate a widening (t36) and carry the old one? A
     //   restore from before that migration looks structurally fine -- the
     //   table exists, every expected column is there -- and only refuses on
-    //   the first `sent` write, which is the owner's Approve button. Caught
-    //   here instead of live.
+    //   the first `sent` write, which is the owner's Approve button. Unlike
+    //   a missing table or column, this is not a NOT SOUND finding: it is
+    //   exactly what migrate() exists to fix, tested (migration.test.mjs) to
+    //   do so losslessly on next boot, so a stale CHECK here is the same
+    //   OLDER SCHEMA claim as an absent later table, not evidence of damage.
     const quotesSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='quotes'").get()?.sql ?? '';
     const staleStatuses = QUOTE_STATUSES.filter(status => !quotesSql.includes(`'${status}'`));
-    check(quotesSql !== '' && staleStatuses.length === 0,
-      'quotes.status CHECK constraint includes every current status',
-      quotesSql === '' ? 'quotes table missing, already reported above' : `missing: ${staleStatuses.join(', ')} — this file predates a status-widening migration`);
+    if (quotesSql === '') {
+      fail('quotes.status CHECK constraint includes every current status — quotes table missing, already reported above');
+    } else if (staleStatuses.length) {
+      stale(`quotes.status CHECK constraint predates a status-widening migration -- missing ${staleStatuses.join(', ')}; migrate() will widen it losslessly on next boot`);
+    } else {
+      ok('quotes.status CHECK constraint includes every current status');
+    }
 
     // 14. importSnapshot() no-ops once metadata.seeded is set (backend/
     //   inventory.mjs). A restored file with that flag set and no supplier
@@ -225,14 +286,20 @@ function main() {
 }
 
 function reportCount() {
-  const ran = passed + failed;
-  console.log(`\n${passed} OK, ${failed} FAIL — ${ran} of ${EXPECTED_CHECKS} expected checks ran`);
+  const ran = passed + failed + staled;
+  console.log(`\n${passed} OK, ${staled} OLDER SCHEMA, ${failed} FAIL — ${ran} of ${EXPECTED_CHECKS} expected checks ran`);
   if (ran < EXPECTED_CHECKS) {
     fail(`only ${ran} of ${EXPECTED_CHECKS} checks ran. A check that stopped running is not a check that passed.`);
   } else if (ran > EXPECTED_CHECKS) {
     fail(`${ran} checks ran but EXPECTED_CHECKS is ${EXPECTED_CHECKS}. Update it in the same commit as the new check.`);
   }
-  console.log(failed === 0 ? '\nSOUND: this file passed every check this script knows to run.' : '\nNOT SOUND: see FAIL lines above.');
+  if (failed > 0) {
+    console.log('\nNOT SOUND: see FAIL lines above.');
+  } else if (staled > 0) {
+    console.log('\nOLDER SCHEMA: intact, but restore it and let the app\'s own migration run before serving from it -- see OLDER SCHEMA lines above.');
+  } else {
+    console.log('\nSOUND: this file passed every check this script knows to run.');
+  }
 }
 
 main();
