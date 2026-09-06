@@ -17,6 +17,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | doc-staleness-note | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/NOTES.md, one appended entry (the three stale-record instances of 2026-09-06 and a detection proposal). At the PROJECT MANAGER's request. | 2026-09-06 |
 | service-area-observability | QA ENGINEER (local_1fa1cb9a) | backend/site.mjs (securityHeaders/applySecurityHeaders: add X-KMT-Service-Area on/off, no parameters), backend/server.mjs (wire the existing serviceArea object through, read nothing new), backend/site.test.mjs, .forge/deployed-site-check.mjs (the check that reads it) | 2026-09-06 |
 | growth-marketing-role | GROWTH/MARKETING (local_d80272eb) | new .forge/roles/growth-marketing.md, plus one lanes row in .forge/AGENTS.md (docs only) | 2026-09-06 |
+| declined-email-reason-optional | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/t62-voice.md, part F only (the declined sketch renders a reason Ken may not have written; voice/product, no code) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
