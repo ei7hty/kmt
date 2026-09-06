@@ -144,9 +144,10 @@ it is not. Measured against the flat ground of each file that ships:
 detectable in `kens-dark-600.webp`, against the **3:1** at which WCAG 1.4.11
 treats a graphical object as perceptible at all.
 
-**The swap to licensed art is still owed, on licensing grounds.** These are
-unlicensed previews whatever they look like. "You cannot see it" is a good
-answer to the wrong question.
+**Whether a swap is owed turns on licensing, not on visibility.** These are
+seller preview files; their licensing terms are not settled here in either
+direction, and nothing about the watermark's visibility answers that
+question. "You cannot see it" is a good answer to the wrong question.
 
 Method, if you ever need to redo it: mask out the artwork (a big `MaxFilter`
 window rejects anything near a bright edge — without it you measure the logo's
