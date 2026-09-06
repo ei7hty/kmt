@@ -76,9 +76,16 @@ async function main() {
     throw new Error(
       'Set SAMPLE_SIZES to a comma-separated list spanning multiple rim-diameter bands ' +
       '(e.g. one each from 12-14", 15-18", 19-24"), so a partial import in one band is ' +
-      'not hidden by a row count that happens to land right.',
+      'not hidden by a row count that happens to land right. Each entry may be ' +
+      '"size" (checks at least one supplier row) or "size:count" (checks exactly that ' +
+      'many) -- a size expecting exactly one row is the sharpest sample there is: a ' +
+      'truncated batch shows up there before it shows up in a size expecting hundreds.',
     );
   }
+  const samples = sampleSizes.map(entry => {
+    const [size, countRaw] = entry.split(':').map(part => part.trim());
+    return { size, expected: countRaw === undefined ? null : Number(countRaw) };
+  });
   const expectedCount = Number(expectedCountRaw);
 
   // 2 fixed checks (row count, no supplier fields) + 1 per sample size.
@@ -105,14 +112,27 @@ async function main() {
   // 2. A partial import can still land the right total if the count happens
   //    to work out, the way a wrong number of tires in one band can be
   //    offset by an extra few in another. Each sampled size is checked on
-  //    its own so that a missing band is the line that says which one,
-  //    not a single "counts don't match" with no further information.
-  for (const size of sampleSizes) {
+  //    its own so that a missing band is the line that says which one, not
+  //    a single "counts don't match" with no further information.
+  //
+  //    Where an exact count is given, it is asserted exactly rather than
+  //    "at least one": a size expecting exactly one row is the sharpest
+  //    sample in the set precisely because "at least one" would let a
+  //    duplicate write past unnoticed, and a size the walk covered heavily
+  //    would let a truncated batch hide inside a total that still looks
+  //    non-empty.
+  for (const { size, expected } of samples) {
     const rowsForSize = tires.filter(tire => tire.size === size);
     const supplierRows = rowsForSize.filter(tire => tire.id.startsWith('giga-'));
-    check(supplierRows.length > 0,
-      `${size} shows a real supplier tire, not only generated coverage`,
-      `${rowsForSize.length} row(s) for this size, ${supplierRows.length} from the supplier`);
+    if (expected === null) {
+      check(supplierRows.length > 0,
+        `${size} shows a real supplier tire, not only generated coverage`,
+        `${rowsForSize.length} row(s) for this size, ${supplierRows.length} from the supplier`);
+    } else {
+      check(supplierRows.length === expected,
+        `${size} shows exactly ${expected} supplier tire(s)`,
+        `got ${supplierRows.length} (${rowsForSize.length} row(s) for this size total)`);
+    }
   }
 
   // 3. No supplier field leaked into the public response -- the same shape
