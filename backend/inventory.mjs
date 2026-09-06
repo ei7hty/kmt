@@ -276,18 +276,23 @@ export class Inventory {
   }
 
   /**
-   * What a customer may be shown: every tire that is offered and has a price.
+   * What a customer may be shown: every tire that is offered and has a price,
+   * optionally narrowed to one size.
    *
    * The same rows the owner curates, reduced to what a quote needs. Unpaginated
    * on purpose -- list() pages because a person scrolls a screen, and this
-   * answers a program that needs the whole catalog to price a request.
+   * answers a program that needs the whole catalog (or one size's worth of it)
+   * to price a request.
    *
    * The mapping deliberately mirrors scrapedTiresFor() in src/data/catalog.js,
    * field for field, because the customer flow already runs on rows of that
    * shape and a second, subtly different shape is the kind of thing that only
    * shows up as a wrong price. Anything the supplier told us -- SKU, list
    * price, stock count, the URL we scraped -- stops here: the customer sees
-   * KMT's price and nothing behind it.
+   * KMT's price and nothing behind it. That is now also true of what SQLite
+   * hands back: the query projects exactly these seven fields with
+   * `json_extract` rather than the whole `payload` column, so a supplier's
+   * extra bytes never cross into Node just to be parsed and discarded.
    *
    * A tire the supplier has stopped listing is kept and marked out of stock
    * rather than dropped. Dropping it would quietly shrink the catalog under a
@@ -295,15 +300,25 @@ export class Inventory {
    * source. Out of stock is the honest answer, and the pricing rules already
    * route an out-of-stock choice to the owner instead of quoting it outright.
    */
-  catalog() {
+  catalog({ size = '' } = {}) {
     const settings = this.getMarkup()
-    const rows = this.db.prepare(`SELECT s.payload, s.active, o.id AS offer_id, o.price_cents, o.enabled
+    const where = size ? 'WHERE s.size=?' : ''
+    const args = size ? [size] : []
+    const rows = this.db.prepare(`SELECT
+        json_extract(s.payload,'$.id') AS id,
+        json_extract(s.payload,'$.name') AS name,
+        s.size AS size,
+        json_extract(s.payload,'$.price') AS price,
+        json_extract(s.payload,'$.inStock') AS inStock,
+        json_extract(s.payload,'$.category') AS category,
+        json_extract(s.payload,'$.description') AS description,
+        s.active, o.id AS offer_id, o.price_cents, o.enabled
       FROM supplier s LEFT JOIN offers o ON o.id=s.id
-      ORDER BY s.size, json_extract(s.payload,'$.name'), s.id`).all()
+      ${where}
+      ORDER BY s.size, name, s.id`).all(...args)
 
     const tires = []
     for (const row of rows) {
-      const tire = JSON.parse(row.payload)
       // A missing offers row is not the same as a disabled one: a tire the
       // owner has never touched is still for sale at the marked-up price,
       // while one he switched off is a deliberate no.
@@ -312,20 +327,21 @@ export class Inventory {
         : { priceCents: row.price_cents ?? null, enabled: !!row.enabled }
 
       const { price, offered } = quotedPrice({
-        supplierPrice: tire.price, offer, tire, settings,
+        supplierPrice: row.price, offer, tire: row, settings,
       })
       if (price === null || !offered) continue
 
       tires.push({
-        id: tire.id,
-        name: tire.name,
-        size: tire.size,
+        id: row.id,
+        name: row.name,
+        size: row.size,
         price,
         // Delisted at the supplier is out of stock here, whatever the last
         // snapshot said about it, and whether or not the owner priced it.
-        inStock: !!row.active && tire.inStock,
-        category: tire.category,
-        description: tire.description,
+        // json_extract answers a JSON boolean as 0/1, not true/false.
+        inStock: !!row.active && !!row.inStock,
+        category: row.category,
+        description: row.description,
       })
     }
     return tires

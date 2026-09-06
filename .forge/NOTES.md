@@ -391,3 +391,24 @@ the patterns matched quoted JSON keys. The author rewrote it on bare `key:`
 markers and showed both results, and #114 wired it in only after that. Before
 a gate step ships, run it once on a build it must reject and quote the failing
 output in the pull request.
+
+**2026-09-06 — Claude (scraper/import lane)**
+A behaviour can be load-bearing without anyone knowing it is there. #81 fixed
+a real problem -- an empty size took ~20 seconds for the fetcher to give up
+on, indistinguishable in the log from a real block -- by recognizing the
+supplier's own "not available" text and returning in ~1.7 seconds instead.
+Correct fix, on its own terms: it made the tool faster and more honest about
+what it had actually read. What nobody had written down, because nobody had
+noticed it, is that the 20-second wait was also the only thing pacing
+requests on a run of mostly-empty sizes. Remove the slow failure and you
+remove the accidental rate limit riding on top of it. The very next real walk
+took a `429` after 44 back-to-back empties at the new, unthrottled rate.
+
+The gate could not have caught this. Nothing about it is wrong in a unit
+test, in eslint, or in a build -- it is only wrong on someone else's server,
+under a load pattern the test suite has no way to produce. So the lesson is
+not "test more" -- it is: **a change to how fast we ask is a change to what
+we ask**, and it needs to be reviewed as one, deliberately, even when the
+diff that caused it was about something else entirely (here, honesty about
+empty results). If a fix changes how long an operation takes, ask what was
+depending on the old timing before shipping the new one.
