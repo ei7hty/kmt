@@ -324,3 +324,32 @@ test('every customer email speaks as Ken: no "we", a way to reach him, and his n
     assert.match(text, /— Ken/, `${type}: signed by the person sending it`)
   }
 })
+
+/**
+ * The links have to be links. `htmlOf` escaped every body into a `<pre>` with
+ * no anchors at all, so in the message a customer actually opens -- clients
+ * render the HTML part, not the text -- the status URL and the number were
+ * bare text: tappable only if the client guessed, and `sms:` never. t63 had
+ * already replaced calling with texting, so a person at hour six had no
+ * working way to reach Ken from the email. Verified in the delivered form,
+ * not the rendered one, which is how it was missed.
+ */
+test('every email links what it asks the reader to do', () => {
+  const ctx = {
+    request: { id: 'r1', customerPhone: '1', location: 'l', locationNotes: 'n', customerNotes: 'c',
+      vehicleInfo: '2016 Honda Civic', quantity: 4, locationType: 'Home', serviceZip: '02148', date: SOON },
+    quote: { lines: [{ description: 'T', quantity: 4, unitPrice: 50 }], total: 250, note: 'a note', reason: null },
+    tire: { name: 'T', size: SIZE }, origin: 'https://x', to: 'a@b.c', toName: 'A',
+  }
+  for (const type of MAIL_TYPES) {
+    const template = TEMPLATES[type]
+    const { text, html } = template.render(template.data(ctx))
+    for (const url of text.match(/https:\/\/\S+/g) || []) {
+      assert.ok(html.includes(`<a href="${url}">`), `${type}: ${url} is a link, not text`)
+    }
+    if (template.audience === 'customer') {
+      assert.match(html, /<a href="sms:/, `${type}: the number is tappable (t63)`)
+    }
+    assert.doesNotMatch(text, /<a /, `${type}: the plain-text part stays plain`)
+  }
+})
