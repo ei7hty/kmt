@@ -1149,3 +1149,33 @@ test('#407: the route answers 409 rather than 500 when a resend is refused', asy
   assert.equal(response.status, 409, 'a refused resend is a conflict the owner screen can render, not a server error')
   assert.match((await response.json()).error, /bounced/)
 })
+
+test('every HTML alternative uses the email-safe KMT frame, while stored data and plain text stay presentation-free', () => {
+  const ctx = {
+    request: { id: 'r1', customerPhone: '1', location: 'l', locationNotes: 'n', customerNotes: 'c',
+      vehicleInfo: '2016 Honda Civic', quantity: 4, locationType: 'Home', serviceZip: '02148', date: SOON },
+    // lineItems, not lines: baseData reads quote.lineItems (the field's real
+    // name everywhere else in the codebase, per the fix above this test's own
+    // merge point) -- this fixture originally said `lines`, which baseData
+    // never reads, so it silently exercised an empty invoice on every run
+    // without a single assertion here noticing.
+    quote: { lineItems: [{ description: 'Test Touring', quantity: 4, unitPrice: 50 }], total: 250, note: 'a note', reason: null },
+    tire: { name: 'Test Touring', size: SIZE }, origin: 'https://x', to: 'a@b.c', toName: 'A',
+  }
+  for (const type of MAIL_TYPES) {
+    const template = TEMPLATES[type]
+    const data = template.data(ctx)
+    const { text, html } = template.render(data)
+    assert.match(html, /<table role="presentation"/, `${type}: table layout survives conservative mail clients`)
+    assert.match(html, /border-top:6px solid #d9121a/, `${type}: the settled red is the accent`)
+    assert.match(html, /background:#080808/, `${type}: the settled black frames the message`)
+    assert.match(html, /Ken's Mobile Tire/, `${type}: the business name is in the HTML footer`)
+    assert.doesNotMatch(html, /<pre\b|<style\b|<script\b|<img\b/i, `${type}: inline, asset-free and not a plain-text wrapper`)
+    assert.doesNotMatch(text, /role="presentation"|#d9121a|<table/i, `${type}: the text alternative stays plain`)
+    assert.equal(template.version, 1, `${type}: a render-only change does not claim a new stored-data shape`)
+    assert.equal(data.requestId, 'r1')
+    if (type === 'quote-sent' || type === 'payment-recorded') {
+      assert.match(text, /Test Touring/, `${type}: the actual line item reaches the message, not an empty invoice (#320)`)
+    }
+  }
+})

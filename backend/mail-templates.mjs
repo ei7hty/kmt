@@ -9,10 +9,11 @@
 // rendered is persisted, so a failed send is reproduced from the row's data
 // and this file, and a redaction is a WHERE clause rather than a search.
 //
-// These renderings are functional, not designed: plain text and a thin HTML
-// wrapper. The designed templates are LEAD UI ENGINEER's and arrive after
-// t61; they replace `render()` here and nothing else changes. Bump `version`
-// when a template's data shape changes, so an old row says which shape it is.
+// The plain-text alternative stays deliberately plain. The HTML alternative
+// is one email-safe, table-based KMT frame shared by every message: black,
+// white and brand red, inline styles, a visible action and no remote assets.
+// Bump `version` only when a template's data shape changes, so an old row says
+// which shape it is; a presentation-only change does not invalidate the data.
 
 // The number and its sms: link come from the one place that owns them, so the
 // email and the screens can never offer different ones (t63, src/contact.js).
@@ -64,7 +65,15 @@ function htmlOf(text) {
   const linked = escaped
     .replace(/https:\/\/\S+/g, url => `<a href="${url}">${url}</a>`)
     .replace(new RegExp(number, 'g'), match => `<a href="${smsHref}">${match}</a>`)
-  return `<!doctype html><html><body style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#111"><pre style="font:inherit;white-space:pre-wrap">${linked}</pre></body></html>`
+  const blocks = linked.split(/\n{2,}/).map(block => {
+    const line = block.replace(/\n/g, '<br>')
+    const action = line.match(/^<a href="([^"]+)">[^<]+<\/a>$/)
+    if (action) {
+      return `<p style="margin:24px 0"><a href="${action[1]}" style="display:inline-block;padding:13px 20px;background:#d9121a;color:#ffffff;text-decoration:none;font-weight:800;border-radius:4px">Open in KMT</a></p>`
+    }
+    return `<p style="margin:0 0 18px;color:#171717">${line}</p>`
+  }).join('')
+  return `<!doctype html><html lang="en"><body style="margin:0;padding:0;background:#080808;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:#171717"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;background:#080808"><tr><td align="center" style="padding:28px 14px"><table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#ffffff;border-top:6px solid #d9121a"><tr><td style="padding:32px 28px 14px">${blocks}</td></tr><tr><td style="padding:20px 28px;background:#171717;color:#ffffff;border-top:1px solid #3e3e42"><p style="margin:0;font-size:13px;letter-spacing:.08em;text-transform:uppercase;font-weight:800">${MOBILE}</p></td></tr></table></td></tr></table></body></html>`
 }
 
 /**
