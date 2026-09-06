@@ -33,6 +33,16 @@ the next agent would otherwise rediscover the hard way, append it to
 [`.forge/NOTES.md`](NOTES.md). Update `.forge/state.json` if you closed a task,
 and record architecture decisions in `.forge/decisions.md`.
 
+**Claim and release commits go straight to `main`, never through a pull request.**
+`CLAIMS.md` changes several times an hour across every agent working here, so a
+PR against it re-enters a losing race on every push in its review window — a
+correct rebase collides again within minutes, repeatedly, because the file it
+touches is the busiest one in the repo. `.forge/` is in neither `build_paths`
+nor `ship_paths` in `fly-deploy.yml`, so a claim commit runs the gate and ships
+nothing regardless of how it lands. One small commit, straight to `main`, is
+the whole mechanism — the same discipline as any other commit here (explicit
+paths, no `-A`, check the branch first), just without a PR wrapped around it.
+
 ---
 
 ## Active claims
