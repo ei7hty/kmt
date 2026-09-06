@@ -890,6 +890,59 @@
   margin-top: 14px;
 }
 
+/* The owner's cancel reason, in place of window.prompt (#78): the promise
+   in the label ("the customer will see this") has to stay visible at the
+   point of typing, not live in a placeholder that disappears on the first
+   keystroke. */
+.owner-cancel-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.owner-cancel-draft label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.owner-cancel-draft .optional {
+  display: block;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.owner-cancel-draft textarea {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: #171717;
+}
+
+.owner-cancel-draft-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* The customer's cancel confirmation, in place of window.confirm (#78):
+   Playwright cannot drive a native confirm dialog, so nothing had ever
+   exercised this control before it moved in-page. */
+.cancel-confirm {
+  margin-top: 8px;
+}
+
+.cancel-confirm .tire-empty-actions {
+  margin-top: 8px;
+}
+
 @media (max-width: 640px) {
   .internal-nav {
     flex-wrap: wrap;
