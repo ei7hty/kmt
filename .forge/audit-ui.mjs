@@ -139,5 +139,12 @@ export async function freshPage(browser, viewport) {
 
 /** A size whose tires include the off-road option, which forces owner review. */
 export const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain' }
-/** A size and tire that sail through without an exception. */
-export const CLEAN_TIRE = { size: '215/60R16', tireName: 'All-Weather Standard' }
+/**
+ * A size and tire that sail through without an exception.
+ *
+ * A real supplier row, not one of the six seeds: since a tire whose id
+ * doesn't start with `giga-` is now itself an exception reason (the seeds and
+ * every generated row are placeholders, not tires KMT can confirm buying),
+ * a seed here would no longer be a clean path at all.
+ */
+export const CLEAN_TIRE = { size: '205/65R15', tireName: 'Waterfall Quattro' }

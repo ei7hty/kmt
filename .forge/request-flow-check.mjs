@@ -25,11 +25,14 @@ try {
     const check = (condition, message) => { assert.ok(condition, message); checks++; console.log(`OK ${width}px: ${message}`) }
     const overflow = () => page.locator('.order-section').evaluate(el => [...el.querySelectorAll('*')].filter(node => node.getClientRects().length).every(node => node.getBoundingClientRect().right <= innerWidth + 1))
     await page.goto(base)
-    for (const value of ['215', '60', '16']) await page.locator('.fitment-option').getByText(value, { exact: true }).click()
+    // A real supplier row, not a seed: a tire whose id doesn't start with
+    // giga- is itself an exception reason, so this has to be a supplier tire
+    // to stay a clean, non-exception path through the form.
+    for (const value of ['205', '65', '15']) await page.locator('.fitment-option').getByText(value, { exact: true }).click()
     await page.locator('#fitmentZip').fill('02149')
     await page.getByRole('button', { name: 'Continue to tires' }).click()
     await expandTireList(page)
-    await page.locator('.tire-option').filter({ hasText: 'All-Weather Standard' }).click()
+    await page.locator('.tire-option').filter({ hasText: 'Waterfall Quattro' }).click()
     await page.getByLabel('Year', { exact: true }).fill('2020')
     await page.getByLabel('Make', { exact: true }).fill('Honda')
     await page.getByLabel('Model', { exact: true }).fill('Civic')
