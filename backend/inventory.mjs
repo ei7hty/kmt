@@ -108,6 +108,12 @@ export class Inventory {
         !Array.isArray(snapshot.tires) || !Number.isFinite(Date.parse(snapshot.scrapedAt))) {
       throw new InputError('Invalid supplier snapshot')
     }
+    // Per-size coverage is what the scraper writes since it started recording
+    // what it read; older files have none and are treated as partial.
+    if (snapshot.coverage !== undefined &&
+        (typeof snapshot.coverage !== 'object' || snapshot.coverage === null || Array.isArray(snapshot.coverage))) {
+      throw new InputError('Invalid supplier snapshot')
+    }
     const bySize = new Map()
     for (const tire of snapshot.tires) {
       validateTire(tire, tire?.size)
@@ -148,6 +154,16 @@ export class Inventory {
   applySnapshot(snapshot, { complete = false, dryRun = false } = {}) {
     const bySize = this.validateSnapshot(snapshot)
     if (!bySize.size) throw new InputError('The snapshot holds no tires; nothing to import')
+    // Retiring what a size does not list is only right when the scraper read
+    // the whole size: no limit, every page. The file says whether it did. The
+    // CLI refuses this first with a fuller message; this is the door itself.
+    if (complete) {
+      for (const size of bySize.keys()) {
+        if (snapshot.coverage?.[size]?.complete !== true) {
+          throw new InputError(`${size} was not scraped completely (every page, no limit), so its missing tires cannot be retired. Import it without complete, or scrape it again with --limit 0.`)
+        }
+      }
+    }
 
     const report = []
     for (const [size, tires] of bySize) {
