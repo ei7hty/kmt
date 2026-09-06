@@ -102,16 +102,16 @@ test('every template names its personal fields the way the outbox redacts them, 
 })
 
 test('a taxed quote-sent email names the tax, not just the final total (owner-agent scrutiny finding 2)', () => {
-  // baseData() picks lines/total off the quote and stops there; subtotal and
-  // tax are real fields on a taxed quote (CUSTOMER_QUOTE_FIELDS carries
-  // both) but never reach the template at all, and invoice() only knows
-  // how to print lines plus one flat total. A customer paying tax should
-  // not have to do their own arithmetic against the line items to find out
-  // whether -- or how much -- tax was charged.
+  // baseData() picks lineItems/total off the quote and stops there;
+  // subtotal and tax are real fields on a taxed quote (CUSTOMER_QUOTE_FIELDS
+  // carries both) but never reach the template at all, and invoice() only
+  // knows how to print lines plus one flat total. A customer paying tax
+  // should not have to do their own arithmetic against the line items to
+  // find out whether -- or how much -- tax was charged.
   const data = TEMPLATES['quote-sent'].data({
     request: { id: 'r1', customerPhone: '1', location: 'l', locationNotes: 'n', vehicleInfo: 'v', quantity: 4 },
     quote: {
-      lines: [{ description: 'T', quantity: 4, unitPrice: 50 }],
+      lineItems: [{ description: 'T', quantity: 4, unitPrice: 50 }],
       subtotal: 200, tax: { rate: 0.1, appliesTo: 'all', amount: 20 }, total: 220,
     },
     tire: { name: 'T', size: SIZE },
