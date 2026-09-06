@@ -50,7 +50,7 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 53;
+const EXPECTED_CHECKS = 54;
 
 let passed = 0;
 let failed = 0;
@@ -358,6 +358,18 @@ async function main() {
   const ownerResponse = await fetch(`${BASE}/api/owner/inventory`, { headers: { Accept: 'application/json' } });
   check(ownerResponse.status === 401, 'GET /api/owner/inventory refuses without a session',
     `got ${ownerResponse.status}`);
+
+  // 3b. The release header (t53), shape only. The post-deploy CI step already
+  // proves an exact match against the commit that run just built (it has
+  // GITHUB_SHA; this script does not) -- what this proves instead is that the
+  // header answers at all, in the shape backend/site.mjs's readRelease()
+  // actually validates, whenever this script runs: hand-run against
+  // production next week, not just in the minute after a deploy.
+  const releaseResponse = await fetch(`${BASE}/`);
+  const release = releaseResponse.headers.get('x-kmt-release') || '';
+  check(/^[0-9a-f]{7,40}$/i.test(release),
+    'the deployed site answers X-KMT-Release, shaped like a commit SHA',
+    release ? `got ${JSON.stringify(release)}` : 'header absent');
 
   const browser = await chromium.launch();
   try {
