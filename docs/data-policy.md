@@ -120,8 +120,9 @@ renders a template against a `data` column at send time and hands the
 result to the provider; nothing composed is persisted. What is stored is
 the template's name and version, the structured fields it was rendered
 from (`data`, JSON: personal fields under known keys -- `to_name`,
-`to_email`, `customerPhone`, `location`, `locationNotes` -- business fields
-beside them: tire, size, quantity, unit price, lines, total, date, service
+`to_email`, `customerPhone`, `location`, `locationNotes`, `customerNotes`
+(t64) -- business fields beside them: tire, size, quantity, unit price,
+lines, total, date, service
 ZIP, status), and `to_address`/`to_name` as their own columns for sending.
 If a failed send needs debugging, the row's `data` and the named template
 reproduce exactly what went out -- which is what makes "we don't keep the

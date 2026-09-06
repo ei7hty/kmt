@@ -145,7 +145,7 @@ test('forRequest is answered from an index, not a table scan', t => {
 })
 
 test('the personal keys a redaction has to find are named, not guessed at call time', () => {
-  assert.deepEqual(OUTBOX_PERSONAL_DATA_KEYS, ['to_name', 'to_email', 'customerPhone', 'location', 'locationNotes'])
+  assert.deepEqual(OUTBOX_PERSONAL_DATA_KEYS, ['to_name', 'to_email', 'customerPhone', 'location', 'locationNotes', 'customerNotes'])
 })
 
 /* --------------------------------------------------- the migration case --- */
