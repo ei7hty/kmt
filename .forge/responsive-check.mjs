@@ -3,8 +3,14 @@ import { chromium } from 'playwright';
 import { EXCEPTION_TIRE, cleanTireFor, freshPage, openOwnerQuotes, submitRequest } from './audit-ui.mjs';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4173';
-/** A preferred date always ahead of today: the server refuses a past day (#70). */
-const SOON = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+/**
+ * A preferred date well clear of today: the server now refuses anything
+ * inside a week of today (t48's date floor), and a value right at day 7 can
+ * land on either side of that boundary depending on the time of day this
+ * runs and the machine's clock vs. the Massachusetts calendar the server
+ * judges it on.
+ */
+const SOON = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10);
 const VIEWPORTS = [
   { name: 'phone', width: 375, height: 812 },
   { name: 'desktop', width: 1280, height: 900 },

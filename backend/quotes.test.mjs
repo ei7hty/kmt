@@ -151,12 +151,15 @@ test('the personal keys a redaction has to find inside requests.payload are name
 
 /* ------------------------------------------- where and when (t48, #95, #70) */
 
-test('the preferred date is a real calendar day, today or later, judged where the van is', async t => {
+test('the preferred date is a real calendar day, at least a week out, judged where the van is', async t => {
   const { inventory } = setup(t)
   // Stand at a fixed day so the boundary is exact, whatever today really is.
   const quotes = new Quotes(inventory, { today: () => '2026-09-06' })
-  assert.throws(() => quotes.submit(form({ date: '2026-09-05' })), /today or a later date/)
-  assert.equal(stored(quotes, quotes.submit(form({ date: '2026-09-06' })).request.id).date, '2026-09-06', 'today is fine')
+  // Ken needs a week's notice (the user's instruction): the earliest bookable
+  // day is today + 7, not today + 6. Prove the boundary in both directions.
+  assert.throws(() => quotes.submit(form({ date: '2026-09-12' })), /at least a week's notice/, 'today + 6 is refused')
+  assert.equal(stored(quotes, quotes.submit(form({ date: '2026-09-13' })).request.id).date, '2026-09-13', 'today + 7 is the earliest accepted day')
+  assert.throws(() => quotes.submit(form({ date: '2026-09-06' })), /at least a week's notice/, 'today itself is well inside the old floor and still refused')
   assert.equal(stored(quotes, quotes.submit(form({ date: '2026-12-25' })).request.id).date, '2026-12-25')
   for (const bad of ['June 1', '06/01/2026', '2026-6-1', '2026-06-31', '2026-13-01', '20260601', '']) {
     assert.throws(() => quotes.submit(form({ date: bad })), /YYYY-MM-DD|not on the calendar|date is required/, `${JSON.stringify(bad)} is refused`)

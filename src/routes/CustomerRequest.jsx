@@ -4,7 +4,7 @@ import { loadCatalogForSize } from '../data/liveCatalog'
 import { FITMENT_DIAMETERS, FITMENT_RATIOS, FITMENT_WIDTHS } from '../data/fitment'
 import { submitRequest } from '../store'
 import { VehicleDetails, ServiceDetails } from '../components/RequestDetails'
-import { serviceDay } from '../components/serviceDay'
+import { MIN_LEAD_DAYS, serviceDay } from '../components/serviceDay'
 import { TEXT_HREF, TEXT_LABEL } from '../contact.js'
 
 /**
@@ -359,7 +359,7 @@ function CustomerRequest({ navigate }) {
     // customer a refused submit after filling everything else in.
     if (!/^\d{5}(-\d{4})?$/.test((formData.serviceZip || '').trim())) errors.serviceZip = 'Enter the five-digit ZIP code where we will meet you.'
     if (!formData.date) errors.date = 'Preferred date is required'
-    else if (formData.date < serviceDay(0)) errors.date = 'Choose today or a later day.'
+    else if (formData.date < serviceDay(MIN_LEAD_DAYS)) errors.date = 'I need a week’s notice for that day.'
     if (!formData.customerName.trim()) errors.customerName = 'Your name is required'
     if (!formData.customerEmail.trim()) errors.customerEmail = 'An email address is required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail.trim())) errors.customerEmail = 'Enter a valid email address'

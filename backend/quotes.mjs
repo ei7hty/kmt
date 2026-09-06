@@ -21,13 +21,34 @@ export function todayInServiceArea(at = new Date()) {
 
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 
+/** Ken needs a week's notice: the earliest bookable day is seven days out. */
+const MIN_LEAD_DAYS = 7
+
 /**
- * The preferred date, as YYYY-MM-DD, a real calendar day, today or later.
+ * `dateStr` (YYYY-MM-DD) advanced by whole calendar days.
+ *
+ * This adds days to the calendar, not milliseconds to an instant: the day
+ * arithmetic happens in `Date.UTC`, which has no daylight-saving transitions
+ * of its own, so the result is the right calendar day regardless of what the
+ * server's clock or the customer's timezone is doing. `today` is already the
+ * Massachusetts calendar day (`todayInServiceArea`); this only walks it
+ * forward.
+ */
+function addCalendarDays(dateStr, days) {
+  const [, year, month, day] = DATE_PATTERN.exec(dateStr).map(Number)
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
+}
+
+/**
+ * The preferred date, as YYYY-MM-DD, a real calendar day, at least
+ * `MIN_LEAD_DAYS` out.
  *
  * Anything up to forty characters used to be accepted, and the audits
  * themselves submitted a day in 2025 and passed (#70). A date the calendar
  * does not have (the 31st of June) is refused as such rather than being
- * quietly rolled into July.
+ * quietly rolled into July. The floor used to be "today or later"; the user
+ * moved it to a week out so Ken has notice, and it is still judged on the
+ * Massachusetts calendar `today` comes from.
  */
 function cleanDate(value, today) {
   const match = DATE_PATTERN.exec(value)
@@ -37,7 +58,8 @@ function cleanDate(value, today) {
   if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) {
     throw new InputError('That date is not on the calendar.')
   }
-  if (value < today) throw new InputError('Choose today or a later date.')
+  const floor = addCalendarDays(today, MIN_LEAD_DAYS)
+  if (value < floor) throw new InputError(`I need at least a week's notice -- the earliest I can come is ${floor}.`)
   return value
 }
 

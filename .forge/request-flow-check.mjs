@@ -58,7 +58,9 @@ try {
     check(await page.getByLabel('Road, exit or nearby address').isVisible(), 'roadside option provides relevant address guidance')
     await page.locator('#location').fill('I-93 North, Exit 20, Boston')
     await page.locator('#locationNotes').fill('Blue sedan near the gas station')
-    await page.getByRole('button', { name: 'Tomorrow', exact: true }).click()
+    // t48's date floor retired Today/Tomorrow (both landed inside it,
+    // guaranteed rejections); the shortcuts are now a week/two weeks out.
+    await page.getByRole('button', { name: 'In a week', exact: true }).click()
     check(!!await page.locator('#date').inputValue(), 'date shortcut fills the date input')
     await page.getByRole('button', { name: 'Back to tire selection' }).click()
     check(await page.getByLabel('Model', { exact: true }).inputValue() === 'Corolla', 'vehicle survives back navigation')

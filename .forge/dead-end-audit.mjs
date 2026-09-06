@@ -16,14 +16,18 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
 const EXPECTED_CHECKS = 54;
 
 /**
- * Preferred dates, always ahead of today. The server refuses a day in the
- * past (#70), and a fixed date in a script is a gate that goes red on a
- * morning nobody changed anything.
+ * Preferred dates, always ahead of today. The server refuses anything inside
+ * a week of today (t48's date floor), and a fixed date in a script is a gate
+ * that goes red on a morning nobody changed anything. These sit well clear
+ * of the 7-day floor rather than right on it: `daysAhead` computes a UTC
+ * calendar day from the machine's clock, and the server's floor is computed
+ * on the Massachusetts calendar, so a date exactly at day 7 can land on
+ * either side of the boundary depending on the time of day this runs.
  */
 const daysAhead = (days) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
-const SOON = daysAhead(7);
-const LATER = daysAhead(8);
-const LATEST = daysAhead(9);
+const SOON = daysAhead(14);
+const LATER = daysAhead(15);
+const LATEST = daysAhead(16);
 
 /**
  * ZIPs the service-area check answers differently (t48). The base is Malden
