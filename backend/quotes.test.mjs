@@ -119,6 +119,39 @@ test('an owner adjustment changes the current quote and keeps the original draft
   assert.equal(adjusted.quote.version, original.quote.version + 1)
 })
 
+test('an adjustment on a taxed quote keeps subtotal + tax.amount === total (owner-agent scrutiny finding 1)', async t => {
+  // cleanQuoteAdjustment (backend/quotes.mjs) recomputes `total` as a flat
+  // sum of the adjusted lines and nothing else -- no subtotal, no tax. The
+  // merge in Quotes#adjust is `{ ...found.quote, ...adjustment }`, and
+  // `adjustment` only carries lineItems/note/total, so subtotal and tax
+  // survive from the *original* draft while total is the *adjusted*
+  // number. Once tax is enabled this is not "still an approximation" --
+  // it is two numbers from two different quotes glued together. The
+  // invariant, not the arithmetic, is the assertion: whatever the maths
+  // becomes, a stored quote's subtotal and tax must still add up to its
+  // own total.
+  const { inventory, quotes } = setup(t)
+  inventory.savePricingSettings({ mobileServiceFee: 75, disposalFee: null, tax: { rate: 0.1, appliesTo: 'all' } })
+  const original = quotes.submit(form())
+  assert.ok(original.quote.tax, 'the fixture must actually draft with tax on, or this test proves nothing')
+
+  quotes.adjust(original.request.id, {
+    lineItems: [
+      { description: 'Four tires (adjusted)', quantity: 4, unitPrice: 70 },
+      { description: 'Mobile service', quantity: 1, unitPrice: 75 },
+    ],
+    note: 'Adjusted for a discount.', version: original.quote.version,
+  })
+
+  const stored = quotes.get(original.request.id, 'owner').quote
+  assert.equal(
+    Math.round((stored.subtotal + (stored.tax?.amount ?? 0)) * 100) / 100,
+    stored.total,
+    `stored subtotal ${stored.subtotal} + tax ${stored.tax?.amount} must equal stored total ${stored.total} -- ` +
+    'a mismatch means the adjustment kept a stale subtotal/tax from before the edit',
+  )
+})
+
 test('approving after an adjustment sends the adjusted numbers', async t => {
   const { quotes } = setup(t)
   const original = quotes.submit(form())

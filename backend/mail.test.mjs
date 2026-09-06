@@ -101,6 +101,27 @@ test('every template names its personal fields the way the outbox redacts them, 
   assert.doesNotMatch(rendered.html, /<script/)
 })
 
+test('a taxed quote-sent email names the tax, not just the final total (owner-agent scrutiny finding 2)', () => {
+  // baseData() picks lines/total off the quote and stops there; subtotal and
+  // tax are real fields on a taxed quote (CUSTOMER_QUOTE_FIELDS carries
+  // both) but never reach the template at all, and invoice() only knows
+  // how to print lines plus one flat total. A customer paying tax should
+  // not have to do their own arithmetic against the line items to find out
+  // whether -- or how much -- tax was charged.
+  const data = TEMPLATES['quote-sent'].data({
+    request: { id: 'r1', customerPhone: '1', location: 'l', locationNotes: 'n', vehicleInfo: 'v', quantity: 4 },
+    quote: {
+      lines: [{ description: 'T', quantity: 4, unitPrice: 50 }],
+      subtotal: 200, tax: { rate: 0.1, appliesTo: 'all', amount: 20 }, total: 220,
+    },
+    tire: { name: 'T', size: SIZE },
+    origin: 'https://x', to: 'a@b.c', toName: 'A',
+  })
+  const rendered = TEMPLATES['quote-sent'].render(data)
+  assert.match(rendered.text, /subtotal/i, 'the email must name a subtotal separately from the total once tax is on')
+  assert.match(rendered.text, /tax/i, 'the email must name that tax was applied, and how much')
+})
+
 test('the decline carries the reason only when Ken wrote one, names the request, and offers no payment link or email reply', () => {
   const declined = TEMPLATES['quote-declined']
   const ctx = {
