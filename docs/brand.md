@@ -80,7 +80,16 @@ opening hours, a price range, and any social profile for `sameAs`. Nobody has
 supplied them and structured data is the wrong place to guess. `aggregateRating`
 and `review` are absent for a stronger reason: KMT has no collected reviews, and
 fabricating them in markup is both a search penalty and a lie told on a real
-person's behalf. Do not add them until real ones exist.
+person's behalf.
+
+**That last one is a standing rule, ruled on 2026-09-06 by the product owner,
+not a decision taken once for this file:** `aggregateRating` and `review` stay
+absent permanently until real customer reviews exist. There is no placeholder
+version, no example version and no "just to show the layout" version --
+a rating is a stranger's judgement of whether to trust Ken with their car, and
+inventing one misrepresents him to exactly the person deciding. The way to earn
+them is to ask after a paid job, which is t66's territory and a conversation
+with Ken about what he is comfortable asking for.
 
 One judgement worth knowing before changing it: the radius is 25 miles, not the
 100 in `KMT_SERVICE_RADIUS_MILES`. A request past 25 miles is accepted and
@@ -88,9 +97,24 @@ routed to the owner to look at; past 100 it is refused. Twenty-five is what the
 site's own copy already claims ("Malden, MA and Greater Boston") and the
 distance nobody has to approve, so it is the conservative and consistent
 number. Widening it toward 100 would reach more of Massachusetts and bring in
-leads Ken then has to decline -- a real trade, and his call, not an oversight.
+leads Ken then has to decline. **Settled on 2026-09-06 by the product owner:
+25 stands**, so this is a decision to reopen deliberately rather than a gap to
+close.
+
 Note also that the radius here is static while the server's is configuration:
 if `KMT_SERVICE_REVIEW_MILES` is ever changed, this number does not follow it.
+
+**The two radii are independent on purpose and must not be wired together.**
+The server's 100 is a straight-line floor on how far the owner may be *asked*
+to go, set deliberately under road distance so that a refusal errs toward
+letting someone through; `areaServed` answers a different question -- where
+Ken should turn up when somebody searches -- which is his market, and his
+scarce resource is hours, not leads. Pointing this number at
+`KMT_SERVICE_RADIUS_MILES` to stop the two disagreeing would silently
+advertise him to 100 miles, and nobody would notice until he started declining
+work from Worcester. A listing that says 25 while enforcement allows 100 is not
+drift: it is the review band doing its job, so that someone at 40 miles who
+finds Ken another way still reaches his judgement instead of a closed door.
 
 Brand ground: navy `#0d1b24`. Brand red: `#ed1c24` (already `--accent`).
 Chrome/silver is reserved for the wordmark and the page headline; the flame
