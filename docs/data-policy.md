@@ -104,6 +104,51 @@ anywhere else -- there is nowhere else, since redaction rewrites the
 that ever adds a "recover original value" path would defeat this policy
 outright, and should be refused on sight if proposed.
 
+## The outbox: structure, not prose
+
+t37's outbox (`backend/outbox.mjs`) is where email actually gets tempting to
+get wrong, because a message is naturally a paragraph of text with a
+customer's name and address written into it. The lead's ruling rejects both
+obvious answers: scrubbing a redacted customer's words back out of sent
+message bodies (fragile -- free text has no field boundaries, and a partial
+scrub looks complete when it is not), and leaving message bodies unredacted
+as an exception to this whole policy (the privacy notice would be lying
+about email specifically).
+
+Instead, **the outbox never stores a rendered body at all.** `mail.mjs`
+renders a template against a `data` column at send time and hands the
+result to the provider; nothing composed is persisted. What is stored is
+the template's name and version, the structured fields it was rendered
+from (`data`, JSON: personal fields under known keys -- `to_name`,
+`to_email`, `customerPhone`, `location`, `locationNotes` -- business fields
+beside them: tire, size, quantity, unit price, lines, total, date, service
+ZIP, status), and `to_address`/`to_name` as their own columns for sending.
+If a failed send needs debugging, the row's `data` and the named template
+reproduce exactly what went out -- which is what makes "we don't keep the
+body" a non-loss rather than a gap.
+
+This makes outbox redaction the same shape as request redaction: a `WHERE`
+clause on `request_id` (non-null on every row, indexed), no text matching.
+`to_address`, `to_name`, and the personal keys inside `data` get the same
+redacted marker the request's own fields do, in the same transaction as
+that redaction -- a request and its outbox messages are redacted together
+or not at all, never one without the other. Everything else on the row --
+`type`, `template_version`, the business fields inside `data`, `status`,
+`provider_id`, the timestamps -- survives, because the record of what was
+sold, sent, and to what outcome, is the ledger this whole policy exists to
+keep. Both halves of the promise hold at once: the message is still there
+as a record, and the person's details are gone from it.
+
+**No customer address in a log line, ever**, including inside `mail.mjs`'s
+own send logging (there is real instinct to log "sent to jamie@example.com"
+while debugging a failed send -- don't). Log the outbox row id, the message
+type, and the provider's own message id; if an address must be correlated
+across log lines without being printed, use the same keyed-HMAC
+construction `limits.mjs` uses per boot (#166), not a bare or unsalted hash
+of the address -- a low-entropy identifier like an email address is
+guessable enough that an unsalted hash of it still confirms the address to
+anyone holding the log, which is the same problem in a new place.
+
 ## What a full reset destroys
 
 A database reset (as run on 2026-09-06, see `.forge/HANDOFF.md`) is not

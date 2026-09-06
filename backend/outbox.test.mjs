@@ -5,88 +5,113 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { DatabaseSync } from 'node:sqlite'
 import { Inventory } from './inventory.mjs'
-import { Outbox, OUTBOX_STATUSES } from './outbox.mjs'
+import { Outbox, OUTBOX_PERSONAL_DATA_KEYS, OUTBOX_STATUSES } from './outbox.mjs'
 
 const SIZE = '215/60R16'
+
+/** A request row a foreign key can actually point at. */
+function seedRequest(db, id = 'req-1') {
+  db.prepare('INSERT INTO requests VALUES (?, ?, ?, ?, ?)')
+    .run(id, 'a1b2c3d4e5f60718', JSON.stringify({ vehicleInfo: '2021 Honda Civic' }), '2026-09-06T00:00:00.000Z', '2026-09-06T00:00:00.000Z')
+  return id
+}
 
 function setup(t) {
   const inventory = new Inventory(':memory:', [SIZE])
   t.after(() => inventory.close())
-  return new Outbox(inventory.db)
+  // Inventory does not create `requests` -- Quotes does, and Outbox's foreign
+  // key needs it to exist before a row can reference it.
+  inventory.db.exec(`CREATE TABLE requests (
+    id TEXT PRIMARY KEY, customer_key TEXT NOT NULL, payload TEXT NOT NULL,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  )`)
+  const requestId = seedRequest(inventory.db)
+  return { outbox: new Outbox(inventory.db), db: inventory.db, requestId }
 }
 
-test('a message is recorded unsent by default, and read back whole', t => {
-  const outbox = setup(t)
-  const message = outbox.record({ to: 'jamie@example.com', subject: 'We received your request', body: 'Thanks, Jamie.' })
+const renderData = (overrides = {}) => ({
+  to_name: 'Jamie Rivera', to_email: 'jamie@example.com', customerPhone: '+16174108319',
+  location: '456 Demo Ave', locationNotes: 'Driveway',
+  vehicleInfo: '2021 Honda Civic', tireSelection: 'giga-a', quantity: 4, total: 249.99,
+  ...overrides,
+})
+
+test('a message is recorded queued by default, and read back whole', t => {
+  const { outbox, requestId } = setup(t)
+  const message = outbox.record({
+    requestId, type: 'request_received', data: renderData(),
+    to: 'jamie@example.com', toName: 'Jamie Rivera',
+  })
   assert.match(message.id, /^[0-9a-f]{32}$/, 'a 128-bit id, not a guessable one')
+  assert.equal(message.requestId, requestId)
+  assert.equal(message.type, 'request_received')
+  assert.equal(message.templateVersion, 1, 'defaults to the first version')
   assert.equal(message.to, 'jamie@example.com')
-  assert.equal(message.status, 'unsent')
-  assert.equal(message.requestId, null, 'optional, and absent here')
+  assert.equal(message.toName, 'Jamie Rivera')
+  assert.equal(message.status, 'queued')
   assert.equal(message.providerId, null)
   assert.equal(message.error, null)
-  assert.equal(outbox.get(message.id).body, 'Thanks, Jamie.')
+  assert.equal(outbox.get(message.id).data.total, 249.99, 'the rendering data round-trips through JSON')
+  assert.equal(outbox.get(message.id).body, undefined, 'no body column exists to read back')
 })
 
-test('a message carries the request it is about, and forRequest finds every message for one request', t => {
-  const outbox = setup(t)
-  const forA = outbox.record({ to: 'a@example.com', subject: 'We received your request', body: 'x', requestId: 'req-a' })
-  outbox.record({ to: 'owner@example.com', subject: 'A request arrived', body: 'x', requestId: 'req-a' })
-  outbox.record({ to: 'b@example.com', subject: 'We received your request', body: 'x', requestId: 'req-b' })
-
-  assert.equal(forA.requestId, 'req-a')
-
-  const messagesForA = outbox.forRequest('req-a')
-  assert.equal(messagesForA.length, 2, 'both messages about req-a, and none of req-b')
-  assert.ok(messagesForA.every(m => m.requestId === 'req-a'))
-
-  assert.deepEqual(outbox.forRequest('req-nothing-sent-for-this-one'), [], 'a request with no messages answers empty, not an error')
-  assert.deepEqual(outbox.forRequest(''), [], 'a blank id answers empty rather than matching every unlinked row')
+test('a message needs the request it is about, a type, rendering data, and a recipient', t => {
+  const { outbox, requestId } = setup(t)
+  const full = { requestId, type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' }
+  assert.throws(() => outbox.record({ ...full, requestId: undefined }), /needs the request/)
+  assert.throws(() => outbox.record({ ...full, requestId: '' }), /needs the request/)
+  assert.throws(() => outbox.record({ ...full, type: '' }), /needs a type/)
+  assert.throws(() => outbox.record({ ...full, data: undefined }), /needs its rendering data/)
+  assert.throws(() => outbox.record({ ...full, data: 'not an object' }), /needs its rendering data/)
+  assert.throws(() => outbox.record({ ...full, to: '  ' }), /needs an address/)
+  assert.throws(() => outbox.record({ ...full, toName: '' }), /needs a recipient name/)
+  assert.throws(() => outbox.record({ ...full, templateVersion: 0 }), /templateVersion must be/)
 })
 
-test('an address, a subject and a body are all required', t => {
-  const outbox = setup(t)
-  assert.throws(() => outbox.record({ subject: 'x', body: 'x' }), /needs an address/)
-  assert.throws(() => outbox.record({ to: '  ', subject: 'x', body: 'x' }), /needs an address/)
-  assert.throws(() => outbox.record({ to: 'a@example.com', body: 'x' }), /needs a subject/)
-  assert.throws(() => outbox.record({ to: 'a@example.com', subject: 'x' }), /needs a body/)
+test('a request_id that names no real request is refused by the foreign key, not silently stored', t => {
+  const { outbox } = setup(t)
+  assert.throws(
+    () => outbox.record({ requestId: 'req-does-not-exist', type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' }),
+    /FOREIGN KEY constraint failed/,
+  )
 })
 
-test('a status outside unsent, sent and failed is refused, on record and on update', t => {
-  const outbox = setup(t)
-  assert.throws(() => outbox.record({ to: 'a@example.com', subject: 'x', body: 'x', status: 'bounced' }), /status must be one of/)
-  const message = outbox.record({ to: 'a@example.com', subject: 'x', body: 'x' })
+test('a status outside queued, sent, failed and bounced is refused, on record and on update', t => {
+  const { outbox, requestId } = setup(t)
+  assert.throws(
+    () => outbox.record({ requestId, type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A', status: 'delivered' }),
+    /status must be one of/,
+  )
+  const message = outbox.record({ requestId, type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' })
   assert.throws(() => outbox.updateStatus(message.id, { status: 'delivered' }), /status must be one of/)
-  assert.deepEqual(OUTBOX_STATUSES, ['unsent', 'sent', 'failed'])
+  assert.deepEqual(OUTBOX_STATUSES, ['queued', 'sent', 'failed', 'bounced'])
 })
 
-test('updateStatus moves a message to sent or failed, and keeps a provider id a later call omits', t => {
-  const outbox = setup(t)
-  const message = outbox.record({ to: 'a@example.com', subject: 'x', body: 'x' })
+test('updateStatus moves a message to sent, failed or bounced, and keeps a provider id a later call omits', t => {
+  const { outbox, requestId } = setup(t)
+  const message = outbox.record({ requestId, type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' })
 
   const sent = outbox.updateStatus(message.id, { status: 'sent', providerId: 'resend-123' })
   assert.equal(sent.status, 'sent')
   assert.equal(sent.providerId, 'resend-123')
 
-  // A later update that names no provider id must not erase the one already
-  // recorded -- the id is evidence of what happened, not a field to blank.
-  const again = outbox.updateStatus(message.id, { status: 'sent' })
-  assert.equal(again.providerId, 'resend-123', 'the earlier provider id survives an update that says nothing about it')
-
-  const failed = outbox.record({ to: 'b@example.com', subject: 'x', body: 'x' })
-  const failedResult = outbox.updateStatus(failed.id, { status: 'failed', error: 'provider timed out' })
-  assert.equal(failedResult.status, 'failed')
-  assert.equal(failedResult.error, 'provider timed out')
+  // A bounce arriving after the send must not erase the provider id that
+  // already proved the message went out.
+  const bounced = outbox.updateStatus(message.id, { status: 'bounced', error: 'mailbox full' })
+  assert.equal(bounced.status, 'bounced')
+  assert.equal(bounced.providerId, 'resend-123', 'the earlier provider id survives an update that says nothing about it')
+  assert.equal(bounced.error, 'mailbox full')
 })
 
 test('updating a message that does not exist is refused rather than silently doing nothing', t => {
-  const outbox = setup(t)
+  const { outbox } = setup(t)
   assert.throws(() => outbox.updateStatus('0'.repeat(32), { status: 'sent' }), /No such outbox message/)
 })
 
 test('list answers recent messages newest first, and respects a limit', t => {
-  const outbox = setup(t)
+  const { outbox, requestId } = setup(t)
   for (let i = 0; i < 5; i++) {
-    outbox.record({ to: `c${i}@example.com`, subject: `subject ${i}`, body: 'x' })
+    outbox.record({ requestId, type: 'request_received', data: renderData(), to: `c${i}@example.com`, toName: `C${i}` })
   }
   const all = outbox.list()
   assert.equal(all.length, 5)
@@ -94,8 +119,33 @@ test('list answers recent messages newest first, and respects a limit', t => {
   assert.equal(all[4].to, 'c0@example.com')
 
   const limited = outbox.list({ limit: 2 })
-  assert.equal(limited.length, 2)
   assert.deepEqual(limited.map(m => m.to), ['c4@example.com', 'c3@example.com'])
+})
+
+test('a message carries the request it is about, and forRequest finds every message for one request', t => {
+  const { outbox, db } = setup(t)
+  const requestA = seedRequest(db, 'req-a')
+  const requestB = seedRequest(db, 'req-b')
+  outbox.record({ requestId: requestA, type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' })
+  outbox.record({ requestId: requestA, type: 'request_alert', data: renderData(), to: 'owner@example.com', toName: 'Ken' })
+  outbox.record({ requestId: requestB, type: 'request_received', data: renderData(), to: 'b@example.com', toName: 'B' })
+
+  const messagesForA = outbox.forRequest(requestA)
+  assert.equal(messagesForA.length, 2, 'both messages about req-a, and none of req-b')
+  assert.ok(messagesForA.every(m => m.requestId === requestA))
+
+  assert.deepEqual(outbox.forRequest('req-nothing-sent-for-this-one'), [], 'a request with no messages answers empty, not an error')
+  assert.deepEqual(outbox.forRequest(''), [], 'a blank id answers empty rather than matching every row')
+})
+
+test('forRequest is answered from an index, not a table scan', t => {
+  const { db } = setup(t)
+  const plan = db.prepare('EXPLAIN QUERY PLAN SELECT * FROM outbox WHERE request_id=?').all('req-1')
+  assert.ok(plan.some(row => /USING INDEX outbox_request/.test(row.detail)), `expected an index search, got: ${plan.map(r => r.detail).join(' | ')}`)
+})
+
+test('the personal keys a redaction has to find are named, not guessed at call time', () => {
+  assert.deepEqual(OUTBOX_PERSONAL_DATA_KEYS, ['to_name', 'to_email', 'customerPhone', 'location', 'locationNotes'])
 })
 
 /* --------------------------------------------------- the migration case --- */
@@ -137,6 +187,7 @@ function deployedDatabase(t) {
 
   const open = () => {
     const handle = new DatabaseSync(file)
+    handle.exec('PRAGMA foreign_keys=ON')
     opened.push(handle)
     return handle
   }
@@ -150,7 +201,7 @@ test('opening a deployed database (no outbox table yet) adds it without touching
   const outbox = new Outbox(db)
 
   // The table exists now, and is usable immediately.
-  const message = outbox.record({ to: 'owner@example.com', subject: 'A request arrived', body: 'x' })
+  const message = outbox.record({ requestId: 'req-1', type: 'request_alert', data: renderData(), to: 'owner@example.com', toName: 'Ken' })
   assert.equal(outbox.get(message.id).to, 'owner@example.com')
 
   // Nothing that was already in the file moved.
@@ -167,7 +218,7 @@ test('a second, genuinely separate connection to the same file sees the table, t
 
   const first = open()
   const firstOutbox = new Outbox(first)
-  const written = firstOutbox.record({ to: 'a@example.com', subject: 'x', body: 'x', requestId: 'req-1' })
+  const written = firstOutbox.record({ requestId: 'req-1', type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' })
   first.close()
 
   const second = open()
@@ -183,20 +234,10 @@ test('reopening a database that already has the table changes nothing and loses 
   const { open } = deployedDatabase(t)
 
   const first = open()
-  new Outbox(first).record({ to: 'a@example.com', subject: 'x', body: 'x' })
+  new Outbox(first).record({ requestId: 'req-1', type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' })
   first.close()
 
   const second = open()
   const secondOutbox = new Outbox(second) // CREATE TABLE IF NOT EXISTS must be a no-op here, not an error
   assert.equal(secondOutbox.list().length, 1, 'the earlier row is still there, and nothing was duplicated')
-})
-
-test('forRequest is answered from an index, not a table scan', t => {
-  // The whole reason request_id exists: proving it, not assuming the column
-  // implies the index gets used.
-  const inventory = new Inventory(':memory:', [SIZE])
-  t.after(() => inventory.close())
-  const outbox = new Outbox(inventory.db)
-  const plan = inventory.db.prepare("EXPLAIN QUERY PLAN SELECT * FROM outbox WHERE request_id=?").all('req-1')
-  assert.ok(plan.some(row => /USING INDEX outbox_request/.test(row.detail)), `expected an index search, got: ${plan.map(r => r.detail).join(' | ')}`)
 })
