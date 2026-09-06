@@ -167,6 +167,7 @@ Everything comes from the environment, so the same image runs anywhere:
 | `PORT` | Defaults to 8080. Most hosts set this for you. |
 | `KMT_BIND` | Defaults to `0.0.0.0`. |
 | `KMT_ALLOWED_HOSTS` | Comma-separated hostnames to accept. Unset accepts any, which is fine behind a host terminating its own TLS. |
+| `KMT_CANONICAL_HOST` | The one name the site lives on. When set, every other accepted name answers 301 to it with the same path and query, except `/api/health`, which the platform reads under an internal name. Unset, every accepted name serves. This is the cutover's one switch; unsetting it is the rollback. If `KMT_ALLOWED_HOSTS` is set and does not include this name, the server refuses to start and says so: every other name would redirect to a name it refuses while the health check stayed green. |
 | `KMT_SESSION_HOURS` | Session lifetime, default 12. |
 | `KMT_SERVICE_BASE_ZIP` | Where the van starts, default `02148` (Malden). Must be in the centroid table. |
 | `KMT_SERVICE_RADIUS_MILES` | Straight-line miles beyond which a request is refused, default 100. `off` (or `0`) accepts every known ZIP and the boot line says so; the only place that is a default is `backend/dev.mjs`, so a laptop in another state is not refused. Read by t48 part two once wired. |

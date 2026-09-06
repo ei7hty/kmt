@@ -3,9 +3,10 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Quotes } from './quotes.mjs'
-import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isPublicApiCall, readJsonBody } from './api.mjs'
+import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
 import { PUBLIC_BODY_LIMIT, RateLimiter } from './limits.mjs'
+import { parseRequestUrl } from './site.mjs'
 import { calculateDraftQuote } from '../src/pricing.js'
 
 const SIZE = '215/60R16'
@@ -375,9 +376,16 @@ function serve(t, quotes, inventory, { limiter = null } = {}) {
   const ownerApi = createApi(inventory, { start: () => ({}), cancel: () => ({}) }, null, quotes)
 
   const server = createServer(async (request, response) => {
-    const url = new URL(request.url, 'http://localhost')
+    // As server.mjs does: the collapsed path is the one every handler sees.
+    const { url } = parseRequestUrl(request.url)
+    request.url = url.pathname + url.search
     if (await auth.handle(request, response, url, readJsonBody)) return
     if (url.pathname.startsWith('/api/')) {
+      if (!isKnownApiPath(url.pathname)) {
+        response.writeHead(404, { 'Content-Type': 'application/json' })
+        response.end(JSON.stringify({ error: 'No such endpoint.' }))
+        return
+      }
       if (!isPublicApiCall(request.method, url.pathname) && !auth.isAuthenticated(request)) {
         response.writeHead(401, { 'Content-Type': 'application/json' })
         response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' }))
@@ -463,6 +471,39 @@ test('the public rule opens the customer paths and nothing else', async t => {
   assert.equal(isPublicApiCall('GET', '/api/requests/abc/pay'), false)
 })
 
+test('a path no handler knows is 404, not an invitation to sign in', async t => {
+  // Every unmatched /api/* path answered 401 with the owner sign-in message:
+  // a customer with a slip in a link was told to sign in to a workspace they
+  // do not have. Known areas: the public calls and the owner's; nothing else.
+  assert.equal(isKnownApiPath('/api/catalog'), true)
+  assert.equal(isKnownApiPath('/api/health'), true)
+  assert.equal(isKnownApiPath('/api/requests'), true)
+  assert.equal(isKnownApiPath('/api/requests/abc/pay'), true)
+  assert.equal(isKnownApiPath('/api/owner/inventory'), true)
+  assert.equal(isKnownApiPath('/api/owner/nonsense'), true, 'the owner area is known even where the route is not; which routes exist is the owner\'s business')
+  assert.equal(isKnownApiPath('/api/nonsense'), false)
+  assert.equal(isKnownApiPath('/api/api/catalog'), false)
+  assert.equal(isKnownApiPath('/api/requestsx'), false, 'a prefix match is on the segment, not the string')
+  assert.equal(isKnownApiPath('/api/owner'), false, 'the owner area is under /api/owner/, not the bare name')
+
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory)
+  const nonsense = await fetch(`${base}/api/nonsense`)
+  assert.equal(nonsense.status, 404)
+  assert.deepEqual(await nonsense.json(), { error: 'No such endpoint.' })
+  const owner = await fetch(`${base}/api/owner/inventory`)
+  assert.equal(owner.status, 401, 'a real owner route without a session is still the sign-in answer')
+  assert.equal((await fetch(`${base}/api/owner/nonsense`)).status, 401)
+  assert.equal((await fetch(`${base}/api/catalog`)).status, 200)
+  // A doubled slash reaches the handler as the path it meant, end to end:
+  // the collapse has to be written back onto the request, because every
+  // handler parses request.url for itself.
+  const slipped = await fetch(`${base}/api//catalog`)
+  assert.equal(slipped.status, 200, 'the catalog, not a sign-in message and not a 404')
+  assert.ok(Array.isArray((await slipped.json()).tires))
+  assert.equal((await fetch(`${base}/api/api//catalog`)).status, 404)
+})
+
 test('the catalog handler answers the catalog and nothing else', async t => {
   // It used to guard on "is this a public path", which is a different question
   // from "is this my route". The moment a second public path existed, a POST to
@@ -478,6 +519,34 @@ test('the catalog handler answers the catalog and nothing else', async t => {
 
   const catalog = await (await fetch(base + '/api/catalog')).json()
   assert.ok(Array.isArray(catalog.tires), 'and the catalog still answers its own path')
+})
+
+test('the catalog is cached for five minutes, and ?size narrows it to one size', async t => {
+  const OTHER_SIZE = '225/50R17'
+  const inventory = new Inventory(':memory:', [SIZE, OTHER_SIZE])
+  t.after(() => inventory.close())
+  inventory.importSnapshot({
+    source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE, OTHER_SIZE],
+    tires: [tire('giga-a', { size: SIZE }), tire('giga-b', { size: OTHER_SIZE, name: 'Second' })],
+  })
+  inventory.saveMarkup({ rate: 1.4 })
+  const quotes = new Quotes(inventory)
+  const base = await serve(t, quotes, inventory)
+
+  const whole = await fetch(base + '/api/catalog')
+  assert.equal(whole.headers.get('cache-control'), 'public, max-age=300')
+  const wholeSizes = (await whole.json()).tires.map(t => t.size).sort()
+  assert.deepEqual(wholeSizes, [OTHER_SIZE, SIZE].sort(), 'no size param answers every size')
+
+  const narrowed = await fetch(base + `/api/catalog?size=${encodeURIComponent(SIZE)}`)
+  assert.equal(narrowed.headers.get('cache-control'), 'public, max-age=300')
+  const narrowedTires = (await narrowed.json()).tires
+  assert.equal(narrowedTires.length, 1)
+  assert.equal(narrowedTires[0].size, SIZE)
+  assert.equal(narrowedTires[0].id, 'giga-a')
+
+  const unsupported = await (await fetch(base + '/api/catalog?size=999/99R99')).json()
+  assert.deepEqual(unsupported.tires, [], 'a size nothing matches answers empty, not an error')
 })
 
 /* ------------------------------------------------------- owner review (t30) */
@@ -963,6 +1032,8 @@ test('the Host guard refuses a strange host, and never the health check', async 
   const allowed = ['kmt.fly.dev']
 
   assert.equal(isHostAllowed('kmt.fly.dev', '/', allowed), true)
+  assert.equal(isHostAllowed('KMT.Fly.Dev', '/', allowed), true, 'hostnames are case-insensitive, as the redirect already treats them')
+  assert.equal(isHostAllowed('kensmobiletire.com', '/', ['KensMobileTire.com']), true, 'in the allow-list too')
   assert.equal(isHostAllowed('evil.example.com', '/', allowed), false)
   assert.equal(isHostAllowed('evil.example.com', '/api/catalog', allowed), false,
     'the exemption is for the health path alone')
