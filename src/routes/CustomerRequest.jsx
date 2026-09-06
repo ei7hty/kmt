@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getAllTires } from '../data/catalog'
-import { loadCatalog } from '../data/liveCatalog'
+import { loadCatalogForSize } from '../data/liveCatalog'
 import { FITMENT_DIAMETERS, FITMENT_RATIOS, FITMENT_WIDTHS } from '../data/fitment'
 import { submitRequest } from '../store'
 import { VehicleDetails, ServiceDetails } from '../components/RequestDetails'
@@ -74,20 +74,27 @@ function CustomerRequest({ navigate }) {
   const [showAllTires, setShowAllTires] = useState(false)
 
   // The static catalog is the starting value rather than an empty list, so the
-  // first paint is a working selector: if the backend answers, its rows replace
-  // these, and if it does not, this is already the answer.
+  // first paint is a working selector, and it is all the size step needs: the
+  // fitment ranges are static. Nothing is fetched until a size is chosen.
   const [catalog, setCatalog] = useState(() => ({ tires: getAllTires(), source: 'static' }))
-  const [catalogLoading, setCatalogLoading] = useState(true)
+  // The size the catalog on screen answers for; loading is the gap between it
+  // and the size chosen, rather than a flag an effect would have to set.
+  const [answeredSize, setAnsweredSize] = useState('')
 
+  // One size, fetched when it is chosen (#154). Choosing another size aborts
+  // the previous fetch; if the backend does not answer, the static rows for
+  // that size are already on screen and stay there.
+  const chosenSize = formData.tireSize
   useEffect(() => {
+    if (!chosenSize) return
     const controller = new AbortController()
     let live = true
-    loadCatalog(controller.signal)
-      .then(result => { if (live) setCatalog(result) })
+    loadCatalogForSize(chosenSize, controller.signal)
+      .then(result => { if (live) { setCatalog(result); setAnsweredSize(chosenSize) } })
       .catch(() => {})
-      .finally(() => { if (live) setCatalogLoading(false) })
     return () => { live = false; controller.abort() }
-  }, [])
+  }, [chosenSize])
+  const catalogLoading = Boolean(chosenSize) && answeredSize !== chosenSize
 
   const tires = catalog.tires
   // Each stage offers only choices that lead somewhere. The catalog is generated
@@ -284,7 +291,7 @@ function CustomerRequest({ navigate }) {
           </div>
         </div>}
       </main>
-      <footer className="site-footer"><span>KMT / KEN&apos;S MOBILE TIRE</span><span>Fast. Reliable. Always on the move.</span></footer>
+      <footer className="site-footer"><span>KMT / KEN&apos;S MOBILE TIRE</span><span>Fast. Reliable. Always on the move.</span><a href="/privacy" className="privacy-link" onClick={event => { event.preventDefault(); navigate('/privacy') }}>Privacy</a></footer>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { cancelRequest, myRequests, payRequest, requestById } from '../store'
+import { PrivacyFooter } from './Privacy.jsx'
 
 /**
  * What the customer sees after asking for a quote.
@@ -159,6 +160,7 @@ function Status({ navigate }) {
           </div>
         )}
       </div>
+      <PrivacyFooter navigate={navigate} />
     </div>
   )
 }

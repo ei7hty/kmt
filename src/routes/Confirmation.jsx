@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { requestById } from '../store'
+import { PrivacyFooter } from './Privacy.jsx'
 
 /**
  * The end of the customer's journey, read back from the server.
@@ -122,6 +123,7 @@ function Confirmation({ navigate }) {
       <div className="confirmation-content">
         <div className="panel confirmation-card">{panel}</div>
       </div>
+      <PrivacyFooter navigate={navigate} />
     </div>
   )
 }

@@ -46,6 +46,11 @@ export function cachePolicy(relative, isFile) {
   return 'no-cache'
 }
 
+/** The path decoded, or null when it is not valid percent-encoding. */
+export function decodePath(pathname) {
+  try { return decodeURIComponent(pathname) } catch { return null }
+}
+
 /** Weak validator from what the filesystem knows; enough for a 304. */
 export function etagFor(stat) {
   return `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`
@@ -70,12 +75,20 @@ export function createStaticHandler(dist) {
       return
     }
 
-    const relative = decodeURIComponent(pathname).replace(/^\/+/, '')
+    // A path that is not valid percent-encoding ("/%", "/brand/%E0%A4%A")
+    // names no file. It gets the app shell like any other unknown path, not
+    // a server fault: decodeURIComponent throws on it, and until this line
+    // that throw was a 500 and a stack line in the log for every scanner
+    // that tried one, which is noise under a 5xx alarm.
+    const decoded = decodePath(pathname)
+    const relative = (decoded ?? '').replace(/^\/+/, '')
     const candidate = path.join(distRoot, relative)
 
-    // Never serve outside dist, whatever the URL claims.
+    // Never serve outside dist, whatever the URL claims. Inside means under
+    // it, separator included: a sibling directory whose name merely begins
+    // with "dist" would pass a bare prefix check.
     const resolved = path.resolve(candidate)
-    const isFile = resolved.startsWith(distRoot) &&
+    const isFile = decoded !== null && resolved.startsWith(distRoot + path.sep) &&
       existsSync(resolved) && statSync(resolved).isFile()
 
     const file = isFile ? resolved : path.join(distRoot, 'index.html')

@@ -18,7 +18,11 @@
  *   KMT_BIND             defaults to 0.0.0.0
  *   KMT_ALLOWED_HOSTS    comma-separated hostnames to accept. Unset means any,
  *                        which is fine behind a host that terminates its own TLS
+ *   KMT_CANONICAL_HOST   when set, every other accepted name answers 301 to
+ *                        this one (except /api/health). Unset: every name serves
  *   KMT_SESSION_HOURS    session lifetime, default 12
+ *   KMT_RELEASE          the short commit SHA the image was built from, set by
+ *                        the Dockerfile; answered as X-KMT-Release. Unset: no header
  *
  * One origin is a deliberate choice, not a convenience: the API's same-origin
  * check keeps working as written, so there is no CORS surface and no token to
@@ -34,10 +38,11 @@ import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
-import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isPublicApiCall, readJsonBody } from './api.mjs'
+import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { Quotes } from './quotes.mjs'
 import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
+import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl, readRelease } from './site.mjs'
 import { createStaticHandler } from './static.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -86,6 +91,20 @@ const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'
 const allowedHosts = (process.env.KMT_ALLOWED_HOSTS || '')
   .split(',').map(value => value.trim()).filter(Boolean)
+// The one switch for the domain cutover: set it and every other name answers
+// 301 to this one. site.mjs says what is exempt and why.
+const canonicalHost = (process.env.KMT_CANONICAL_HOST || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
+// A canonical name the allow-list refuses would be a healthy-looking outage;
+// site.mjs says why this is a crash instead.
+try {
+  assertCanonicalIsAllowed({ canonicalHost, allowedHosts })
+} catch (error) {
+  console.error(error.message)
+  process.exit(1)
+}
+// The commit this image was built from, answered on every response as
+// X-KMT-Release when the image says (KMT_RELEASE, baked in by the Dockerfile).
+const release = readRelease()
 
 // The built frontend, served the way backend/static.mjs describes: hashed
 // assets forever, brand files for a day, everything else revalidated.
@@ -93,13 +112,25 @@ const serveStatic = createStaticHandler(dist)
 
 const server = createServer(async (request, response) => {
   try {
-    const url = new URL(request.url, 'http://localhost')
+    // A URL that does not parse is a bad link, not a server fault (#132), and
+    // the browser-facing headers go on before anything can write (#67).
+    const { url } = parseRequestUrl(request.url)
+    // Every handler parses request.url for itself, so the collapsed path has
+    // to be the one they see: with the raw one, /api//catalog passed the gate
+    // as the catalog and then matched no handler.
+    request.url = url.pathname + url.search
     const hostname = (request.headers.host || '').split(':')[0]
+    applySecurityHeaders(request, response, { release })
 
-    // The health check is exempt, and isHostAllowed says why. A canonical-host
-    // redirect added later has to exempt it for the same reason.
+    // The health check is exempt, and isHostAllowed says why. The canonical
+    // redirect below exempts it for the same reason.
     if (!isHostAllowed(hostname, url.pathname, allowedHosts)) {
       response.writeHead(403); response.end('Unrecognised host'); return
+    }
+
+    const canonical = canonicalRedirectTarget({ hostname, pathname: url.pathname, search: url.search, canonicalHost })
+    if (canonical) {
+      response.writeHead(301, { Location: canonical, 'Cache-Control': 'no-store' }); response.end(); return
     }
 
     // Login and logout have to be reachable without a session, or there is no
@@ -117,6 +148,14 @@ const server = createServer(async (request, response) => {
       // signs in. Named in the allow-list in api.mjs rather than by relaxing
       // the check below, so every other route stays refused by default.
       const publicCall = isPublicApiCall(request.method, url.pathname)
+
+      // A path no handler knows is nobody's, and nobody's is 404: the sign-in
+      // message below is for the owner's area, not for a typo in a link.
+      if (!importCall && !isKnownApiPath(url.pathname)) {
+        response.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+        response.end(JSON.stringify({ error: 'No such endpoint.' }))
+        return
+      }
 
       if (!publicCall && !importCall && !auth.isAuthenticated(request)) {
         response.writeHead(401, { 'Content-Type': 'application/json' })
@@ -147,6 +186,12 @@ server.listen(port, bind, () => {
   console.log(`KMT owner workspace listening on ${bind}:${port}`)
   console.log(`Database: ${dbPath}`)
   if (!allowedHosts.length) console.log('KMT_ALLOWED_HOSTS unset: accepting any Host header.')
+  console.log(canonicalHost
+    ? `KMT_CANONICAL_HOST=${canonicalHost}: every other name answers 301 to it, except /api/health.`
+    : 'KMT_CANONICAL_HOST unset: every accepted name serves; no canonical redirect.')
+  console.log(release
+    ? `Release ${release}: answered as X-KMT-Release on every response.`
+    : 'KMT_RELEASE unset: no X-KMT-Release header (a local build, or an image built without GIT_SHA).')
   if (!process.env.KMT_SESSION_SECRET) {
     console.log('KMT_SESSION_SECRET unset: sessions will not survive a restart.')
   }
