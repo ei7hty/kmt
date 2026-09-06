@@ -28,7 +28,7 @@ function Privacy({ navigate }) {
           <h2>How long it is kept</h2>
           <p>Your request and quote are kept as the record of what was quoted, approved and paid. They are not deleted automatically.</p>
           <h2>Removing your details</h2>
-          <p>Ask, and Ken removes your name, contact details and address from the record. The quote itself stays, as the record of what was sold. Call <a href="tel:6174108319">(617) 410-8319</a>.</p>
+          <p>To ask for your name, contact details and address to be removed, call <a href="tel:6174108319">(617) 410-8319</a>. The quote itself stays, as the record of what was sold.</p>
           <h2>Your status link</h2>
           <p>The link to your quote is private to whoever holds it. Anyone with the link can see the quote, so keep it to yourself.</p>
         </div>
