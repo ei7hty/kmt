@@ -924,6 +924,13 @@ test('a decline carries the reason Ken typed (#78: decide() used to drop it sile
   assert.equal(quotes.decide(approved.id, 'sent', approvedQuote.version, 'should never land').quote.reason, null)
 })
 
+test('a decline reason over 500 characters is refused -- cleanReason\'s own limit, never exercised through decide()', async t => {
+  const { quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+  assert.throws(() => quotes.decide(request.id, 'rejected', quote.version, 'x'.repeat(501)), /reason is too long/)
+  assert.equal(quotes.get(request.id).quote.status, 'draft', 'the refused decision left the row untouched')
+})
+
 test('a stale version is refused rather than overwriting the newer decision', async t => {
   // Two owner windows, or a phone and a laptop. The second save must not
   // silently undo the first -- the same rule PUT /api/owner/offers/:id makes.
