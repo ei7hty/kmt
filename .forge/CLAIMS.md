@@ -9,7 +9,6 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| t61-black-white-red | LEAD UI ENGINEER | src/index.css tokens, src/App.css, src/RequestFlow.css, src/owner/OwnerInventory.css colour literals, index.html theme-color (t61: back to black, white and red; everything else from the overhaul stays) | 2026-09-06 |
 | m13-inventory-summary | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md (docs only) | 2026-09-06 |
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
 | workflow-t53 | KMT-F REPO AGENT- TEMP LEAD (repo agent) | .github/workflows/fly-deploy.yml, .github/workflows/health-monitor.yml, README.md (lint line) | 2026-09-06 |
