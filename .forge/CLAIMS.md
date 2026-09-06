@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| owner-lane-doc | SWE-S AGENT 2 | .forge/roles/swe-owner-screen-lane.md (docs only) | 2026-09-06 |
+| _none_ | | | |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
