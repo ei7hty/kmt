@@ -14,7 +14,7 @@
  */
 import { writeFileSync } from 'node:fs'
 import { chromium } from 'playwright'
-import { EXCEPTION_TIRE, cleanTireFor, freshPage, openOwnerQuotes, signInIfAsked, submitRequest, waitForStatus } from './audit-ui.mjs'
+import { EXCEPTION_TIRE, cleanTireFor, expandTireList, freshPage, openOwnerQuotes, signInIfAsked, submitRequest, waitForStatus } from './audit-ui.mjs'
 
 const BASE = process.env.AUDIT_BASE
 if (!BASE) { console.error('Set AUDIT_BASE explicitly; the audits default to different ports and this one refuses to guess.'); process.exit(2) }
@@ -103,25 +103,48 @@ async function measure(page, label) {
       }
       return out
     }
+    // background-clip: text paints a background only inside that element's
+    // own glyphs -- it is the text's fill, not a backdrop, and it does not
+    // paint at all for anything else (its own padding, or a descendant's
+    // content). Reading it as a background produced "#f0f0f0 on #f4f4f4"
+    // for a silver-on-black headline: both numbers were the same gradient,
+    // once as fg-via-cs.color (usually transparent, parsed wrong) and once
+    // as bg.
+    const hasClipText = (cs) => cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text'
+
     // Effective background: composite every ancestor's background-color from
     // the element upward until one is opaque. Gradients contribute each of
     // their stops as a candidate; the caller reports the worst ratio.
+    // A node whose own background is clipped to its text never contributes
+    // a background layer -- for the element being measured, that gradient
+    // is its fill instead (returned separately, as clipStops, since it is
+    // not something behind the text); for an ancestor, it is skipped
+    // entirely and the walk continues to its parent, since a clipped
+    // ancestor's gradient shows only inside that ancestor's own glyphs, not
+    // as a backdrop for its children.
     const effectiveBg = (el) => {
       let node = el
       let candidates = [null]
       let image = false
       let gradient = false
+      let clipStops = null
       const done = (cands) => cands.every(c => c && c.a >= 1)
       while (node && node !== document) {
         const cs = getComputedStyle(node)
-        const bi = cs.backgroundImage || 'none'
+        const clipped = hasClipText(cs)
+        if (clipped && node === el) {
+          const stops = gradientStops(cs.backgroundImage || '')
+          const solid = parse(cs.backgroundColor)
+          clipStops = stops.length ? stops : (solid && solid.a > 0 ? [solid] : null)
+        }
+        const bi = clipped ? 'none' : (cs.backgroundImage || 'none')
         let layers = []
         if (bi !== 'none') {
           if (/url\(/i.test(bi)) image = true
           const stops = gradientStops(bi)
           if (stops.length) { gradient = true; layers = stops.filter(c => c.a > 0) }
         }
-        const c = parse(cs.backgroundColor)
+        const c = clipped ? null : parse(cs.backgroundColor)
         if (!layers.length && c && c.a > 0) layers = [c]
         else if (layers.length && c && c.a > 0) layers = layers.map(l => (l.a >= 1 ? l : over(l, c)))
         if (layers.length) {
@@ -134,7 +157,7 @@ async function measure(page, label) {
       }
       const root = parse(getComputedStyle(document.documentElement).backgroundColor) || { r: 8, g: 8, b: 8, a: 1 }
       const bgs = candidates.map(c => (c ? (c.a >= 1 ? c : over(c, root)) : root))
-      return { bg: bgs[0], bgs, image, gradient }
+      return { bg: bgs[0], bgs, image, gradient, clipStops }
     }
     const ident = (el) => ({
       tag: el.tagName.toLowerCase(),
@@ -148,12 +171,22 @@ async function measure(page, label) {
       const own = Array.from(el.childNodes).filter(n => n.nodeType === 3 && n.textContent.trim()).map(n => n.textContent.trim()).join(' ')
       if (!own) continue
       const cs = getComputedStyle(el)
-      const fg = parse(cs.color)
-      if (!fg) continue
-      const { bg, bgs, image, gradient } = effectiveBg(el)
+      const { bg, bgs, image, gradient, clipStops } = effectiveBg(el)
+      // Clipped text's fill is the gradient (or solid colour) it is clipped
+      // to, not cs.color -- which the fill-color property usually leaves
+      // transparent, exactly because the clip is meant to show through to
+      // it. Each stop is a candidate fg the same way a gradient background
+      // is a candidate bg elsewhere in this file.
+      const plainFg = parse(cs.color)
+      const fgCandidates = clipStops && clipStops.length ? clipStops : (plainFg ? [plainFg] : [])
+      if (!fgCandidates.length) continue
       const size = parseFloat(cs.fontSize)
       const weight = parseInt(cs.fontWeight, 10) || (cs.fontWeight === 'bold' ? 700 : 400)
-      texts.push({ ...ident(el), text: own.replace(/\s+/g, ' ').slice(0, 48), fg, bg, bgs, image, gradient, size, weight, opacity: +cs.opacity })
+      texts.push({
+        ...ident(el), text: own.replace(/\s+/g, ' ').slice(0, 48),
+        fg: fgCandidates[0], fgCandidates, clippedText: Boolean(clipStops && clipStops.length),
+        bg, bgs, image, gradient, size, weight, opacity: +cs.opacity,
+      })
     }
     const interactive = []
     const sel = 'a[href], button, input, select, textarea, summary, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"]), label.oi-check'
@@ -169,15 +202,26 @@ async function measure(page, label) {
   })
   const isLarge = (t) => t.size >= 24 || (t.size >= 18.66 && t.weight >= 700)
   const texts = raw.texts.map(t => {
-    // Worst case across every candidate background (gradient stops), and the
-    // best case alongside so a gradient's range is visible in the record.
-    const ratios = (t.bgs && t.bgs.length ? t.bgs : [t.bg]).map(b => ({ b, r: ratio(t.fg, b) })).sort((x, y) => x.r - y.r)
+    // Worst case across every candidate background (gradient stops) and,
+    // for clipped text, every candidate fill (the gradient's own stops) --
+    // the best case sits alongside so a gradient's range is visible in the
+    // record either way.
+    const bgList = t.bgs && t.bgs.length ? t.bgs : [t.bg]
+    const fgList = t.fgCandidates && t.fgCandidates.length ? t.fgCandidates : [t.fg]
+    const ratios = []
+    for (const f of fgList) for (const b of bgList) ratios.push({ f, b, r: ratio(f, b) })
+    ratios.sort((x, y) => x.r - y.r)
     const worst = ratios[0], best = ratios[ratios.length - 1]
     const r = +worst.r.toFixed(2)
     const large = isLarge(t)
     const threshold = large ? 3 : 4.5
+    const fg = worst.f
     const bg = worst.b
-    return { ...t, bg, fgHex: hex(t.fg), bgHex: hex(bg), bgBestHex: hex(best.b), ratioBest: +best.r.toFixed(2), ratio: r, large, threshold, pass: r >= threshold, brandRed: hex(t.fg) === '#ed1c24' || hex(bg) === '#ed1c24' || hex(t.fg) === '#b80e14' || hex(bg) === '#b80e14' }
+    return {
+      ...t, fg, bg, fgHex: hex(fg), bgHex: hex(bg), bgBestHex: hex(best.b), ratioBest: +best.r.toFixed(2),
+      ratio: r, large, threshold, pass: r >= threshold,
+      brandRed: hex(fg) === '#ed1c24' || hex(bg) === '#ed1c24' || hex(fg) === '#b80e14' || hex(bg) === '#b80e14',
+    }
   })
   const interactive = raw.interactive.map(i => ({ ...i, fgHex: hex(i.fg), bgHex: hex(i.bg), tapPass: i.w >= 44 && i.h >= 44 }))
   return { label, url: raw.url, docWidth: raw.docWidth, scrollWidth: raw.scrollWidth, texts, interactive }
@@ -201,7 +245,9 @@ try {
     results.push(await measure(page, 'step 1 with size chosen'))
     await page.click('button:has-text("Continue to tires")', { timeout: 15000 })
     await page.waitForSelector('.tire-option', { timeout: 15000 })
-    const showAll = page.locator('button:has-text("Show all")'); if (await showAll.count()) await showAll.first().click()
+    // The "Show all" one-shot button became paged "Show N more" (#187);
+    // expandTireList() already loops on the paged control's stable class.
+    await expandTireList(page)
     results.push(await measure(page, 'step 2 (tires, before choosing)'))
     await page.click(`.tire-option:has-text("${clean.tireName}")`, { timeout: 15000 })
     await page.locator('.manual-vehicle summary').click()
@@ -227,8 +273,11 @@ try {
   {
     const { context, page } = await freshPage(browser, VIEWPORT)
     await submitRequest(page, { base: BASE, ...EXCEPTION_TIRE, vehicle: '2020 Ford F-150 Pickup Truck', location: '12 Example St, Everett, MA 02149', date: '2026-09-10', notes: 'Behind the building' })
-    await page.click('button:has-text("Owner review")', { timeout: 15000 })
-    await page.waitForURL('**/owner')
+    // R4 retired the customer-facing "Owner review" link; direct navigation
+    // replaces the click (same fix as #188, duplicated here since that PR
+    // has not merged yet -- it will merge cleanly, since it's the same
+    // change on the same line).
+    await page.goto(`${new URL(page.url()).origin}/owner`)
     await page.waitForSelector('.oi-signin, .owner-content, .oi-results, .oi-error', { timeout: 15000 }).catch(() => {})
     if (await page.locator('.oi-signin').count()) results.push(await measure(page, '/owner sign-in form'))
     await signInIfAsked(page)
@@ -334,7 +383,7 @@ tokenTable.push({ hex: '#b80e14 (current --accent-dark)', lightness: Math.round(
 const out = { base: BASE, viewport: VIEWPORT, measuredAt: new Date().toISOString(), states: results.map(s => ({ label: s.label, url: s.url, texts: s.texts.length, interactive: s.interactive.length, docWidth: s.docWidth, scrollWidth: s.scrollWidth })), brandRed, textFails, overImage, tapFails, tapAll, fixes, tokenTable, raw: results }
 writeFileSync(new URL('./a11y-85-results.json', import.meta.url), JSON.stringify(out, null, 2))
 
-const fmt = (t) => `${t.state} | <${t.tag}${t.id ? '#' + t.id : ''}${t.cls ? '.' + t.cls : ''}> "${t.text}" | fg ${t.fgHex} on bg ${t.bgHex}${t.gradient ? ` (gradient, worst stop; best ${t.bgBestHex} ${t.ratioBest}:1)` : ''} | ${t.size}px/${t.weight}${t.large ? ' (large)' : ''} | ${t.ratio}:1 vs ${t.threshold}:1 | ${t.pass ? 'PASS' : 'FAIL'}`
+const fmt = (t) => `${t.state} | <${t.tag}${t.id ? '#' + t.id : ''}${t.cls ? '.' + t.cls : ''}> "${t.text}" | fg ${t.fgHex}${t.clippedText ? ' (clipped-text fill, worst stop)' : ''} on bg ${t.bgHex}${t.gradient ? ` (gradient, worst stop; best ${t.bgBestHex} ${t.ratioBest}:1)` : ''} | ${t.size}px/${t.weight}${t.large ? ' (large)' : ''} | ${t.ratio}:1 vs ${t.threshold}:1 | ${t.pass ? 'PASS' : 'FAIL'}`
 console.log(`\nStates measured: ${results.length}`)
 for (const s of results) console.log(`  ${s.label}  (${s.url})  texts=${s.texts.length} interactive=${s.interactive.length} overflow=${s.scrollWidth > s.docWidth + 1 ? 'YES' : 'no'}`)
 console.log(`\nBRAND RED PAIRINGS (${brandRed.length}):`)
