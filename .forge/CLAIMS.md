@@ -10,6 +10,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
+| `release-header-image` | DEV OPS/INFRASTRUCTURE | `Dockerfile` only (the image half of X-KMT-Release) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
