@@ -1,18 +1,35 @@
 # Brand assets: provenance and the swap rule
 
-Derived on 2026-09-06 by the KMT lead from the three files the user placed in
-`public/` (git-ignored there as watermarked previews from the seller,
-DesignNoirCo): the primary "KENS / MOBILE TIRE" lockup on the navy ground, the
-same lockup on white, and the sheet of compact "KMT" and "KENS" badges.
+Derived on 2026-09-06 by the KMT lead from the three source files the user
+placed in `public/` (git-ignored there, as source art rather than shipped
+assets): the primary "KENS / MOBILE TIRE" lockup on the navy ground, the same
+lockup on white, and the sheet of compact "KMT" and "KENS" badges.
 
-The user chose to ship these as they are. Every file below still carries the
-seller's watermark; when the licensed, unwatermarked art arrives, regenerate
-`public/brand/` from it with the same names and nothing in `src/` changes.
+**The art is the business's own.** Confirmed by the user on 2026-09-06, after
+this file had spent a day asserting the opposite.
 
-**The watermark is present and is not visible.** Those are two claims and the
-sentence above only makes the first, which has been read as both. Measured on
-2026-09-06 against the flat ground of each file that actually ships, the
-seller's tiled diagonal mark peaks at **2 levels out of 255 in
+> **Correction, 2026-09-06.** Until this revision, this file made a claim about
+> the licensing of this art, and named the designer alongside it. **Both were
+> inferences drawn from a faint mark in the images, and neither was ever
+> checked with the person who bought the art.** Both are wrong and both are
+> withdrawn. The repository is public, so that text was a published claim about
+> a real business and a named supplier; it should not have been written from an
+> inference. The designer is deliberately not named here now, and the
+> provenance below is what a maintainer actually needs.
+>
+> The measurement that prompted it was sound and is kept below. **The
+> inference drawn from the measurement was never put to the one person who
+> could settle it in a sentence** -- which is the failure worth remembering,
+> not the number.
+
+Whether the files now in `public/brand/` are final or will be reissued from
+newer source art is **not settled here**, and this file no longer guesses. If
+they are ever replaced, follow the cache rule below.
+
+**A faint mark is present in the source art and is not visible.** Those are two
+claims and only the first was being made, which is how it came to be read as
+both. Measured on 2026-09-06 against the flat ground of each file that actually
+ships, the tiled diagonal mark peaks at **2 levels out of 255 in
 `og-1200x630.jpg` (1.02:1), 3 levels in `kens-dark-1200.webp` (1.03:1), and
 nothing detectable in `kens-dark-600.webp`** -- against the 3:1 at which WCAG
 1.4.11 treats a graphical object as perceptible at all. The method was proved
@@ -25,16 +42,17 @@ only by cropping the empty ground and stretching the contrast several times
 over.
 
 So: nobody sharing a link, loading the hero or looking at the favicon sees a
-watermark, and no work is owed on visual grounds. **The swap below is still
-owed on licensing grounds** -- these are unlicensed previews whatever they
-look like -- and that is the reason to do it, which is worth stating plainly
-because "you cannot see it" is a good answer to the wrong question.
+mark, and **no work is owed on visual grounds.** The earlier version of this
+paragraph went on to say the swap was owed on licensing grounds instead. It is
+not; see the correction above.
 
-One condition on that swap, from the lead: `/brand/*` is served with
-`Cache-Control: public, max-age=86400`, so a browser that has seen a file keeps
-it for a day. The PR that swaps in the licensed art must also bump a version
-query on every reference (`/brand/icon-192.png?v=2`) or give the files a new
-suffix, so nobody holds a watermark for a day after the real art is live.
+**If the files are ever reissued**, from newer source art or for any other
+reason, one condition applies: `/brand/*` is served with `Cache-Control:
+public, max-age=86400`, so a browser that has seen a file keeps it for a day.
+That PR must also bump a version query on every reference
+(`/brand/icon-192.png?v=2`) or give the files new names, so nobody is served a
+day-old cached copy after the replacement is live. This is a caching rule, not
+a deadline -- nothing here is waiting on it.
 
 This note lives in `docs/`, not in `public/brand/` beside the files, because
 everything under `public/` ships to the site as-is: for a while it was readable
