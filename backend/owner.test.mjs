@@ -338,16 +338,18 @@ test('a rate-only save must not ratify a defaulted shipping figure as a decision
   // field differently, update this assertion to match the real contract;
   // the invariant it protects (a field a save never touched keeps its own
   // placeholder flag) does not change either way.
+  // Shipping must never have been touched -- if a prior save had actually
+  // chosen 8, carrying that choice forward through a later rate-only save
+  // is correct, not the bug (that is the sibling test above). The live
+  // defect only exists on shipping's very first defaulted appearance: Ken
+  // has never named a figure, and a rate-only save still stamps it decided.
   const db = setup(t)
-  const withShipping = db.saveMarkup({ rate: 1.5, shippingPerTire: 8 })
-  assert.equal(withShipping.shippingPerTireIsPlaceholder, false, 'a real, explicit shipping figure is not a placeholder')
-
   const rateOnly = db.saveMarkup({ rate: 1.6 })
-  assert.equal(rateOnly.shippingPerTire, 8, 'the defaulted-from-storage value (sibling test above)')
+  assert.equal(rateOnly.shippingPerTire, DEFAULT_MARKUP_SETTINGS.shippingPerTire, 'never chosen, so still the shared default')
   assert.equal(
     rateOnly.shippingPerTireIsPlaceholder, true,
-    'a save that never sent shippingPerTire must not report it as a decision -- this is the exact shape of the ' +
-    'live defect: a defaulted value reading as Ken\'s own choice',
+    'a save that never sent shippingPerTire, and where nobody had chosen one before, must not report it as a ' +
+    'decision -- this is the exact shape of the live defect: a defaulted value reading as Ken\'s own choice',
   )
 })
 
