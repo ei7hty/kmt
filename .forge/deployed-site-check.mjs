@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import https from 'node:https';
 import { CATALOG_FIELDS } from './audit-ui.mjs';
 
 /**
@@ -48,7 +49,7 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 25;
+const EXPECTED_CHECKS = 45;
 
 let passed = 0;
 let failed = 0;
@@ -119,6 +120,51 @@ function reportCount() {
  */
 const SCRAPED_SIZE = '215/60R16';
 const GENERATED_SIZE = '135/80R12';
+
+/**
+ * The static assets t60 shipped (#141, #147): 14 brand files plus the web
+ * manifest, each with its own content-type. #141 landed 15 files under
+ * public/brand/ with nothing in the app referencing any of them for a full
+ * day -- a fully green pipeline on an asset drop nothing consumed, one
+ * letter away from #61. Checked one at a time, the way the redirect hosts
+ * are, so a single wrong content-type or a missing file names itself
+ * rather than hiding behind a count.
+ */
+const BRAND_ASSETS = [
+  ['/brand/icon-32.png', 'image/png'],
+  ['/brand/icon-64.png', 'image/png'],
+  ['/brand/icon-180.png', 'image/png'],
+  ['/brand/icon-192.png', 'image/png'],
+  ['/brand/icon-512.png', 'image/png'],
+  ['/brand/kens-badge-dark-800.webp', 'image/webp'],
+  ['/brand/kens-badge-light-800.webp', 'image/webp'],
+  ['/brand/kens-dark-600.webp', 'image/webp'],
+  ['/brand/kens-dark-1200.webp', 'image/webp'],
+  ['/brand/kens-light-600.webp', 'image/webp'],
+  ['/brand/kens-light-1200.webp', 'image/webp'],
+  ['/brand/kmt-dark-800.webp', 'image/webp'],
+  ['/brand/kmt-light-800.webp', 'image/webp'],
+  ['/brand/og-1200x630.jpg', 'image/jpeg'],
+  ['/manifest.webmanifest', 'application/manifest+json'],
+];
+
+/**
+ * TRACE is a forbidden method in both browser fetch() and Node's --
+ * undici answers "'TRACE' HTTP method is unsupported" before a request
+ * ever leaves the process, proven directly against this same host before
+ * writing the check below. node:https has no such restriction, so it is
+ * the only way to ask the deployed server the question at all.
+ */
+function traceRequest(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(url, { method: 'TRACE' }, res => {
+      res.resume();
+      res.on('end', () => resolve({ status: res.statusCode, allow: res.headers.allow || '' }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
 
 /** Anything sticking out past the viewport, which is what a phone shows as a sideways scroll. */
 async function overflow(page) {
@@ -317,6 +363,100 @@ async function main() {
       `status ${otherHealthResponse.status}, body ${JSON.stringify(otherHealth)}`);
   } catch (error) {
     fail(`GET /api/health on ${HEALTH_OTHER_HOST} answers 200 with ok:true — ${describeFetchError(error)}`);
+  }
+
+  // 10. The brand assets t60 shipped, one file at a time.
+  for (const [path, expectedType] of BRAND_ASSETS) {
+    try {
+      const response = await fetch(`${BASE}${path}`);
+      const type = response.headers.get('content-type') || '';
+      check(response.status === 200 && type.startsWith(expectedType),
+        `${path} answers 200 as ${expectedType}`,
+        `got status ${response.status}, content-type ${type || 'none'}`);
+    } catch (error) {
+      fail(`${path} answers 200 as ${expectedType} — ${describeFetchError(error)}`);
+    }
+  }
+
+  // robots.txt and sitemap.xml both name the canonical host explicitly no
+  // matter which host answers this request: a crawler reads them to learn
+  // the one address worth indexing, not to learn about whichever host it
+  // happened to ask.
+  try {
+    const robotsResponse = await fetch(`${BASE}/robots.txt`);
+    const robotsType = robotsResponse.headers.get('content-type') || '';
+    const robotsBody = await robotsResponse.text();
+    const requiredLines = [
+      'Disallow: /owner', 'Disallow: /status', 'Disallow: /confirmation', 'Disallow: /api/',
+      `Sitemap: https://${CANONICAL_HOST}/sitemap.xml`,
+    ];
+    const missingLines = requiredLines.filter(line => !robotsBody.includes(line));
+    check(robotsResponse.status === 200 && robotsType.startsWith('text/plain') && missingLines.length === 0,
+      "/robots.txt answers 200 as text/plain, disallowing the customer's own pages and naming the sitemap",
+      `status ${robotsResponse.status}, content-type ${robotsType || 'none'}${missingLines.length ? `, missing: ${JSON.stringify(missingLines)}` : ''}`);
+  } catch (error) {
+    fail(`/robots.txt answers 200 as text/plain, disallowing the customer's own pages and naming the sitemap — ${describeFetchError(error)}`);
+  }
+
+  try {
+    const sitemapResponse = await fetch(`${BASE}/sitemap.xml`);
+    const sitemapType = sitemapResponse.headers.get('content-type') || '';
+    const sitemapBody = await sitemapResponse.text();
+    const locMatches = [...sitemapBody.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
+    const expectedLoc = `https://${CANONICAL_HOST}/`;
+    check(sitemapResponse.status === 200 && sitemapType.startsWith('application/xml') &&
+      locMatches.length === 1 && locMatches[0] === expectedLoc,
+      '/sitemap.xml answers 200 as application/xml with exactly one <loc>, the canonical host',
+      `status ${sitemapResponse.status}, content-type ${sitemapType || 'none'}, locs ${JSON.stringify(locMatches)}`);
+  } catch (error) {
+    fail(`/sitemap.xml answers 200 as application/xml with exactly one <loc>, the canonical host — ${describeFetchError(error)}`);
+  }
+
+  // Three behaviors, not just files: caching that actually works, a method
+  // that is actually disabled, and a link that actually reaches the
+  // manifest. Each is a way "the file exists" can still not be "the
+  // feature works" -- #141's own lesson is that the gap between shipped
+  // and consumed is exactly where nothing was watching.
+  try {
+    const first = await fetch(`${BASE}/brand/icon-192.png`);
+    const etag = first.headers.get('etag');
+    if (!etag) {
+      fail('a conditional GET on /brand/icon-192.png answers 304 with an empty body — no ETag on the first response to condition on');
+    } else {
+      const conditional = await fetch(`${BASE}/brand/icon-192.png`, { headers: { 'If-None-Match': etag } });
+      const body = await conditional.text();
+      check(conditional.status === 304 && body === '',
+        'a conditional GET on /brand/icon-192.png answers 304 with an empty body',
+        `got status ${conditional.status}, body length ${body.length}`);
+    }
+  } catch (error) {
+    fail(`a conditional GET on /brand/icon-192.png answers 304 with an empty body — ${describeFetchError(error)}`);
+  }
+
+  try {
+    const { status, allow } = await traceRequest(`${BASE}/`);
+    check(status === 405 && allow.includes('GET') && allow.includes('HEAD'),
+      'TRACE / answers 405 naming GET and HEAD as the allowed methods',
+      `got status ${status}, allow ${allow || 'none'}`);
+  } catch (error) {
+    fail(`TRACE / answers 405 naming GET and HEAD as the allowed methods — ${describeFetchError(error)}`);
+  }
+
+  try {
+    const homeResponse = await fetch(`${BASE}/`);
+    const homeBody = await homeResponse.text();
+    // A tag search, not a literal string: Vite's HTML output is free to
+    // reorder attributes or self-close the tag, and a check that cares
+    // about that formatting would fail on a harmless build-output change
+    // rather than on the thing that actually matters -- whether the
+    // manifest is linked at all.
+    const manifestLinkTag = homeBody.match(/<link\b[^>]*>/gi)?.find(tag =>
+      /rel=["']manifest["']/i.test(tag) && /href=["']\/manifest\.webmanifest["']/i.test(tag));
+    check(Boolean(manifestLinkTag),
+      'the live index.html links the manifest, not just serves it separately',
+      manifestLinkTag ? '' : homeBody.includes('manifest') ? 'a manifest reference exists but not as a <link> tag' : 'no manifest reference found');
+  } catch (error) {
+    fail(`the live index.html links the manifest, not just serves it separately — ${describeFetchError(error)}`);
   }
 
   reportCount();
