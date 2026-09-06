@@ -130,7 +130,7 @@ test('an out-of-stock tire and a truck both raise the exception the existing rul
 
 test('a tire we do not offer is refused rather than quoted', async t => {
   const { quotes } = setup(t)
-  assert.throws(() => quotes.submit(form({ tireSelection: 'giga-nonexistent' })), /not one we currently offer/)
+  assert.throws(() => quotes.submit(form({ tireSelection: 'giga-nonexistent' })), /isn't one I offer right now/)
 })
 
 test('a request is required to carry the fields a quote needs', async t => {
@@ -170,9 +170,9 @@ test('the ZIP is required and five digits; a ZIP+4 is read as its five', async t
 test('beyond the service area is refused with the distance and the phone number, and nothing is stored', async t => {
   const { quotes } = setup(t)
   // Defaults on: Malden, 100 miles. Bangor is about 200.
-  assert.throws(() => quotes.submit(form({ serviceZip: '04401' })), /about 200 miles from us, outside the 100 mile area we serve\. Text us at \(617\) 410-8319/)
+  assert.throws(() => quotes.submit(form({ serviceZip: '04401' })), /about 200 miles from Malden, outside the 100 miles I cover\. Text me at \(617\) 410-8319 if you'd like to ask anyway/)
   // A ZIP nobody can place is refused the same way, with the number.
-  assert.throws(() => quotes.submit(form({ serviceZip: '99999' })), /do not recognise that ZIP code\. Text us at/)
+  assert.throws(() => quotes.submit(form({ serviceZip: '99999' })), /ZIP code isn't one I recognize\. Text me at/)
   assert.equal(quotes.listForOwner().length, 0, 'a refused request is not a request')
 })
 
@@ -181,7 +181,7 @@ test('inside the radius but past the review distance goes through with the miles
   // Worcester, about 40 miles: accepted, flagged, and the owner sees how far.
   const { request, quote } = quotes.submit(form({ serviceZip: '01608' }))
   assert.equal(quote.exception, true)
-  assert.ok(quote.exceptionReasons.some(reason => /Service address is about 40 miles from base, beyond the 25 mile review distance/.test(reason)),
+  assert.ok(quote.exceptionReasons.some(reason => /Service address is about 40 miles from Malden, beyond the 25 mile review distance/.test(reason)),
     `the reason names the miles: ${quote.exceptionReasons.join(' | ')}`)
   const owner = quotes.listForOwner().find(row => row.request.id === request.id)
   assert.equal(owner.request.serviceMiles, 40, 'the owner row carries the distance for the card')
@@ -200,7 +200,7 @@ test('with the check switched off every known ZIP is accepted and the owner stil
   assert.equal(quote.exception, true, 'still past the review distance, so still flagged')
   assert.ok(quote.exceptionReasons.some(reason => /about 200 miles/.test(reason)))
   assert.equal(quotes.listForOwner().find(row => row.request.id === request.id).request.serviceMiles, 200)
-  assert.throws(() => quotes.submit(form({ serviceZip: '99999' })), /do not recognise/, 'unknown is still unknown')
+  assert.throws(() => quotes.submit(form({ serviceZip: '99999' })), /ZIP code isn't one I recognize/, 'unknown is still unknown')
 })
 
 test('special instructions are stored for the owner, capped, optional, and never in the customer shape', async t => {
@@ -425,7 +425,7 @@ test('one browser key and one email address have limits of their own', async t =
   }
   const byEmail = await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'same@example.com' }))
   assert.equal(byEmail.status, 429)
-  assert.match((await byEmail.json()).error, /email address has been used for too many requests today. Text us instead./)
+  assert.match((await byEmail.json()).error, /email address has been used for too many requests today. Text me instead./)
   assert.equal((await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'other@example.com' }))).status, 201, 'the key itself is fine')
 })
 

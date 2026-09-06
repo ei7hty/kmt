@@ -344,7 +344,7 @@ async function main() {
     const refusal = await page.locator('.submit-failure').first();
     const refusalText = (await refusal.textContent().catch(() => '')) || '';
     const refusalPhone = await refusal.locator('a[href^="tel:"]').first().isVisible().catch(() => false);
-    if (/about \d+ miles/.test(refusalText) && /outside the \d+ mile area/.test(refusalText) && refusalPhone) {
+    if (/about \d+ miles/.test(refusalText) && /outside the \d+ miles I cover/.test(refusalText) && refusalPhone) {
       ok(`Customer form: a ZIP beyond the service area (${ZIP_OUT_OF_AREA}) is refused with the distance and a visible phone link.`);
     } else {
       fail(`Customer form: out-of-area ZIP ${ZIP_OUT_OF_AREA} was not refused with the distance and a phone link. Got: ${refusalText.slice(0, 200)}`);
@@ -362,7 +362,7 @@ async function main() {
     await openOwnerQuotes(page);
     const reviewCard = await page.locator('.owner-request', { hasText: 'Worcester' }).first();
     const reviewText = (await reviewCard.textContent().catch(() => '')) || '';
-    if (/Owner review required/.test(reviewText) && /about \d+ miles from base/.test(reviewText)) {
+    if (/Owner review required/.test(reviewText) && /about \d+ miles from Malden/.test(reviewText)) {
       ok(`/owner: a request from the review band (${ZIP_REVIEW}) shows "Owner review required" with the distance in miles.`);
     } else {
       fail(`/owner: the review-band request (${ZIP_REVIEW}) did not show the review reason with the miles. Got: ${reviewText.slice(0, 200)}`);

@@ -358,7 +358,7 @@ export class Quotes {
     if (!area.serviceable) {
       // "Text", not "call": every customer-facing control promotes texting
       // (t63), and the panel that shows this sentence carries the text button.
-      throw new InputError(`${area.message} Text us at ${SHOP_PHONE} and we will see what we can do.`)
+      throw new InputError(`${area.message} Text me at ${SHOP_PHONE} if you'd like to ask anyway.`)
     }
     // The distance rides with the request for the owner's card. It is not in
     // the customer shape: the customer knows where they are.
@@ -366,7 +366,7 @@ export class Quotes {
 
     const catalog = this.catalog()
     if (!catalog.some(tire => tire.id === request.tireSelection)) {
-      throw new InputError('That tire is not one we currently offer. Choose another.')
+      throw new InputError("That tire isn't one I offer right now. Choose another.")
     }
 
     const id = newId()
@@ -641,7 +641,7 @@ export class Quotes {
     if (!found?.quote) throw new InputError('No such request.', 404)
     if (found.quote.status === 'cancelled') return found
     if (found.quote.status === 'paid' || found.quote.status === 'done') {
-      throw new InputError('This request has been paid for. Get in touch and we will sort it out.', 409)
+      throw new InputError("This request has been paid for. Text me and I'll sort it out.", 409)
     }
     return this.moveTo(id, found.quote.version, {
       to: 'cancelled',
