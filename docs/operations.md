@@ -532,6 +532,30 @@ that syncs to a machine other people use. And delete the copy on the server
 afterwards, as above -- leaving it in `/tmp` puts a second copy of every
 customer record inside the container.
 
+## Before the drill: take the two numbers that make it provable
+
+**Do this first, in under a minute, while production is healthy.** Without it,
+"the restore worked" means "a file opened". With it, it means "the customer
+records came back, all of them".
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite 'select (select count(*) from requests), (select count(*) from quotes)'"
+```
+
+Write the two numbers down with the time. `Error: The handle is invalid` prints
+after every `ssh console` call on Windows and is a console quirk; the output
+above it is real.
+
+**Those are the only numbers that matter.** The supplier tables can be rebuilt
+from the scrape in the repository. A customer's request cannot be rebuilt from
+anything, so the drill's pass condition is that the restored file holds the
+requests and quotes the live database held when the snapshot was taken -- not
+that it opened, not that it passed a schema check.
+
+A snapshot taken before the count will hold fewer rows if requests arrived in
+between. That is expected and it is why the time matters: compare against the
+count at the snapshot's age, not at the moment you happen to run the drill.
+
 ## The restore drill
 
 **This has not been run. Run it once on a quiet day.** The whole point is to
@@ -577,6 +601,18 @@ a restore creates a new volume rather than overwriting one.
    ```
 
    This is the step that turns "the file came back" into "the data is sound".
+
+   **The drill passes when both of these hold**, and it is worth writing them
+   down as they come rather than deciding afterwards whether it went well:
+
+   - the script prints `SOUND` and exits 0 (or `OLDER SCHEMA` and exits 2, which
+     is intact -- see the verdict table below); and
+   - the `requests` and `quotes` counts it prints match the two numbers taken
+     before the drill, allowing for rows that arrived after the snapshot.
+
+   A `SOUND` verdict with a requests count of zero is a failed restore that
+   passed every structural check. That combination is the one to watch for: the
+   file is a valid database, and it is not the customers' database.
    It opens the database **read-only**, so it cannot repair the evidence it is
    judging -- opening a damaged SQLite file read-write can silently checkpoint
    and fix it, after which every run passes and nobody learns anything.

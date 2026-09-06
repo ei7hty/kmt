@@ -9,7 +9,8 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| t63-text-controls | BUG FIXER (local_8ba9f198) | rebase PR #210 onto current main, conflicts in src/components/RequestDetails.jsx and src/routes/CustomerRequest.jsx | 2026-09-06 |
+| request-personal-payload-keys | JUNIOR BACK END DEV (local_0b9989ef) | backend/quotes.mjs, backend/quotes.test.mjs, new doc-sync test | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
