@@ -363,7 +363,7 @@ export default function OwnerInventory({ navigate }) {
       <div className="oi-metrics">
         <div><strong>{summary?.supplierCount ?? '—'}</strong><span>Supplier tires saved</span></div>
         <div><strong>{summary?.offeredCount ?? '—'}</strong><span>Chosen for KMT</span></div>
-        <div><strong>{summary ? `${summary.fullSizeCount} / ${summary.refreshableSizes.length}` : '—'}</strong><span>Sizes with supplier data fully refreshed</span></div>
+        <div><strong>{summary ? summary.fullSizeCount + summary.importedSizeCount : '—'}</strong><span>Sizes with supplier tires</span>{summary && <small title="The deep pass reads the rest.">Read to the last page: {summary.fullSizeCount} of {summary.fullSizeCount + summary.importedSizeCount}</small>}</div>
       </div>
       <div className={toolsOpen ? 'oi-tools is-open' : 'oi-tools'}>
         <button type="button" className="oi-tools-toggle" aria-expanded={toolsOpen} aria-controls="owner-tools" onClick={toggleTools}>Supplier refresh, browser import and markup rule</button>

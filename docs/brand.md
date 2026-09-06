@@ -1,4 +1,4 @@
-# Brand assets
+# Brand assets: provenance and the swap rule
 
 Derived on 2026-09-06 by the KMT lead from the three files the user placed in
 `public/` (git-ignored there as watermarked previews from the seller,
@@ -7,7 +7,18 @@ same lockup on white, and the sheet of compact "KMT" and "KENS" badges.
 
 The user chose to ship these as they are. Every file below still carries the
 seller's watermark; when the licensed, unwatermarked art arrives, regenerate
-this folder from it with the same names and nothing in `src/` changes.
+`public/brand/` from it with the same names and nothing in `src/` changes.
+
+One condition on that swap, from the lead: `/brand/*` is served with
+`Cache-Control: public, max-age=86400`, so a browser that has seen a file keeps
+it for a day. The PR that swaps in the licensed art must also bump a version
+query on every reference (`/brand/icon-192.png?v=2`) or give the files a new
+suffix, so nobody holds a watermark for a day after the real art is live.
+
+This note lives in `docs/`, not in `public/brand/` beside the files, because
+everything under `public/` ships to the site as-is: for a while it was readable
+at `/brand/SOURCES.md`, announcing the provenance and the watermarks to anyone
+who asked. The files' provenance belongs in the repository, not on the web.
 
 | file | use |
 | --- | --- |
