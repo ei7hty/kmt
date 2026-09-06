@@ -290,7 +290,7 @@ function cleanCustomerKey(value) {
  * Optional: an empty value returns ''. Anything else must resolve to ten
  * digits (with or without a leading 1, spaces, dashes, dots or parens).
  */
-function cleanCustomerPhone(value) {
+export function cleanCustomerPhone(value) {
   if (value === undefined || value === null || value === '') return ''
   if (typeof value !== 'string') throw new InputError('customerPhone must be text.')
   const digits = value.replace(/\D/g, '')

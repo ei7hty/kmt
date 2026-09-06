@@ -102,6 +102,7 @@ function shapeRow(row) {
     contact: row.contact,
     vehicleInfo: row.vehicle_info,
     message: row.message,
+    status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -119,10 +120,12 @@ export class Inquiries {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS inquiries (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, contact TEXT NOT NULL,
-        vehicle_info TEXT, message TEXT NOT NULL,
+        vehicle_info TEXT, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new',
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
     `)
+    const columns = this.db.prepare('PRAGMA table_info(inquiries)').all().map(column => column.name)
+    if (!columns.includes('status')) this.db.exec("ALTER TABLE inquiries ADD COLUMN status TEXT NOT NULL DEFAULT 'new'")
   }
 
   create(input) {

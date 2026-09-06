@@ -47,6 +47,8 @@ import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget
 import { createStaticHandler } from './static.mjs'
 import { Outbox } from './outbox.mjs'
 import { createMailer, describeMail, readMailConfig } from './mail.mjs'
+import { Inquiries } from './inquiries.mjs'
+import { createInquiriesApi } from './inquiries-api.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
@@ -145,7 +147,9 @@ const catalogApi = createCatalogApi(inventory)
 const healthApi = createHealthApi(inventory)
 // Requests and their quotes live in the same database as inventory. The three
 // public writes are limited per address, per browser key and per email (#63).
-const requestsApi = createRequestsApi(quotes, { limiter: new RateLimiter(), mailer })
+const publicLimiter = new RateLimiter()
+const requestsApi = createRequestsApi(quotes, { limiter: publicLimiter, mailer })
+const inquiriesApi = createInquiriesApi(new Inquiries(inventory.db), { limiter: publicLimiter })
 
 const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'
@@ -212,6 +216,7 @@ const server = createServer(async (request, response) => {
       if (await healthApi(request, response)) return
       if (await catalogApi(request, response)) return
       if (await requestsApi(request, response)) return
+      if (await inquiriesApi(request, response)) return
       if (await api(request, response)) return
       response.writeHead(404, { 'Content-Type': 'application/json' })
       response.end(JSON.stringify({ error: 'Owner endpoint not found' }))

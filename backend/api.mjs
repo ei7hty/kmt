@@ -60,10 +60,12 @@ export const PUBLIC_API_PATHS = new Set(['/api/catalog', '/api/health'])
  * `cancel` is public only because this line says so.
  */
 const PUBLIC_REQUEST_PREFIX = '/api/requests'
+const PUBLIC_INQUIRIES_PATH = '/api/inquiries'
 const PUBLIC_POST_PATHS = [
   /^\/api\/requests$/,
   /^\/api\/requests\/[^/]+\/pay$/,
   /^\/api\/requests\/[^/]+\/cancel$/,
+  /^\/api\/inquiries$/,
 ]
 
 /** The action suffixes a GET must not answer, whatever else the prefix allows. */
@@ -88,6 +90,7 @@ const REQUEST_ACTIONS = ['/pay', '/cancel']
 export function isKnownApiPath(pathname) {
   return PUBLIC_API_PATHS.has(pathname) ||
     pathname === PUBLIC_REQUEST_PREFIX ||
+    pathname === PUBLIC_INQUIRIES_PATH ||
     pathname.startsWith(PUBLIC_REQUEST_PREFIX + '/') ||
     pathname.startsWith('/api/owner/')
 }
