@@ -35,8 +35,9 @@ exist.
 ## What a removal request does: redaction, not deletion
 
 A customer's removal request is honoured by **redacting name, email,
-phone, the service address (`location`), and the access notes
-(`locationNotes`)** -- while the quote record stays intact: its line
+phone, the service address (`location`), the access notes
+(`locationNotes`), and the special instructions (`customerNotes`, the
+"Anything else I should know?" field)** -- while the quote record stays intact: its line
 items, total, status, version, and timestamps are untouched. The ledger
 stays true; the way to reach that customer, and where they were found,
 does not.
@@ -82,7 +83,7 @@ Not a schema change, and not `migrate()`'s concern. The redacted fields
 live inside `requests.payload`, a JSON blob in a column that already
 exists -- redaction is `UPDATE requests SET payload=?, updated_at=? WHERE
 id=?` with the parsed JSON's `customerName`/`customerEmail`/
-`customerPhone`/`location`/`locationNotes` overwritten to a redacted
+`customerPhone`/`location`/`locationNotes`/`customerNotes` overwritten to a redacted
 marker (not deleted from the object entirely, so a reader can tell "this
 was redacted" apart from "this was never collected"). Belongs as a method
 on `Quotes`, next to `shapeRow` which is the one place a stored row
@@ -104,6 +105,52 @@ anywhere else -- there is nowhere else, since redaction rewrites the
 that ever adds a "recover original value" path would defeat this policy
 outright, and should be refused on sight if proposed.
 
+## The outbox: structure, not prose
+
+t37's outbox (`backend/outbox.mjs`) is where email actually gets tempting to
+get wrong, because a message is naturally a paragraph of text with a
+customer's name and address written into it. The lead's ruling rejects both
+obvious answers: scrubbing a redacted customer's words back out of sent
+message bodies (fragile -- free text has no field boundaries, and a partial
+scrub looks complete when it is not), and leaving message bodies unredacted
+as an exception to this whole policy (the privacy notice would be lying
+about email specifically).
+
+Instead, **the outbox never stores a rendered body at all.** `mail.mjs`
+renders a template against a `data` column at send time and hands the
+result to the provider; nothing composed is persisted. What is stored is
+the template's name and version, the structured fields it was rendered
+from (`data`, JSON: personal fields under known keys -- `to_name`,
+`to_email`, `customerPhone`, `location`, `locationNotes`, `customerNotes`
+(t64) -- business fields beside them: tire, size, quantity, unit price,
+lines, total, date, service
+ZIP, status), and `to_address`/`to_name` as their own columns for sending.
+If a failed send needs debugging, the row's `data` and the named template
+reproduce exactly what went out -- which is what makes "we don't keep the
+body" a non-loss rather than a gap.
+
+This makes outbox redaction the same shape as request redaction: a `WHERE`
+clause on `request_id` (non-null on every row, indexed), no text matching.
+`to_address`, `to_name`, and the personal keys inside `data` get the same
+redacted marker the request's own fields do, in the same transaction as
+that redaction -- a request and its outbox messages are redacted together
+or not at all, never one without the other. Everything else on the row --
+`type`, `template_version`, the business fields inside `data`, `status`,
+`provider_id`, the timestamps -- survives, because the record of what was
+sold, sent, and to what outcome, is the ledger this whole policy exists to
+keep. Both halves of the promise hold at once: the message is still there
+as a record, and the person's details are gone from it.
+
+**No customer address in a log line, ever**, including inside `mail.mjs`'s
+own send logging (there is real instinct to log "sent to jamie@example.com"
+while debugging a failed send -- don't). Log the outbox row id, the message
+type, and the provider's own message id; if an address must be correlated
+across log lines without being printed, use the same keyed-HMAC
+construction `limits.mjs` uses per boot (#166), not a bare or unsalted hash
+of the address -- a low-entropy identifier like an email address is
+guessable enough that an unsalted hash of it still confirms the address to
+anyone holding the log, which is the same problem in a new place.
+
 ## What a full reset destroys
 
 A database reset (as run on 2026-09-06, see `.forge/HANDOFF.md`) is not
@@ -115,3 +162,42 @@ two are never confused: redaction answers "forget this customer's contact
 details," a reset answers "start the database over," and a pending removal
 request is not a reason to reach for the second when the first is what was
 asked.
+
+## Inquiries (t65): a second personal-data table, redacted by its own id
+
+`inquiries` (`backend/inquiries.mjs`) holds the short "more than tires" form:
+name, a phone or email, what they need, the vehicle if it matters. It is not
+a request's sibling -- no `request_id`, nothing else in the database points
+at it -- so it carries its own copy of this policy rather than inheriting
+the requests/quotes one above.
+
+**Personal:** `name` and `contact` identify a specific person, the same
+claim `requests`' name/email/phone make. **Not personal, and untouched by a
+removal request:** `vehicle_info` and `message`, for the same reason
+`requests.vehicleInfo` survives redaction there -- they are what the
+inquiry is *about*, not how to reach the person who sent it, and Ken needs
+both if the same person calls back. `INQUIRY_PERSONAL_FIELDS`, exported
+from `inquiries.mjs`, names the first two so an implementation reads the
+list from one place rather than re-deciding it.
+
+**The mechanism, for whoever implements it** (not written yet -- neither
+`requests` nor `outbox`'s redaction is implemented in code today either;
+see above): `UPDATE inquiries SET name=?, contact=?, updated_at=? WHERE
+id=?`, the redacted marker overwriting real columns rather than a JSON
+key, since this table was given typed columns instead of a `payload` blob
+from the start (see `inquiries.mjs`'s header for why). Idempotent for the
+same reason the requests mechanism must be: redacting an already-redacted
+row should be a no-op read straight off the row, not a state tracked
+anywhere else.
+
+**No status, no category.** An inquiry has no workflow column and no
+CHECK-constrained taxonomy, the same decision and the same reasoning as
+outbox's unconstrained `type` in #157: whether an inquiry needs a
+new/contacted/closed workflow, or a category of "more than tires" work, is
+`POST /api/inquiries` and the owner screen's question to answer once they
+exist, not a guess to constrain today. If either is added later, it is a
+schema change made when the vocabulary is real, the same as any other
+widening under `.forge/owner-backend.md`'s migration contract -- and since
+`inquiries` needs no `migrate()` of its own (a brand-new table has no prior
+rows in any deployed shape to reconcile), that future change would be the
+first time this table needs one.

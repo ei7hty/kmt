@@ -323,6 +323,12 @@ Environment for the hosted server:
 | `PORT`, `KMT_BIND` | Default `8080` and `0.0.0.0`. |
 | `KMT_ALLOWED_HOSTS` | Comma-separated hostnames to accept. Unset accepts any. |
 | `KMT_SESSION_HOURS` | Session lifetime, default 12. |
+| `KMT_MAIL_SMTP_HOST` | Where mail is sent through: the owner's Google Workspace, `smtp-relay.gmail.com` (default when any SMTP setting is present) or `smtp.gmail.com`. With no SMTP setting at all the server sends nothing and records every message in the outbox as `queued` (R25). |
+| `KMT_MAIL_SMTP_PORT` | Default `587` (STARTTLS); `465` is implicit TLS. |
+| `KMT_MAIL_SMTP_USER`, `KMT_MAIL_SMTP_PASSWORD` | Together or not at all: the mailbox and its App Password, or the relay credential. Unset for an IP-allow-listed relay. The password is set by the owner as a Fly secret and read by nothing else. |
+| `KMT_MAIL_FROM` | Required with any SMTP setting: the mailbox on the domain mail is sent from, e.g. `quotes@kensmobiletire.com`. |
+| `KMT_OWNER_EMAIL` | Required with any SMTP setting: where the owner's copy goes and what customers reply to. |
+| `KMT_PUBLIC_ORIGIN` | The origin links in emails point at. Unset, `https://` plus `KMT_CANONICAL_HOST`. |
 
 First-time Fly setup, `fly launch` pitfalls and the Docker commands are in
 [`.forge/owner-backend.md`](.forge/owner-backend.md). Whether supplier

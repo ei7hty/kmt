@@ -9,7 +9,8 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| workflow-t53 | KMT-F REPO AGENT- TEMP LEAD (repo agent) | .github/workflows/fly-deploy.yml, .github/workflows/health-monitor.yml, README.md (lint line) | 2026-09-06 |
+| t63-text-controls | JUNIOR FRONTEND DEV 2 (83b42a) | rebase onto current main, no new file changes | 2026-09-06 |
+| owner-guide | TEMP REPO AGENT (local_b2ab10bb) | rebase onto current main, no new file changes | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their

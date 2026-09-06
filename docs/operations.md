@@ -17,6 +17,56 @@ true yesterday is the most convincing way to be wrong today.
 
 ---
 
+## Preflight: which steps have already run
+
+**Run this before any step in this document, and before concluding anything from
+the site's behaviour.**
+
+```bash
+flyctl secrets list -a kmt
+```
+
+Every switch in this file is a secret, so one command shows which steps have
+already been done. It is faster than reading logs, needs no deploy, writes
+nothing, and it answered in seconds a question that three sessions spent an hour
+inferring from behaviour.
+
+| secret | absent means | present means |
+| --- | --- | --- |
+| `KMT_OWNER_PASSWORD` | the server refuses to boot | the owner can sign in |
+| `KMT_SESSION_SECRET` | a random one per boot, so sessions die on restart | sessions survive a restart |
+| `KMT_SERVICE_RADIUS_MILES` | **the service-area check is ENFORCING** at base 02148, 100 mi, 25 mi review | it is set to something -- read the boot line for which |
+| `KMT_ALLOWED_HOSTS` | **Step 1 has not been done**; any Host is accepted | Step 1 has been done |
+| `KMT_CANONICAL_HOST` | **Step 2 has not been done**; the redirect is dormant | the flip is live |
+| `KMT_MAIL_SMTP_HOST` / `_USER` / `_PASSWORD` | mail is outbox-only; nothing sends | SMTP is configured (see below) |
+| `KMT_MAIL_FROM`, `KMT_OWNER_EMAIL` | fine while no SMTP variable is set | required once any is |
+
+**A digest is not a value.** `secrets list` shows that a secret exists, not what
+it resolves to -- so it can prove a step has been done, and cannot prove what it
+was set to. `KMT_SERVICE_RADIUS_MILES` is the case that matters: present, it may
+be `off` or a number of miles, and only the boot line says which:
+
+```
+service-area check OFF: accepting every ZIP
+service-area check ON: base 02148, radius 100 mi, review beyond 25 mi
+```
+
+Presence and resolution are two different questions and each needs its own
+evidence. Both were used to settle this on 2026-09-06: the secret was listed as
+Deployed, and three boot lines across three deploys all read `OFF`.
+
+**The service-area row is the one to read carefully, because it fails closed.**
+Nothing set means customers beyond 100 miles are refused at submit -- and a
+refused customer does not come back to say so. Absence of that secret is not a
+quiet default; it is the check running.
+
+**Mail refuses a half-configuration rather than half-sending.** `configured` is
+true if **any** of `KMT_MAIL_SMTP_HOST`, `_USER` or `_PASSWORD` is set, and from
+that moment `KMT_MAIL_FROM` and `KMT_OWNER_EMAIL` are required or the server
+refuses to boot, naming the missing one. `_USER` and `_PASSWORD` must also be set
+together or neither. So a partial mail setup cannot start and quietly send from
+the wrong address; it stops, the way a missing owner password does.
+
 ## What is already done
 
 DNS at Squarespace, and certificates issued for the apex, `www` and `order`:
@@ -526,25 +576,66 @@ a restore creates a new volume rather than overwriting one.
    node .forge/restore-integrity-check.mjs /path/to/restored.sqlite
    ```
 
-   Fourteen checks, ending `14 OK, 0 FAIL -- 14 of 14 expected checks ran` and
-   a `SOUND:` line, exit code 0. Anything else is a `FAIL:` line and a
-   `NOT SOUND` verdict, exit non-zero. The row counts it prints vary per
-   restore, so they are counts to read rather than numbers to match.
-
-   It separates what it counts: `requests` and `quotes` are marked
-   **irreplaceable** -- nothing can reconstruct a customer's request -- while
-   the supplier tables are **rebuildable** from the scrape in the repository.
-   At 2am that distinction is the difference between a problem and an
-   inconvenience.
-
-   The script is PR #194 (DB ADMIN) and lands separately; until it does, this
-   step has no command and the drill stops at step 3.
-
    This is the step that turns "the file came back" into "the data is sound".
    It opens the database **read-only**, so it cannot repair the evidence it is
    judging -- opening a damaged SQLite file read-write can silently checkpoint
-   and fix it, after which every subsequent run passes and nobody learns
-   anything.
+   and fix it, after which every run passes and nobody learns anything.
+
+   A sound file looks like this. The row counts vary per restore, so they are
+   counts to read, not numbers to match:
+
+   ```
+   Restore-integrity check against /path/to/restored.sqlite
+   OK: /path/to/restored.sqlite exists
+   OK: opens as a SQLite database in read-only mode
+   PRAGMA user_version: 0
+   OK: PRAGMA integrity_check reports ok
+   OK: PRAGMA foreign_key_check reports no violations
+   OK: table supplier (rebuildable) is present with its expected columns and readable: N row(s)
+   OK: table offers (rebuildable) is present with its expected columns and readable: N row(s)
+   OK: table coverage (rebuildable) is present with its expected columns and readable: N row(s)
+   OK: table metadata (rebuildable) is present with its expected columns and readable: N row(s)
+   OK: table requests (irreplaceable) is present with its expected columns and readable: N row(s)
+   OK: table quotes (irreplaceable) is present with its expected columns and readable: N row(s)
+   OK: table owner_sessions (operational) is present with its expected columns and readable: N row(s)
+   OK: table outbox (operational) is present with its expected columns and readable: N row(s)
+   OK: quotes.status CHECK constraint includes every current status
+   OK: if metadata.seeded is set, the supplier table actually holds rows
+
+   14 OK, 0 OLDER SCHEMA, 0 FAIL -- 14 of 14 expected checks ran
+
+   SOUND: this file passed every check this script knows to run.
+   ```
+
+   **Three verdicts, and they mean three different next actions.** Read the
+   last line, or the exit code, and do the matching thing:
+
+   | verdict | exit | what it means | what you do |
+   | --- | --- | --- | --- |
+   | `SOUND` | 0 | every check passed | restore from this file |
+   | `OLDER SCHEMA` | 2 | **intact**, but written before a table or a constraint the current code has | restore it and let the app's own migration run before serving from it |
+   | `NOT SOUND` | 1 | corruption, a missing original table, a missing column, or the seeded-but-empty trap | do not serve from this file; find another copy |
+
+   **`OLDER SCHEMA` is not a failure and must not be treated as one.** Fly's
+   snapshots are kept five days, and this project has added tables and widened
+   constraints on consecutive days, so *every* restore is a file from a schema
+   in the past -- an intact one reporting `OLDER SCHEMA` is the normal case,
+   not the alarming one. It exists as its own verdict precisely so that
+   `NOT SOUND` keeps meaning "stop". A check that cried wolf here would be
+   worse than no check, because the one time it matters is the one time
+   somebody is frightened and in a hurry.
+
+   The two things it covers: a table added later (`owner_sessions`, `outbox`)
+   being absent, which `CREATE TABLE IF NOT EXISTS` recreates empty on the next
+   boot with nothing lost; and `quotes.status`'s CHECK predating t36's widening,
+   which `migrate()` rebuilds losslessly. A real `FAIL` alongside an
+   `OLDER SCHEMA` finding still wins the verdict and the exit code.
+
+   `PRAGMA user_version` is printed, not asserted -- nothing in this project has
+   ever set it, so it is `0` on every file today. It is there because it is the
+   fastest way to say which migration generation a file belongs to if that ever
+   changes, and because it answers the first question anyone asks when this
+   output is pasted into a message.
 
 5. **Record what happened**, in `.forge/HANDOFF.md`: the snapshot id and age,
    how long each step took, the check's output verbatim, and **every step whose
@@ -589,6 +680,227 @@ means Ken signs in again.
 assume -- a password that was set with the wrong quoting is a password nobody
 knows.
 
+## Manual data removal (until redaction is code)
+
+`/privacy` promises this today, in these exact words: *"To ask for your name,
+contact details and address to be removed, call (617) 410-8319."* Nobody has
+written `redact()` yet -- not for `requests`, not for `outbox`, not for
+`inquiries`; `docs/data-policy.md` documents the mechanism for each and
+implements none of them. **So if that phone rings, this is what happens: a
+human, by hand, in the database.** That is a legitimate way to run this for a
+business this size, but only if it is written down -- the person doing it is
+the user, who has not read the schema, and a promise with no procedure behind
+it is discovered at the worst possible moment, not the best one.
+
+This section is a checklist for that call, not a design document. Delete or
+rewrite it the day real `redact()` code exists for these tables -- at that
+point this procedure is the thing being replaced, not a reference for it.
+
+**Take a snapshot first.** Same rule as everywhere else in this document: it
+costs seconds, and it is the difference between one problem and two if a typed
+`WHERE` clause is wrong. See "Taking a snapshot by hand," above.
+
+**`requests`, `quotes`, `outbox` and `inquiries` are all live tables today**
+(#157 and #205 merged, #206 wired `mail.mjs` to write outbox rows on submit,
+on quote-sent, and on payment -- the outbox is not empty the way it was when
+this section was first written). Everything below applies to all four; there
+is no longer a "check which blocks apply" step. If a future schema change
+ever drops one of these tables, a query against it fails loudly with
+`no such table` rather than silently skipping -- that failure is correct,
+not a sign this procedure is out of date.
+
+### 1. Find what you have
+
+You will be holding a request id (from an emailed link, or read off `/status`
+by the customer), or only a name or phone number. `flyctl ssh console -a kmt`
+puts you on the machine; one `sqlite3` invocation per call, per the rule above
+-- nested quoting through `-C` breaks in ways that are hard to see.
+
+By id, if you have one:
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, payload FROM requests WHERE id='<request-id>';\""
+```
+
+By name or phone, if that is all you have -- the payload is JSON, so this
+reads inside it:
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, json_extract(payload,'\$.customerName'), json_extract(payload,'\$.customerPhone') FROM requests WHERE json_extract(payload,'\$.customerName') LIKE '%<name>%' OR json_extract(payload,'\$.customerPhone') LIKE '%<digits>%';\""
+```
+
+A name with an apostrophe (O'Brien) needs it doubled for SQL, not backslash-escaped:
+`O''Brien`, not `O\'Brien`.
+
+**Read the row back before touching anything.** More than one match, or no
+match at all, both mean stop and confirm you have the right person before the
+next step -- there is no undo on the write that follows.
+
+Then, with the request id in hand, find everything attached to it:
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, status FROM quotes WHERE request_id='<request-id>';\""
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, type, status FROM outbox WHERE request_id='<request-id>';\""
+```
+
+An inquiry is not attached to a request at all -- there is no `request_id` to
+search by, because an inquiry was never about a tire. If the person also
+submitted the "more than tires" form, you need its own id or a name/contact
+search the same shape as above, against `inquiries` directly.
+
+### 2. Redact exactly what `docs/data-policy.md` promises -- no more, no less
+
+**This is a deliberate, authorised exception to R27 ("nothing is deleted"),
+not a violation of it -- read closely, they say different things.** R27
+governs the *row*: a request or quote is never deleted, through every state
+including cancelled, and this procedure does not delete one either. What it
+blanks is a handful of columns inside a row that stays. `docs/data-policy.md`
+draws exactly this line -- "redaction, not deletion" -- and its own header
+says the policy behind it was decided by the lead under the user's standing
+direction, with the user holding veto; `/privacy` making this promise in
+production is that authorisation already exercised, not something this
+procedure grants itself. If a future reader still sees a contradiction
+between R27 and this section, that reading is worth a ruling from the PM or
+the lead rather than either DB ADMIN or DEV OPS deciding it in a doc.
+
+**What gets blanked:** `requests.payload`'s `customerName`, `customerEmail`,
+`customerPhone`, `location`, `locationNotes` and `customerNotes` (t64, "anything
+else I should know?" -- free text, and the field most likely to hold the
+actual thing someone wants gone); `outbox`'s `to_address`, `to_name`, and
+inside its `data` the same six personal keys (`OUTBOX_PERSONAL_DATA_KEYS` in
+`backend/outbox.mjs`); `inquiries`' `name` and `contact`
+(`INQUIRY_PERSONAL_FIELDS` in `backend/inquiries.mjs`).
+
+**What survives, on every table, and must not be touched:** `quotes` in full
+-- status, version, total, line items, both timestamps, all of it; on
+`requests`, `vehicleInfo`, `tireSelection`, `quantity`, `date`, `locationType`
+and `serviceZip`; on `outbox`, `type`, `template_version`, the business fields
+inside `data` (tire, size, quantity, price, the request id), `status`,
+`provider_id`; on `inquiries`, `vehicle_info` and `message`. These are the
+ledger and the business record this policy exists to keep, not contact
+information -- see "What redaction does not touch, and why" in
+`docs/data-policy.md`.
+
+**Never touch `requests.customer_key`.** It is what lets the customer's own
+device still see their history at `/status`; redacting contact information
+and revoking device access are two different asks, and this call was only
+one of them.
+
+**The marker is the literal string `[redacted]`,** written into every blanked
+field, not an empty string and not a deleted key -- so a reader can tell "this
+was removed" apart from "this was never collected," which is exactly what
+`docs/data-policy.md` asks for and does not itself pick a value for. Whoever
+eventually codes `redact()` for these tables should use the same string, so a
+row fixed by hand and a row redacted by code are not distinguishable from each
+other afterward.
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE requests SET payload = json_set(payload, '\$.customerName','[redacted]', '\$.customerEmail','[redacted]', '\$.customerPhone','[redacted]', '\$.location','[redacted]', '\$.locationNotes','[redacted]', '\$.customerNotes','[redacted]'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='<request-id>';\""
+```
+
+Then `outbox`, in the same visit -- every message mail.mjs recorded for this
+request carries the same six personal keys inside `data` that the request's
+own payload does (`backend/mail-templates.mjs`'s `baseData()` writes them
+under those exact names, matching `OUTBOX_PERSONAL_DATA_KEYS`), so this is
+not optional once `mail.mjs` has sent anything about the request:
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE outbox SET to_address='[redacted]', to_name='[redacted]', data = json_set(data, '\$.to_name','[redacted]', '\$.to_email','[redacted]', '\$.customerPhone','[redacted]', '\$.location','[redacted]', '\$.locationNotes','[redacted]', '\$.customerNotes','[redacted]'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE request_id='<request-id>';\""
+```
+
+And for an inquiry, by its own id:
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE inquiries SET name='[redacted]', contact='[redacted]', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='<inquiry-id>';\""
+```
+
+**Idempotent by construction.** `json_set` writing the same literal twice, or
+a plain `UPDATE ... = '[redacted]'` run twice, changes nothing the second
+time -- running this whole section again on a request already handled is safe,
+which matters if you are not sure whether last month's call was ever acted on.
+
+### 3. Verify
+
+Read the row back -- the same `SELECT`s as step 1 -- and confirm all six
+personal fields (`customerNotes` included) now read `[redacted]` and nothing
+else moved: the quote's status, the outbox row's `type`, the inquiry's
+`vehicle_info`, all unchanged.
+
+**Then check the customer's own access paths, not only the table.** The
+request is reachable by its 128-bit id at `GET /api/requests/<request-id>`
+and by the per-browser key at `/status` -- a row whose columns are blanked in
+`sqlite3` but which still answers with the old name over the API has not been
+removed from the one point of view that actually matters. If you have the id:
+
+```bash
+curl -s https://kensmobiletire.com/api/requests/<request-id>
+```
+
+The shaped response must no longer carry the real name, email, phone or
+location. Checking the table alone would not have caught a redaction that
+missed the row the public API actually reads.
+
+Then pull a copy off the machine (the same `.backup` and `sftp get` as "The
+monthly copy that leaves Fly," above) and run the read-only checker against
+it, from your own machine, the same way the restore drill's own
+integrity-check step does (see "The restore drill," above):
+
+```bash
+node .forge/restore-integrity-check.mjs /path/to/owner-backup.sqlite
+```
+
+A hand-edited database is exactly the case that checker exists for -- a typo
+in a `WHERE` clause, a quoted value that did not close the way it looked like
+it would, or a request whose `outbox` rows were missed is a mistake it
+catches, not one it prevents. Read its own output for what passed; a database
+that predates the `outbox` or `inquiries` tables reads as such on its own
+terms and is not evidence this procedure went wrong. Delete the local copy
+once you have read the result, the same as after any other backup.
+
+### What "removed" actually means here
+
+**Blanking a column does not erase the old bytes from the file.** SQLite
+writes the new value elsewhere on disk and leaves the previous one in
+freelist pages until something reuses them; the WAL holds the prior version
+too, until it is checkpointed. Your `UPDATE` reporting success means the app
+can no longer reach the name and address through any query -- it does not
+mean those bytes are gone from `/data/owner.sqlite`. If someone asks precisely
+what "removed" means, the honest answer is **no longer reachable by the app,
+today** -- not **erased from the file, today**.
+
+**`VACUUM` is what actually reclaims those pages**, rewriting the database
+without them. It is not part of this procedure by default, because it is not
+free: it needs roughly the size of the database again in free space, holds an
+exclusive lock for the duration, and on a live file that duration is real
+time, not instant. Whether it is worth running right after a removal, or
+batched for a quiet moment, is a judgement call -- but it is the tool for
+"gone from the file," and this procedure does not reach that state on its
+own.
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"VACUUM;\""
+```
+
+**And every snapshot or off-Fly copy taken before this was run still holds
+the original bytes, in full**, until it ages out on its own schedule -- five
+days for a Fly snapshot, whenever it is next replaced for a monthly copy
+someone kept encrypted. Neither an `UPDATE` nor a `VACUUM` against the live
+volume reaches back into a copy that already existed before the call came in.
+
+**Mail already sent** is the fourth boundary, and it is live now, not
+hypothetical: `mail.mjs` (#206) sends on submit, on quote-sent, and on
+payment. Once a message has actually left for the customer's own inbox --
+`status = 'sent'` on its outbox row, or check whether `KMT_MAIL_SMTP_HOST`
+is configured at all, since with no provider configured every row stays
+`queued` and never really left -- this procedure can redact KMT's record of
+having sent it; it cannot recall the message itself.
+
+Say all of this on the call if it comes up, in the terms above: reachable
+today, gone from the file only after a `VACUUM`, and out of every backup only
+once each ages out on its own schedule. That is the honest shape of the
+promise `/privacy` makes, not a weaker one than it sounds, but not a stronger
+one either.
+
 ## When it breaks
 
 **The site is down.** Read `flyctl status -a kmt` first: a machine that will not
@@ -620,3 +932,154 @@ database is what customers see and it does not go away when a scrape fails; see
 
 **In every case, before acting: take a snapshot.** It costs seconds and
 kilobytes, and it is the difference between one problem and two.
+
+---
+
+# Repairing the domain's mail records
+
+**Mail to `@kensmobiletire.com` is bouncing as of 2026-09-06.** There are no MX
+records on the domain, so every message sent to any address there has nowhere to
+be delivered and is returned to the sender. The website is entirely unaffected:
+every record the app depends on is intact and the site serves normally.
+
+**Google Workspace is the only sender.** Resend was cancelled on 2026-09-06, so
+this is a restoration to a single-sender zone rather than a reconciliation
+between two. That makes the repair simpler than it first looked, and it makes
+removing Resend's leftovers part of the fix rather than tidying afterwards.
+
+**The user makes every registrar edit.** No credential and no registrar action
+passes through an agent. This section provides the rows, where their values come
+from, the order to do them in, and the command that proves each one landed.
+
+## Query the authoritative nameserver, with a tool that fails loudly
+
+Everything is served through Google's nameservers, so ask them directly rather
+than asking a resolver:
+
+```powershell
+Resolve-DnsName -Name kensmobiletire.com -Type MX  -Server ns-cloud-a1.googledomains.com
+Resolve-DnsName -Name kensmobiletire.com -Type TXT -Server ns-cloud-a1.googledomains.com
+```
+
+**Use `Resolve-DnsName`, not `dig`, and this matters more here than anywhere
+else in this document.** `dig` is not installed on this machine and prints
+nothing rather than failing. On this question the two possible outputs are
+identical: *"there are no MX records"* and *"the tool that would have shown me
+the MX records is not installed"* both look like silence. That mistake sends
+someone to repair a zone that was fine, or to declare a broken one healthy.
+`Resolve-DnsName` raises `DNS name does not exist` and returns nothing only when
+the record genuinely is not there.
+
+**Ask the authoritative server, never a public cache.** Resolvers keep answering
+with stale good records for hours after the zone is wrong, and stale bad ones
+for hours after it is right. A repair that looks unapplied is usually a cache; a
+repair that looks applied may also be one.
+
+## What is in the zone now, and what it should be
+
+Measured authoritatively on 2026-09-06.
+
+| record | name | now | target |
+| --- | --- | --- | --- |
+| **MX** | `kensmobiletire.com` | **absent — this is why mail bounces** | Google Workspace MX |
+| **TXT (SPF)** | `kensmobiletire.com` | **absent** | one record, Google only |
+| **TXT (DKIM)** | `google._domainkey` | absent | add, generated in the admin console |
+| TXT | `kensmobiletire.com` | **junk: value is the literal string `resend._domainkey`** | delete |
+| CNAME | `rsend` | `rsend.forge.rmta.net` | delete |
+| A | `kensmobiletire.com` | `66.241.124.248` | unchanged |
+| AAAA | `kensmobiletire.com` | `2a09:8280:1::184:5351:0` | unchanged |
+| CNAME | `www` | `kmt.fly.dev` | unchanged |
+
+**One correction to expect when you go looking.** There is no record *at*
+`resend._domainkey` to delete — that name does not exist. What exists is a TXT
+record **at the apex** whose *value* is the literal text `resend._domainkey`,
+which is the record's host pasted into its value field. Search the apex TXT
+records for that string; do not search for a `resend._domainkey` host and
+conclude there is nothing to remove.
+
+That mistake is also the best available evidence for how the incident happened.
+A session in which a record's name went into its value field is a session in
+which a record set could be replaced rather than appended to. **Screenshot the
+existing rows before editing**, and treat the interface as capable of replacing
+what you meant to add to.
+
+## The repair, in this order
+
+The order matters: the first step is what stops mail bouncing, and the last one
+changes nothing about the bounce.
+
+**1. Restore the Google Workspace MX records. This is the fix for the
+incident.** The values come from **the user's Google Workspace admin console**,
+which is the only authority on whether their tenant expects the single
+`smtp.google.com` record or the older five `aspmx` hosts. Both are valid Google
+configurations for different tenants, and guessing picks the wrong one. Do not
+take MX values from this document, from memory, or from a search result.
+
+Mail delivery resumes when these are live and propagated. Everything below
+affects outbound mail, not the bounce.
+
+**2. Add one SPF TXT record at the apex, naming Google only.** With a single
+sender there is nothing to merge — take Google's `include:` from their own
+documentation.
+
+The rule to keep in mind even though it is not at risk today: **a domain may
+have only one SPF record.** Two is a misconfiguration that fails every sender,
+not just the added one. It is not the likely mistake in this repair because
+there is only one sender; it becomes the likely mistake the day a second is
+added, which is why it is written here rather than left to be rediscovered.
+
+**3. Add Google's DKIM key at `google._domainkey`.** This is not automatic and
+is easy to skip because nothing visibly breaks without it. The user generates
+the key in the Workspace admin console, which produces the TXT record to add.
+Without it Google signs nothing, and unsigned mail from the domain is markedly
+more likely to be filtered — a failure that looks like customers ignoring you.
+
+**4. Remove Resend's two leftovers.** The junk apex TXT described above, and the
+`rsend` CNAME pointing at `rsend.forge.rmta.net`. They are inert once nothing
+sends through Resend, but they are a standing claim in the zone that a sender
+nobody uses is associated with this domain, and they will confuse whoever reads
+these records next. Last, because nothing breaks if they linger a few minutes.
+
+## Proving the repair
+
+Authoritative, in this order:
+
+```powershell
+$ns = 'ns-cloud-a1.googledomains.com'
+Resolve-DnsName -Name kensmobiletire.com                    -Type MX    -Server $ns
+Resolve-DnsName -Name kensmobiletire.com                    -Type TXT   -Server $ns
+Resolve-DnsName -Name google._domainkey.kensmobiletire.com  -Type TXT   -Server $ns
+Resolve-DnsName -Name rsend.kensmobiletire.com              -Type CNAME -Server $ns
+```
+
+What each must show:
+
+- **MX**: the mail exchangers from the admin console, exactly.
+- **TXT at the apex**: exactly **one** record beginning `v=spf1`, naming Google;
+  and **no** record whose value is `resend._domainkey`.
+- **`google._domainkey`**: a DKIM key.
+- **`rsend`**: `DNS name does not exist`. That error is the pass condition for
+  this one, which is worth saying out loud because it is the only line here
+  where an error is the good outcome.
+
+**Then prove it with mail, not with DNS.** DNS answering correctly is the
+precondition, not the result.
+
+- **Send a message to an `@kensmobiletire.com` address from an outside account
+  and confirm it arrives rather than bounces.** That is the fix for this
+  incident, and nothing else demonstrates it.
+- Send one **from** the domain to an address on another provider, and read the
+  received message's `Authentication-Results` header: `spf=pass` and `dkim=pass`
+  is the proof. A dashboard reporting "verified" is a provider agreeing with
+  itself.
+
+## What the app does and does not depend on
+
+Nothing in this section affects the site. The app reads no DNS, sends no mail
+today, and its records — the apex `A` and `AAAA`, and the `www` and `order`
+CNAMEs — were not touched by the incident and must not be touched by the repair.
+
+**The apex `A` and `AAAA` records are also the mail domain's records.** Replacing
+them with a CNAME to satisfy some future instruction would break mail a second
+way and permanently: a CNAME at the apex cannot coexist with MX. That warning is
+in the cutover section too, and this incident is why it is worth repeating.

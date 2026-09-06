@@ -163,12 +163,15 @@ jobs:
   image:
     name: The image builds and boots
     runs-on: ubuntu-latest
-    # The scope decision below is also what tells deploy whether to ship and
-    # verify whether to re-audit: a docs-only push builds no image, deploys
-    # nothing, and re-audits nothing, rather than replacing the machine to carry
-    # a Markdown change.
+    # The scope step below answers two questions for the jobs downstream: build
+    # (does the gate's docker build have to run) and ship (did the deployed
+    # artifact change, which deploy and verify gate on). A docs-only push does
+    # neither -- no build, no deploy, no re-audit -- rather than replacing the
+    # machine to carry a Markdown change; a frontend change does not force the
+    # gate build but does ship.
     outputs:
       build: ${{ steps.scope.outputs.build }}
+      ship: ${{ steps.scope.outputs.ship }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -186,7 +189,20 @@ jobs:
       - name: Decide whether this change can affect the image
         id: scope
         run: |
-          paths='^(Dockerfile|\.dockerignore|fly\.toml|package-lock\.json|package\.json|backend/|src/data/|\.github/workflows/)'
+          # Two questions, two answers, because they are not the same question.
+          #
+          # build: does the GATE's docker build have to run? Only when the image
+          # or what it installs changed. The frontend build is already proven by
+          # `npm run build` in the check job, so a frontend-only change needs no
+          # second build here (#161).
+          build_paths='^(Dockerfile|\.dockerignore|fly\.toml|package-lock\.json|package\.json|backend/|src/data/|\.github/workflows/)'
+          # ship: did the DEPLOYED ARTIFACT change? Broader, and this is the one
+          # deploy gates on. The Dockerfile builds dist/ from ALL of src/, plus
+          # index.html and public/, so a change to any of them IS a change to the
+          # running image and must deploy -- gating deploy on `build` would skip a
+          # CSS or route change silently, an image nobody shipped (t53). `ship` is
+          # a superset of `build`: everything that forces a build also ships.
+          ship_paths='^(Dockerfile|\.dockerignore|fly\.toml|package-lock\.json|package\.json|backend/|src/|index\.html|public/|\.github/workflows/)'
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             base='${{ github.event.pull_request.base.sha }}'
@@ -196,18 +212,25 @@ jobs:
 
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
              || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            echo "no usable base ref; building rather than guessing"
+            echo "no usable base ref; building and shipping rather than guessing"
             echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "ship=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
           echo "changed files:"; echo "$changed"
-          if echo "$changed" | grep -Eq "$paths"; then
+          if echo "$changed" | grep -Eq "$build_paths"; then
             echo "build=true" >> "$GITHUB_OUTPUT"
           else
-            echo "nothing here can affect the image"
+            echo "no image or backend file changed; the gate build is skipped"
             echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$changed" | grep -Eq "$ship_paths"; then
+            echo "ship=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no file that reaches the deployed image changed; nothing to ship"
+            echo "ship=false" >> "$GITHUB_OUTPUT"
           fi
 
       # Built from the repository root with the real .dockerignore in play. That
@@ -311,20 +334,22 @@ jobs:
       # Skip the flyctl step, not the deploy job: verify needs deploy, and a
       # skipped job skips its dependents. So on a docs-only push the job runs
       # and succeeds with nothing shipped, and the running release stands rather
-      # than being replaced to carry a Markdown change (t53, #103). The signal
-      # is the image job's scope decision, the same one that governed the build.
+      # than being replaced to carry a Markdown change (t53, #103). The signal is
+      # `ship` -- did the deployed artifact change -- which is broader than the
+      # gate's `build`: a CSS or route change does not force the gate's docker
+      # build but must still deploy, because dist/ is built from all of src/.
       #
       # --build-arg GIT_SHA: the seven-character commit, baked into the image as
       # KMT_RELEASE, which the server answers as X-KMT-Release. It rides here and
       # on the gate's docker build both, so a cutover step reads with one curl.
       - name: Deploy the release
-        if: needs.image.outputs.build == 'true'
+        if: needs.image.outputs.ship == 'true'
         run: flyctl deploy --remote-only --ha=false --build-arg GIT_SHA=${GITHUB_SHA::7}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       - name: Nothing reached the image
-        if: needs.image.outputs.build != 'true'
-        run: echo "No file that reaches the image changed; the running release stands (t53)."
+        if: needs.image.outputs.ship != 'true'
+        run: echo "No file that reaches the deployed image changed; the running release stands (t53)."
 
   # The browser audits are the project's actual contract, and they only mean
   # anything against a real deployment -- this build passed every local check
@@ -334,12 +359,12 @@ jobs:
   verify:
     name: Audit the deployed site
     # deploy runs on every main push -- its flyctl step is what skips on a
-    # docs-only change -- so this audit is gated on the same scope decision.
+    # docs-only change -- so this audit is gated on the same `ship` signal.
     # When nothing shipped there is nothing new to read, and checking
     # X-KMT-Release against a SHA that was never deployed would read as a stale
     # image when the truth is that nothing deployed. So verify skips too.
     needs: [deploy, image]
-    if: needs.image.outputs.build == 'true'
+    if: needs.image.outputs.ship == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
