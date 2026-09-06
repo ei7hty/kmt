@@ -31,6 +31,10 @@ function Status({ navigate }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState('')
+  // Which request is mid-way through the "are you sure" step (#78): not
+  // window.confirm, which Playwright cannot drive, so this path had never
+  // once been exercised by anything.
+  const [confirmingId, setConfirmingId] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -65,7 +69,7 @@ function Status({ navigate }) {
   async function callOff(id) {
     // Asked for, because there is no undo from this screen: the customer would
     // have to submit the request again from the start.
-    if (!window.confirm('Cancel this request? You would have to start a new one.')) return
+    setConfirmingId('')
     setBusyId(id)
     setError('')
     try {
@@ -153,8 +157,22 @@ function Status({ navigate }) {
                       {quote.status === 'cancelled' && <p className="status-note status-note-bad">
                         This request was cancelled.{quote.reason ? ` ${quote.reason}` : ''} You have not been charged.
                       </p>}
-                      {CANCELLABLE.includes(quote.status) && <button className="link-action" disabled={busyId === request.id}
-                        onClick={() => callOff(request.id)}>Cancel this request</button>}
+                      {CANCELLABLE.includes(quote.status) && (
+                        confirmingId === request.id ? (
+                          <div className="cancel-confirm" role="alert">
+                            <p className="status-note status-note-bad">Cancel this request? You would have to start a new one.</p>
+                            <div className="tire-empty-actions">
+                              <button type="button" className="btn btn-neutral" disabled={busyId === request.id} onClick={() => setConfirmingId('')}>Keep it</button>
+                              <button type="button" className="btn btn-primary" disabled={busyId === request.id} onClick={() => callOff(request.id)}>
+                                {busyId === request.id ? 'Cancelling…' : 'Yes, cancel'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button className="link-action" disabled={busyId === request.id}
+                            onClick={() => setConfirmingId(request.id)}>Cancel this request</button>
+                        )
+                      )}
                     </div>
                   ) : <p className="text-secondary">Quote is being prepared.</p>}
                 </div>

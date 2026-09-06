@@ -13,7 +13,7 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 54;
+const EXPECTED_CHECKS = 62;
 
 /**
  * Preferred dates, always ahead of today. The server refuses anything inside
@@ -409,6 +409,75 @@ async function main() {
       }
     } else {
       fail('/owner: no visible Reject action found to test the rejected-quote path.');
+    }
+
+    // 7b. The customer cancels their own draft (R27, #78). This used to live
+    //     behind window.confirm, which Playwright cannot drive at all -- the
+    //     control was untestable, and untestable is why nobody had ever
+    //     watched it work. Confirming in-page, not a native dialog.
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
+    await submitRequest(page, {
+      ...CLEAN_TIRE,
+      vehicle: '2017 Mazda3',
+      location: '111 Demo Way',
+      date: LATEST,
+    });
+    await page.click('button:has-text("My Quote")');
+    await page.waitForURL('**/status');
+    await waitForStatus(page);
+    await page.click('button:has-text("Cancel this request")');
+    const selfCancelPromptVisible = await page.locator('text=Cancel this request? You would have to start a new one.').isVisible().catch(() => false);
+    if (selfCancelPromptVisible) {
+      ok('/status: cancelling asks in-page ("Cancel this request?"), not through window.confirm.');
+    } else {
+      fail('/status: clicking Cancel did not show the in-page confirmation step.');
+    }
+    await page.click('button:has-text("Yes, cancel")');
+    await page.waitForTimeout(300);
+    const selfCancelledVisible = await page.locator('text=This request was cancelled.').isVisible().catch(() => false);
+    if (selfCancelledVisible) {
+      ok('/status: confirming the in-page cancel step actually cancels the request.');
+    } else {
+      fail('/status: confirming cancel did not leave the request in a visibly cancelled state.');
+    }
+
+    // 7c. The owner cancels with a reason the customer will see (R28, #78).
+    //     window.prompt made this equally untestable; the prompt's own text
+    //     is a promise ("the customer will see it"), so the in-page
+    //     replacement has to keep that promise visible while typing, not
+    //     bury it in a placeholder that disappears on the first keystroke --
+    //     and the reason actually has to reach the customer's screen.
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
+    await submitRequest(page, {
+      ...CLEAN_TIRE,
+      vehicle: '2018 Subaru Outback',
+      location: '222 Demo Ct',
+      date: LATEST,
+    });
+    await openOwnerQuotes(page);
+    const ownerCancelCard = page.locator('.owner-request', { hasText: 'Subaru Outback' }).first();
+    await ownerCancelCard.locator('button:has-text("Cancel")').click();
+    const reasonPromiseVisible = await ownerCancelCard.locator('text=The customer will see this').isVisible().catch(() => false);
+    if (reasonPromiseVisible) {
+      ok('/owner: cancelling asks for a reason in-page, with "the customer will see this" visible at the point of typing, not window.prompt.');
+    } else {
+      fail('/owner: cancelling did not show an in-page reason box with the promise text visible.');
+    }
+    await ownerCancelCard.locator('textarea').fill('Out of stock by the time I checked -- sorry!');
+    await ownerCancelCard.locator('button:has-text("Cancel request")').click();
+    await page.waitForTimeout(300);
+    await page.click('button:has-text("Back to Customer Flow")');
+    await page.waitForURL(BASE + '/');
+    await page.click('button:has-text("My Quote")');
+    await page.waitForURL('**/status');
+    await waitForStatus(page);
+    const reasonReachedCustomer = await page.locator('text=Out of stock by the time I checked').isVisible().catch(() => false);
+    if (reasonReachedCustomer) {
+      ok('/status: the owner\'s cancellation reason, typed in-page, actually reaches the customer\'s screen.');
+    } else {
+      fail('/status: the customer does not see the reason the owner typed when cancelling.');
     }
 
     // 8. Quantity control (#113): the tire line multiplies by quantity, the
