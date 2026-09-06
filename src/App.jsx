@@ -6,13 +6,34 @@ import CustomerRequest from './routes/CustomerRequest.jsx'
 import QuoteRequests from './routes/QuoteRequests.jsx'
 import Status from './routes/Status.jsx'
 import Confirmation from './routes/Confirmation.jsx'
+import NotFound from './routes/NotFound.jsx'
+
+/**
+ * The pathname as the route switch sees it: trailing slashes dropped, so
+ * `/owner/` is `/owner` rather than an unknown path that used to fall through
+ * to the customer home (#76). Repeated slashes count as trailing. The root
+ * stays `/`.
+ */
+function normalizePath(pathname) {
+  const trimmed = pathname.replace(/\/+$/, '')
+  return trimmed === '' ? '/' : trimmed
+}
+
+/** Read the current route, and put the normalised form in the address bar if it differs. */
+function currentRoute() {
+  const route = normalizePath(window.location.pathname)
+  if (route !== window.location.pathname) {
+    window.history.replaceState(window.history.state, '', route + window.location.search + window.location.hash)
+  }
+  return route
+}
 
 function App() {
-  const [route, setRoute] = useState(() => window.location.pathname)
+  const [route, setRoute] = useState(currentRoute)
   const [ownerVersion, setOwnerVersion] = useState(0)
 
   useEffect(() => {
-    const handlePopState = () => setRoute(window.location.pathname)
+    const handlePopState = () => setRoute(currentRoute())
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
@@ -27,7 +48,7 @@ function App() {
 
   const navigate = (path) => {
     window.history.pushState({}, '', path)
-    setRoute(window.location.pathname)
+    setRoute(currentRoute())
   }
 
   if (route === '/owner') return <OwnerInventory navigate={navigate} />
@@ -44,7 +65,11 @@ function App() {
     return <Status navigate={navigate} />
   }
 
-  return <CustomerRequest navigate={navigate} />
+  if (route === '/') return <CustomerRequest navigate={navigate} />
+
+  // Anything else is a path the app does not have. It used to render the
+  // customer home with no sign that anything was wrong.
+  return <NotFound navigate={navigate} path={route} />
 }
 
 export default App
