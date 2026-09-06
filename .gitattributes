@@ -1,0 +1,9 @@
+# Shell scripts must reach the image with LF endings.
+#
+# docker-entrypoint.sh runs as the container ENTRYPOINT. A CRLF line ending on
+# its shebang makes the kernel look for an interpreter literally named
+# "/bin/sh\r", which does not exist -- the container then fails to start at
+# all, on every deploy, with an error that names neither line endings nor the
+# file. It is stored LF today only because the machine that wrote it happens
+# to normalise on commit; this makes it true regardless of anyone's settings.
+*.sh text eol=lf
