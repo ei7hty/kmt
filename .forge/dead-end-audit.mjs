@@ -373,12 +373,12 @@ async function main() {
     if (setPriceDoubled && draftMatches) {
       ok(
         `Quantity 2 on ${CLEAN_TIRE.tireName}: displayed set price doubles to ${expectedSetPrice}, and the ` +
-          `drafted total (\$${expectedDraftTotal}) is 2x the tire plus one un-multiplied service fee.`,
+          `drafted total ($${expectedDraftTotal}) is 2x the tire plus one un-multiplied service fee.`,
       );
     } else {
       fail(
         `Quantity 2 on ${CLEAN_TIRE.tireName}: expected set price ${expectedSetPrice} (got "${setPriceText}") and ` +
-          `drafted total including \$${expectedDraftTotal} (got message: "${draftMsg}"). A service fee that ` +
+          `drafted total including $${expectedDraftTotal} (got message: "${draftMsg}"). A service fee that ` +
           'multiplies with quantity, or a tire line that does not, would both surface here.',
       );
     }

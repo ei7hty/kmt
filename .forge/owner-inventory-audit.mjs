@@ -1,3 +1,4 @@
+/* global window, document, innerWidth */ // used inside page.evaluate, which runs in the browser
 import { chromium } from 'playwright'
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
