@@ -1,6 +1,6 @@
 {
   "source": "giga-tires.com",
-  "scrapedAt": "2026-09-05T15:33:54.024Z",
+  "scrapedAt": "2026-09-05T23:17:57.320Z",
   "sizes": [
     "205/65R15",
     "215/60R16",
@@ -114,7 +114,7 @@
       "description": "High Performance All Season · 95H BSW",
       "source": {
         "sku": "FERE0011621560H",
-        "stock": 3635,
+        "stock": 3505,
         "listPrice": 42.4,
         "segment": "Passenger",
         "url": "https://www.giga-tires.com/215-60-16/ferentino-tires/eternopresa/tirecode/3000000096"
@@ -130,7 +130,7 @@
       "description": "High Performance All Season · 95H BSW",
       "source": {
         "sku": "LEAO0221621560H",
-        "stock": 2548,
+        "stock": 2544,
         "listPrice": 48.08,
         "segment": "Passenger",
         "url": "https://www.giga-tires.com/215-60-16/leao-tires/lion-sport-hp3/tirecode/221012046"
@@ -162,7 +162,7 @@
       "description": "Racing · 95V BSW",
       "source": {
         "sku": "RCKD0011621560V",
-        "stock": 3193,
+        "stock": 3160,
         "listPrice": 48.64,
         "segment": "Passenger",
         "url": "https://www.giga-tires.com/215-60-16/rockblade-tires/multifresh-touring/tirecode/2KRKA008Y"
@@ -178,7 +178,7 @@
       "description": "High Performance All Season · 95V BSW",
       "source": {
         "sku": "ATLA0031621560V2",
-        "stock": 1617,
+        "stock": 1615,
         "listPrice": 48.89,
         "segment": "Passenger",
         "url": "https://www.giga-tires.com/215-60-16/atlas-tires/force-hp/tirecode/221018383"
@@ -194,10 +194,1514 @@
       "description": "All Season · 95H BSW",
       "source": {
         "sku": "GRND0221621560H",
-        "stock": 1388,
+        "stock": 1347,
         "listPrice": 49.47,
         "segment": "Passenger",
         "url": "https://www.giga-tires.com/215-60-16/groundspeed-tires/voyager-gt-as/tirecode/714968"
+      }
+    },
+    {
+      "id": "giga-vizz0081621560vxl",
+      "name": "Vizzoni VZ101",
+      "size": "215/60R16",
+      "price": 40,
+      "inStock": true,
+      "category": "performance",
+      "description": "Ultra High Performance Summer · XL 99V BSW",
+      "source": {
+        "sku": "VIZZ0081621560VXL",
+        "stock": 106,
+        "listPrice": 50,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/vizzoni-tires/vz101/tirecode/6M6075"
+      }
+    },
+    {
+      "id": "giga-otan0161621560h",
+      "name": "Otani EK2000",
+      "size": "215/60R16",
+      "price": 40.2,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95H BSW",
+      "source": {
+        "sku": "OTAN0161621560H",
+        "stock": 1126,
+        "listPrice": 50.25,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/otani-tires/ek2000/tirecode/S198D"
+      }
+    },
+    {
+      "id": "giga-evol0071621560h",
+      "name": "Evoluxx Capricorn HP",
+      "size": "215/60R16",
+      "price": 40.5,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95H",
+      "source": {
+        "sku": "EVOL0071621560H",
+        "stock": 9204,
+        "listPrice": 50.63,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/evoluxx-tires/capricorn-hp/tirecode/221019790"
+      }
+    },
+    {
+      "id": "giga-lanv0071621560v",
+      "name": "Lanvigator Fastone",
+      "size": "215/60R16",
+      "price": 40.57,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "LANV0071621560V",
+        "stock": 820,
+        "listPrice": 50.71,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/lanvigator-tires/fastone/tirecode/20000755"
+      }
+    },
+    {
+      "id": "giga-roya0011621560v",
+      "name": "Royal Black Touring HP",
+      "size": "215/60R16",
+      "price": 41.29,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "ROYA0011621560V",
+        "stock": 1635,
+        "listPrice": 51.61,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/royal-black-tires/touring-hp/tirecode/20000502"
+      }
+    },
+    {
+      "id": "giga-lasp0011621560v",
+      "name": "Landspider Citytraxx G/P",
+      "size": "215/60R16",
+      "price": 41.35,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95V BSW",
+      "source": {
+        "sku": "LASP0011621560V",
+        "stock": 752,
+        "listPrice": 51.69,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/landspider-tires/citytraxx-g-p/tirecode/AGP016"
+      }
+    },
+    {
+      "id": "giga-rada0931621560vxl",
+      "name": "Radar Dimax eSport 1",
+      "size": "215/60R16",
+      "price": 41.55,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · XL 99V BSW",
+      "source": {
+        "sku": "RADA0931621560VXL",
+        "stock": 39,
+        "listPrice": 51.94,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/radar-tires/dimax-esport-1/tirecode/RACEIN0008"
+      }
+    },
+    {
+      "id": "giga-grnd0041621560hxl",
+      "name": "Groundspeed Voyager GT",
+      "size": "215/60R16",
+      "price": 41.8,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · XL 99H BSW",
+      "source": {
+        "sku": "GRND0041621560HXL",
+        "stock": 2244,
+        "listPrice": 52.25,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/groundspeed-tires/voyager-gt/tirecode/115555"
+      }
+    },
+    {
+      "id": "giga-atln0341621560v",
+      "name": "Atlander Xsport-86",
+      "size": "215/60R16",
+      "price": 41.84,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95V BSW",
+      "source": {
+        "sku": "ATLN0341621560V",
+        "stock": 196,
+        "listPrice": 52.3,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/atlander-tires/xsport-86/tirecode/UHP1009"
+      }
+    },
+    {
+      "id": "giga-apls0031621560v",
+      "name": "Aplus Comfort HP",
+      "size": "215/60R16",
+      "price": 42,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "APLS0031621560V",
+        "stock": 1287,
+        "listPrice": 52.5,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/aplus-tires/comfort-hp/tirecode/20000203"
+      }
+    },
+    {
+      "id": "giga-amrs0171621560v",
+      "name": "American Road Star PRO A/S",
+      "size": "215/60R16",
+      "price": 42.05,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95V BSW",
+      "source": {
+        "sku": "AMRS0171621560V",
+        "stock": 2628,
+        "listPrice": 52.56,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/american-road-star-tires/pro-a-s/tirecode/ARSP22"
+      }
+    },
+    {
+      "id": "giga-supe0461621560h",
+      "name": "Supermax TR-1",
+      "size": "215/60R16",
+      "price": 42.13,
+      "inStock": true,
+      "category": "performance",
+      "description": "Racing · 95H BSW",
+      "source": {
+        "sku": "SUPE0461621560H",
+        "stock": 15,
+        "listPrice": 52.66,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/supermax-tires/tr-1/tirecode/PCR1605SX"
+      }
+    },
+    {
+      "id": "giga-lanc0061621560h",
+      "name": "Lancaster LR-66",
+      "size": "215/60R16",
+      "price": 42.21,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Ultra High Performance All Season · 95H BSW",
+      "source": {
+        "sku": "LANC0061621560H",
+        "stock": 1222,
+        "listPrice": 52.76,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/lancaster-tires/lr-66/tirecode/LC0220"
+      }
+    },
+    {
+      "id": "giga-amet0251621560v",
+      "name": "AmeriTread Total Comfort",
+      "size": "215/60R16",
+      "price": 42.26,
+      "inStock": true,
+      "category": "performance",
+      "description": "Compare tires at a glance using our easy test score<sup>®</sup> system. Our proprietary algorithm factors in performance, expert insights, user reviews, and Uniform Tire Quality Grading (UTQG) scores. · 95V BSW",
+      "source": {
+        "sku": "AMET0251621560V",
+        "stock": 826,
+        "listPrice": 52.82,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/ameritread-tires/total-comfort/tirecode/ADCMTC14"
+      }
+    },
+    {
+      "id": "giga-mevr0011621560v",
+      "name": "Milever Sport Pro MA354",
+      "size": "215/60R16",
+      "price": 42.47,
+      "inStock": true,
+      "category": "performance",
+      "description": "Racing · 95V BSW",
+      "source": {
+        "sku": "MEVR0011621560V",
+        "stock": 746,
+        "listPrice": 53.09,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/milever-tires/sport-pro-ma354/tirecode/3104167"
+      }
+    },
+    {
+      "id": "giga-arro0071621560v",
+      "name": "Arroyo Eco Pro A/S",
+      "size": "215/60R16",
+      "price": 42.95,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95V BSW",
+      "source": {
+        "sku": "ARRO0071621560V",
+        "stock": 8338,
+        "listPrice": 53.69,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/arroyo-tires/eco-pro-a-s/tirecode/AEP007"
+      }
+    },
+    {
+      "id": "giga-pega0701621560h",
+      "name": "Pegasus TOUR AS",
+      "size": "215/60R16",
+      "price": 43,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Highway · 95H BSW",
+      "source": {
+        "sku": "PEGA0701621560H",
+        "stock": 1376,
+        "listPrice": 53.75,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/pegasus-tires/tour-as/tirecode/1791116664"
+      }
+    },
+    {
+      "id": "giga-zenn0041621560h",
+      "name": "Zenna Sport Line",
+      "size": "215/60R16",
+      "price": 43.2,
+      "inStock": true,
+      "category": "performance",
+      "description": "Ultra High Performance Summer · 95H BSW",
+      "source": {
+        "sku": "ZENN0041621560H",
+        "stock": 774,
+        "listPrice": 54,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/zenna-tires/sport-line/tirecode/1951326616"
+      }
+    },
+    {
+      "id": "giga-geoq0261621560v",
+      "name": "Geoquest A5 Touring All Season",
+      "size": "215/60R16",
+      "price": 43.2,
+      "inStock": true,
+      "category": "all-season",
+      "description": "95V BSW",
+      "source": {
+        "sku": "GEOQ0261621560V",
+        "stock": 2864,
+        "listPrice": 54,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/geoquest-tires/a5-touring-all-season/tirecode/3402000260"
+      }
+    },
+    {
+      "id": "giga-deli0071621560v2",
+      "name": "Delinte DH2",
+      "size": "215/60R16",
+      "price": 43.85,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 99V BSW",
+      "source": {
+        "sku": "DELI0071621560V2",
+        "stock": 545,
+        "listPrice": 54.81,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/delinte-tires/dh2/tirecode/200651"
+      }
+    },
+    {
+      "id": "giga-mont0011621560v",
+      "name": "Montreal Eco",
+      "size": "215/60R16",
+      "price": 44,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "MONT0011621560V",
+        "stock": 771,
+        "listPrice": 55,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/montreal-tires/eco/tirecode/MN48"
+      }
+    },
+    {
+      "id": "giga-forc0011621560h",
+      "name": "Forceland Kunimoto F20",
+      "size": "215/60R16",
+      "price": 44,
+      "inStock": true,
+      "category": "performance",
+      "description": "Ultra High Performance Summer · 95H BSW",
+      "source": {
+        "sku": "FORC0011621560H",
+        "stock": 877,
+        "listPrice": 55,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/forceland-tires/kunimoto-f20/tirecode/F05216"
+      }
+    },
+    {
+      "id": "giga-amcu0241621560v",
+      "name": "Americus Recon Tour",
+      "size": "215/60R16",
+      "price": 44.2,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "AMCU0241621560V",
+        "stock": 628,
+        "listPrice": 55.25,
+        "segment": "Truck/SUV - CUV/Crossover",
+        "url": "https://www.giga-tires.com/215-60-16/americus-tires/recon-tour/tirecode/AMD3060"
+      }
+    },
+    {
+      "id": "giga-trav0071621560h",
+      "name": "Travelstar UN99",
+      "size": "215/60R16",
+      "price": 44.32,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95H BSW",
+      "source": {
+        "sku": "TRAV0071621560H",
+        "stock": 51,
+        "listPrice": 55.4,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/travelstar-tires/un99/tirecode/LLPCR031"
+      }
+    },
+    {
+      "id": "giga-tbba0041621560h",
+      "name": "TBB TR-66/GR-66",
+      "size": "215/60R16",
+      "price": 44.33,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Ultra High Performance All Season · 95H BSW",
+      "source": {
+        "sku": "TBBA0041621560H",
+        "stock": 4,
+        "listPrice": 55.41,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/tbb-tires/tr-66-gr-66/tirecode/9HEB2PA"
+      }
+    },
+    {
+      "id": "giga-rone0611621560h",
+      "name": "Road One Cavalry A/S",
+      "size": "215/60R16",
+      "price": 44.35,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95H BSW",
+      "source": {
+        "sku": "RONE0611621560H",
+        "stock": 3635,
+        "listPrice": 55.44,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/road-one-tires/cavalry-a-s/tirecode/RL1345"
+      }
+    },
+    {
+      "id": "giga-petl0371621560v",
+      "name": "Petlas Progreen PT525",
+      "size": "215/60R16",
+      "price": 44.51,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "PETL0371621560V",
+        "stock": 96,
+        "listPrice": 55.64,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/petlas-tires/progreen-pt525/tirecode/23301"
+      }
+    },
+    {
+      "id": "giga-aris1101621560h",
+      "name": "Arisun ZP01",
+      "size": "215/60R16",
+      "price": 44.55,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95H BSW",
+      "source": {
+        "sku": "ARIS1101621560H",
+        "stock": 985,
+        "listPrice": 55.69,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/arisun-tires/zp01/tirecode/TH20728"
+      }
+    },
+    {
+      "id": "giga-watf0011621560h",
+      "name": "Waterfall Eco Dynamic",
+      "size": "215/60R16",
+      "price": 44.62,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95H BSW",
+      "source": {
+        "sku": "WATF0011621560H",
+        "stock": 1125,
+        "listPrice": 55.78,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/waterfall-tires/eco-dynamic/tirecode/PCR-1610-WF"
+      }
+    },
+    {
+      "id": "giga-hdwy0061621560h",
+      "name": "Headway HH316",
+      "size": "215/60R16",
+      "price": 44.85,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95H BSW",
+      "source": {
+        "sku": "HDWY0061621560H",
+        "stock": 16,
+        "listPrice": 56.06,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/headway-tires/hh316/tirecode/HH316013"
+      }
+    },
+    {
+      "id": "giga-full0101621560vxl",
+      "name": "Fullrun PC388",
+      "size": "215/60R16",
+      "price": 44.86,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · XL 99V BSW",
+      "source": {
+        "sku": "FULL0101621560VXL",
+        "stock": 340,
+        "listPrice": 56.08,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/fullrun-tires/pc388/tirecode/PC3881605"
+      }
+    },
+    {
+      "id": "giga-pant0021621560h",
+      "name": "Pantera Platinum Touring A/S",
+      "size": "215/60R16",
+      "price": 45,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95H BSW",
+      "source": {
+        "sku": "PANT0021621560H",
+        "stock": 882,
+        "listPrice": 56.25,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/pantera-tires/platinum-touring-a-s/tirecode/151102"
+      }
+    },
+    {
+      "id": "giga-rove0521621560h",
+      "name": "Rovelo Instinct AS01",
+      "size": "215/60R16",
+      "price": 45,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95H BSW",
+      "source": {
+        "sku": "ROVE0521621560H",
+        "stock": 1477,
+        "listPrice": 56.25,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/rovelo-tires/instinct-as01/tirecode/9630931"
+      }
+    },
+    {
+      "id": "giga-aris1131621560h",
+      "name": "Arisun ZP11",
+      "size": "215/60R16",
+      "price": 45,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95H BSW",
+      "source": {
+        "sku": "ARIS1131621560H",
+        "stock": 162,
+        "listPrice": 56.25,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/arisun-tires/zp11/tirecode/TH85345"
+      }
+    },
+    {
+      "id": "giga-verc0041621560v",
+      "name": "Vercelli Strada I",
+      "size": "215/60R16",
+      "price": 45.01,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "VERC0041621560V",
+        "stock": 32,
+        "listPrice": 56.26,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/vercelli-tires/strada-i/tirecode/VC630"
+      }
+    },
+    {
+      "id": "giga-attu0021621560vxl",
+      "name": "Atturo AZ810",
+      "size": "215/60R16",
+      "price": 45.22,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Weather · XL 99V BSW",
+      "source": {
+        "sku": "ATTU0021621560VXL",
+        "stock": 488,
+        "listPrice": 56.53,
+        "segment": "Truck/SUV - Highway",
+        "url": "https://www.giga-tires.com/215-60-16/atturo-tires/az810/tirecode/AZ810-9HEAJPA"
+      }
+    },
+    {
+      "id": "giga-fort0041621560v",
+      "name": "Fortune Perfectus FSR602",
+      "size": "215/60R16",
+      "price": 45.36,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "FORT0041621560V",
+        "stock": 1969,
+        "listPrice": 56.7,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/fortune-tires/perfectus-fsr602/tirecode/3431030703"
+      }
+    },
+    {
+      "id": "giga-dcen0161621560h",
+      "name": "Dcenti DC33",
+      "size": "215/60R16",
+      "price": 45.37,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95H BSW",
+      "source": {
+        "sku": "DCEN0161621560H",
+        "stock": 949,
+        "listPrice": 56.71,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/dcenti-tires/dc33/tirecode/T2156016DCE-DC33"
+      }
+    },
+    {
+      "id": "giga-crmx0011621560v",
+      "name": "Crossmax CT-1",
+      "size": "215/60R16",
+      "price": 45.46,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95V BSW",
+      "source": {
+        "sku": "CRMX0011621560V",
+        "stock": 4288,
+        "listPrice": 56.83,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/crossmax-tires/ct-1/tirecode/PCR-1605-CS"
+      }
+    },
+    {
+      "id": "giga-land0011621560h",
+      "name": "Landsail LS388",
+      "size": "215/60R16",
+      "price": 45.47,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95H BSW",
+      "source": {
+        "sku": "LAND0011621560H",
+        "stock": 180,
+        "listPrice": 56.84,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/landsail-tires/ls388/tirecode/133723"
+      }
+    },
+    {
+      "id": "giga-glad0201621560v",
+      "name": "Gladiator X Comp HP AS1",
+      "size": "215/60R16",
+      "price": 45.55,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95V BSW",
+      "source": {
+        "sku": "GLAD0201621560V",
+        "stock": 486,
+        "listPrice": 56.94,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/gladiator-tires/x-comp-hp-as1/tirecode/1801006616"
+      }
+    },
+    {
+      "id": "giga-matr0021621560h",
+      "name": "Mastertrack M-TRAC Tour",
+      "size": "215/60R16",
+      "price": 45.59,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95H BSW",
+      "source": {
+        "sku": "MATR0021621560H",
+        "stock": 791,
+        "listPrice": 56.99,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/mastertrack-tires/m-trac-tour/tirecode/MASTPAS012"
+      }
+    },
+    {
+      "id": "giga-deli0401621560vxl",
+      "name": "Delinte DS2 Dynamx Sport 2",
+      "size": "215/60R16",
+      "price": 46,
+      "inStock": true,
+      "category": "performance",
+      "description": "Ultra High Performance Summer · XL 99V BSW",
+      "source": {
+        "sku": "DELI0401621560VXL",
+        "stock": 1427,
+        "listPrice": 57.5,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/delinte-tires/ds2-dynamx-sport-2/tirecode/849670"
+      }
+    },
+    {
+      "id": "giga-amhe0131621560v",
+      "name": "Armohero Smartway Touring",
+      "size": "215/60R16",
+      "price": 46.42,
+      "inStock": true,
+      "category": "performance",
+      "description": "Racing · 95V BSW",
+      "source": {
+        "sku": "AMHE0131621560V",
+        "stock": 23,
+        "listPrice": 58.03,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/armohero-tires/smartway-touring/tirecode/2KAHA008Y"
+      }
+    },
+    {
+      "id": "giga-cosm0061621560v",
+      "name": "Cosmo RC-17",
+      "size": "215/60R16",
+      "price": 46.54,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95V BSW",
+      "source": {
+        "sku": "COSM0061621560V",
+        "stock": 2153,
+        "listPrice": 58.18,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/cosmo-tires/rc-17/tirecode/I-0066713"
+      }
+    },
+    {
+      "id": "giga-west0911621560v",
+      "name": "Westlake Foray RP218",
+      "size": "215/60R16",
+      "price": 46.72,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "WEST0911621560V",
+        "stock": 6697,
+        "listPrice": 58.4,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/westlake-tires/foray-rp218/tirecode/24000119"
+      }
+    },
+    {
+      "id": "giga-finl0111621560h",
+      "name": "Finalist UN109",
+      "size": "215/60R16",
+      "price": 46.96,
+      "inStock": true,
+      "category": "all-season",
+      "description": "95H BSW",
+      "source": {
+        "sku": "FINL0111621560H",
+        "stock": 70,
+        "listPrice": 58.7,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/finalist-tires/un109/tirecode/FINAPAS019"
+      }
+    },
+    {
+      "id": "giga-foum0071621560vxl",
+      "name": "Forceum Octa",
+      "size": "215/60R16",
+      "price": 47.08,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Ultra High Performance All Season · XL 99V BSW",
+      "source": {
+        "sku": "FOUM0071621560VXL",
+        "stock": 10,
+        "listPrice": 58.85,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/forceum-tires/octa/tirecode/1200028057"
+      }
+    },
+    {
+      "id": "giga-zeta0041621560v",
+      "name": "Zeta Verdant",
+      "size": "215/60R16",
+      "price": 47.74,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95V BSW",
+      "source": {
+        "sku": "ZETA0041621560V",
+        "stock": 572,
+        "listPrice": 59.68,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/zeta-tires/verdant/tirecode/7101501"
+      }
+    },
+    {
+      "id": "giga-land0311621560h",
+      "name": "Landsail RapidDragon RD-3 AS",
+      "size": "215/60R16",
+      "price": 47.95,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95H BSW",
+      "source": {
+        "sku": "LAND0311621560H",
+        "stock": 344,
+        "listPrice": 59.94,
+        "segment": "Truck/SUV - CUV/Crossover",
+        "url": "https://www.giga-tires.com/215-60-16/landsail-tires/rapiddragon-rd-3-as/tirecode/921931"
+      }
+    },
+    {
+      "id": "giga-thun3301621560v",
+      "name": "Thunderer Mach I Plus",
+      "size": "215/60R16",
+      "price": 48.23,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "THUN3301621560V",
+        "stock": 922,
+        "listPrice": 60.29,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/thunderer-tires/mach-i-plus/tirecode/TH3060"
+      }
+    },
+    {
+      "id": "giga-mile0701621560hxl",
+      "name": "Milestar Weatherguard AW365",
+      "size": "215/60R16",
+      "price": 48.5,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Weather · XL 99H BSW",
+      "source": {
+        "sku": "MILE0701621560HXL",
+        "stock": 531,
+        "listPrice": 60.63,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/milestar-tires/weatherguard-aw365/tirecode/24655032"
+      }
+    },
+    {
+      "id": "giga-acce0541621560h",
+      "name": "Accelera X-Grip N",
+      "size": "215/60R16",
+      "price": 48.59,
+      "inStock": true,
+      "category": "winter",
+      "description": "Winter / snow · 95H BSW",
+      "source": {
+        "sku": "ACCE0541621560H",
+        "stock": 50,
+        "listPrice": 60.74,
+        "segment": "Passenger - Snow/Winter",
+        "url": "https://www.giga-tires.com/215-60-16/accelera-tires/x-grip-n/tirecode/1200046758"
+      }
+    },
+    {
+      "id": "giga-neot0011621560v",
+      "name": "NeoTerra NeoTour",
+      "size": "215/60R16",
+      "price": 48.65,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "NEOT0011621560V",
+        "stock": 15,
+        "listPrice": 60.81,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/neoterra-tires/neotour/tirecode/6959613722714"
+      }
+    },
+    {
+      "id": "giga-gori0581621560h",
+      "name": "Goodride RP88",
+      "size": "215/60R16",
+      "price": 48.9,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95H BSW",
+      "source": {
+        "sku": "GORI0581621560H",
+        "stock": 60,
+        "listPrice": 61.13,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/goodride-tires/rp88/tirecode/TH24238"
+      }
+    },
+    {
+      "id": "giga-otan0071621560vxl",
+      "name": "Otani KC2000",
+      "size": "215/60R16",
+      "price": 48.92,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · XL 99V BSW",
+      "source": {
+        "sku": "OTAN0071621560VXL",
+        "stock": 135,
+        "listPrice": 61.15,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/otani-tires/kc2000/tirecode/S198G"
+      }
+    },
+    {
+      "id": "giga-mutr0011621560v",
+      "name": "MultiTrax MX901 A/S",
+      "size": "215/60R16",
+      "price": 49.48,
+      "inStock": true,
+      "category": "all-season",
+      "description": "95V BSW",
+      "source": {
+        "sku": "MUTR0011621560V",
+        "stock": 2131,
+        "listPrice": 61.85,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/multitrax-tires/mx901-a-s/tirecode/MXAS018"
+      }
+    },
+    {
+      "id": "giga-mega0071621560h",
+      "name": "Megagrip HPX 350",
+      "size": "215/60R16",
+      "price": 49.56,
+      "inStock": true,
+      "category": "all-season",
+      "description": "95H BSW",
+      "source": {
+        "sku": "MEGA0071621560H",
+        "stock": 226,
+        "listPrice": 61.95,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/megagrip-tires/hpx-350/tirecode/MGC12716"
+      }
+    },
+    {
+      "id": "giga-coop0201621560h",
+      "name": "Cooper Evolution Winter",
+      "size": "215/60R16",
+      "price": 49.93,
+      "inStock": true,
+      "category": "winter",
+      "description": "Winter / snow · 95H BSW",
+      "source": {
+        "sku": "COOP0201621560H",
+        "stock": 247,
+        "listPrice": 62.41,
+        "segment": "Passenger - Snow/Winter",
+        "url": "https://www.giga-tires.com/215-60-16/cooper-tires/evolution-winter/tirecode/166116006"
+      }
+    },
+    {
+      "id": "giga-land0341621560vxl",
+      "name": "Landsail RapidDragon RD-365",
+      "size": "215/60R16",
+      "price": 50.1,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Weather · XL 99V BSW",
+      "source": {
+        "sku": "LAND0341621560VXL",
+        "stock": 16,
+        "listPrice": 62.63,
+        "segment": "Truck/SUV - CUV/Crossover",
+        "url": "https://www.giga-tires.com/215-60-16/landsail-tires/rapiddragon-rd-365/tirecode/927117"
+      }
+    },
+    {
+      "id": "giga-zeet0251621560hxl",
+      "name": "Zeetex ZT3000",
+      "size": "215/60R16",
+      "price": 50.24,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · XL 99H BSW",
+      "source": {
+        "sku": "ZEET0251621560HXL",
+        "stock": 908,
+        "listPrice": 62.8,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/zeetex-tires/zt3000/tirecode/1200036575"
+      }
+    },
+    {
+      "id": "giga-mult0081621560h",
+      "name": "Multi-Mile Matrix Tour RS II",
+      "size": "215/60R16",
+      "price": 50.38,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95H BSW",
+      "source": {
+        "sku": "MULT0081621560H",
+        "stock": 99,
+        "listPrice": 62.98,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/multi-mile-tires/matrix-tour-rs-ii/tirecode/MTS48"
+      }
+    },
+    {
+      "id": "giga-rotr0011621560v",
+      "name": "Roadtrack Terrena AS",
+      "size": "215/60R16",
+      "price": 50.49,
+      "inStock": true,
+      "category": "performance",
+      "description": "Racing · 95V BSW",
+      "source": {
+        "sku": "ROTR0011621560V",
+        "stock": 308,
+        "listPrice": 63.11,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/roadtrack-tires/terrena-as/tirecode/ROD-10-0070"
+      }
+    },
+    {
+      "id": "giga-dora0351621560h",
+      "name": "Doral Elite Edge A/S",
+      "size": "215/60R16",
+      "price": 50.68,
+      "inStock": true,
+      "category": "performance",
+      "description": "Racing · 95H BSW",
+      "source": {
+        "sku": "DORA0351621560H",
+        "stock": 39,
+        "listPrice": 63.35,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/doral-tires/elite-edge-a-s/tirecode/DTA48"
+      }
+    },
+    {
+      "id": "giga-momo0041621560vxl",
+      "name": "Momo Toprun M-300 Sport A/S",
+      "size": "215/60R16",
+      "price": 50.95,
+      "inStock": true,
+      "category": "performance",
+      "description": "High Performance Summer · XL 99V BSW",
+      "source": {
+        "sku": "MOMO0041621560VXL",
+        "stock": 153,
+        "listPrice": 63.69,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/momo-tires/toprun-m-300-sport-a-s/tirecode/73127"
+      }
+    },
+    {
+      "id": "giga-eldo0111621560h",
+      "name": "El Dorado Tourmax GFT II",
+      "size": "215/60R16",
+      "price": 51,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95H BSW",
+      "source": {
+        "sku": "ELDO0111621560H",
+        "stock": 93,
+        "listPrice": 63.75,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/el-dorado-tires/tourmax-gft-ii/tirecode/ETM48"
+      }
+    },
+    {
+      "id": "giga-irhd0361621560v",
+      "name": "Ironhead Reflex AS IH01",
+      "size": "215/60R16",
+      "price": 51.28,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "IRHD0361621560V",
+        "stock": 283,
+        "listPrice": 64.1,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/ironhead-tires/reflex-as-ih01/tirecode/IHR0123K"
+      }
+    },
+    {
+      "id": "giga-zeet1291621560vxl",
+      "name": "Zeetex ZT5000 Max",
+      "size": "215/60R16",
+      "price": 51.37,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · XL 99V BSW",
+      "source": {
+        "sku": "ZEET1291621560VXL",
+        "stock": 7,
+        "listPrice": 64.21,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/zeetex-tires/zt5000-max/tirecode/1200056646"
+      }
+    },
+    {
+      "id": "giga-staf0331621560v",
+      "name": "Starfire Solarus AS",
+      "size": "215/60R16",
+      "price": 51.44,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95V BSW",
+      "source": {
+        "sku": "STAF0331621560V",
+        "stock": 9185,
+        "listPrice": 64.3,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/starfire-tires/solarus-as/tirecode/162003001"
+      }
+    },
+    {
+      "id": "giga-lion0691621560v",
+      "name": "Lionhart Ramani A/S",
+      "size": "215/60R16",
+      "price": 51.73,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "LION0691621560V",
+        "stock": 4211,
+        "listPrice": 64.66,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/lionhart-tires/ramani-a-s/tirecode/LHGSRAS1660020"
+      }
+    },
+    {
+      "id": "giga-lauf0011621560h",
+      "name": "Laufenn G FIT AS",
+      "size": "215/60R16",
+      "price": 53.21,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95H BSW",
+      "source": {
+        "sku": "LAUF0011621560H",
+        "stock": 1810,
+        "listPrice": 66.51,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/laufenn-tires/g-fit-as/tirecode/1016762"
+      }
+    },
+    {
+      "id": "giga-arms0901621560v",
+      "name": "Armstrong Blu-Trac PC3",
+      "size": "215/60R16",
+      "price": 53.26,
+      "inStock": true,
+      "category": "all-season",
+      "description": "95V BSW",
+      "source": {
+        "sku": "ARMS0901621560V",
+        "stock": 211,
+        "listPrice": 66.58,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/armstrong-tires/blu-trac-pc3/tirecode/1200068921"
+      }
+    },
+    {
+      "id": "giga-arms0901621560vxl",
+      "name": "Armstrong Blu-Trac PC3",
+      "size": "215/60R16",
+      "price": 53.41,
+      "inStock": true,
+      "category": "all-season",
+      "description": "XL 99V BSW",
+      "source": {
+        "sku": "ARMS0901621560VXL",
+        "stock": 926,
+        "listPrice": 66.76,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/armstrong-tires/blu-trac-pc3/tirecode/1200068354"
+      }
+    },
+    {
+      "id": "giga-gtra0731621560h",
+      "name": "GT Radial Champiro Touring A/S",
+      "size": "215/60R16",
+      "price": 53.54,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95H BSW",
+      "source": {
+        "sku": "GTRA0731621560H",
+        "stock": 1253,
+        "listPrice": 66.93,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/gt-radial-tires/champiro-touring-a-s/tirecode/B509"
+      }
+    },
+    {
+      "id": "giga-fort0021621560h",
+      "name": "Fortune Climaflex 4S FSR402",
+      "size": "215/60R16",
+      "price": 53.56,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Weather · 95H BSW",
+      "source": {
+        "sku": "FORT0021621560H",
+        "stock": 1050,
+        "listPrice": 66.95,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/fortune-tires/climaflex-4s-fsr402/tirecode/3431250610"
+      }
+    },
+    {
+      "id": "giga-rove0551621560hxl",
+      "name": "Rovelo Instinct AW",
+      "size": "215/60R16",
+      "price": 54.62,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Weather · XL 99H BSW",
+      "source": {
+        "sku": "ROVE0551621560HXL",
+        "stock": 32,
+        "listPrice": 68.27,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/rovelo-tires/instinct-aw/tirecode/1603916"
+      }
+    },
+    {
+      "id": "giga-petl0491621560hxl",
+      "name": "Petlas Snow Master 2 Sport",
+      "size": "215/60R16",
+      "price": 55,
+      "inStock": true,
+      "category": "winter",
+      "description": "Winter / snow · XL 99H BSW",
+      "source": {
+        "sku": "PETL0491621560HXL",
+        "stock": 8,
+        "listPrice": 68.75,
+        "segment": "Passenger - Snow/Winter",
+        "url": "https://www.giga-tires.com/215-60-16/petlas-tires/snow-master-2-sport/tirecode/233100"
+      }
+    },
+    {
+      "id": "giga-lexa0731621560v",
+      "name": "Lexani Quattro Tempo Tour AW",
+      "size": "215/60R16",
+      "price": 55.13,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Weather · 99V BSW",
+      "source": {
+        "sku": "LEXA0731621560V",
+        "stock": 3036,
+        "listPrice": 68.91,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/lexani-tires/quattro-tempo-tour-aw/tirecode/LXSMQTT1660020"
+      }
+    },
+    {
+      "id": "giga-arms0011621560vxl",
+      "name": "Armstrong Blu-Trac PC",
+      "size": "215/60R16",
+      "price": 55.14,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · XL 99V BSW",
+      "source": {
+        "sku": "ARMS0011621560VXL",
+        "stock": 4804,
+        "listPrice": 68.93,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/armstrong-tires/blu-trac-pc/tirecode/1200043052"
+      }
+    },
+    {
+      "id": "giga-lexa0431621560v",
+      "name": "Lexani LXTR-203",
+      "size": "215/60R16",
+      "price": 55.16,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95V BSW",
+      "source": {
+        "sku": "LEXA0431621560V",
+        "stock": 11158,
+        "listPrice": 68.95,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/lexani-tires/lxtr-203/tirecode/LXST2031660020"
+      }
+    },
+    {
+      "id": "giga-staf0331621560t",
+      "name": "Starfire Solarus AS",
+      "size": "215/60R16",
+      "price": 55.17,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95T BSW",
+      "source": {
+        "sku": "STAF0331621560T",
+        "stock": 726,
+        "listPrice": 68.96,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/starfire-tires/solarus-as/tirecode/162013001"
+      }
+    },
+    {
+      "id": "giga-petl0131621560vxl",
+      "name": "Petlas Velox Sport PT741",
+      "size": "215/60R16",
+      "price": 55.21,
+      "inStock": true,
+      "category": "performance",
+      "description": "Ultra High Performance Summer · XL 99V BSW",
+      "source": {
+        "sku": "PETL0131621560VXL",
+        "stock": 30,
+        "listPrice": 69.01,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/petlas-tires/velox-sport-pt741/tirecode/23290"
+      }
+    },
+    {
+      "id": "giga-prix0011621560v",
+      "name": "Prinx HiCity HH2",
+      "size": "215/60R16",
+      "price": 55.68,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95V BSW",
+      "source": {
+        "sku": "PRIX0011621560V",
+        "stock": 2215,
+        "listPrice": 69.6,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/prinx-tires/hicity-hh2/tirecode/3431250703"
+      }
+    },
+    {
+      "id": "giga-arms1021621560vxl",
+      "name": "Armstrong Blu-Trac PC2",
+      "size": "215/60R16",
+      "price": 55.8,
+      "inStock": true,
+      "category": "performance",
+      "description": "Compare tires at a glance using our easy test score<sup>®</sup> system. Our proprietary algorithm factors in performance, expert insights, user reviews, and Uniform Tire Quality Grading (UTQG) scores. · XL 99V BSW",
+      "source": {
+        "sku": "ARMS1021621560VXL",
+        "stock": 8,
+        "listPrice": 69.75,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/armstrong-tires/blu-trac-pc2/tirecode/1200068338"
+      }
+    },
+    {
+      "id": "giga-nexe0791621560v",
+      "name": "Nexen NPriz AH8",
+      "size": "215/60R16",
+      "price": 55.84,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95V BSW",
+      "source": {
+        "sku": "NEXE0791621560V",
+        "stock": 1317,
+        "listPrice": 69.8,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/nexen-tires/npriz-ah8/tirecode/14691NXK"
+      }
+    },
+    {
+      "id": "giga-torn0311621560h",
+      "name": "Tornel Real",
+      "size": "215/60R16",
+      "price": 56.08,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 94H BSW",
+      "source": {
+        "sku": "TORN0311621560H",
+        "stock": 6,
+        "listPrice": 70.1,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/tornel-tires/real/tirecode/10A56433"
+      }
+    },
+    {
+      "id": "giga-lexa0701621560v",
+      "name": "Lexani Quattro Tempo Primo",
+      "size": "215/60R16",
+      "price": 56.5,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95V BSW",
+      "source": {
+        "sku": "LEXA0701621560V",
+        "stock": 10,
+        "listPrice": 70.63,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/lexani-tires/quattro-tempo-primo/tirecode/LXSCQTP1660020"
+      }
+    },
+    {
+      "id": "giga-sail0081621560v",
+      "name": "Sailun Atrezzo SH408",
+      "size": "215/60R16",
+      "price": 56.58,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95V BSW",
+      "source": {
+        "sku": "SAIL0081621560V",
+        "stock": 17122,
+        "listPrice": 70.73,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/sailun-tires/atrezzo-sh408/tirecode/9630377"
+      }
+    },
+    {
+      "id": "giga-cros0251621560v",
+      "name": "Crosswind HP010 Plus",
+      "size": "215/60R16",
+      "price": 56.63,
+      "inStock": true,
+      "category": "all-season",
+      "description": "High Performance All Season · 95V BSW",
+      "source": {
+        "sku": "CROS0251621560V",
+        "stock": 4816,
+        "listPrice": 70.79,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/crosswind-tires/hp010-plus/tirecode/CTR1748LL"
+      }
+    },
+    {
+      "id": "giga-blhk0131621560h",
+      "name": "Blackhawk Street-H HH11",
+      "size": "215/60R16",
+      "price": 56.98,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95H BSW",
+      "source": {
+        "sku": "BLHK0131621560H",
+        "stock": 5763,
+        "listPrice": 71.23,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/blackhawk-tires/street-h-hh11/tirecode/5546778V"
+      }
+    },
+    {
+      "id": "giga-kend0081621560h",
+      "name": "Kenda Kenetica KR217",
+      "size": "215/60R16",
+      "price": 57.46,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95H BSW",
+      "source": {
+        "sku": "KEND0081621560H",
+        "stock": 1781,
+        "listPrice": 71.83,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/kenda-tires/kenetica-kr217/tirecode/217014"
+      }
+    },
+    {
+      "id": "giga-nexe0041621560h2",
+      "name": "Nexen CP672",
+      "size": "215/60R16",
+      "price": 57.55,
+      "inStock": true,
+      "category": "all-season",
+      "description": "All Season · 95H BSW",
+      "source": {
+        "sku": "NEXE0041621560H2",
+        "stock": 867,
+        "listPrice": 71.94,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/nexen-tires/cp672/tirecode/11050NXK"
+      }
+    },
+    {
+      "id": "giga-summ1281621560h",
+      "name": "Summit Ultramax AS 2.0",
+      "size": "215/60R16",
+      "price": 58.3,
+      "inStock": true,
+      "category": "all-season",
+      "description": "Touring · 95H BSW",
+      "source": {
+        "sku": "SUMM1281621560H",
+        "stock": 523,
+        "listPrice": 72.88,
+        "segment": "Passenger",
+        "url": "https://www.giga-tires.com/215-60-16/summit-tires/ultramax-as-2-0/tirecode/20613"
+      }
+    },
+    {
+      "id": "giga-trav0771621560vxl",
+      "name": "Travelstar Eco-Mile 4S",
+      "size": "215/60R16",
+      "price": 58.46,
+      "inStock": true,
+      "category": "performance",
+      "description": "Compare tires at a glance using our easy test score<sup>®</sup> system. Our proprietary algorithm factors in performance, expert insights, user reviews, and Uniform Tire Quality Grading (UTQG) scores. · XL 99V BSW",
+      "source": {
+        "sku": "TRAV0771621560VXL",
+        "stock": 196,
+        "listPrice": 73.08,
+        "segment": "Truck/SUV - CUV/Crossover",
+        "url": "https://www.giga-tires.com/215-60-16/travelstar-tires/eco-mile-4s/tirecode/TS4S009"
       }
     },
     {
