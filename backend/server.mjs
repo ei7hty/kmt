@@ -133,6 +133,10 @@ const server = createServer(async (request, response) => {
     // A URL that does not parse is a bad link, not a server fault (#132), and
     // the browser-facing headers go on before anything can write (#67).
     const { url } = parseRequestUrl(request.url)
+    // Every handler parses request.url for itself, so the collapsed path has
+    // to be the one they see: with the raw one, /api//catalog passed the gate
+    // as the catalog and then matched no handler.
+    request.url = url.pathname + url.search
     const hostname = (request.headers.host || '').split(':')[0]
     applySecurityHeaders(request, response)
 

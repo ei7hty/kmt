@@ -6,6 +6,7 @@ import { Quotes } from './quotes.mjs'
 import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
 import { PUBLIC_BODY_LIMIT, RateLimiter } from './limits.mjs'
+import { parseRequestUrl } from './site.mjs'
 import { calculateDraftQuote } from '../src/pricing.js'
 
 const SIZE = '215/60R16'
@@ -375,7 +376,9 @@ function serve(t, quotes, inventory, { limiter = null } = {}) {
   const ownerApi = createApi(inventory, { start: () => ({}), cancel: () => ({}) }, null, quotes)
 
   const server = createServer(async (request, response) => {
-    const url = new URL(request.url, 'http://localhost')
+    // As server.mjs does: the collapsed path is the one every handler sees.
+    const { url } = parseRequestUrl(request.url)
+    request.url = url.pathname + url.search
     if (await auth.handle(request, response, url, readJsonBody)) return
     if (url.pathname.startsWith('/api/')) {
       if (!isKnownApiPath(url.pathname)) {
@@ -492,6 +495,13 @@ test('a path no handler knows is 404, not an invitation to sign in', async t => 
   assert.equal(owner.status, 401, 'a real owner route without a session is still the sign-in answer')
   assert.equal((await fetch(`${base}/api/owner/nonsense`)).status, 401)
   assert.equal((await fetch(`${base}/api/catalog`)).status, 200)
+  // A doubled slash reaches the handler as the path it meant, end to end:
+  // the collapse has to be written back onto the request, because every
+  // handler parses request.url for itself.
+  const slipped = await fetch(`${base}/api//catalog`)
+  assert.equal(slipped.status, 200, 'the catalog, not a sign-in message and not a 404')
+  assert.ok(Array.isArray((await slipped.json()).tires))
+  assert.equal((await fetch(`${base}/api/api//catalog`)).status, 404)
 })
 
 test('the catalog handler answers the catalog and nothing else', async t => {
