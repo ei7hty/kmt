@@ -20,6 +20,17 @@ import { chromium } from 'playwright';
 
 const BASE = process.env.AUDIT_BASE || 'https://kmt.fly.dev';
 
+/**
+ * How many checks a complete run performs.
+ *
+ * The baseline lives here, in the thing that produces it, and nowhere in
+ * prose. When you add or remove a check, change this number in the same
+ * commit. The run fails if a different number of checks executed: fewer
+ * means checks stopped running -- the way an audit here once passed while
+ * asserting nothing -- and more means the baseline was not updated.
+ */
+const EXPECTED_CHECKS = 19;
+
 let passed = 0;
 let failed = 0;
 
@@ -37,6 +48,17 @@ function fail(message) {
 function check(condition, message, detail = '') {
   if (condition) ok(message);
   else fail(`${message}${detail ? ` — ${detail}` : ''}`);
+}
+
+/** The count, held against the baseline. Printed last, so it is the line a reader lands on. */
+function reportCount() {
+  const ran = passed + failed;
+  console.log(`\n${passed} checks passed, ${failed} failed -- ${ran} of ${EXPECTED_CHECKS} expected checks ran`);
+  if (ran < EXPECTED_CHECKS) {
+    fail(`only ${ran} of ${EXPECTED_CHECKS} checks ran. A check that stopped running is not a check that passed.`);
+  } else if (ran > EXPECTED_CHECKS) {
+    fail(`${ran} checks ran but EXPECTED_CHECKS is ${EXPECTED_CHECKS}. Update it in the same commit as the new check.`);
+  }
 }
 
 /** The seven fields a customer's browser is built around, and nothing else. */
@@ -169,12 +191,13 @@ async function main() {
     await browser.close();
   }
 
-  console.log(`\n${passed} checks passed, ${failed} failed`);
+  reportCount();
   if (failed > 0) process.exitCode = 1;
 }
 
 main().catch(error => {
   // A script that cannot run is not a site that passed.
   console.error(`FAIL: the deployed-site check could not complete: ${error.message.split('\n')[0]}`);
+  reportCount();
   process.exit(1);
 });
