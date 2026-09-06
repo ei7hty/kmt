@@ -408,6 +408,10 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
           send(200, decided)
           // The quote itself, itemised, once the owner has sent it (R25).
           if (mailer && decided?.quote?.status === 'sent') mailer.after('quote-sent', decided.request.id)
+          // Same shape as above, the other outcome: `decided` already carries
+          // the owner shape (decide() always asks for audience 'owner'), so
+          // `.quote.reason` is Ken's own text or null, never guessed at here.
+          if (mailer && decided?.quote?.status === 'rejected') mailer.after('quote-declined', decided.request.id)
         }
       } else if (request.method === 'GET' && url.pathname === '/api/owner/outbox') {
         // What was sent, or would have been, about every request: the outbox

@@ -257,6 +257,27 @@ test('the API sends after it answers: submit records two messages, sending the q
   assert.equal(listed.messages[0].status, 'queued')
 })
 
+test('rejecting a draft records a quote-declined message, the sibling of quote-sent', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const requestsApi = createRequestsApi(quotes, { mailer })
+  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer })
+  const server = createServer(async (req, res) => { if (await requestsApi(req, res)) return; if (await ownerApi(req, res)) return; res.writeHead(404); res.end() })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  const base = `http://127.0.0.1:${server.address().port}`
+  const post = (path, body) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
+  const submitted = await (await post('/api/requests', form())).json()
+  await mailer.idle()
+
+  const { version } = quotes.get(submitted.request.id).quote
+  const decided = await (await post(`/api/owner/quotes/${submitted.request.id}/reject`, { version })).json()
+  assert.equal(decided.quote.status, 'rejected')
+  await mailer.idle()
+  assert.ok(outbox.forRequest(submitted.request.id).some(row => row.type === 'quote-declined'), 'a decline sends the sibling of quote-sent, not silence')
+  assert.equal(outbox.forRequest(submitted.request.id).filter(row => row.type === 'quote-sent').length, 0, 'and never both for the same decision')
+})
+
 test('a provider outage never reaches the customer: the submit still answers 201', async t => {
   const adapter = { name: 'broken', async send() { throw new Error('provider down') } }
   const { quotes, outbox, mailer } = world(t, { adapter })
