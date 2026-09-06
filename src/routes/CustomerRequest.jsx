@@ -152,6 +152,12 @@ function CustomerRequest({ navigate }) {
         if (!live) return
         setCatalog(result)
         const rows = result.tires.filter(tire => tire.size === chosenSize)
+        // Two names for one list, on purpose: the data layer answers 'static'
+        // (the built-in catalog, its word for the code), and the step shows it
+        // as 'standard' (the word a customer reads in the sentence above the
+        // list). The DOM value, data-source="standard", is asserted by the gate
+        // (QA's slow-network step), so renaming either side alone breaks a
+        // check for a reason unrelated to what it tests.
         update(current => {
           // A failed answer is the standard list, unless the wait already showed it.
           if (result.source !== 'live') return current.tires ? current : { ...current, tires: rows, source: 'standard' }
