@@ -99,6 +99,19 @@ export async function requestById(id) {
   return call(`/api/requests/${encodeURIComponent(id)}`)
 }
 
+/**
+ * Call off a request from the customer's side, before it is paid for.
+ *
+ * Keyed like paying is, and refused the same way. A reason is optional: a
+ * customer who has changed their mind does not owe anyone an explanation.
+ */
+export async function cancelRequest(id, reason) {
+  return call(`/api/requests/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify(reason ? { customerKey: customerKey(), reason } : { customerKey: customerKey() }),
+  })
+}
+
 /** Pay an approved quote. Still the fake step, recorded by the server. */
 export async function payRequest(id) {
   return call(`/api/requests/${encodeURIComponent(id)}/pay`, {
@@ -109,23 +122,31 @@ export async function payRequest(id) {
 
 /* ---------------------------------------------------------------- owner */
 
-/** Every request with its quote, for the owner's review screen. */
-export async function ownerRequests() {
-  const data = await call('/api/owner/requests')
-  return data.requests ?? []
+/**
+ * One view of the owner's list, with the size of every view.
+ *
+ * The counts come back for all of them, not just the one asked for, so the
+ * filters can carry their own numbers without the screen fetching five lists.
+ */
+export async function ownerRequests(view) {
+  const query = view ? `?view=${encodeURIComponent(view)}` : ''
+  const data = await call(`/api/owner/requests${query}`)
+  return { view: data.view ?? 'open', counts: data.counts ?? {}, requests: data.requests ?? [] }
 }
 
 /**
- * Approve or reject a draft.
+ * Act on one quote as the owner: send it, reject it, close it, call it off.
  *
- * The version goes with it: two owner windows, and the second decision would
- * otherwise quietly undo the first. A 409 comes back as a message telling the
- * owner to reload, which is what the version is for.
+ * One function because every one of these is the same request with the same
+ * version: two owner windows, and the second action would otherwise quietly
+ * undo the first. A 409 comes back as a message telling the owner to reload,
+ * which is what the version is for. What each action is allowed to do is the
+ * server's rule, not this file's.
  */
-export async function decideQuote(requestId, decision, version) {
-  const action = decision === 'approved' ? 'approve' : 'reject'
+export async function actOnQuote(requestId, action, version, reason) {
   return call(`/api/owner/quotes/${encodeURIComponent(requestId)}/${action}`, {
     method: 'POST',
-    body: JSON.stringify({ version }),
+    body: JSON.stringify(reason ? { version, reason } : { version }),
   })
 }
+
