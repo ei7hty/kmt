@@ -10,7 +10,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
 | t47-samesite-lax | LEAD FULL STACK (local_8f1cdec6) | backend/auth.mjs (the cookie's SameSite and the comment that cites it), backend/owner.test.mjs (the Strict assertion) | 2026-09-06 |
-| mail-from-message | LEAD FULL STACK (local_8f1cdec6) | backend/mail.mjs (readMailConfig messages only), backend/mail.test.mjs, README.md (the KMT_MAIL_FROM row) | 2026-09-06 |
+| mail-boot-warning | LEAD FULL STACK (local_8f1cdec6) | backend/mail.mjs (describeMail, the from/user domain warning, interim flag), backend/mail.test.mjs, backend/server.mjs and backend/dev.mjs (one boot line each), backend/api.mjs (interim on the outbox route) | 2026-09-06 |
 | gh-run-status-lag-note | TEMP REPO AGENT (local_b2ab10bb) | .forge/NOTES.md (docs only, one entry) | 2026-09-06 |
 | removal-completeness | TECHNICAL ARCHITECT (local_5b133312) | new file .forge/personal-data-removal.md only; reads across backend/, docs/, .github/ (completeness audit of the removal set + redact() design, no code change) | 2026-09-06 |
 | t35-quote-adjustment | JUNIOR BACK END DEV (local_0b9989ef) | backend/quotes.mjs, backend/quotes.test.mjs, src/routes/QuoteRequests.jsx, .forge/dead-end-audit.mjs, backend/api.mjs, src/App.css, src/routes/Confirmation.jsx, src/routes/Status.jsx, src/store.js (inherited: rebasing and reviewing an orphaned agent's finished-but-unopened PR, not new work) | 2026-09-06 |
