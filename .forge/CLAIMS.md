@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| `t60-brand-delivery` | LEAD FULL STACK | `public/manifest.webmanifest` (new), `backend/server.mjs` static handler (types, cache headers for `/brand/*`), its tests; not `index.html`, not `src/` (#145) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
