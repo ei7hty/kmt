@@ -7,7 +7,8 @@ import { createServer, request as httpRequest } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { createApi, createCatalogApi, isPublicApiCall, readJsonBody } from './api.mjs'
-import { createAuth, createImportToken, readAuthConfig, verifyImportToken } from './auth.mjs'
+import { createAuth, createImportToken, createSessionStore, memorySessionStore, readAuthConfig, verifyImportToken } from './auth.mjs'
+import { LoginThrottle } from './limits.mjs'
 import { PageImporter } from './import.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 
@@ -364,7 +365,10 @@ test('a malformed login body is refused with a JSON error, not a stack trace', a
 
 test('sessions are signed, expire, and cannot be forged', async t => {
   const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'secret-one' }
-  const auth = createAuth(readAuthConfig(env))
+  // One store shared by every instance below, so what each refusal proves is
+  // the signature or the expiry, never merely a session the other never saw.
+  const sessions = memorySessionStore()
+  const auth = createAuth(readAuthConfig(env), { sessions })
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
     if (await auth.handle(request, response, url, readJsonBody)) return
@@ -390,7 +394,7 @@ test('sessions are signed, expire, and cannot be forged', async t => {
   assert.equal((await fetch(`${base}/anything`, { headers: { cookie: token } })).status, 200)
 
   // A cookie signed with a different secret is not accepted.
-  const other = createAuth(readAuthConfig({ ...env, KMT_SESSION_SECRET: 'secret-two' }))
+  const other = createAuth(readAuthConfig({ ...env, KMT_SESSION_SECRET: 'secret-two' }), { sessions })
   assert.equal(other.isAuthenticated({ headers: { cookie: token }, socket: {} }), false)
 
   // Neither is a tampered payload.
@@ -401,7 +405,7 @@ test('sessions are signed, expire, and cannot be forged', async t => {
   // negative lifetime no longer boots, so this issues with a tiny positive
   // one and waits it out. The lifetime affects issuing, not existing tokens:
   // the long-lived one above is still good on this instance.
-  const brief = createAuth(readAuthConfig({ ...env, KMT_SESSION_HOURS: String(1 / 3600_000) }))
+  const brief = createAuth(readAuthConfig({ ...env, KMT_SESSION_HOURS: String(1 / 3600_000) }), { sessions })
   assert.equal(brief.isAuthenticated({ headers: { cookie: token }, socket: {} }), true, 'ttl affects issuing, not this token')
   const sent = {}
   await brief.handle(
@@ -414,6 +418,96 @@ test('sessions are signed, expire, and cannot be forged', async t => {
   const staleToken = sent.cookie.split(';')[0]
   await new Promise(resolve => setTimeout(resolve, 5))
   assert.equal((await fetch(`${base}/anything`, { headers: { cookie: staleToken } })).status, 401, 'a signed but expired cookie is refused')
+})
+
+/** An auth server the way server.mjs mounts it, with the pieces under test passed in. */
+async function authServer(t, options) {
+  const auth = createAuth(readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'secret-one' }), options)
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (await auth.handle(request, response, url, readJsonBody)) return
+    response.writeHead(auth.isAuthenticated(request) ? 200 : 401).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+  const login = (password, headers = {}) => fetch(`${base}/api/owner/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ password }),
+  })
+  return { base, login }
+}
+
+test('logging out forgets the session on the server, so a copied cookie is dead too', async t => {
+  // Before this, a session was a signed timestamp and logout only cleared the
+  // browser's copy: a cookie copied off a shared device stayed good for its
+  // whole twelve hours (#66).
+  const { base, login } = await authServer(t, { sessions: memorySessionStore() })
+  const ok = await login('a-long-enough-password')
+  const token = ok.headers.getSetCookie()[0].split(';')[0]
+  const copy = token
+  assert.equal((await fetch(`${base}/anything`, { headers: { cookie: copy } })).status, 200, 'the copy works while the session lives')
+
+  const out = await fetch(`${base}/api/owner/logout`, { method: 'POST', headers: { cookie: token } })
+  assert.equal(out.status, 200)
+  assert.match(out.headers.getSetCookie()[0], /Max-Age=0/, 'the browser is told to drop it')
+  assert.equal((await fetch(`${base}/anything`, { headers: { cookie: copy } })).status, 401, 'and the copy is refused, whatever its signature says')
+  assert.equal((await (await fetch(`${base}/api/owner/session`, { headers: { cookie: copy } })).json()).authenticated, false)
+
+  // A second login is a new session, unaffected by the old one's end.
+  const again = await login('a-long-enough-password')
+  assert.equal((await fetch(`${base}/anything`, { headers: { cookie: again.headers.getSetCookie()[0].split(';')[0] } })).status, 200)
+})
+
+test('sessions kept in the database survive a new auth instance, the way a deploy restarts the process', async t => {
+  const inventory = new Inventory(':memory:', [SIZE])
+  t.after(() => inventory.close())
+  const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'kept-across-restarts' }
+
+  const first = createAuth(readAuthConfig(env), { sessions: createSessionStore(inventory.db) })
+  const sent = {}
+  await first.handle({ method: 'POST', headers: {}, socket: {} },
+    { writeHead: (status, headers) => { sent.cookie = headers['Set-Cookie'] }, end: () => {} },
+    new URL('http://localhost/api/owner/login'), async () => ({ password: 'a-long-enough-password' }))
+  const token = sent.cookie.split(';')[0]
+
+  // The same database opened by a fresh process: the table already exists,
+  // the row is there, and the owner is still signed in.
+  const second = createAuth(readAuthConfig(env), { sessions: createSessionStore(inventory.db) })
+  assert.equal(second.isAuthenticated({ headers: { cookie: token }, socket: {} }), true)
+
+  // Logging out on the new instance forgets it for both.
+  await second.handle({ method: 'POST', headers: { cookie: token }, socket: {} },
+    { writeHead: () => {}, end: () => {} }, new URL('http://localhost/api/owner/logout'), readJsonBody)
+  assert.equal(first.isAuthenticated({ headers: { cookie: token }, socket: {} }), false)
+  assert.equal(inventory.db.prepare('SELECT COUNT(*) AS n FROM owner_sessions').get().n, 0, 'nothing left behind')
+})
+
+test('wrong passwords from one address are slowed, per address, and never lock the owner out', async t => {
+  let now = 5_000_000
+  const throttle = new LoginThrottle({
+    rule: { free: 2, windowMs: 60_000, baseDelayMs: 2_000, maxDelayMs: 60_000 }, now: () => now, log: () => {},
+  })
+  const { login } = await authServer(t, { throttle })
+
+  assert.equal((await login('wrong-but-long-enough')).status, 401)
+  assert.equal((await login('wrong-but-long-enough')).status, 401, 'the free failures still answer 401')
+  assert.equal((await login('wrong-but-long-enough')).status, 401, 'the third is counted and starts the delay')
+
+  const slowed = await login('a-long-enough-password')
+  assert.equal(slowed.status, 429, 'even the right password waits, because the guess is not read during the delay')
+  assert.equal(slowed.headers.get('retry-after'), '2')
+  assert.match((await slowed.json()).error, /Try again in 2 seconds/)
+
+  // Another address is not slowed by this one's failures: a stranger cannot
+  // lock the owner out by guessing wrong from elsewhere.
+  const elsewhere = await login('a-long-enough-password', { 'fly-client-ip': '203.0.113.9' })
+  assert.equal(elsewhere.status, 200)
+
+  now += 2_000
+  const ok = await login('a-long-enough-password')
+  assert.equal(ok.status, 200, 'after the wait the right password is read')
+  assert.equal((await login('wrong-but-long-enough')).status, 401, 'and the success cleared the count: this is a free failure again')
+  assert.equal((await login('a-long-enough-password')).status, 200)
 })
 
 test('the API origin check follows the request scheme', async t => {

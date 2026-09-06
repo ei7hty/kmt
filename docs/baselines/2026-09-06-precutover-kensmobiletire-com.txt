@@ -1,0 +1,102 @@
+# Baseline of https://kensmobiletire.com, 2026-09-06T07:41:26Z, read-only
+
+## TLS
+  issuer=C=US, O=Let's Encrypt, CN=YE1
+  subject=CN=kensmobiletire.com
+  notBefore=Sep  6 05:32:22 2026 GMT
+  notAfter=Dec  5 05:32:21 2026 GMT
+  X509v3 Subject Alternative Name: 
+      DNS:kensmobiletire.com
+  tls1.2: New, TLSv1.2, Cipher is ECDHE-ECDSA-AES256-GCM-SHA384
+  tls1.2: Protocol: TLSv1.2
+  tls1.3: New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+  tls1.3: Protocol: TLSv1.3
+
+## Redirects
+  http://kensmobiletire.com/            -> 301 https://kensmobiletire.com/
+  http://kensmobiletire.com/status      -> 301 https://kensmobiletire.com/status
+  https://www.kensmobiletire.com/ (if any) -> 200 
+
+## Response headers, GET / (every header, verbatim)
+  HTTP/1.1 200 OK
+  content-type: text/html; charset=utf-8
+  cache-control: no-cache
+  date: Sun, 06 Sep 2026 07:41:36 GMT
+  connection: keep-alive
+  keep-alive: timeout=5
+  transfer-encoding: chunked
+  server: Fly/ec1a4f957c (2026-08-31)
+  via: 1.1 fly.io
+  fly-request-id: 01M1TTMS3SAXRKB6M6H0EP48E7-ewr
+
+## Security headers present on / (name only)
+  strict-transport-security: ABSENT
+  content-security-policy: ABSENT
+  x-content-type-options: ABSENT
+  x-frame-options: ABSENT
+  referrer-policy: ABSENT
+  permissions-policy: ABSENT
+  cross-origin-opener-policy: ABSENT
+
+## Compression (GET with Accept-Encoding: br, gzip)
+  / -> content-encoding: br downloaded=377 
+  /api/catalog -> content-encoding: br downloaded=170881 
+
+## Routes and status codes
+  /                                                200  text/html; charset=utf-8
+  /status                                          200  text/html; charset=utf-8
+  /owner                                           200  text/html; charset=utf-8
+  /owner/quotes                                    200  text/html; charset=utf-8
+  /owner/                                          200  text/html; charset=utf-8
+  /nonsense-path                                   200  text/html; charset=utf-8
+  /robots.txt                                      200  text/html; charset=utf-8
+  /index.html                                      200  text/html; charset=utf-8
+  /api/nope                                        401  application/json
+  /api/health                                      200  application/json
+  /api/catalog                                     200  application/json
+  /api/owner/session                               200  application/json
+  /api/owner/inventory                             401  application/json
+  /api/owner/requests                              401  application/json
+  /api/owner/markup                                401  application/json
+  /api/owner/import-token                          401  application/json
+  /api/requests                                    400  application/json
+  /api/requests/0123456789abcdef0123456789abcdef   404  application/json
+  /brand/SOURCES.md                                200  text/html; charset=utf-8
+  /brand/og-1200x630.jpg                           200  image/jpeg
+  /.env                                            200  text/html; charset=utf-8
+  /backend/data/owner.sqlite                       200  text/html; charset=utf-8
+  /package.json                                    200  text/html; charset=utf-8
+
+## Method handling
+  HEAD /               -> 200
+  HEAD /api/health     -> 401
+  OPTIONS /api/owner/import (no Origin)      -> 403
+  OPTIONS /api/owner/import (Origin evil)    -> 403
+  OPTIONS /api/owner/import (Origin giga)    -> access-control-allow-origin: https://www.giga-tires.com code=204 
+  TRACE /              -> 200
+
+## Bodies of the public JSON answers (shape, not values)
+  /api/health: {"ok":true}
+  /api/owner/session: {"authenticated":false}
+  /api/owner/inventory: {"error":"Sign in to use the owner workspace."}
+  /api/requests/<unknown id>: {"error":"No such request."}
+  /api/requests (no key): {"error":"Pass the customer key this browser was given."}
+  /api/requests?customer=<key with no requests>: {"requests":[]}
+  /api/catalog: tires=6169 sizes=511 keys=[category,description,id,inStock,name,price,size]
+
+## Asset caching
+  /brand/og-1200x630.jpg -> cache-control: no-cache 
+  /assets/index-Zane3PbJ.js -> cache-control: public, max-age=31536000, immutable 
+
+## Fly (read-only)
+   Hostname │ kmt.fly.dev                               
+   Image    │ kmt:deployment-01M1TTHXMP7AQCVP392CGPTEGC 
+   PROCESS │ ID             │ VERSION │ REGION │ STATE   │ ROLE │ CHECKS             │ LAST UPDATED         
+   app     │ d89459da9703e8 │ 87      │ ewr    │ started │      │ 1 total, 1 passing │ 2026-09-06T07:40:17Z 
+   health │ passing │ d89459da9703e8 │ 1m18s ago    │ {"ok":true} 
+  secret: KMT_SESSION_SECRET
+  secret: KMT_OWNER_PASSWORD
+  certs: HOSTNAME                       SOURCE     STATUS
+  certs: order.kensmobiletire.com       Fly        Issued
+  certs: kensmobiletire.com             Fly        Issued
+  certs: www.kensmobiletire.com         Fly        Issued

@@ -381,17 +381,35 @@ export class Quotes {
    * should see the tire that was quoted. A row the catalog no longer carries
    * still shows its id, because "this tire is gone" is information the owner
    * needs, not a reason to render a blank.
+   *
+   * The supplier's stock count and when it was last seen ride along on the
+   * owner's row (#105). The customer catalog strips both on purpose (R16),
+   * so resolving the tire against it left the owner approving a quote with
+   * no idea whether the supplier still had the tire, and refreshes are
+   * monthly. This is the same audience line t44 drew for the request: the
+   * owner's row carries what the owner's decision needs, and the customer's
+   * row, which has no tire object at all, keeps carrying none of it. A tire
+   * that is not a supplier row (a seed or generated one) reads null for all
+   * three, which is the honest answer: nobody has looked.
    */
   listForOwner() {
     const catalog = this.catalog()
+    const supplierRow = this.db.prepare('SELECT payload, last_seen, active FROM supplier WHERE id=?')
     return this.db.prepare('SELECT * FROM requests ORDER BY created_at DESC').all().map(row => {
       const shaped = this.shapeRow(row, 'owner')
       const tire = catalog.find(item => item.id === shaped.request.tireSelection) ?? null
+      const supplier = supplierRow.get(shaped.request.tireSelection)
+      const supplierStock = supplier ? (JSON.parse(supplier.payload).source?.stock ?? null) : null
       return {
         ...shaped,
-        tire: tire
-          ? { id: tire.id, name: tire.name, size: tire.size, price: tire.price }
-          : { id: shaped.request.tireSelection, name: null, size: null, price: null },
+        tire: {
+          ...(tire
+            ? { id: tire.id, name: tire.name, size: tire.size, price: tire.price }
+            : { id: shaped.request.tireSelection, name: null, size: null, price: null }),
+          supplierStock,
+          supplierLastSeen: supplier ? supplier.last_seen : null,
+          supplierActive: supplier ? Boolean(supplier.active) : null,
+        },
       }
     })
   }

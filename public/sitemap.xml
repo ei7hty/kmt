@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Only the pages meant for a search index. /privacy joins this list when it
+     exists on the site (t50); a sitemap that advertises a 404 is worse than
+     none. Everything else here is a customer's own request or the shop's
+     sign-in, and robots.txt disallows those. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://kensmobiletire.com/</loc>
+    <changefreq>monthly</changefreq>
+  </url>
+</urlset>
