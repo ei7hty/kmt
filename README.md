@@ -7,7 +7,8 @@ reviews the draft, approves or rejects it, and the customer pays. Behind that,
 a separate owner workspace lets the owner build KMT's tire offering from a
 supplier's live listings and set his own prices.
 
-Live at **https://kmt.fly.dev** (the older Vercel URL redirects there).
+Live at **https://kensmobiletire.com** (Ken's own domain, on Fly.io; `kmt.fly.dev`
+and the older Vercel URL still answer and will redirect there).
 
 > Several agents work on this repository at once and cannot message each
 > other. If you are one of them, read [`.forge/AGENTS.md`](.forge/AGENTS.md)
@@ -214,7 +215,7 @@ npm run import-tires
 ```
 
 ```bash
-KMT_OWNER_PASSWORD='...' npm run import-tires -- --to https://kmt.fly.dev
+KMT_OWNER_PASSWORD='...' npm run import-tires -- --to https://kensmobiletire.com
 ```
 
 The local server (`node backend/dev.mjs` on port 4180) is the default target
@@ -301,7 +302,7 @@ production on a missing SPA fallback.
 Pushing to `main` runs `.github/workflows/fly-deploy.yml`: tests, lint and
 build first, with the three flow audits against a throwaway database; deploy to
 Fly only if they pass; then `.forge/deployed-site-check.mjs`, a read-only check
-of https://kmt.fly.dev that never posts or signs in, because the flow audits
+of the live site that never posts or signs in, because the flow audits
 would leave fabricated, paid requests in the owner's list. Nothing deploys from
 any other branch or from a pull request.
 
