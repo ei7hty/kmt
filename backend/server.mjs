@@ -78,9 +78,16 @@ const auth = createAuth(authConfig, {
 })
 const refresher = new Refresher(inventory)
 const importer = new PageImporter(inventory)
-// Where the van goes (t48): a base ZIP the table does not know, or a radius
-// that is not a distance, is refused here at boot rather than at the first
-// submit, the way a bad password is.
+// Where the van goes (t48). ACTIVE BY DEFAULT ON THIS SERVER: with nothing
+// set, this reads base 02148, a 100 mile radius and a 25 mile review band,
+// and a customer beyond the radius is refused at submit from the moment
+// this deploys. The lead ruled it on by default and the user gave the
+// number. Only backend/dev.mjs defaults the radius to off, for a laptop
+// elsewhere; that comment describes the local server, not this one. To
+// accept every ZIP here, set KMT_SERVICE_RADIUS_MILES=off explicitly, and
+// the boot line will say so. A base ZIP the table does not know, or a
+// radius that is not a distance, is refused here at boot rather than at the
+// first submit, the way a bad password is.
 let serviceArea
 try {
   serviceArea = readServiceAreaConfig()
