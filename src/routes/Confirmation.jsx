@@ -117,7 +117,7 @@ function Confirmation({ navigate }) {
   return (
     <div className="app-shell confirmation-shell">
       <nav className="internal-nav">
-        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
+        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand-mark.svg" alt="" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
       </nav>
       <div className="confirmation-content">
         <div className="panel confirmation-card">{panel}</div>
