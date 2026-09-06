@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| `request-lifecycle` | SWE AGENT 1 | `backend/quotes.mjs`, `backend/api.mjs`, owner + status screens | 2026-09-06 |
+| `request-lifecycle` | SWE-S AGENT 2 | PR #55, taking over from stood-down SWE-0 AGENT 1: merge origin/main, verify gate, do not merge | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
