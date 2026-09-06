@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import SignIn from '../owner/SignIn.jsx'
 import { NeedsSignIn, actOnQuote, ownerRequests } from '../store'
+import { signOut } from '../owner/session.js'
+
+/** A stored US number, +16174108319, as a person reads it: (617) 410-8319. Anything else as stored. */
+const formatPhone = (phone) => {
+  const match = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(phone || '')
+  return match ? `(${match[1]}) ${match[2]}-${match[3]}` : phone
+}
 
 /**
  * The owner's review screen, over the backend.
@@ -109,6 +116,12 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
 
   // What the owner is asked to do, whichever view they are looking at.
   const waiting = counts.attention ?? 0
+  // Sign out ends the session on this device (#96); see OwnerInventory.
+  const leave = async () => {
+    const { hosted } = await signOut()
+    if (hosted) { setRequests([]); setNeedsSignIn(true) } else navigate('/')
+  }
+
   const summary = loading
     ? 'Loading requests…'
     : waiting === 1 ? '1 request waiting on you.' : `${waiting} requests waiting on you.`
@@ -117,7 +130,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
     <div className="app-shell owner-shell">
       <nav className="internal-nav">
         <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
-        <div className="internal-nav-links"><button className="btn btn-neutral" onClick={() => navigate('/owner')}>← Inventory</button><button className="btn btn-neutral" onClick={() => navigate('/')}>Back to Customer Flow</button></div>
+        <div className="internal-nav-links"><button className="btn btn-neutral" onClick={() => navigate('/owner')}>← Inventory</button><button className="btn btn-neutral" onClick={() => navigate('/')}>Back to Customer Flow</button><button className="btn btn-neutral" onClick={leave}>Sign out</button></div>
       </nav>
       <div className="owner-content">
         <p className="eyebrow">OWNER</p>
@@ -149,7 +162,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                   <div><dt>Tire:</dt> <dd>{tire?.name ? `${tireLine ? `${tireLine.quantity} × ` : ''}${tire.name} · ${tire.size}` : `${tire?.id ?? request.tireSelection} (no longer in the catalog)`}</dd></div>
                   <div><dt>Location:</dt> <dd>{request.location}</dd></div>
                   <div><dt>Preferred Date:</dt> <dd>{request.date}</dd></div>
-                  <div><dt>Contact:</dt> <dd>{request.customerEmail ? <>{request.customerName} · <a href={`mailto:${request.customerEmail}`}>{request.customerEmail}</a>{request.customerPhone && <> · <a href={`tel:${request.customerPhone}`}>{request.customerPhone}</a></>}</> : <span className="text-secondary">No contact on file (submitted before this was collected)</span>}</dd></div>
+                  <div><dt>Contact:</dt> <dd>{request.customerEmail ? <>{request.customerName} · <a href={`mailto:${request.customerEmail}`}>{request.customerEmail}</a>{request.customerPhone && <> · <a href={`tel:${request.customerPhone}`}>{formatPhone(request.customerPhone)}</a></>}</> : <span className="text-secondary">No contact on file (submitted before this was collected)</span>}</dd></div>
                 </dl>
                 {quote && <div className={quote.exception ? 'owner-quote owner-quote-exception' : 'owner-quote'}>
                   <div className="owner-quote-summary"><div><p className="text-secondary">Draft Quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div><span className="owner-quote-status">{quote.status}</span></div>
