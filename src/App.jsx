@@ -10,6 +10,10 @@ import Confirmation from './routes/Confirmation.jsx'
 import NotFound from './routes/NotFound.jsx'
 import Privacy from './routes/Privacy.jsx'
 
+/** The apex domain, and the two routes the sitemap lists under it (t46). */
+const CANONICAL_HOST = 'https://kensmobiletire.com'
+const CANONICAL_PATHS = new Set(['/', '/privacy'])
+
 /**
  * The pathname as the route switch sees it: trailing slashes dropped, so
  * `/owner/` is `/owner` rather than an unknown path that used to fall through
@@ -47,6 +51,28 @@ function App() {
     window.addEventListener('storage', handleStorageChange)
     return () => window.removeEventListener('storage', handleStorageChange)
   }, [])
+
+  // index.html is one static shell served for every route, so it cannot
+  // carry two pages' worth of `<link rel="canonical">`. Set it here instead,
+  // where the route already lives: the two pages the sitemap lists get their
+  // own absolute URL, everything else gets none, since every other route is
+  // already excluded from indexing by robots.txt. Google documents this
+  // pattern for a page that cannot set the tag in its HTML -- inject it with
+  // JavaScript and leave the HTML without one, rather than shipping one tag
+  // that would tell a crawler /privacy is really /.
+  useEffect(() => {
+    let link = document.head.querySelector('link[rel="canonical"]')
+    if (!CANONICAL_PATHS.has(route)) {
+      if (link) link.remove()
+      return
+    }
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'canonical'
+      document.head.appendChild(link)
+    }
+    link.href = `${CANONICAL_HOST}${route}`
+  }, [route])
 
   const navigate = (path) => {
     window.history.pushState({}, '', path)
