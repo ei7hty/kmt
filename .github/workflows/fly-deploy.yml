@@ -155,12 +155,22 @@ jobs:
             sleep 5
           done
           echo "kmt.fly.dev did not respond within 150s"; exit 1
-      - run: node .forge/dead-end-audit.mjs
-        env:
-          AUDIT_BASE: https://kmt.fly.dev
-      - run: node .forge/request-flow-check.mjs
-        env:
-          AUDIT_BASE: https://kmt.fly.dev
-      - run: node .forge/responsive-check.mjs
+      # What this run proves is the deploy, not the flow.
+      #
+      # The three flow audits perform the journey -- submit, approve, pay --
+      # which is right against the temporary database the check job builds and
+      # wrong here: on the deployed site they write real rows into the real
+      # database, so every deploy would leave a fabricated request in the
+      # owner's list, paid for. The owner's screen is a record of what
+      # customers asked for.
+      #
+      # The flow is still proved on every pull request, against a real
+      # backend/server.mjs with a real database, in the check job above. This
+      # one reads: the site is up, the catalog is the shape the customer flow
+      # is built on and leaks no supplier fields, the routes resolve through
+      # the SPA fallback, the owner's data is still behind its password, and
+      # nothing scrolls sideways on a phone. It signs into nothing, so no
+      # production password belongs in this workflow.
+      - run: node .forge/deployed-site-check.mjs
         env:
           AUDIT_BASE: https://kmt.fly.dev
