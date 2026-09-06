@@ -42,9 +42,10 @@ Options:
                    215/60R16 or 215-60-16.
   --complete       Treat each size as the supplier's whole listing: tires the
                    snapshot does not mention are marked no longer listed (they
-                   are kept, with the owner's offer). Only for scrapes run with
-                   --limit 0 and enough --pages to read every page. Without it
-                   a size is treated as a partial view and nothing is retired.
+                   are kept, with the owner's offer). Refused for any size the
+                   snapshot does not record as scraped with --limit 0 over
+                   every page. Without it a size is treated as a partial view
+                   and nothing is retired.
   --dry-run        Ask the server what would change, write nothing.
   --help           This message.
 
@@ -153,6 +154,26 @@ async function main() {
   }
   const snapshot = { ...file, sizes: [...new Set(tires.map(tire => tire.size))].sort(), tires }
   const base = options.to.replace(/\/+$/, '')
+
+  // --complete retires every tire the file does not mention. That is right
+  // for a size the scraper read in full and wrong for one it trimmed: the
+  // missing tires would be ones it merely did not fetch, and retiring them
+  // takes tires off Ken's list that the supplier still sells. The scraper
+  // writes what it covered; a file from before it did has no record and is
+  // treated as partial. The server checks the same thing.
+  if (options.complete) {
+    const partial = snapshot.sizes.filter(size => file.coverage?.[size]?.complete !== true)
+    if (partial.length) {
+      const why = partial.map(size => {
+        const record = file.coverage?.[size]
+        return record
+          ? `${size} was scraped with --limit ${record.limit} over ${record.pagesRead} of ${record.totalPages} page${record.totalPages === 1 ? '' : 's'}`
+          : `${size} has no coverage record (scraped before the scraper wrote one)`
+      })
+      throw new Error(`Refusing --complete: ${why.join('; ')}. ` +
+        'Re-scrape with --limit 0 and enough --pages to read every page, or import without --complete.')
+    }
+  }
 
   const password = process.env.KMT_OWNER_PASSWORD || ''
   const cookie = password ? await signIn(base, password) : null
