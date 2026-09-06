@@ -28,8 +28,11 @@ FROM node:24-bookworm-slim
 # "executable file not found in $PATH", found by running the restore drill.
 # The third is the expensive one: a privacy obligation, under time pressure,
 # failing in a way that reads as a broken machine rather than a missing binary.
+# gosu drops privileges in docker-entrypoint.sh. Purpose-built for it: no
+# intermediate shell and no TTY handling, so signals reach the process tini
+# supervises. `su` would fork one and break that.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      chromium fonts-liberation xvfb xauth tini ca-certificates sqlite3 \
+      chromium fonts-liberation xvfb xauth tini ca-certificates sqlite3 gosu \
   && rm -rf /var/lib/apt/lists/*
 
 # Use the distro's Chromium rather than downloading a second copy through
@@ -39,9 +42,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # `--omit=dev`, so setting it before `npm ci` skips devDependencies -- which is
 # where Vite lives, and the build then fails with `vite: not found`. It is set
 # after the build instead, where it only affects the running server.
+# HOME is set explicitly because gosu does not change it. Left at /root, the
+# process runs as `node` with a home it cannot write, and xvfb-run's call to
+# xauth fails -- which surfaces as Chromium never starting, with nothing in the
+# log naming a home directory.
+#
+# KMT_CHROMIUM_NO_SANDBOX stays 1 for now, and that is deliberate rather than
+# forgotten. Dropping root removes the layer that made a renderer compromise
+# total; enabling Chromium's own sandbox needs user namespaces this container
+# may not have, and turning it on unverified would trade a proven improvement
+# for a browser that silently fails to launch on the next refresh. That is its
+# own change, and it can only be proved by running a real refresh (#87 part two).
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     KMT_CHROMIUM_PATH=/usr/bin/chromium \
     KMT_CHROMIUM_NO_SANDBOX=1 \
+    HOME=/home/node \
     PORT=8080 \
     KMT_OWNER_DB=/data/owner.sqlite
 
@@ -97,6 +112,12 @@ EXPOSE 8080
 # -s registers tini as a child subreaper. Fly's own init takes PID 1, so without
 # it tini reaps nothing and the browser processes a cancelled refresh leaves
 # behind accumulate as zombies.
-ENTRYPOINT ["/usr/bin/tini", "-s", "--"]
+# The entrypoint chowns /data and drops to `node` before exec'ing CMD. It runs
+# under tini so the browser processes a cancelled refresh leaves behind are
+# still reaped, and so signals still reach the server after the drop.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1280x1024x24", \
      "node", "backend/server.mjs"]
