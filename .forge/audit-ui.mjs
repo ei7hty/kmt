@@ -139,12 +139,34 @@ export async function freshPage(browser, viewport) {
 
 /** A size whose tires include the off-road option, which forces owner review. */
 export const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain' }
+/** The size every gate database has real supplier rows in, via the local scraped-tires.json snapshot. */
+export const CLEAN_SIZE = '205/65R15'
+
 /**
- * A size and tire that sail through without an exception.
+ * A size and a tire in it that sail through without an exception, resolved
+ * against whatever the server is actually offering right now rather than a
+ * name typed into this file.
  *
- * A real supplier row, not one of the six seeds: since a tire whose id
- * doesn't start with `giga-` is now itself an exception reason (the seeds and
- * every generated row are placeholders, not tires KMT can confirm buying),
- * a seed here would no longer be a clean path at all.
+ * Has to be a real supplier row, not one of the six seeds: since a tire whose
+ * id doesn't start with `giga-` is itself an exception reason, a seed here
+ * would no longer be a clean path at all. It used to be hardcoded as
+ * Waterfall Quattro -- one specific SKU out of 177 in this size, in a
+ * snapshot that gets re-scraped -- so a routine delisting at the supplier
+ * would have failed three audits on a Playwright timeout that reads like a
+ * UI regression, not "this fixture tire is gone." Asking the server which
+ * supplier tire it is currently offering removes that dependency instead of
+ * just diagnosing it faster: any tire the database actually carries makes as
+ * good a clean-path fixture as any other, so there is nothing to pin here.
  */
-export const CLEAN_TIRE = { size: '205/65R15', tireName: 'Waterfall Quattro' }
+export async function cleanTireFor(base) {
+  const response = await fetch(`${base}/api/catalog`)
+  const { tires } = await response.json()
+  const supplierTire = tires.find(tire => tire.size === CLEAN_SIZE && tire.id.startsWith('giga-'))
+  if (!supplierTire) {
+    throw new Error(
+      `No giga- supplier tire is listed in ${CLEAN_SIZE} right now, so there is no clean-path fixture to submit. ` +
+      'This is a gap in the gate database or the live catalog, not a UI regression.',
+    )
+  }
+  return { size: CLEAN_SIZE, tireName: supplierTire.name }
+}

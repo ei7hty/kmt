@@ -1,5 +1,5 @@
 import { chromium } from 'playwright'
-import { expandTireList, openOwnerQuotes } from './audit-ui.mjs'
+import { cleanTireFor, expandTireList, openOwnerQuotes } from './audit-ui.mjs'
 import assert from 'node:assert/strict'
 
 const base = process.env.AUDIT_BASE || 'http://localhost:4183'
@@ -18,6 +18,15 @@ const EXPECTED_CHECKS = 34
 const browser = await chromium.launch()
 let checks = 0
 try {
+  // A real supplier row, not a seed: a tire whose id doesn't start with
+  // giga- is itself an exception reason, so this has to be a supplier tire
+  // to stay a clean, non-exception path through the form. Resolved against
+  // whatever the server is actually offering right now, not a name typed
+  // into this file -- see cleanTireFor.
+  const cleanTire = await cleanTireFor(base)
+  const [cleanWidth, cleanRest] = cleanTire.size.split('/')
+  const [cleanRatio, cleanDiameter] = cleanRest.split('R')
+
   for (const width of [375, 1280]) {
     const page = await browser.newPage({ viewport: { width, height: 900 } })
     const errors = []
@@ -25,14 +34,11 @@ try {
     const check = (condition, message) => { assert.ok(condition, message); checks++; console.log(`OK ${width}px: ${message}`) }
     const overflow = () => page.locator('.order-section').evaluate(el => [...el.querySelectorAll('*')].filter(node => node.getClientRects().length).every(node => node.getBoundingClientRect().right <= innerWidth + 1))
     await page.goto(base)
-    // A real supplier row, not a seed: a tire whose id doesn't start with
-    // giga- is itself an exception reason, so this has to be a supplier tire
-    // to stay a clean, non-exception path through the form.
-    for (const value of ['205', '65', '15']) await page.locator('.fitment-option').getByText(value, { exact: true }).click()
+    for (const value of [cleanWidth, cleanRatio, cleanDiameter]) await page.locator('.fitment-option').getByText(value, { exact: true }).click()
     await page.locator('#fitmentZip').fill('02149')
     await page.getByRole('button', { name: 'Continue to tires' }).click()
     await expandTireList(page)
-    await page.locator('.tire-option').filter({ hasText: 'Waterfall Quattro' }).click()
+    await page.locator('.tire-option').filter({ hasText: cleanTire.tireName }).click()
     await page.getByLabel('Year', { exact: true }).fill('2020')
     await page.getByLabel('Make', { exact: true }).fill('Honda')
     await page.getByLabel('Model', { exact: true }).fill('Civic')

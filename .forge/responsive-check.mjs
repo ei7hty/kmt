@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { CLEAN_TIRE, EXCEPTION_TIRE, freshPage, openOwnerQuotes, submitRequest } from './audit-ui.mjs';
+import { EXCEPTION_TIRE, cleanTireFor, freshPage, openOwnerQuotes, submitRequest } from './audit-ui.mjs';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4173';
 const VIEWPORTS = [
@@ -75,7 +75,7 @@ const screens = [
     path: '/status',
     async reach(page) {
       await submitRequest(page, {
-        base: BASE, ...CLEAN_TIRE,
+        base: BASE, ...(await cleanTireFor(BASE)),
         vehicle: '2020 Toyota Corolla',
         location: '456 Demo Ave, Everett, MA 02149',
         date: '2026-09-10',
