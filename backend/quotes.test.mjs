@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Quotes } from './quotes.mjs'
-import { createApi, createCatalogApi, createRequestsApi, isPublicApiCall, readJsonBody } from './api.mjs'
+import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
 import { calculateDraftQuote } from '../src/pricing.js'
 
@@ -234,6 +234,7 @@ function serve(t, quotes, inventory) {
   const auth = createAuth(readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password' }))
   const requestsApi = createRequestsApi(quotes)
   const catalogApi = createCatalogApi(inventory)
+  const healthApi = createHealthApi(inventory)
   const ownerApi = createApi(inventory, { start: () => ({}), cancel: () => ({}) }, null, quotes)
 
   const server = createServer(async (request, response) => {
@@ -247,6 +248,7 @@ function serve(t, quotes, inventory) {
       }
       // Mounted in the order server.mjs mounts them, so a handler that
       // answers a route belonging to another one shows up here.
+      if (await healthApi(request, response)) return
       if (await catalogApi(request, response)) return
       if (await requestsApi(request, response)) return
       if (await ownerApi(request, response)) return
@@ -303,12 +305,15 @@ test('the public rule opens the customer paths and nothing else', async t => {
   // The allow-list is a prefix, so this pins what the prefix does and does not
   // reach -- a route added under it later stays behind the session by default.
   assert.equal(isPublicApiCall('GET', '/api/catalog'), true)
+  assert.equal(isPublicApiCall('GET', '/api/health'), true)
   assert.equal(isPublicApiCall('POST', '/api/requests'), true)
   assert.equal(isPublicApiCall('GET', '/api/requests'), true)
   assert.equal(isPublicApiCall('GET', '/api/requests/abc123'), true)
   assert.equal(isPublicApiCall('POST', '/api/requests/abc123/pay'), true)
 
   assert.equal(isPublicApiCall('POST', '/api/catalog'), false)
+  assert.equal(isPublicApiCall('POST', '/api/health'), false)
+  assert.equal(isPublicApiCall('GET', '/api/owner/health'), false)
   assert.equal(isPublicApiCall('DELETE', '/api/requests/abc123'), false)
   assert.equal(isPublicApiCall('POST', '/api/requests/abc123'), false)
   assert.equal(isPublicApiCall('POST', '/api/requests/abc123/approve'), false)
@@ -706,4 +711,72 @@ test('cancel is public by name, and only as a POST', async () => {
     'the owner closes a request, and that is not a public call')
   assert.equal(isPublicApiCall('POST', '/api/owner/quotes/abc/cancel'), false)
   assert.equal(isPublicApiCall('GET', '/api/requests/abc'), true, 'reading one still works')
+})
+
+/* ------------------------------------------------------------ health (#88) */
+
+test('health answers a machine with no session, and nothing else does', async t => {
+  // The platform check arrives with no cookie. Behind the session gate this
+  // answers 401, the check never passes, and Fly marks the only machine
+  // unhealthy for as long as it runs -- so "reachable without a session" is
+  // the property under test, not an incidental one.
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory)
+
+  const answer = await fetch(`${base}/api/health`)
+  assert.equal(answer.status, 200)
+  assert.equal(answer.headers.get('cache-control'), 'no-store', 'a cached health check is not a health check')
+  assert.deepEqual(await answer.json(), { ok: true })
+
+  // A GET only, and the session gate is what refuses the rest: the allow-list
+  // opens this path for GET alone, so a POST is 401 before the handler is
+  // reached. That is the right layer for it -- the handler is not the thing
+  // standing between the public and a write.
+  const posted = await post(base, '/api/health', {})
+  assert.equal(posted.status, 401, 'refused by the gate, not by the handler')
+
+  // And the gate it sits beside is unchanged.
+  assert.equal((await fetch(`${base}/api/owner/inventory`)).status, 401)
+})
+
+test('health asks the database rather than answering a constant', async t => {
+  // A process that is listening but cannot read its database is exactly the
+  // failure worth restarting for. If this endpoint returned a literal, it would
+  // report healthy through a missing volume mount.
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory)
+
+  const broken = new Error('unable to open database file')
+  const realPrepare = inventory.db.prepare.bind(inventory.db)
+  inventory.db.prepare = statement => {
+    if (statement.includes('sqlite_master')) throw broken
+    return realPrepare(statement)
+  }
+  t.after(() => { inventory.db.prepare = realPrepare })
+
+  const answer = await fetch(`${base}/api/health`)
+  assert.equal(answer.status, 503, 'a database that cannot be read is not healthy')
+  assert.deepEqual(await answer.json(), { ok: false })
+})
+
+test('the health handler answers its own path and nothing else', async t => {
+  // The mistake createCatalogApi made once: guarding on "is this public"
+  // instead of "is this my route".
+  const { inventory } = setup(t)
+  const healthApi = createHealthApi(inventory)
+  const answered = await healthApi(
+    { method: 'GET', url: '/api/catalog', headers: {} },
+    { writeHead: () => {}, end: () => {} },
+  )
+  assert.equal(answered, false, 'it must decline a path that is not its own')
+
+  // Its own path with the wrong method is 405, not a fall-through. Unreachable
+  // behind server.mjs's gate, which answers 401 first, but backend/dev.mjs
+  // mounts the same handler with no gate at all.
+  let status = 0
+  await healthApi(
+    { method: 'POST', url: '/api/health', headers: {} },
+    { writeHead: code => { status = code }, end: () => {} },
+  )
+  assert.equal(status, 405)
 })

@@ -41,6 +41,30 @@ primary_region = "ewr"          # Secaucus NJ, nearest Fly region to Everett MA.
   auto_start_machines = true
   min_machines_running = 1
 
+  # Is the machine actually serving, or only listening?
+  #
+  # Without a check Fly knows the process started and nothing after that: a
+  # server that boots, binds, and cannot read its database looks identical to a
+  # healthy one. /api/health asks SQLite one question, so this notices that.
+  #
+  # grace_period is the load-bearing number. The first boot after a deploy runs
+  # the migration and the seed, both of which log nothing, and a check that
+  # starts before they finish marks the machine unhealthy and rolls the release
+  # back -- a deploy failure whose cause is invisible, because neither step
+  # prints a line. Thirty seconds is generous against the observed boot.
+  #
+  # This is one machine (see the concurrency note below), so a check that is
+  # wrong about health is a check that takes production down. The path, the
+  # port and the status were verified against backend/server.mjs before this
+  # block was written.
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    port = 8080
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+
   # Do NOT raise this. A Fly volume attaches to one machine, so a second machine
   # gets a second, empty database and the two silently diverge -- one owner
   # saving prices into a copy the other never sees. SQLite on a volume is a

@@ -29,7 +29,7 @@ const BASE = process.env.AUDIT_BASE || 'https://kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 19;
+const EXPECTED_CHECKS = 20;
 
 let passed = 0;
 let failed = 0;
@@ -131,7 +131,16 @@ async function main() {
       wrongShape.length ? `first offender: ${JSON.stringify(Object.keys(wrongShape[0]))}` : '');
   }
 
-  // 2. The owner's data is still behind the password. Asked without a session,
+  // 2. The machine says it can reach its own database, and says so to anyone:
+  //    the platform check that reads this arrives with no session, so a health
+  //    endpoint that needs one is a machine marked unhealthy forever.
+  const healthResponse = await fetch(`${BASE}/api/health`, { headers: { Accept: 'application/json' } });
+  const health = await healthResponse.json().catch(() => null);
+  check(healthResponse.status === 200 && health?.ok === true,
+    'GET /api/health answers 200 with ok:true, and needs no session',
+    `status ${healthResponse.status}, body ${JSON.stringify(health)}`);
+
+  // 3. The owner's data is still behind the password. Asked without a session,
   //    which is the only way this script ever asks.
   const ownerResponse = await fetch(`${BASE}/api/owner/inventory`, { headers: { Accept: 'application/json' } });
   check(ownerResponse.status === 401, 'GET /api/owner/inventory refuses without a session',
@@ -141,13 +150,13 @@ async function main() {
   try {
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
 
-    // 3. The site answers and renders the thing a customer starts with.
+    // 4. The site answers and renders the thing a customer starts with.
     const home = await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
     check(home?.status() === 200, '/ answers 200', `got ${home?.status()}`);
     check(await page.locator('.fitment-option').first().isVisible().catch(() => false),
       '/ renders the size selector');
 
-    // 4. Hard navigation to each route returns the app, not a 404. This is the
+    // 5. Hard navigation to each route returns the app, not a 404. This is the
     //    SPA fallback, it is server configuration rather than app code, and it
     //    has broken production before -- which is why it is checked here and
     //    cannot be checked anywhere else.
@@ -159,13 +168,13 @@ async function main() {
         `status ${response?.status()}, #root ${rendered}`);
     }
 
-    // 5. The owner screen asks for the password rather than showing anything.
+    // 6. The owner screen asks for the password rather than showing anything.
     await page.goto(`${BASE}/owner`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.oi-signin, .oi-results', { timeout: 20000 }).catch(() => {});
     check(await page.locator('.oi-signin').count() > 0,
       '/owner shows the sign-in form to a visitor with no session');
 
-    // 6. A completed selection lands on tires, for a size the supplier covers
+    // 7. A completed selection lands on tires, for a size the supplier covers
     //    and a size only the generator fills. Both, because they come from
     //    different halves of the catalog and only one of them is live data.
     for (const [size, label] of [[SCRAPED_SIZE, 'a scraped size'], [GENERATED_SIZE, 'a generated size']]) {
@@ -175,7 +184,7 @@ async function main() {
         `${landing.tires} tires, empty state ${landing.empty}`);
     }
 
-    // 7. Nothing scrolls sideways, on a phone or on a desktop.
+    // 8. Nothing scrolls sideways, on a phone or on a desktop.
     for (const viewport of [{ name: 'phone', width: 375, height: 812 }, { name: 'desktop', width: 1280, height: 900 }]) {
       const sized = await (await browser.newContext({ viewport })).newPage();
       for (const path of ['/', '/status', '/owner']) {
