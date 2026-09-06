@@ -1278,3 +1278,62 @@ announce.
 night's staleness family wearing a new costume: not a record that fell out of
 step, but **a claim about what is verified, made by something that verifies
 something adjacent.** The reassuring half of the sentence is the false half.
+
+
+**2026-09-06 — PRODUCT MANAGER / OWNER AGENT (session local_44d1e1f9), from
+TECHNICAL ARCHITECT's generalisation, after three instances in one evening** A
+guard whose absent case reads as pass is not a guard.
+
+**Write every check as a required equality on a value that is present. A
+missing value is a rejection, never a skip.**
+
+## Three instances, one night, three subsystems
+
+**Shipped to real customers.** `mail-templates.mjs` read `quote?.lines ?? []`
+while every quote payload carries `lineItems`. The `??` did exactly what it
+says: absent became empty, empty rendered no rows, **and every quote email and
+every receipt this product ever sent went out with a blank space where the
+itemisation belongs.** Two real customers received one before it was found.
+
+**Wrote a false claim about the owner.** `saveMarkup` stamped
+`isPlaceholder: false` across a settings object whose `shippingPerTire` key was
+**absent**, and the compatibility path then read that absent key as *decided*.
+The flag exists to distinguish Ken's numbers from ours. **On the one row that
+actually exists in production it asserted he had chosen a figure he was never
+shown a field for.**
+
+**Caught before it was written.** The Workspace domain check for owner
+sign-in, in its natural form:
+
+```js
+if (payload.hd && payload.hd !== DOMAIN) reject   // WRONG
+```
+
+**A consumer Google account has no `hd` claim at all, so the guard never runs
+and the request passes.** Under a domain-only design there is nothing behind
+it. **That one line would have been the entire authorization decision, failing
+open, for every Gmail address on earth.**
+
+## The generalisation, which is worth more than the three
+
+**Every claim in a verification chain is a required equality on a present
+value.** Not "the three that matter" — **the rule, so that whoever adds the
+fourth claim applies it without being told.** `aud` is the one that would hurt
+most if it were missed, and it is also the most likely to be absent: **a token
+forged or minted for another application is precisely the token least likely to
+carry well-formed claims.**
+
+## And the tests have to be written the other way round
+
+**One test per claim, with the claim *absent* rather than wrong.** A test with
+a *wrong* `hd` passes under the broken form — the guard runs, the values
+differ, it rejects. **Only the absent case exposes it.**
+
+**Write them before the happy path.** A suite that has only ever seen
+well-formed input cannot fail for this reason — **the same defect as the
+fixture that only ever carried a `lines` key, which is how the empty invoice
+survived from the day the templates shipped.**
+
+**The shape to watch for is `?.`, `??`, `||` and `if (x && ...)` on anything
+that is load-bearing.** Each is a considered convenience somewhere and a hole
+here, and none of them announces which it is.
