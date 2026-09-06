@@ -12,7 +12,7 @@ ENGINEER's lane with them as first reader and design authority: the
 privacy page and its footer link (#163, #193), the owner card's zero-stock
 warning (#171), the robots `noindex` meta on the private screens (#177),
 the #85 accessibility measurement and its report (#156), and t63, every
-call control becoming a text control (#210, with the settled part of t62).
+call control becoming a text control (#210, with t62's app half).
 
 Did not own: any pricing rule, route state, the store, the backend, the
 audit scripts and their counts (QA ENGINEER's), the scraper, the workflow
@@ -139,13 +139,17 @@ leaves an empty directory or refuses on untracked files, both harmless.
 
 ## What is unfinished, for whoever is next
 
-t62's remainder: sixteen plural sentences on branch `t63-text-controls`
-(listed with proposed forms in #210's body); the approved 32-sentence list
-exists only in messages between the CUSTOMER SUCCESS MANAGER, the lead
-and the PROJECT MANAGER, and should be swept from, with the list in #210
-used to check nothing was missed. t65's approved line has no settled
-placement. The privacy page gains an email route only when the business
-has an address of its own, from configuration.
+t62's app half is done: the approved list's 26 `src/` rows are applied on
+branch `t63-text-controls` at `b11819e` (#210), verified as rendered at
+375, and the list itself is `.forge/t62-voice.md` on #215, a file and no
+longer a message. What remains is the list's six `backend/` rows, 27 to
+32, among them the t48 refusal and the rate-limit line: LEAD BACKEND DEV's
+lane by the lanes table, and that session has spun down, so they need an
+owner. Sweep them from #215's file, not from memory. t65's approved line
+lands with its section, which is not on main. The five email sketches are
+t37's, the template lane's, and touch nothing in `src/`. The privacy page
+gains an email route only when the business has an address of its own,
+from configuration.
 
 ## What I would tell you on day one that no document holds
 
