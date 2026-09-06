@@ -28,6 +28,9 @@
 .oi-refresh p { font-size: 12px; line-height: 1.7; max-width: 730px; }
 .oi-muted { color: #a3a3ab; margin-top: 6px; }
 .oi-refresh-actions { flex-shrink: 0; display: grid; gap: 8px; }
+.oi-brand-summary { flex-shrink: 0; display: grid; gap: 10px; max-width: 320px; }
+.oi-brand-summary p { font-size: 12px; line-height: 1.7; }
+.oi-brand-confirm { display: grid; gap: 8px; }
 .oi-job { display: flex; flex-wrap: wrap; gap: 8px 20px; background: #171717; padding: 12px 16px; font-size: 12px; border: 1px solid #3e3e42; border-radius: 4px; margin-bottom: 16px; }
 .oi-filters { display: grid; grid-template-columns: 2fr 1fr 1fr auto; align-items: end; gap: 14px; padding: 18px 0; }
 .oi-shell label { font-size: 12px; font-weight: 600; display: grid; gap: 7px; color: #dedee3; }
@@ -74,6 +77,7 @@
   .oi-filters { grid-template-columns: 1fr 1fr; }
   .oi-filters > label:first-child { grid-column: 1 / -1; }
   .oi-refresh { align-items: stretch; flex-direction: column; gap: 14px; }
+  .oi-brand-summary { max-width: none; }
   .oi-tire { grid-template-columns: 1fr; }
   .oi-offer { border-left: 0; border-top: 1px solid #303033; }
   .oi-results-heading { flex-direction: column; gap: 4px; }

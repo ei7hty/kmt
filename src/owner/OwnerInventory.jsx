@@ -165,6 +165,72 @@ function MarkupRule({ markup, onSaved }) {
   </section>
 }
 
+/**
+ * Enable or disable every tire from one brand at once.
+ *
+ * `brand` is not stored data -- it is derived server-side from the
+ * supplier's own listing URL (src/data/brand.js), which is why this reads
+ * `summary.brands` rather than deriving anything here. The confirmation
+ * numbers are the feature: nothing enables until the owner has seen how
+ * many tires, across how many sizes, and how many will fall through to
+ * the markup rule rather than a price he set -- so the button only
+ * appears after `brand` resolves to a real summary row, never before.
+ */
+function BrandOffers({ brands, onChanged }) {
+  const [selected, setSelected] = useState('')
+  const [confirming, setConfirming] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const brand = brands.find(b => b.brand === selected)
+
+  function pick(value) {
+    setSelected(value)
+    setConfirming(null)
+    setError('')
+  }
+
+  async function apply(enabled) {
+    setBusy(true)
+    setError('')
+    try {
+      await api(`offers/by-brand/${encodeURIComponent(selected)}`, { method: 'PUT', body: JSON.stringify({ enabled }) })
+      setConfirming(null)
+      await onChanged()
+    } catch (err) { setError(err.message) }
+    finally { setBusy(false) }
+  }
+
+  return <section className="oi-refresh" aria-label="Offer tires by brand">
+    <div>
+      <h2>Offer tires by brand</h2>
+      <p>Enable or disable every tire from one brand at once, instead of finding and tapping each row.</p>
+      <label htmlFor="brand-picker" className="oi-kicker">BRAND</label>
+      <select id="brand-picker" value={selected} onChange={e => pick(e.target.value)}>
+        <option value="">Choose a brand…</option>
+        {brands.map(item => <option key={item.brand} value={item.brand}>{item.label} ({item.count})</option>)}
+      </select>
+    </div>
+    {brand && <div className="oi-brand-summary">
+      <p>
+        {brand.count} tire{brand.count === 1 ? '' : 's'} across {brand.sizeCount} size{brand.sizeCount === 1 ? '' : 's'}.{' '}
+        {brand.enabledCount} of them offered today.{' '}
+        {brand.missingPriceCount > 0 && <span className="oi-attention">{brand.missingPriceCount} {brand.missingPriceCount === 1 ? 'has' : 'have'} no price set and will be priced by markup if offered.</span>}
+      </p>
+      {confirming
+        ? <p className="oi-brand-confirm">
+          {confirming === 'enable' ? `Offer all ${brand.count} ${brand.label} tires?` : `Stop offering all ${brand.count} ${brand.label} tires?`}
+          <button type="button" className="oi-button oi-primary" onClick={() => apply(confirming === 'enable')} disabled={busy}>{busy ? 'Working…' : 'Confirm'}</button>
+          <button type="button" className="oi-button" onClick={() => setConfirming(null)} disabled={busy}>Cancel</button>
+        </p>
+        : <div className="oi-refresh-actions">
+          <button type="button" className="oi-button oi-primary" onClick={() => setConfirming('enable')}>Offer all {brand.count}</button>
+          <button type="button" className="oi-button" onClick={() => setConfirming('disable')}>Stop offering all {brand.count}</button>
+        </div>}
+      {error && <p role="alert" className="oi-error">{error}</p>}
+    </div>}
+  </section>
+}
+
 function TireOffer({ tire, markup, onSaved }) {
   const [price, setPrice] = useState(tire.offer.priceCents == null ? '' : (tire.offer.priceCents / 100).toFixed(2))
   const [enabled, setEnabled] = useState(tire.offer.enabled)
@@ -369,7 +435,7 @@ export default function OwnerInventory({ navigate }) {
         <div><strong>{summary ? summary.fullSizeCount + summary.importedSizeCount : '—'}</strong><span>Sizes with supplier tires</span>{summary && <small title="The deep pass reads the rest.">Read to the last page: {summary.fullSizeCount} of {summary.fullSizeCount + summary.importedSizeCount}</small>}</div>
       </div>
       <div className={toolsOpen ? 'oi-tools is-open' : 'oi-tools'}>
-        <button type="button" className="oi-tools-toggle" aria-expanded={toolsOpen} aria-controls="owner-tools" onClick={toggleTools}>Supplier refresh, browser import and markup rule</button>
+        <button type="button" className="oi-tools-toggle" aria-expanded={toolsOpen} aria-controls="owner-tools" onClick={toggleTools}>Supplier refresh, browser import, markup rule and offers by brand</button>
         <div id="owner-tools" className="oi-tools-body" inert={!toolsOpen}>
       {/* What the supplier data for the selected size is: state about the
           data, so it sits with the refresh controls rather than above the
@@ -381,6 +447,7 @@ export default function OwnerInventory({ navigate }) {
       </section>
       <BrowserImport sizes={summary?.sizes} />
       {summary?.markup && <MarkupRule markup={summary.markup} onSaved={markupSaved} />}
+      {summary?.brands?.length > 0 && <BrandOffers brands={summary.brands} onChanged={load} />}
         </div>
       </div>
       {job && <div className={`oi-job ${['failed', 'interrupted'].includes(job.status) ? 'oi-attention' : ''}`} role="status"><strong>{job.status.toUpperCase()}</strong><span>{job.message}</span><span>{job.completed} / {job.sizes.length} sizes · {job.tiresRead} tires · {job.pagesRead} pages</span>{job.failed?.length > 0 && <span>Earlier saved inventory and offers are preserved. Choose the failed size to retry.</span>}</div>}
