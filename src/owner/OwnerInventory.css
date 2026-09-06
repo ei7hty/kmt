@@ -158,6 +158,15 @@
 .oi-shell dd a, .oi-source a { display: inline-flex; align-items: center; min-height: 44px; }
 .oi-brand { min-height: 44px; }
 
+/* This rule's own comment claimed "the supplier links all reach 44px" --
+   true for the tire-detail source link above, not for this one: the import
+   instructions' giga-tires.com link (#238) sits in an <ol> as running
+   prose, not in a dd or .oi-source, so the rule above never matched it.
+   inline-flex keeps it inline with "Open " and the rest of the sentence --
+   this is instructional text with a link in it, not a button row -- while
+   still giving the link box itself the full 44px tap height. */
+.oi-import-steps a { display: inline-flex; align-items: center; min-height: 44px; }
+
 /* At desktop width one card per row left most of each row empty and 24 cards
    ran to 10,953px. Two cards per row, each stacked main over offer, the way
    the card already stacks at phone width. */
