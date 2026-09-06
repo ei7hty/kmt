@@ -7,6 +7,17 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1280, height: 900 },
 ];
 
+/**
+ * How many screens a complete run measures: every screen at every viewport.
+ *
+ * The baseline lives here, in the thing that produces it, and nowhere in
+ * prose. When you add or remove a check, change this number in the same
+ * commit. The run fails if a different number of checks executed: fewer
+ * means screens stopped being measured -- the way an audit here once passed while
+ * asserting nothing -- and more means the baseline was not updated.
+ */
+const EXPECTED_CHECKS = 8;
+
 async function checkOverflow(page) {
   return page.evaluate(() => {
     const docWidth = document.documentElement.clientWidth;
@@ -94,6 +105,7 @@ const screens = [
 (async () => {
   const browser = await chromium.launch();
   let hadIssue = false;
+  let measured = 0;
 
   for (const viewport of VIEWPORTS) {
     for (const screen of screens) {
@@ -104,6 +116,7 @@ const screens = [
         await screen.reach(page);
         const result = await checkOverflow(page);
         const status = result.scrollWidth > result.docWidth + 1 ? 'OVERFLOW' : 'ok';
+        measured += 1;
         if (status === 'OVERFLOW') hadIssue = true;
         console.log(`[${viewport.name} ${viewport.width}px] ${screen.label} (${screen.path}) -> ${status} (doc=${result.docWidth} scroll=${result.scrollWidth})`);
         for (const o of result.overflowing) {
@@ -122,5 +135,16 @@ const screens = [
   }
 
   await browser.close();
+
+  // An UNREACHABLE screen is not measured, so it shows up here twice: as the
+  // issue it is, and as a count that fell short of the baseline.
+  console.log(`\n${measured} of ${EXPECTED_CHECKS} expected screens measured`);
+  if (measured < EXPECTED_CHECKS) {
+    console.error(`FAIL: only ${measured} of ${EXPECTED_CHECKS} screens were measured. A screen that was not measured did not pass.`);
+    hadIssue = true;
+  } else if (measured > EXPECTED_CHECKS) {
+    console.error(`FAIL: ${measured} screens measured but EXPECTED_CHECKS is ${EXPECTED_CHECKS}. Update it in the same commit as the new screen.`);
+    hadIssue = true;
+  }
   process.exit(hadIssue ? 1 : 0);
 })();

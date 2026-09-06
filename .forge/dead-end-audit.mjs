@@ -3,13 +3,40 @@ import { expandTireList, freshPage, openOwnerQuotes, waitForStatus } from './aud
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
 
+/**
+ * How many checks a complete run performs, across both viewports.
+ *
+ * The baseline lives here, in the thing that produces it, and nowhere in
+ * prose. When you add or remove a check, change this number in the same
+ * commit. The run fails if a different number of checks executed: fewer
+ * means checks stopped running -- the way an audit here once passed while
+ * asserting nothing -- and more means the baseline was not updated.
+ */
+const EXPECTED_CHECKS = 40;
+
+let passed = 0;
+let failed = 0;
+
 function fail(msg) {
+  failed += 1;
   console.error(`FAIL: ${msg}`);
   process.exitCode = 1;
 }
 
 function ok(msg) {
+  passed += 1;
   console.log(`OK: ${msg}`);
+}
+
+/** The count, held against the baseline. Printed last, so it is the line a reader lands on. */
+function reportCount() {
+  const ran = passed + failed;
+  console.log(`\n${passed} OK, ${failed} FAIL -- ${ran} of ${EXPECTED_CHECKS} expected checks ran`);
+  if (ran < EXPECTED_CHECKS) {
+    fail(`only ${ran} of ${EXPECTED_CHECKS} checks ran. A check that stopped running is not a check that passed.`);
+  } else if (ran > EXPECTED_CHECKS) {
+    fail(`${ran} checks ran but EXPECTED_CHECKS is ${EXPECTED_CHECKS}. Update it in the same commit as the new check.`);
+  }
 }
 
 /**
@@ -234,8 +261,11 @@ async function main() {
     // 6. The selector narrows each stage to choices that lead somewhere, so a
     //    completed selection should always land on tires rather than an empty
     //    list. Sampled here; the exhaustive walk of all 910 paths is a one-off,
-    //    too slow to run every time.
-    for (const [w, r, d] of [['175', '70', '14'], ['225', '45', '17'], ['275', '40', '20']]) {
+    //    too slow to run every time. The first three sit in the middle of the
+    //    range; the last two are its edges -- the smallest and the largest
+    //    size the selector can build -- so a change to the fitment lists or
+    //    the plausibility rule that strands either end fails here.
+    for (const [w, r, d] of [['175', '70', '14'], ['225', '45', '17'], ['275', '40', '20'], ['135', '80', '12'], ['325', '35', '24']]) {
       await page.goto(BASE + '/');
       for (const value of [w, r, d]) {
         await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
@@ -290,9 +320,13 @@ async function main() {
   }
 
   await browser.close();
+  reportCount();
 }
 
 main().catch((err) => {
   console.error(err);
+  // Say how far it got: a crash after 5 checks and a crash after 39 are
+  // different failures, and the count is what tells them apart.
+  reportCount();
   process.exit(1);
 });

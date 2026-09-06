@@ -239,16 +239,25 @@ scrapes rather than 290, so roughly three times as long.
 
 **2026-09-06 — Claude (kmt repo agent)**
 `gh run watch --exit-status` returns non-zero for a *cancelled* run, not only a
-failed one. The `fly-deploy` concurrency group cancels an in-flight run whenever
-a newer push lands on the same branch, so a merge that is quickly followed by
-another merge routinely leaves a cancelled run behind. I read `exit=1` from a
-superseded run and announced that main was red. It was not: the job list was
-empty and `.conclusion` was `cancelled`. Read `.conclusion` before calling a run
+failed one. The `fly-deploy` concurrency group cancels a queued run whenever a
+newer push lands in the same group, so a merge quickly followed by another
+routinely leaves a cancelled run behind.
+
+I read `exit=1` from a superseded run and announced that main was red. It was
+not: the job list was empty and `.conclusion` was `cancelled`. Read `.conclusion` before calling a run
 failed:
 
 ```bash
 gh run view <id> --json status,conclusion --jq '"\(.status)/\(.conclusion)"'
 ```
+
+**Amended later the same day, once the cause was found rather than the
+symptom.** The group was `fly-deploy` with no ref key, so *every* run in the
+repository shared one queue: any branch push superseded a queued run on main and
+vice versa. Six runs died that way in one afternoon, and one of them is the run
+described above. Fixed in #44 as `fly-deploy-${{ github.ref }}`. Everything here
+still holds -- a cancelled run is not a failed one -- but if runs are vanishing
+in numbers, read the concurrency block before you read the runs.
 
 An empty `.jobs[]` is the tell -- a run that was cancelled before its jobs
 started has no jobs to have failed.
@@ -320,3 +329,37 @@ Get-NetTCPConnection -LocalPort 4291 -State Listen |
 ```
 
 Then confirm the port is closed before believing the next audit against it.
+
+**2026-09-06 — Claude (kmt repo agent)**
+"No checks reported" and a zero count are not a green gate. They are *no* gate.
+
+I merged two PRs on that reading. On #35 my grep matched nothing because the
+step had been renamed in an earlier PR and I read the empty result as a pass. On
+#42 `gh pr checks` genuinely reported none, because both gate runs had been
+cancelled by the concurrency bug above -- and I merged anyway, having already
+written the lesson from #35 into this file. Both PRs were sound and both merges
+came out green, which is exactly what makes the habit dangerous: it is only ever
+caught by the times it does not.
+
+Wait for a check that has *completed*, or dispatch a run and wait for that. An
+absent signal and a passing signal look identical if you only test for the
+absence of failure:
+
+```bash
+gh run view <id> --json status,conclusion --jq '"\(.status)/\(.conclusion)"'
+```
+
+**2026-09-06 — Claude (kmt repo agent)**
+Two working rules the lead adopted after a day of duplicated and wasted effort,
+both cheap:
+
+**Claim a pull request before you start reviewing it**, with one line to its
+author and to the lead. Merging is work like any other, and twice in one day the
+lead and I solved the same problem from two ends without knowing -- once raising
+a workflow dispatch and a concurrency fix for the same stuck run.
+
+**Merge `origin/main` into your branch and let the gate run on that result
+before asking for a merge.** Otherwise the reviewer is reading a gate that ran
+against a base several merges old, and has to reason out by hand whether
+anything in between could have interacted. That reasoning is right until the one
+time it is not.
