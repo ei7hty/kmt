@@ -40,10 +40,13 @@ import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
 import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { Quotes } from './quotes.mjs'
+import { describeServiceArea, readServiceAreaConfig } from './service-area.mjs'
 import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
 import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl, readRelease } from './site.mjs'
 import { createStaticHandler } from './static.mjs'
+import { Outbox } from './outbox.mjs'
+import { createMailer, readMailConfig } from './mail.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
@@ -58,6 +61,16 @@ if (!existsSync(path.join(dist, 'index.html'))) {
 let authConfig
 try {
   authConfig = readAuthConfig()
+} catch (error) {
+  console.error(error.message)
+  process.exit(1)
+}
+
+// Mail configuration is checked before the database is opened for the same
+// reason as the password: a key without a sending address is a deploy that
+// would look healthy and send nothing.
+try {
+  readMailConfig()
 } catch (error) {
   console.error(error.message)
   process.exit(1)
@@ -95,15 +108,40 @@ const auth = createAuth(authConfig, {
 })
 const refresher = new Refresher(inventory)
 const importer = new PageImporter(inventory)
-const quotes = new Quotes(inventory)
-const api = createApi(inventory, refresher, importer, quotes)
+// Where the van goes (t48). ACTIVE BY DEFAULT ON THIS SERVER: with nothing
+// set, this reads base 02148, a 100 mile radius and a 25 mile review band,
+// and a customer beyond the radius is refused at submit from the moment
+// this deploys. The lead ruled it on by default and the user gave the
+// number. Only backend/dev.mjs defaults the radius to off, for a laptop
+// elsewhere; that comment describes the local server, not this one. To
+// accept every ZIP here, set KMT_SERVICE_RADIUS_MILES=off explicitly, and
+// the boot line will say so. A base ZIP the table does not know, or a
+// radius that is not a distance, is refused here at boot rather than at the
+// first submit, the way a bad password is.
+let serviceArea
+try {
+  serviceArea = readServiceAreaConfig()
+} catch (error) {
+  console.error(error.message)
+  process.exit(1)
+}
+const quotes = new Quotes(inventory, { serviceArea })
+// Every message about a request is recorded here whether or not a provider is
+// configured; the mailer decides whether anything is actually sent.
+const outbox = new Outbox(inventory.db)
+const mailer = createMailer({
+  outbox, quotes,
+  origin: (process.env.KMT_PUBLIC_ORIGIN || '').trim() ||
+    (canonicalHost ? `https://${canonicalHost}` : `http://localhost:${process.env.PORT || 8080}`),
+})
+const api = createApi(inventory, refresher, importer, quotes, { mailer })
 const catalogApi = createCatalogApi(inventory)
 // The platform's health check, mounted here too so the local server and the
 // hosted one answer the same routes.
 const healthApi = createHealthApi(inventory)
 // Requests and their quotes live in the same database as inventory. The three
 // public writes are limited per address, per browser key and per email (#63).
-const requestsApi = createRequestsApi(quotes, { limiter: new RateLimiter() })
+const requestsApi = createRequestsApi(quotes, { limiter: new RateLimiter(), mailer })
 
 const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'
@@ -200,6 +238,7 @@ server.listen(port, bind, () => {
   if (!process.env.KMT_SESSION_SECRET) {
     console.log('KMT_SESSION_SECRET unset: sessions will not survive a restart.')
   }
+  console.log(describeServiceArea(serviceArea))
 })
 
 let stopping = false

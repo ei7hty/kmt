@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
-import { Quotes } from './quotes.mjs'
+import { Quotes, todayInServiceArea } from './quotes.mjs'
+import { readServiceAreaConfig } from './service-area.mjs'
 import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
 import { PUBLIC_BODY_LIMIT, RateLimiter } from './limits.mjs'
@@ -12,6 +13,10 @@ import { calculateDraftQuote } from '../src/pricing.js'
 const SIZE = '215/60R16'
 const KEY = 'a1b2c3d4e5f60718'
 const OTHER_KEY = '00112233445566ff'
+
+/** A preferred date that is always ahead of today, so the fixture never goes stale. */
+const daysAhead = days => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10)
+const SOON = daysAhead(30)
 
 const tire = (id = 'giga-a', overrides = {}) => ({
   id, name: 'Test Touring', size: SIZE, price: 50, inStock: true,
@@ -37,7 +42,7 @@ const form = (overrides = {}) => ({
   tireSelection: 'giga-a',
   quantity: 4,
   location: '456 Demo Ave',
-  date: '2026-09-10',
+  date: SOON,
   locationType: 'home',
   serviceZip: '02149',
   locationNotes: 'Driveway',
@@ -134,6 +139,84 @@ test('a request is required to carry the fields a quote needs', async t => {
   assert.throws(() => quotes.submit(form({ location: '   ' })), /location is required/)
   assert.throws(() => quotes.submit(form({ customerKey: 'not-a-key' })), /customer key/)
   assert.throws(() => quotes.submit(form({ locationNotes: 'x'.repeat(1001) })), /too long/)
+})
+
+/* ------------------------------------------- where and when (t48, #95, #70) */
+
+test('the preferred date is a real calendar day, today or later, judged where the van is', async t => {
+  const { inventory } = setup(t)
+  // Stand at a fixed day so the boundary is exact, whatever today really is.
+  const quotes = new Quotes(inventory, { today: () => '2026-09-06' })
+  assert.throws(() => quotes.submit(form({ date: '2026-09-05' })), /today or a later date/)
+  assert.equal(stored(quotes, quotes.submit(form({ date: '2026-09-06' })).request.id).date, '2026-09-06', 'today is fine')
+  assert.equal(stored(quotes, quotes.submit(form({ date: '2026-12-25' })).request.id).date, '2026-12-25')
+  for (const bad of ['June 1', '06/01/2026', '2026-6-1', '2026-06-31', '2026-13-01', '20260601', '']) {
+    assert.throws(() => quotes.submit(form({ date: bad })), /YYYY-MM-DD|not on the calendar|date is required/, `${JSON.stringify(bad)} is refused`)
+  }
+  // The calendar is Massachusetts's: late evening there is not yet tomorrow.
+  const lateEvening = new Date('2026-09-07T03:30:00Z') // 11:30pm on the 6th in Boston
+  assert.equal(todayInServiceArea(lateEvening), '2026-09-06')
+})
+
+test('the ZIP is required and five digits; a ZIP+4 is read as its five', async t => {
+  const { quotes } = setup(t)
+  assert.throws(() => quotes.submit(form({ serviceZip: '' })), /five-digit ZIP/)
+  assert.throws(() => quotes.submit(form({ serviceZip: '2149' })), /five-digit ZIP/)
+  assert.throws(() => quotes.submit(form({ serviceZip: 'Everett' })), /five-digit ZIP/)
+  assert.equal(stored(quotes, quotes.submit(form({ serviceZip: '02149-1234' })).request.id).serviceZip, '02149')
+  assert.equal(stored(quotes, quotes.submit(form({ serviceZip: ' 02149 ' })).request.id).serviceZip, '02149')
+})
+
+test('beyond the service area is refused with the distance and the phone number, and nothing is stored', async t => {
+  const { quotes } = setup(t)
+  // Defaults on: Malden, 100 miles. Bangor is about 200.
+  assert.throws(() => quotes.submit(form({ serviceZip: '04401' })), /about 200 miles from us, outside the 100 mile area we serve\. Text us at \(617\) 410-8319/)
+  // A ZIP nobody can place is refused the same way, with the number.
+  assert.throws(() => quotes.submit(form({ serviceZip: '99999' })), /do not recognise that ZIP code\. Text us at/)
+  assert.equal(quotes.listForOwner().length, 0, 'a refused request is not a request')
+})
+
+test('inside the radius but past the review distance goes through with the miles as a reason for the owner', async t => {
+  const { quotes } = setup(t)
+  // Worcester, about 40 miles: accepted, flagged, and the owner sees how far.
+  const { request, quote } = quotes.submit(form({ serviceZip: '01608' }))
+  assert.equal(quote.exception, true)
+  assert.ok(quote.exceptionReasons.some(reason => /Service address is about 40 miles from base, beyond the 25 mile review distance/.test(reason)),
+    `the reason names the miles: ${quote.exceptionReasons.join(' | ')}`)
+  const owner = quotes.listForOwner().find(row => row.request.id === request.id)
+  assert.equal(owner.request.serviceMiles, 40, 'the owner row carries the distance for the card')
+  assert.equal('serviceMiles' in quotes.get(request.id).request, false, 'the customer shape does not')
+
+  // Close by: no reason added, and a clean tire stays a clean quote.
+  const near = quotes.submit(form({ serviceZip: '02149' }))
+  assert.equal(near.quote.exception, false)
+  assert.equal(quotes.listForOwner().find(row => row.request.id === near.request.id).request.serviceMiles, 2)
+})
+
+test('with the check switched off every known ZIP is accepted and the owner still sees the miles', async t => {
+  const { inventory } = setup(t)
+  const quotes = new Quotes(inventory, { serviceArea: readServiceAreaConfig({ KMT_SERVICE_RADIUS_MILES: 'off' }) })
+  const { request, quote } = quotes.submit(form({ serviceZip: '04401' }))
+  assert.equal(quote.exception, true, 'still past the review distance, so still flagged')
+  assert.ok(quote.exceptionReasons.some(reason => /about 200 miles/.test(reason)))
+  assert.equal(quotes.listForOwner().find(row => row.request.id === request.id).request.serviceMiles, 200)
+  assert.throws(() => quotes.submit(form({ serviceZip: '99999' })), /do not recognise/, 'unknown is still unknown')
+})
+
+test('special instructions are stored for the owner, capped, optional, and never in the customer shape', async t => {
+  // t64: "Anything else I should know?". The first field added since t44
+  // made the customer shape a positive list, and the test of whether that
+  // held: nothing in CUSTOMER_REQUEST_FIELDS was edited to exclude it.
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form({ customerNotes: '  Gate code 4411, call when you arrive  ' }))
+  assert.equal(stored(quotes, request.id).customerNotes, 'Gate code 4411, call when you arrive', 'trimmed, on the owner row')
+  assert.equal('customerNotes' in quotes.get(request.id).request, false, 'not in the customer shape by id')
+  assert.equal('customerNotes' in quotes.listForCustomer(KEY)[0].request, false, 'nor in the customer list')
+
+  assert.equal(stored(quotes, quotes.submit(form()).request.id).customerNotes, '', 'optional: absent reads as empty')
+  assert.equal(stored(quotes, quotes.submit(form({ customerNotes: 'x'.repeat(500) })).request.id).customerNotes.length, 500, 'five hundred is allowed')
+  assert.throws(() => quotes.submit(form({ customerNotes: 'x'.repeat(501) })), /customerNotes is too long/)
+  assert.throws(() => quotes.submit(form({ customerNotes: 42 })), /customerNotes must be text/)
 })
 
 test('a name and email are required; the email is stored lower-cased and trimmed', async t => {
@@ -342,7 +425,7 @@ test('one browser key and one email address have limits of their own', async t =
   }
   const byEmail = await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'same@example.com' }))
   assert.equal(byEmail.status, 429)
-  assert.match((await byEmail.json()).error, /email address/)
+  assert.match((await byEmail.json()).error, /email address has been used for too many requests today. Text us instead./)
   assert.equal((await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'other@example.com' }))).status, 201, 'the key itself is fine')
 })
 
