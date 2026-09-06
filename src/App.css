@@ -533,6 +533,7 @@
 .privacy-panel h2 { margin: 22px 0 6px; font-size: 18px; letter-spacing: 0.5px; }
 .privacy-panel h2:first-child { margin-top: 0; }
 .privacy-panel p { margin: 0; color: var(--text); font-size: 15px; line-height: 1.55; }
+.privacy-panel a { color: var(--accent-text); }
 
 @media (max-width: 760px) {
   .customer-shell > .site-nav { flex-wrap: wrap; gap: 14px; }
