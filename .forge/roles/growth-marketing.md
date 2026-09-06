@@ -145,7 +145,7 @@ detectable in `kens-dark-600.webp`, against the **3:1** at which WCAG 1.4.11
 treats a graphical object as perceptible at all.
 
 **Whether a swap is owed turns on licensing, not on visibility.** These are
-seller preview files; their licensing terms are not settled here in either
+preview files; their licensing terms are not settled here in either
 direction, and nothing about the watermark's visibility answers that
 question. "You cannot see it" is a good answer to the wrong question.
 

@@ -35,7 +35,7 @@ black, white and red in t61** (#207), on the user's ruling: "original black
 white and red scheme". A newcomer seeing black, white and red will assume it
 was always that and that #145's navy work was wasted. It was not. Everything
 else from #145 survived the revert deliberately: the logo and favicon set
-under `public/brand/` (the three seller preview JPGs among them are
+under `public/brand/` (the three preview JPGs among them are
 git-ignored and must never be referenced by filename),
 the type and composition, the request id and age on the owner card, oldest
 first in "Needs you", the metric wording, the `--muted` token, the two-token

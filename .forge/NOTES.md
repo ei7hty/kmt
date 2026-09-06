@@ -766,9 +766,9 @@ it had not.
 
 **So the record was accurate and the belief drawn from it was false**, because
 it stated one thing and was read as two. And the belief was being used to
-answer a question it does not answer: whether these seller preview files may
-ship at all turns on their licensing terms, not on whether the watermark can
-be seen — and the licensing terms are not settled here, in either direction.
+answer a question it does not answer: whether these preview files may ship
+at all turns on their licensing terms, not on whether the watermark can be
+seen — and the licensing terms are not settled here, in either direction.
 *"You cannot see it" is a good answer to the wrong question.*
 
 
