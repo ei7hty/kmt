@@ -148,19 +148,19 @@ export function isServiceable(zip, config) {
   }
   const miles = distanceMiles(config.baseZip, normalized)
   if (miles === null) {
-    return { serviceable: false, reason: REASONS.UNKNOWN, miles: null, message: 'We do not recognise that ZIP code.' }
+    return { serviceable: false, reason: REASONS.UNKNOWN, miles: null, message: "That ZIP code isn't one I recognize." }
   }
   const rounded = Math.round(miles)
   if (config.radiusMiles !== null && miles > config.radiusMiles) {
     return {
       serviceable: false, reason: REASONS.BEYOND_RADIUS, miles: rounded,
-      message: `That address is about ${rounded} miles from us, outside the ${config.radiusMiles} mile area we serve.`,
+      message: `That's about ${rounded} miles from Malden, outside the ${config.radiusMiles} miles I cover.`,
     }
   }
   if (config.reviewMiles !== null && miles > config.reviewMiles) {
     return {
       serviceable: true, reason: REASONS.REVIEW, miles: rounded,
-      message: `About ${rounded} miles from base, beyond the ${config.reviewMiles} mile review distance.`,
+      message: `About ${rounded} miles from Malden, beyond the ${config.reviewMiles} mile review distance.`,
     }
   }
   return { serviceable: true, reason: null, miles: rounded, message: null }
