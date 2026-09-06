@@ -93,6 +93,10 @@ export function isKnownApiPath(pathname) {
 
 /** Whether this request is one of the public calls, by path and by method. */
 export function isPublicApiCall(method, pathname) {
+  // HEAD is public for the health check alone: uptime tools send it, and it
+  // is what the platform's own check would read as. Nothing HEADs a JSON
+  // data endpoint, so /api/catalog stays GET-only on purpose.
+  if (method === 'HEAD') return pathname === '/api/health'
   if (method === 'GET') {
     return PUBLIC_API_PATHS.has(pathname) ||
       pathname === PUBLIC_REQUEST_PREFIX ||
@@ -197,9 +201,13 @@ export function createHealthApi(inventory) {
     const url = new URL(request.url, 'http://localhost')
     if (url.pathname !== '/api/health') return false
     // Answered here rather than falling through: a POST to this path must not
-    // reach another handler, and 405 says which part was wrong.
-    if (request.method !== 'GET') {
-      response.writeHead(405, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Allow: 'GET' })
+    // reach another handler, and 405 says which part was wrong. HEAD is what
+    // uptime tools send, and it answers the same status with no body: the
+    // baseline recorded HEAD as 401 and a monitor reading that sees a healthy
+    // machine as refusing.
+    const head = request.method === 'HEAD'
+    if (request.method !== 'GET' && !head) {
+      response.writeHead(405, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Allow: 'GET, HEAD' })
       response.end(JSON.stringify({ ok: false, error: 'Health is a GET.' }))
       return true
     }
@@ -207,13 +215,13 @@ export function createHealthApi(inventory) {
     try {
       inventory.db.prepare('SELECT 1 FROM sqlite_master LIMIT 1').get()
       response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-      response.end(JSON.stringify({ ok: true }))
+      response.end(head ? undefined : JSON.stringify({ ok: true }))
     } catch (error) {
       // Logged, because this is the one endpoint whose failure nobody is
       // watching a screen for.
       console.error('health check failed:', error.message)
       response.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-      response.end(JSON.stringify({ ok: false }))
+      response.end(head ? undefined : JSON.stringify({ ok: false }))
     }
     return true
   }

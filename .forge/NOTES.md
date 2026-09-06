@@ -421,3 +421,17 @@ symptom is "no visible submission acknowledgement" partway through the second
 run and a `rate limit: submitPerEmail refused` line in the server log. Restart
 the server between local runs; the gate boots a fresh one per run, so CI never
 meets this.
+
+**2026-09-06 — JUNIOR FRONT END DEV (session local_376e0377)**
+A second instance of the specificity trap at the top of this file, from the
+other direction: a rule scoped to a container outranks a semantic class.
+`.owner-details dd { color: var(--text-h) }` painted the #105 zero-stock
+warning in the heading white even though its `dd` carried
+`.status-note-wait`, because `(0,1,1)` beats `(0,1,0)` whatever the source
+order. The screenshot looked like a line in a card and would have passed a
+glance; only a `getComputedStyle` readout in the check script said the
+colour was wrong. Two habits follow. Give a status colour a selector at
+least as specific as the layout it sits in, and have any check that
+asserts a colour read the computed style, never the stylesheet. Same
+family as the day's `<details>` finding: the file does not say what the
+browser does.

@@ -56,8 +56,12 @@ export async function signInIfAsked(page) {
 /** Follow the visible links to the owner's quote list, signing in if asked. */
 export async function openOwnerQuotes(page, { from = 'customer' } = {}) {
   if (from === 'customer') {
-    await page.click('button:has-text("Owner Review")')
-    await page.waitForURL('**/owner')
+    // R4 retired the customer-facing "Owner Review" link: a live site
+    // collecting a name, email and phone should not advertise its admin
+    // door on the same page. Direct navigation replaces the click, the way
+    // owner-inventory-audit.mjs already reaches /owner.
+    const origin = new URL(page.url()).origin
+    await page.goto(`${origin}/owner`)
   }
   await signInIfAsked(page)
   await page.getByRole('button', { name: 'Quote requests' }).click()
@@ -89,16 +93,20 @@ export async function waitForStatus(page) {
  * fields on load stopped running its checks and nobody noticed.
  */
 /**
- * Open the whole tire list when the step is showing only its cheapest dozen.
+ * Open the whole tire list when the step is showing only its first page.
  *
- * The seed tires the audits pick by name are priced above every supplier tire
- * in their size, so on a real size they sit behind the "Show all" control.
- * Clicking it is what a customer looking for that tire would do; when the
- * list is short enough to have no control, there is nothing to click.
+ * The seed tires the audits pick by name are priced above every supplier
+ * tire in their size, so on a real size they sit behind the paged
+ * "Show N more" control and may need more than one click to reach. Loop on
+ * the control's class rather than its text -- the count in "Show 24 more"
+ * changes on every click, and the button disappears once nothing is left
+ * to page in, which is the actual thing this waits for.
  */
 export async function expandTireList(page) {
-  const showAll = page.locator('button:has-text("Show all")')
-  if (await showAll.count()) await showAll.first().click()
+  const showMore = page.locator('button.tire-show-more')
+  while (await showMore.count()) {
+    await showMore.first().click()
+  }
 }
 
 export async function submitRequest(page, { base, size, tireName, vehicle, location, date, notes, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
