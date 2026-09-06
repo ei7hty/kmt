@@ -2,7 +2,10 @@
 # for a search index. /owner is the shop's sign-in, /status and /confirmation
 # show a customer their own request and receipt, /api is data for the app.
 User-agent: *
+Allow: /
 Disallow: /owner
 Disallow: /status
 Disallow: /confirmation
 Disallow: /api/
+
+Sitemap: https://kensmobiletire.com/sitemap.xml

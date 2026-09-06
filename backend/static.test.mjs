@@ -123,6 +123,15 @@ test('the shipped robots.txt keeps the owner and customer screens out of search 
     assert.match(rules, new RegExp(`^Disallow: ${route.replaceAll('/', '\\/')}$`, 'm'), `${route} is disallowed`)
   }
   assert.match(rules, /^User-agent: \*$/m)
+  assert.match(rules, /^Allow: \/$/m, 'the customer flow is allowed explicitly')
+  assert.match(rules, /^Sitemap: https:\/\/kensmobiletire\.com\/sitemap\.xml$/m, 'and the sitemap is named')
+})
+
+test('the shipped sitemap lists only pages meant for an index, none of which 404', () => {
+  const sitemap = readFileSync(path.join(import.meta.dirname, '..', 'public', 'sitemap.xml'), 'utf8')
+  const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1])
+  assert.deepEqual(locs, ['https://kensmobiletire.com/'], '/privacy joins when it exists on the site')
+  assert.equal(TYPES['.xml'], 'application/xml; charset=utf-8', 'and it is served as XML, not bytes')
 })
 
 test('only GET and HEAD reach the files; anything else is 405, not the app shell', async t => {
