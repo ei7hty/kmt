@@ -124,6 +124,7 @@ async function scrapeSize(size, options, fetcher) {
   const rows = []
   const skipped = []
   let pagesRead = 0
+  let totalPages = 1
 
   // Pages are 1-indexed, matching the site's own pager.
   for (let page = 1; page <= options.pages; page++) {
@@ -131,6 +132,7 @@ async function scrapeSize(size, options, fetcher) {
     const { html } = await fetcher(size, page)
     const parsed = parseListingPage(html, size)
     pagesRead++
+    totalPages = parsed.totalPages
 
     rows.push(...parsed.rows)
     skipped.push(...parsed.skipped)
@@ -140,7 +142,52 @@ async function scrapeSize(size, options, fetcher) {
 
   // The same SKU can appear twice when a page boundary shifts between requests.
   const byId = new Map(rows.map(row => [row.id, row]))
-  return { rows: [...byId.values()], skipped, pagesRead }
+  return { rows: [...byId.values()], skipped, pagesRead, totalPages }
+}
+
+/**
+ * What one size's scrape actually covered, written into the snapshot.
+ *
+ * A size is complete only when nothing was left out: no --limit, and every
+ * page the supplier reported was read. The import CLI and the server both
+ * refuse to treat a size as the supplier's whole listing without this record
+ * saying so, because retiring tires that a partial scrape merely did not
+ * fetch would take tires off Ken's list that the supplier still sells.
+ */
+export function sizeCoverage({ limit, pagesRead, totalPages, scrapedAt }) {
+  return { limit, pagesRead, totalPages, complete: limit === 0 && pagesRead >= totalPages, scrapedAt }
+}
+
+/**
+ * Assemble the snapshot: this run's rows and coverage, plus whatever the
+ * previous snapshot held for sizes this run did not touch.
+ *
+ * Sizes this run did not touch keep their existing rows and their existing
+ * coverage record. Without this, refreshing one size would quietly delete
+ * every other size from the snapshot -- and a size whose fetch *failed* would
+ * be indistinguishable from one that genuinely has nothing left. `replace`
+ * opts into the wipe. Carried rows are byte-identical to their previous
+ * selves, so they do not show up as changes in the diff.
+ */
+export function buildSnapshot({ previous = null, tires, coverage, replace = false, scrapedAt = new Date().toISOString() }) {
+  const scrapedSizes = new Set(Object.keys(coverage))
+  const carried = replace ? [] : (previous?.tires || []).filter(tire => !scrapedSizes.has(tire.size))
+  const carriedCoverage = {}
+  for (const size of new Set(carried.map(tire => tire.size))) {
+    if (previous?.coverage?.[size]) carriedCoverage[size] = previous.coverage[size]
+  }
+  const merged = { ...carriedCoverage, ...coverage }
+  return {
+    carried,
+    snapshot: {
+      source: 'giga-tires.com',
+      scrapedAt,
+      sizes: [...new Set([...carried.map(tire => tire.size), ...scrapedSizes])].sort(),
+      coverage: Object.fromEntries(Object.keys(merged).sort().map(size => [size, merged[size]])),
+      tires: [...tires, ...carried]
+        .sort((a, b) => a.size.localeCompare(b.size) || a.price - b.price),
+    },
+  }
 }
 
 /** What changed against the previous snapshot -- the thing worth reading. */
@@ -227,7 +274,8 @@ async function main() {
 
   const tires = []
   const failures = []
-  const scrapedSizes = new Set()
+  const coverage = {}
+  const scrapedAt = new Date().toISOString()
   let totalSkipped = 0
 
   try {
@@ -235,7 +283,7 @@ async function main() {
       if (index > 0) await sleep(options.delay)
       try {
         const result = await scrapeSize(size, options, fetcher)
-        scrapedSizes.add(size)
+        coverage[size] = sizeCoverage({ limit: options.limit, pagesRead: result.pagesRead, totalPages: result.totalPages, scrapedAt })
         const kept = rank(result.rows, options.limit)
         tires.push(...kept)
         totalSkipped += result.skipped.length
@@ -245,7 +293,8 @@ async function main() {
         console.log(
           `  ${size.padEnd(12)} ${String(result.rows.length).padStart(3)} found` +
           ` -> ${String(kept.length).padStart(2)} kept, from ${cheapest}` +
-          (outOfStock ? `, ${outOfStock} out of stock` : '')
+          (outOfStock ? `, ${outOfStock} out of stock` : '') +
+          (coverage[size].complete ? ', complete' : `, partial (page ${result.pagesRead} of ${result.totalPages}${options.limit ? `, limit ${options.limit}` : ''})`)
         )
       } catch (error) {
         failures.push({ size, message: error.message })
@@ -267,24 +316,8 @@ async function main() {
     ? JSON.parse(await readFile(options.out, 'utf8'))
     : null
 
-  // Sizes this run did not touch keep their existing rows. Without this,
-  // refreshing one size would quietly delete every other size from the
-  // snapshot -- and a size whose fetch *failed* would be indistinguishable
-  // from one that genuinely has nothing left. --replace opts into the wipe.
-  const carried = options.replace
-    ? []
-    : (previous?.tires || []).filter(tire => !scrapedSizes.has(tire.size))
+  const { snapshot, carried } = buildSnapshot({ previous, tires, coverage, replace: options.replace, scrapedAt })
 
-  const snapshot = {
-    source: 'giga-tires.com',
-    scrapedAt: new Date().toISOString(),
-    sizes: [...new Set([...carried.map(tire => tire.size), ...scrapedSizes])].sort(),
-    tires: [...tires, ...carried]
-      .sort((a, b) => a.size.localeCompare(b.size) || a.price - b.price),
-  }
-
-  // Carried rows are byte-identical to their previous selves, so they simply
-  // do not show up as changes.
   reportDiff(diffSnapshots(previous, snapshot), hadPrevious)
   if (carried.length) {
     const untouched = new Set(carried.map(tire => tire.size))
@@ -292,6 +325,8 @@ async function main() {
   }
 
   console.log(`\nSnapshot now holds ${snapshot.tires.length} tires across ${snapshot.sizes.length} size(s).`)
+  const completeSizes = Object.values(snapshot.coverage).filter(record => record.complete).length
+  console.log(`${completeSizes} of ${snapshot.sizes.length} size(s) read completely; only those can be imported with --complete.`)
   if (totalSkipped) console.log(`${totalSkipped} card(s) skipped for having no price.`)
   if (failures.length) console.log(`${failures.length} size(s) failed.`)
 
@@ -302,12 +337,15 @@ async function main() {
 
   await writeFile(options.out, `${JSON.stringify(snapshot, null, 2)}\n`)
   console.log(`\nWrote ${path.relative(ROOT, options.out)}`)
-  console.log('Review it, then wire it into src/data/catalog.js when it looks right.')
+  console.log('Review it, then push it to a running server with `npm run import-tires`.')
 
   if (failures.length) process.exitCode = 1
 }
 
-main().catch(error => {
-  console.error(error)
-  process.exitCode = 1
-})
+// Guarded so the tests can import buildSnapshot without starting a scrape.
+if (import.meta.main) {
+  main().catch(error => {
+    console.error(error)
+    process.exitCode = 1
+  })
+}

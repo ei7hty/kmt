@@ -65,9 +65,12 @@ extract the supported-size list first so missing supplier stock cannot shrink it
   one transaction through the same `writeSize` a refresh uses, so offers are
   untouched and nothing is deleted. `complete: false` (the default) upserts and
   retires nothing, labelled `snapshot` coverage; `complete: true` retires rows the
-  file omits, labelled `full`. `dryRun` answers with per-size counts (new,
-  changed, unchanged, retired) and writes nothing. 409 while a refresh runs.
-  `scripts/import-tires.mjs` is the client.
+  file omits, labelled `full`, and is refused (400, naming the size) for any
+  size whose `snapshot.coverage[size].complete` is not `true` -- the record the
+  scraper writes when it read a size with no limit over every page. `dryRun`
+  answers with per-size counts (new, changed, unchanged, retired) and writes
+  nothing. 409 while a refresh runs. `scripts/import-tires.mjs` is the client,
+  and refuses the same thing first with a fuller message.
 - `GET /api/owner/markup`, `PUT /api/owner/markup`: `{rate}`. The default markup,
   stored in `metadata`. Rates below 1 (quoting under supplier cost) or above 10
   (a typo repricing everything) are rejected. Also returned on the inventory
