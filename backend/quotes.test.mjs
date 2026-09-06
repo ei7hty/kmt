@@ -119,6 +119,64 @@ test('an owner adjustment changes the current quote and keeps the original draft
   assert.equal(adjusted.quote.version, original.quote.version + 1)
 })
 
+test('finding 1 (scrutiny pass 3): adjusting a taxed quote recomputes subtotal and tax, not just total', async t => {
+  const { inventory, quotes } = setup(t)
+  inventory.savePricingSettings({ mobileServiceFee: 75, disposalFee: 6, tax: { rate: 0.1, appliesTo: 'all' } })
+  const original = quotes.submit(form())
+  assert.ok(original.quote.tax, 'the draft itself is taxed, so the bug (stale tax after an adjustment) is reachable')
+
+  const adjusted = quotes.adjust(original.request.id, {
+    lineItems: [{ description: 'Complete job, adjusted', quantity: 1, unitPrice: 200 }],
+    version: original.quote.version,
+  })
+
+  // The whole point: the row must never contradict itself. Before this fix,
+  // total moved to 220 (200 + the draft's stale $20 tax) while subtotal and
+  // tax.amount stayed at the pre-adjustment numbers -- a customer charged a
+  // tax figure that named neither the old subtotal nor the new one.
+  assert.equal(adjusted.quote.subtotal, 200)
+  assert.deepEqual(adjusted.quote.tax, { rate: 0.1, appliesTo: 'all', amount: 20 })
+  assert.equal(adjusted.quote.total, 220)
+  assert.equal(
+    Math.round((adjusted.quote.subtotal + adjusted.quote.tax.amount) * 100) / 100,
+    adjusted.quote.total,
+    'total must always equal subtotal + tax.amount on the stored row, adjusted or not',
+  )
+})
+
+test('finding 1: an adjustment undertaxes rather than misclassifies when tax applies to only one class of line', async t => {
+  const { inventory, quotes } = setup(t)
+  // 'goods'/'services' is calculateDraftQuote's own bookkeeping over the
+  // catalog and is never stored -- an owner-typed line has no class to
+  // recover. Excluded from the taxable subset rather than guessed at,
+  // per pricing-settings.md's "an absent number is correctable, a wrong
+  // one is not".
+  inventory.savePricingSettings({ mobileServiceFee: 75, disposalFee: null, tax: { rate: 0.1, appliesTo: 'goods' } })
+  const original = quotes.submit(form())
+  assert.ok(original.quote.tax.amount > 0, 'the draft is taxed on its tire line')
+
+  const adjusted = quotes.adjust(original.request.id, {
+    lineItems: [{ description: 'Complete job, adjusted', quantity: 1, unitPrice: 200 }],
+    version: original.quote.version,
+  })
+
+  assert.equal(adjusted.quote.subtotal, 200)
+  assert.deepEqual(adjusted.quote.tax, { rate: 0.1, appliesTo: 'goods', amount: 0 }, 'an untaggable line matches neither class, so it is taxed at $0 rather than guessed at')
+  assert.equal(adjusted.quote.total, 200)
+})
+
+test('an adjustment on an untaxed quote (tax off, the default everywhere) still carries no tax key', async t => {
+  const { quotes } = setup(t)
+  const original = quotes.submit(form())
+  const adjusted = quotes.adjust(original.request.id, {
+    lineItems: [{ description: 'Complete job', quantity: 1, unitPrice: 150 }],
+    version: original.quote.version,
+  })
+  assert.equal('tax' in adjusted.quote, false)
+  assert.equal(adjusted.quote.subtotal, 150)
+  assert.equal(adjusted.quote.total, 150)
+})
+
 test('approving after an adjustment sends the adjusted numbers', async t => {
   const { quotes } = setup(t)
   const original = quotes.submit(form())
