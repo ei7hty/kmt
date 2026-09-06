@@ -293,3 +293,34 @@ test('a provider outage never reaches the customer: the submit still answers 201
   assert.equal(rows.length, 2)
   assert.ok(rows.every(row => row.status === 'failed' && /provider down/.test(row.error)))
 })
+
+
+/**
+ * The voice, pinned (t62). Three of the four customer emails said "we", put
+ * Ken in the third person and carried no way to reach him, because
+ * `t62-voice.md` part F was written *for* these templates and never applied
+ * to them -- an approved document that existed, was correct, and went unused.
+ * Nothing caught it until somebody rendered one and read it.
+ *
+ * So the rule is a test rather than a paragraph. Owner mail is exempt: it
+ * speaks to Ken in the second person and needs no signature.
+ */
+test('every customer email speaks as Ken: no "we", a way to reach him, and his name on it', () => {
+  const ctx = {
+    request: { id: 'r1', customerPhone: '1', location: 'l', locationNotes: 'n', customerNotes: 'c',
+      vehicleInfo: '2016 Honda Civic', quantity: 4, locationType: 'Home', serviceZip: '02148', date: SOON },
+    quote: { lines: [{ description: 'T', quantity: 4, unitPrice: 50 }], total: 250, note: 'a note', reason: null },
+    tire: { name: 'T', size: SIZE }, origin: 'https://x', to: 'a@b.c', toName: 'A',
+  }
+  const customer = MAIL_TYPES.filter(type => TEMPLATES[type].audience === 'customer')
+  assert.ok(customer.length >= 4, 'the customer messages are the ones under test')
+
+  for (const type of customer) {
+    const { subject, text } = TEMPLATES[type].render(TEMPLATES[type].data(ctx))
+    assert.doesNotMatch(text, /\bwe\b/i, `${type}: "we" nowhere -- Ken is one person`)
+    assert.doesNotMatch(subject, /\bwe\b/i, `${type}: "we" nowhere in the subject either`)
+    assert.doesNotMatch(text, /reaches the shop/i, `${type}: "the shop" is not how Ken refers to himself`)
+    assert.match(text, /Text me at \(617\) 410-8319/, `${type}: the text number, in every customer message (t63)`)
+    assert.match(text, /— Ken/, `${type}: signed by the person sending it`)
+  }
+})
