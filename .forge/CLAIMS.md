@@ -9,6 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
+| `t37-mail-seam` | LEAD FULL STACK | t37 email seam: `backend/mail.mjs`, `backend/mail-templates.mjs`, `backend/mail.test.mjs` (new); the three transition call sites and `GET /api/owner/outbox` in `backend/api.mjs`; wiring in `backend/server.mjs` and `backend/dev.mjs`. Not `backend/quotes.mjs` (LEAD BACKEND DEV's). Builds on #157's outbox. | 2026-09-06 |
 | m13-inventory-summary | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md (docs only) | 2026-09-06 |
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
 | workflow-t53 | KMT-F REPO AGENT- TEMP LEAD (repo agent) | .github/workflows/fly-deploy.yml, .github/workflows/health-monitor.yml, README.md (lint line) | 2026-09-06 |
