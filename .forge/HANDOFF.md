@@ -1,7 +1,8 @@
 # Lead handoff, 2026-09-06 (v1 baseline push)
 
 Written by the KMT LEAD AGENT at the end of the v1 baseline push, for the next
-lead. Read this, then `roles/lead.md`, `AGENTS.md`, `NOTES.md`, `CLAIMS.md`,
+lead, and updated at 04:40Z on 2026-09-06 after the three baseline corrections
+(m11) landed. Read this, then `roles/lead.md`, `AGENTS.md`, `NOTES.md`, `CLAIMS.md`,
 `project.md`, `requirements.md`, `roadmap.md`, `state.json`, in that order.
 Everything here was true when written; verify the SHAs, PR states and
 production facts before acting on them. The earlier pause-point handoff (at
@@ -12,9 +13,12 @@ found.
 Answered by the user while this was being written: Ken buys at the
 supplier's public listed price today, so the markup sits on retail by design,
 and the supplier integration is to be revisited when he gets a commercial or
-dealer account. Still open: what the renamed sessions (QA ENGINEER, DB ADMIN,
-KMT-O PROJECT MANAGER) are meant to become; the outgoing lead kept them in the
-roles they had served.
+dealer account. Still open at the second update: what the renamed sessions
+(QA ENGINEER, DB ADMIN, KMT-O LIVE PROJECT MANAGER, HARNESS AGENT) are meant to
+become, the outgoing lead having kept them in the roles they had served; the
+one-word go-ahead on the #79 flake fix; and when the walk's import runs. The
+lead went offline at 04:45Z on the user's word; until it speaks again, the
+walk session coordinates with the repo agent directly.
 
 ## v1 baseline push, 2026-09-06
 
@@ -101,7 +105,11 @@ without a session; no horizontal overflow on / and /status at 375.
   only, plus a build check that fails if `dist` contains `listPrice` or `sku:`.
   Decision recorded: the user said fix it; assigned to SWE-S AGENT 2 as the
   first of three tasks (t39 in `state.json`); the gate check is the repo
-  agent's.
+  agent's. Delivered: #110 `bdc399a` (t39) and #114 `59c28ce` (the gate
+  step, after the check was shown to fail on a leaking build); the deployed
+  asset measured 250,887 bytes with zero `sku:`, `listPrice:`, `scrapedAt:`
+  or `stock:` markers, and the leak stayed closed across the three merges
+  since, with the check running on each.
 - **Invented tires are orderable on the live site** (finding 2): 906 of 910
   sizes show generated placeholders, and the six seed tires sit beside real
   ones; a customer can be quoted, approved and charged for a tire that does
@@ -109,6 +117,10 @@ without a session; no horizontal overflow on / and /status at 375.
   does not start with `giga-` becomes an exception reason, so the owner's
   approval gate catches it. The full fix is the all-sizes walk. Decision
   recorded: the user said add the guard; assigned as t40, after the leak fix.
+  Delivered: #111 `afcb481` (t40); the audits' clean path now resolves a real
+  supplier tire from `/api/catalog` instead of a seed by name, and
+  `src/pricing.js` is server-side only, so this change never moved the
+  public bundle.
 - **Public POSTs have no rate limit** (finding 3): fine today, an open relay
   the day t37 sends email. Adopted as a constraint on t37's brief: per-IP and
   per-key throttling on submit, pay and cancel, and no customer email until
@@ -134,11 +146,15 @@ without a session; no horizontal overflow on / and /status at 375.
   status key after seven days, backups and retention, a privacy notice,
   monitoring, the client's own domain, every merge redeploying production,
   screens that never refresh, and whether "supplier price" is retail or
-  dealer cost. Quantity is decided: the form asks, default four (t41,
-  assigned third). The supplier price is the public retail listing, which
+  dealer cost. Quantity is delivered: the form asks 1, 2 or 4, default four
+  (t41, #112 `df196ce`, deployed green at 04:36Z); the tire line multiplies,
+  the mobile-service fee stays one line, and four of a non-supplier tire
+  still multiplies (intersection test). The audits do not yet exercise the
+  picker; that gap is #113. The supplier price is the public retail listing, which
   is what Ken pays today (user, 2026-09-06); the markup is on retail by
   design until he has a commercial or dealer account.
-- `state.json` had t34 as todo after #53 merged it; corrected in this update.
+- `state.json` had t34 as todo after #53 merged it; corrected in the first
+  update. m11 (t39 to t41) is closed as done in the second, all three live.
   m10 stays planned: t35, t37 and t38 remain.
 - The owner-inventory audit is real but ungated (no workflow runs it).
 - `git worktree remove` on this machine fails once with permission denied and
@@ -158,13 +174,8 @@ automatically as now. After that, the m10 plan resumes.
 
 ### Recommended next step
 
-- **First, before any all-sizes scrape: take the snapshot out of the client
-  bundle.** `src/data/catalog.js` imports `scraped-tires.json`, so the static
-  fallback ships every scraped row to the browser; #59's 1083 tires took the
-  bundle from 286 KB to 614 KB, and 910 sizes would be tens of megabytes. The
-  snapshot should seed the backend only; the fallback keeps the seed tires plus
-  generated coverage, and the live catalog comes from `/api/catalog` as now.
-  Frontend task, SWE-S AGENT 2's lane, with the audits' by-name seeds unchanged.
+- Done: the snapshot is out of the client bundle (t39, #110) and the check
+  job fails on supplier markers in `dist/` (#114).
 - The all-sizes walk, under way in SWE-S AGENT 1's lane, writing to
   `C:/Users/anune/kmt-walk/supplier-walk.json` outside the repository and
   reaching production only through `import-tires` run by the user (the guard
@@ -176,12 +187,14 @@ automatically as now. After that, the m10 plan resumes.
   single page per size is often the whole inventory. Plan: breadth-first pass
   over the remaining 879 sizes at one page each (about 80 minutes), then deep
   batches for the common sizes. Imports were held until the live test ended.
-  The monthly runbook is `docs/supplier-refresh.md` (#60).
-- After t39 lands: the bundle check is wired into the check job by the repo
-  agent, asserting on `dist/` only for what the fix removed, never before the
-  fix (main contains `listPrice` 1085 times until then, so a check first
-  would block its own fix); and `/api/catalog` moves from `no-store` to a
-  public five-minute max-age, decided 2026-09-06, backend lane, not started.
+  The monthly runbook is `docs/supplier-refresh.md` (#60). Status at 04:40Z:
+  11 of 36 chunks written, 2241 tires across 156 sizes, 61 of them complete;
+  chunk 12 ended on a browser crash ("Target page, context or browser has
+  been closed"), not a supplier block, and the walk session is restructuring
+  for speed at the user's own direction. The import is still one command, run
+  by the user, after the walk.
+- Still not started: `/api/catalog` moves from `no-store` to a public
+  five-minute max-age, decided 2026-09-06, backend lane.
 - Then t37 email, which needs the user's provider account and a verified
   sending domain, with the rate-limit and SameSite constraints above. t35
   waits for the pricing decision.
