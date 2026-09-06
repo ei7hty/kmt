@@ -118,11 +118,16 @@ drift apart.
   listing for a size (measured: 12 of 18 pilot sizes needed only 1-2 pages
   total) -- but say "page 1" in every report, not "complete," unless the
   coverage block agrees.
-- **Seconds-per-page is not one constant.** ~5.4s/page held across two
-  independent deep-scrape measurements (four sizes, then a 27-size pilot);
-  a breadth-first chunk full of successful 10-tire pages measured ~10s/page
-  instead, because parsing a full result page costs more than confirming
-  an empty one. State which kind of run a number came from.
+- **Seconds-per-page is not one constant, and empties are the slow ones,
+  not the fast ones.** ~5.4-10s/page on a chunk with mostly hits; a chunk
+  running mostly empty sizes measured up to 18s/page. Cause, not guessed at
+  -- the fetcher waits out its full ready-selector timeout before it can
+  conclude a page is empty, while a hit returns as soon as the grid
+  renders. Rule of thumb for planning a batch: an empty costs about three
+  hits' worth of time. This is the practical case for issue #81
+  (recognising the supplier's "size is not available" text directly would
+  make empties nearly free) -- worth fixing before the 19-24" and 12-14"
+  bands, which run mostly empty.
 - **`kill $!` targets the wrong PID here.** Bash's job-control PID for a
   backgrounded `node` process does not match the real Windows PID Task
   Manager would show -- measured directly (1392 vs the actual 31204 for
