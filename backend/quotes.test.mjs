@@ -145,7 +145,7 @@ test('the personal keys a redaction has to find inside requests.payload are name
   assert.deepEqual(
     REQUEST_PERSONAL_DATA_KEYS,
     ['customerName', 'customerEmail', 'customerPhone', 'location', 'locationNotes', 'customerNotes'],
-    'if you change this list, update the three UPDATE statements in docs/operations.md',
+    'update the UPDATE requests statement in docs/operations.md, and check whether this key also reaches outbox.data or inquiries',
   )
 })
 

@@ -87,10 +87,12 @@ const FORM_FIELDS = [
  * passing through the form-field loop). This list answers a different
  * question -- which keys identify the customer -- and is pinned by a test the
  * same way `OUTBOX_PERSONAL_DATA_KEYS` and `INQUIRY_PERSONAL_FIELDS` are.
- * If you change this list, update the three UPDATE statements in
- * docs/operations.md's manual removal procedure to match: that procedure
- * hand-lists these same keys, and nothing else checks it against this
- * constant (#230's bug, closed for `outbox` and `inquiries` already -- this
+ * If you change this list, update the `UPDATE requests` statement in
+ * docs/operations.md's manual removal procedure to match -- and check
+ * whether the new or changed key also reaches `outbox.data` (see
+ * `OUTBOX_PERSONAL_DATA_KEYS`) or `inquiries` (see `INQUIRY_PERSONAL_FIELDS`),
+ * which are governed by their own constants and their own statements, not
+ * this one (#230's bug, closed for `outbox` and `inquiries` already -- this
  * is `requests`' own list).
  */
 export const REQUEST_PERSONAL_DATA_KEYS = [
