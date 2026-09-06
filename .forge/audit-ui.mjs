@@ -56,8 +56,12 @@ export async function signInIfAsked(page) {
 /** Follow the visible links to the owner's quote list, signing in if asked. */
 export async function openOwnerQuotes(page, { from = 'customer' } = {}) {
   if (from === 'customer') {
-    await page.click('button:has-text("Owner Review")')
-    await page.waitForURL('**/owner')
+    // R4 retired the customer-facing "Owner Review" link: a live site
+    // collecting a name, email and phone should not advertise its admin
+    // door on the same page. Direct navigation replaces the click, the way
+    // owner-inventory-audit.mjs already reaches /owner.
+    const origin = new URL(page.url()).origin
+    await page.goto(`${origin}/owner`)
   }
   await signInIfAsked(page)
   await page.getByRole('button', { name: 'Quote requests' }).click()

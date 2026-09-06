@@ -524,7 +524,15 @@
 .site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #1d3745; color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
 /* A text-only control, but a full-height one: it was 12px tall, which is not
    a touch target for anyone, let alone at a roadside (#85). */
-.site-footer button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent-text) !important; font-size: 11px; }
+/* The privacy notice's link at the foot of every screen (t50): text-only,
+   but a full-height touch target all the same. */
+.page-footer { padding: 6px 24px 28px; text-align: center; font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
+.page-footer a, .site-footer .privacy-link { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: var(--accent-text); text-decoration: none; }
+.page-footer a:hover, .site-footer .privacy-link:hover { text-decoration: underline; }
+.privacy-panel h2 { margin: 22px 0 6px; font-size: 18px; letter-spacing: 0.5px; }
+.privacy-panel h2:first-child { margin-top: 0; }
+.privacy-panel p { margin: 0; color: var(--text); font-size: 15px; line-height: 1.55; }
+.privacy-panel a { color: var(--accent-text); white-space: nowrap; }
 
 @media (max-width: 760px) {
   .customer-shell > .site-nav { flex-wrap: wrap; gap: 14px; }
@@ -1417,3 +1425,10 @@
 .tire-reselect-note { margin: 14px 0 0; color: var(--text); font-size: 14px; line-height: 1.5; }
 .tire-reselect-note.status-note-bad { color: #ef7a80; }
 .step-panel .primary-action:disabled { cursor: not-allowed; opacity: 0.45; }
+
+/* The size search's empty state: a sentence and a way back, never a blank
+   list. On the light modal, so the dark text tokens of that panel. */
+.fitment-empty { display: grid; gap: 10px; justify-items: start; padding: 14px 4px 6px; color: #16303c; font-size: 14px; line-height: 1.5; }
+.fitment-empty p { margin: 0; }
+.fitment-clear { min-height: 44px; padding: 10px 16px !important; border: 1px solid #34505e !important; border-radius: 6px !important; background: #fff !important; color: #16303c !important; font-size: 13px; font-weight: 800; }
+.fitment-clear:hover { background: #e8edf0 !important; }

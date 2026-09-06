@@ -451,7 +451,7 @@ test('a customer with no session can submit, read and pay; the owner API still c
   assert.equal((await fetch(`${base}/api/owner/markup`)).status, 401)
 })
 
-test('the public rule opens the customer paths and nothing else', async t => {
+test('the public rule opens the customer paths and nothing else', async () => {
   // The allow-list is a prefix, so this pins what the prefix does and does not
   // reach -- a route added under it later stays behind the session by default.
   assert.equal(isPublicApiCall('GET', '/api/catalog'), true)
@@ -463,6 +463,9 @@ test('the public rule opens the customer paths and nothing else', async t => {
 
   assert.equal(isPublicApiCall('POST', '/api/catalog'), false)
   assert.equal(isPublicApiCall('POST', '/api/health'), false)
+  assert.equal(isPublicApiCall('HEAD', '/api/health'), true, 'uptime tools HEAD the health check')
+  assert.equal(isPublicApiCall('HEAD', '/api/catalog'), false, 'nothing HEADs a JSON data endpoint; left GET-only on purpose')
+  assert.equal(isPublicApiCall('HEAD', '/api/requests'), false)
   assert.equal(isPublicApiCall('GET', '/api/owner/health'), false)
   assert.equal(isPublicApiCall('DELETE', '/api/requests/abc123'), false)
   assert.equal(isPublicApiCall('POST', '/api/requests/abc123'), false)
@@ -971,10 +974,17 @@ test('health answers a machine with no session, and nothing else does', async t 
   assert.equal(answer.headers.get('cache-control'), 'no-store', 'a cached health check is not a health check')
   assert.deepEqual(await answer.json(), { ok: true })
 
-  // A GET only, and the session gate is what refuses the rest: the allow-list
-  // opens this path for GET alone, so a POST is 401 before the handler is
-  // reached. That is the right layer for it -- the handler is not the thing
-  // standing between the public and a write.
+  // HEAD is what uptime tools send: the same status, no body. The baseline
+  // recorded it as 401, which reads a healthy machine as refusing.
+  const head = await fetch(`${base}/api/health`, { method: 'HEAD' })
+  assert.equal(head.status, 200)
+  assert.equal(head.headers.get('cache-control'), 'no-store')
+  assert.equal(await head.text(), '', 'no body on a HEAD')
+
+  // GET and HEAD only, and the session gate is what refuses the rest: the
+  // allow-list opens this path for those alone, so a POST is 401 before the
+  // handler is reached. That is the right layer for it -- the handler is not
+  // the thing standing between the public and a write.
   const posted = await post(base, '/api/health', {})
   assert.equal(posted.status, 401, 'refused by the gate, not by the handler')
 

@@ -1,3 +1,4 @@
+/* global document, getComputedStyle, location */ // used inside page.evaluate, which runs in the browser
 /**
  * Measure issue #85 at 375px against a running server: contrast ratios for
  * every visible text element (with every brand-red pairing called out) and
@@ -18,15 +19,9 @@ import { EXCEPTION_TIRE, cleanTireFor, freshPage, openOwnerQuotes, signInIfAsked
 const BASE = process.env.AUDIT_BASE
 if (!BASE) { console.error('Set AUDIT_BASE explicitly; the audits default to different ports and this one refuses to guess.'); process.exit(2) }
 const VIEWPORT = { width: 375, height: 812 }
-const BRAND_RED = 'rgb(237, 28, 36)'
-const ACCENT_DARK = 'rgb(184, 14, 20)'
 
 // ---------- colour maths (WCAG 2.x) ----------
-function parseColor(s) {
-  const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(s || '')
-  if (!m) return null
-  return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] }
-}
+// The colour parsing happens inside page.evaluate; only the ratio maths runs here.
 function lum({ r, g, b }) {
   const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
   return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
@@ -191,7 +186,6 @@ async function measure(page, label) {
 // ---------- the states ----------
 const results = []
 const browser = await chromium.launch()
-const password = process.env.KMT_OWNER_PASSWORD || ''
 try {
   const clean = await cleanTireFor(BASE)
   const clean2 = clean

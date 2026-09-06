@@ -1,3 +1,4 @@
+/* global document */ // used inside page.evaluate, which runs in the browser
 import { chromium } from 'playwright';
 import { CATALOG_FIELDS } from './audit-ui.mjs';
 
