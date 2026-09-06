@@ -77,7 +77,7 @@ function Status({ navigate }) {
   return (
     <div className="app-shell status-shell">
       <nav className="internal-nav">
-        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home">KMT<span>.</span></button>
+        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
         <div className="internal-nav-links">
           <button className="btn btn-neutral" onClick={() => navigate('/')}>← New Request</button>
           <button className="btn btn-neutral" onClick={() => navigate('/owner')}>Owner Review →</button>
@@ -86,6 +86,7 @@ function Status({ navigate }) {
       <div className="owner-content">
         <p className="eyebrow">YOUR QUOTE</p>
         <h1 className="owner-heading">Quote Status</h1>
+        <p className="text-secondary" role="note">Save this link; it is how you find your quote again.</p>
         <p className="text-secondary owner-subhead" role="status">
           {loading ? 'Checking with the shop…' : 'Track your request and the shop’s decision.'}
         </p>

@@ -195,11 +195,11 @@ function TireOffer({ tire, markup, onSaved }) {
 
   return <article className={`oi-tire ${tire.offer.enabled ? 'oi-tire-offered' : ''}`}>
     <div className="oi-tire-main">
-      <div className="oi-tire-tags"><span>{tire.size}</span><span className={isAvailable ? 'oi-stock' : 'oi-attention'}>{stockLabel}</span></div>
+      <div className="oi-tire-tags"><span>{tire.size}</span><span className={isAvailable ? 'oi-stock' : 'oi-attention'}>{stockLabel}</span><span className="oi-tire-price">Giga {dollars(Math.round(tire.price * 100))} / tire</span></div>
       <h2>{tire.name}</h2>
+      <details className="oi-tire-more"><summary>Details</summary>
       <p className="oi-description">{tire.description}</p>
       <dl className="oi-specs">
-        <div><dt>Giga price / tire</dt><dd>{dollars(Math.round(tire.price * 100))}</dd></div>
         <div><dt>Giga list price</dt><dd>{tire.source?.listPrice == null ? 'Not provided' : dollars(Math.round(tire.source.listPrice * 100))}</dd></div>
         <div><dt>Category</dt><dd>{tire.category}</dd></div>
         <div><dt>Segment</dt><dd>{tire.source?.segment || 'Not provided'}</dd></div>
@@ -209,19 +209,22 @@ function TireOffer({ tire, markup, onSaved }) {
         <div><dt>Last seen</dt><dd>{dateLabel(tire.lastSeen)}</dd></div>
         <div><dt>Listing</dt><dd><SupplierLink url={tire.source?.url} /></dd></div>
       </dl><details><summary>All imported fields</summary><pre>{JSON.stringify({ id: tire.id, name: tire.name, size: tire.size, price: tire.price, inStock: tire.inStock, category: tire.category, description: tire.description, source: tire.source }, null, 2)}</pre></details></details>
+      </details>
     </div>
     <form className="oi-offer" onSubmit={save}>
       <p className="oi-kicker">KMT OFFER</p>
-      <label className="oi-check"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} disabled={saving} />Offer this tire</label>
-      <label htmlFor={`price-${tire.id}`}>Your price per tire ($)</label>
-      <input id={`price-${tire.id}`} value={price} onChange={e => setPrice(e.target.value)} inputMode="decimal" placeholder="Set your price" disabled={saving} />
+      <div className="oi-offer-row">
+        <label className="oi-check"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} disabled={saving} />Offer this tire</label>
+        <div><label htmlFor={`price-${tire.id}`}>Your price per tire ($)</label>
+        <input id={`price-${tire.id}`} value={price} onChange={e => setPrice(e.target.value)} inputMode="decimal" placeholder="Set your price" disabled={saving} /></div>
+      </div>
       <p className={spread != null && spread < 0 ? 'oi-attention oi-spread' : 'oi-spread'}>{spread == null ? 'Set independently from Giga’s price.' : `${dollars(spread)} ${spread < 0 ? 'below' : 'above'} Giga’s listed price`.replace('-$', '$')}</p>
       {suggestedCents != null && tire.offer.priceCents == null && <p className="oi-spread oi-muted">
         Markup offers this at {dollars(suggestedCents)} until you set a price.
         <button type="button" className="oi-button oi-inline" onClick={() => setPrice((suggestedCents / 100).toFixed(2))} disabled={saving}>Use {dollars(suggestedCents)}</button>
       </p>}
       <label htmlFor={`notes-${tire.id}`}>Owner notes</label>
-      <textarea id={`notes-${tire.id}`} value={notes} onChange={e => setNotes(e.target.value)} maxLength={2000} rows={2} placeholder="Why this tire, pricing notes…" disabled={saving} />
+      <textarea id={`notes-${tire.id}`} value={notes} onChange={e => setNotes(e.target.value)} maxLength={2000} rows={1} placeholder="Why this tire, pricing notes…" disabled={saving} />
       <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save offer'}</button>
       {error && <p role="alert" className="oi-error">{error}</p>}
       {tire.offer.enabled && !isAvailable && <p className="oi-attention">Selected by KMT, but supplier availability needs review.</p>}
@@ -244,6 +247,15 @@ export default function OwnerInventory({ navigate }) {
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [needsSignIn, setNeedsSignIn] = useState(false)
+  // The refresh, import and markup tools sit folded above the list so the
+  // first tire is within a screen of the top on a phone; whether the owner
+  // left them open is remembered on this device only.
+  const [toolsOpen, setToolsOpen] = useState(() => { try { return localStorage.getItem('kmt_owner_tools') === 'open' } catch { return false } })
+  const toggleTools = () => {
+    const open = !toolsOpen
+    setToolsOpen(open)
+    try { localStorage.setItem('kmt_owner_tools', open ? 'open' : 'closed') } catch { /* storage unavailable: forget, do not fail */ }
+  }
   const sequence = useRef(0)
   const invalidate = useCallback(() => { sequence.current++ }, [])
   const jobRunning = data?.summary.job?.status === 'running'
@@ -345,7 +357,7 @@ export default function OwnerInventory({ navigate }) {
     setPage(1)
   }
   return <div className="oi-shell">
-    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}>KMT<span>.</span></button><span>OWNER WORKSPACE</span><button className="oi-button" onClick={() => navigate('/owner/quotes')}>Quote requests →</button><button className="oi-button" onClick={leave}>Sign out</button></nav>
+    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button><span>OWNER WORKSPACE</span><button className="oi-button" onClick={() => navigate('/owner/quotes')}>Quote requests →</button><button className="oi-button" onClick={leave}>Sign out</button></nav>
     <main className="oi-content">
       <header className="oi-heading"><div><p className="oi-kicker">YOUR INVENTORY. YOUR PRICES.</p><h1>Build your tire offering</h1><p>Explore Giga Tires, choose what you want to offer, and set your price.</p></div><span className="oi-owner-badge">Owner only</span></header>
       <div className="oi-metrics">
@@ -353,12 +365,17 @@ export default function OwnerInventory({ navigate }) {
         <div><strong>{summary?.offeredCount ?? '—'}</strong><span>Chosen for KMT</span></div>
         <div><strong>{summary ? summary.fullSizeCount + summary.importedSizeCount : '—'}</strong><span>Sizes with supplier tires</span>{summary && <small title="The deep pass reads the rest.">Read to the last page: {summary.fullSizeCount} of {summary.fullSizeCount + summary.importedSizeCount}</small>}</div>
       </div>
+      <div className={toolsOpen ? 'oi-tools is-open' : 'oi-tools'}>
+        <button type="button" className="oi-tools-toggle" aria-expanded={toolsOpen} aria-controls="owner-tools" onClick={toggleTools}>Supplier refresh, browser import and markup rule</button>
+        <div id="owner-tools" className="oi-tools-body" inert={!toolsOpen}>
       <section className="oi-refresh" aria-label="Supplier refresh">
         <div><h2>Supplier inventory</h2><p>{summary?.importedSizeCount ? `${summary.importedSizeCount} sizes started from a limited snapshot. ` : ''}Refresh reads every results page for the selected size and opens a browser on this computer. Refresh all covers the {summary?.refreshableSizes.length ?? '…'} sizes that already have supplier data, not the {summary?.sizes.length ?? '…'} sizes a customer can choose. To walk every size, run the scrape from a home connection (npm run scrape-tires -- --from-catalog), then push it in with npm run import-tires.</p><p className="oi-muted">Supplier prices and stock are last-seen listings, not guaranteed quotes. Your saved KMT prices stay under your control.</p></div>
         <div className="oi-refresh-actions"><button className="oi-button oi-primary" onClick={refresh} disabled={!data || busy || jobRunning || sizePending || (!size && !summary?.refreshableSizes.length)}>{size ? `Refresh ${size}` : sizePending ? 'Finish choosing a size to refresh it' : summary && !summary.refreshableSizes.length ? 'No sizes with supplier data to refresh yet' : `Refresh all ${summary?.refreshableSizes.length ?? '…'} sizes with supplier data`}</button>{jobRunning && <button className="oi-button" onClick={cancel} disabled={busy}>Stop refresh</button>}</div>
       </section>
       <BrowserImport sizes={summary?.sizes} />
       {summary?.markup && <MarkupRule markup={summary.markup} onSaved={markupSaved} />}
+        </div>
+      </div>
       {job && <div className={`oi-job ${['failed', 'interrupted'].includes(job.status) ? 'oi-attention' : ''}`} role="status"><strong>{job.status.toUpperCase()}</strong><span>{job.message}</span><span>{job.completed} / {job.sizes.length} sizes · {job.tiresRead} tires · {job.pagesRead} pages</span>{job.failed?.length > 0 && <span>Earlier saved inventory and offers are preserved. Choose the failed size to retry.</span>}</div>}
       <div className="oi-filters">
         <label>Search tires or SKU<input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Brand, model, supplier SKU…" /></label>
@@ -377,7 +394,7 @@ export default function OwnerInventory({ navigate }) {
       {size && <p className="oi-coverage">{size}: {coverage ? `${coverage.completeness === 'full' ? 'Full refresh' : coverage.completeness === 'snapshot' ? 'Limited snapshot' : 'Not refreshed'} · ${dateLabel(coverage.last_success)}` : 'Not refreshed yet. Select Refresh above to fetch its tires.'}{coverage?.error && ` · Last attempt failed: ${coverage.error}`}</p>}
       {error && <div className="oi-error oi-notice" role="alert">{error}</div>}
       {notice && <div className="oi-notice" role="status">{notice}</div>}
-      <div className="oi-results-heading"><p>{data ? `${data.total} matching tires` : 'Loading inventory…'}</p><span>{loading ? 'Updating…' : 'Selections and prices are saved, and offered tires reach the customer catalog.'}</span></div>
+      <div className="oi-results-heading"><p>{data ? `${data.total} matching tires · page ${data.page} of ${Math.max(1, Math.ceil(data.total / data.pageSize))}` : 'Loading inventory…'}</p><span>{loading ? 'Updating…' : 'Selections and prices are saved, and offered tires reach the customer catalog.'}</span></div>
       <div className="oi-results" aria-busy={loading}>
         {data?.items.map(tire => <TireOffer key={`${tire.id}:${tire.offer.version}`} tire={tire} markup={summary?.markup} onSaved={saved} />)}
         {data && !data.items.length && <div className="oi-empty"><h2>No tires to show yet</h2><p>{size && !coverage ? 'Refresh this size to load supplier inventory.' : 'Try another search or filter, or refresh a size to add supplier inventory.'}</p></div>}
