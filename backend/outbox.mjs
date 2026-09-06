@@ -53,7 +53,7 @@ export const OUTBOX_STATUSES = ['queued', 'sent', 'failed', 'bounced']
  * transaction spans `requests` too), but the list lives beside the schema it
  * describes rather than wherever that method ends up.
  */
-export const OUTBOX_PERSONAL_DATA_KEYS = ['to_name', 'to_email', 'customerPhone', 'location', 'locationNotes']
+export const OUTBOX_PERSONAL_DATA_KEYS = ['to_name', 'to_email', 'customerPhone', 'location', 'locationNotes', 'customerNotes']
 
 /**
  * The current shape of the table, as one place both creation and migration use.

@@ -44,8 +44,8 @@ function baseData({ request, quote, tire, origin, to, toName }) {
     customerPhone: request.customerPhone ?? null,
     location: request.location ?? null,
     locationNotes: request.locationNotes ?? null,
-    // t64's "Anything else I should know?": free text the customer wrote, so
-    // it belongs with the personal keys if the request's redaction takes it.
+    // t64's "Anything else I should know?": free text the customer wrote, in
+    // OUTBOX_PERSONAL_DATA_KEYS with the rest so a removal request blanks it.
     customerNotes: request.customerNotes ?? null,
     requestId: request.id,
     vehicleInfo: request.vehicleInfo ?? null,
