@@ -625,10 +625,10 @@
         "t32"
       ],
       "notes": [
-        "Verified against https://kmt.fly.dev on 2026-09-06. Request f80ada133275b41c327b6c35fb5555a4: submitted from an emulated iPhone 13, approved by the owner on their own device, read as approved on the phone after one reload, paid from the phone to /confirmation at $135.98, and opened from a third browser context holding no customer key, which read paid. Server-side final state: paid, version 3. The TEST row stays approved-and-paid until t36 adds done."
+        "Verified in PR #50 against https://kmt.fly.dev on 2026-09-06. Request f80ada133275b41c327b6c35fb5555a4: submitted from an emulated iPhone 13, approved by the owner on their own device, read as approved on the phone after one reload, paid from the phone to /confirmation at $135.98, and opened from a third browser context holding no customer key, which read paid. Server-side final state: paid, version 3. The TEST row stays approved-and-paid until t36 adds done."
       ],
       "createdAt": "2026-09-05T21:22:39.887Z",
-      "updatedAt": "2026-09-06T00:56:39.720Z"
+      "updatedAt": "2026-09-06T01:08:50.414Z"
     },
     {
       "id": "t34",
@@ -702,5 +702,5 @@
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-06T00:56:39.726Z"
+  "updatedAt": "2026-09-06T01:08:50.415Z"
 }
