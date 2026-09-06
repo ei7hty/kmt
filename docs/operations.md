@@ -802,10 +802,12 @@ the lead rather than either DB ADMIN or DEV OPS deciding it in a doc.
 **What gets blanked:** `requests.payload`'s `customerName`, `customerEmail`,
 `customerPhone`, `location`, `locationNotes` and `customerNotes` (t64, "anything
 else I should know?" -- free text, and the field most likely to hold the
-actual thing someone wants gone); `outbox`'s `to_address`, `to_name`, and
-inside its `data` the same six personal keys (`OUTBOX_PERSONAL_DATA_KEYS` in
-`backend/outbox.mjs`); `inquiries`' `name` and `contact`
-(`INQUIRY_PERSONAL_FIELDS` in `backend/inquiries.mjs`).
+actual thing someone wants gone) (`REQUEST_PERSONAL_DATA_KEYS` in
+`backend/quotes.mjs`); `outbox`'s `to_address` and `to_name`
+(`OUTBOX_REDACTED_COLUMNS` in `backend/outbox.mjs`), and inside its `data` the
+same six personal keys (`OUTBOX_PERSONAL_DATA_KEYS` in `backend/outbox.mjs`);
+`inquiries`' `name` and `contact` (`INQUIRY_PERSONAL_FIELDS` in
+`backend/inquiries.mjs`).
 
 **What survives, on every table, and must not be touched:** `quotes` in full
 -- status, version, total, line items, both timestamps, all of it; on

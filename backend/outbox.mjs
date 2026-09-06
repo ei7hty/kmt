@@ -61,6 +61,17 @@ export const OUTBOX_STATUSES = ['queued', 'sent', 'failed', 'bounced']
 export const OUTBOX_PERSONAL_DATA_KEYS = ['to_name', 'to_email', 'customerPhone', 'location', 'locationNotes', 'customerNotes']
 
 /**
+ * The two real columns above -- `to_address` and `to_name` -- that a removal
+ * request blanks directly, as distinct from the personal keys inside `data`
+ * this module already names. `OUTBOX_PERSONAL_DATA_KEYS` does not cover
+ * these two: they are their own columns, not JSON keys, and a hand-list with
+ * only one of its two halves pinned is exactly the shape of gap #230 found
+ * in `requests.payload`. If you change this list, update the UPDATE outbox
+ * statement in docs/operations.md's manual removal procedure to match.
+ */
+export const OUTBOX_REDACTED_COLUMNS = ['to_address', 'to_name']
+
+/**
  * The current shape of the table, as one place both creation and migration use.
  *
  * `request_id` is NOT NULL with a foreign key, the same as `quotes.request_id`

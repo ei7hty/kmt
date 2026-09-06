@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
-import { Quotes, todayInServiceArea } from './quotes.mjs'
+import { Quotes, REQUEST_PERSONAL_DATA_KEYS, todayInServiceArea } from './quotes.mjs'
 import { readServiceAreaConfig } from './service-area.mjs'
 import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
@@ -139,6 +139,14 @@ test('a request is required to carry the fields a quote needs', async t => {
   assert.throws(() => quotes.submit(form({ location: '   ' })), /location is required/)
   assert.throws(() => quotes.submit(form({ customerKey: 'not-a-key' })), /customer key/)
   assert.throws(() => quotes.submit(form({ locationNotes: 'x'.repeat(1001) })), /too long/)
+})
+
+test('the personal keys a redaction has to find inside requests.payload are named, not guessed at call time', () => {
+  assert.deepEqual(
+    REQUEST_PERSONAL_DATA_KEYS,
+    ['customerName', 'customerEmail', 'customerPhone', 'location', 'locationNotes', 'customerNotes'],
+    'if you change this list, update the three UPDATE statements in docs/operations.md',
+  )
 })
 
 /* ------------------------------------------- where and when (t48, #95, #70) */

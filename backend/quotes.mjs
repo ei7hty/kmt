@@ -77,6 +77,26 @@ const FORM_FIELDS = [
   'customerEmail',
 ]
 
+/**
+ * The personal keys inside `requests.payload`, redacted on a removal request.
+ *
+ * Deliberately separate from `FORM_FIELDS` above and not derived from it:
+ * that list is the intake allow-list (business fields like `vehicleInfo` and
+ * `date` mixed in with personal ones, and missing `customerPhone`, which is
+ * cleaned and stored under its own name via `cleanCustomerPhone` rather than
+ * passing through the form-field loop). This list answers a different
+ * question -- which keys identify the customer -- and is pinned by a test the
+ * same way `OUTBOX_PERSONAL_DATA_KEYS` and `INQUIRY_PERSONAL_FIELDS` are.
+ * If you change this list, update the three UPDATE statements in
+ * docs/operations.md's manual removal procedure to match: that procedure
+ * hand-lists these same keys, and nothing else checks it against this
+ * constant (#230's bug, closed for `outbox` and `inquiries` already -- this
+ * is `requests`' own list).
+ */
+export const REQUEST_PERSONAL_DATA_KEYS = [
+  'customerName', 'customerEmail', 'customerPhone', 'location', 'locationNotes', 'customerNotes',
+]
+
 /** Bounded so a request cannot carry an essay. */
 const LIMITS = {
   vehicleInfo: 200, tireSelection: 200, location: 300, date: 40,

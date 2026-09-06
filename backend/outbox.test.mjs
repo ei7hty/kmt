@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { DatabaseSync } from 'node:sqlite'
 import { Inventory } from './inventory.mjs'
-import { Outbox, OUTBOX_PERSONAL_DATA_KEYS, OUTBOX_STATUSES } from './outbox.mjs'
+import { Outbox, OUTBOX_PERSONAL_DATA_KEYS, OUTBOX_REDACTED_COLUMNS, OUTBOX_STATUSES } from './outbox.mjs'
 
 const SIZE = '215/60R16'
 
@@ -145,7 +145,19 @@ test('forRequest is answered from an index, not a table scan', t => {
 })
 
 test('the personal keys a redaction has to find are named, not guessed at call time', () => {
-  assert.deepEqual(OUTBOX_PERSONAL_DATA_KEYS, ['to_name', 'to_email', 'customerPhone', 'location', 'locationNotes', 'customerNotes'])
+  assert.deepEqual(
+    OUTBOX_PERSONAL_DATA_KEYS,
+    ['to_name', 'to_email', 'customerPhone', 'location', 'locationNotes', 'customerNotes'],
+    'if you change this list, update the UPDATE outbox statement in docs/operations.md',
+  )
+})
+
+test('the two bare columns a redaction blanks directly are named too, separately from the keys inside data', () => {
+  assert.deepEqual(
+    OUTBOX_REDACTED_COLUMNS,
+    ['to_address', 'to_name'],
+    'if you change this list, update the UPDATE outbox statement in docs/operations.md',
+  )
 })
 
 /* --------------------------------------------------- the migration case --- */
