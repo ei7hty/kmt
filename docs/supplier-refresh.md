@@ -144,7 +144,7 @@ of a band will take.
    just to make the flag accept. If a size still is not complete, leave it
    partial for this round and pick it up in the next refresh.
    ```bash
-   KMT_OWNER_PASSWORD='...' npm run import-tires -- --to https://kmt.fly.dev --complete
+   KMT_OWNER_PASSWORD='...' npm run import-tires -- --to https://kensmobiletire.com --complete
    ```
    Set `KMT_OWNER_PASSWORD` in your own shell, in your own environment.
    Nobody else needs to see it, and no PR should ever carry it.

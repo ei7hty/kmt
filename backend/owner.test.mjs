@@ -874,6 +874,32 @@ test('the scraper records what it read, and only a full read counts as complete'
   assert.deepEqual(Object.keys(replaced.coverage), [SIZE], '--replace drops the untouched size and its record')
 })
 
+test('a confirmed-empty size keeps its record on a run that does not touch it', async t => {
+  // A genuinely empty size (read in full, nothing there) has no tire to ride
+  // along on. Keying the carry-forward off carried tires, as an earlier
+  // version did, silently dropped every such size's record the moment a
+  // later run did not re-scrape it -- the exact loss #81 exists to prevent,
+  // just one run later.
+  const { buildSnapshot } = await import('../scripts/scrape-tires.mjs')
+  const emptySize = '165/70R15'
+  const previous = {
+    ...snapshot([tire('giga-old', { size: otherSize })]),
+    coverage: {
+      [otherSize]: fullRead,
+      [emptySize]: { limit: 0, pagesRead: 1, totalPages: 1, complete: true, scrapedAt: '2026-09-05T15:00:00Z' },
+    },
+  }
+
+  const { snapshot: next } = buildSnapshot({
+    previous, tires: [tire('giga-b')], replace: false, scrapedAt: '2026-09-06T00:00:00Z',
+    coverage: { [SIZE]: fullRead },
+  })
+
+  assert.deepEqual(next.coverage[emptySize], previous.coverage[emptySize], 'the empty size\'s record survives untouched')
+  assert.ok(next.sizes.includes(emptySize), 'and it still counts as a covered size')
+  assert.equal(next.tires.some(t => t.size === emptySize), false, 'with no tires manufactured for it')
+})
+
 test('scripts/import-tires.mjs refuses --complete for a size that was not read in full', async t => {
   const { execFile } = await import('node:child_process')
   const { writeFileSync } = await import('node:fs')
