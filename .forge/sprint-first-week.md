@@ -185,8 +185,14 @@ described as partial, because email reaches a pocket only if his mail
 notifies and no SMS path to Ken exists. The customer-side message at M hours
 is held and returns to the OWNER AGENT for a fresh ruling with week-one
 data, not automatic entry, because it can be worse than silence and promises
-a responsiveness not yet known to be keepable. Item 8's figure is what
-decides both.
+a responsiveness not yet known to be keepable. The number that decides it,
+named so it is not re-argued from taste: build the customer message when
+week-one data shows Ken's median answer time exceeds M; if his median is well
+under M, it is a message that arrives to tell people about a problem they do
+not have. Item 8's figure is what decides both. And the waiting copy of item
+4 ("if you need it today, text me") is inert until item 1's anchors land,
+which is one more reason the anchors go first: the roadside case is answered
+at hour zero by a tap that works, not by a timer.
 
 ## What this sprint cuts, and why
 
@@ -237,6 +243,31 @@ The CSM has walked each item as a person on a phone against production and
 written the line in `HANDOFF.md`, and Ken has used search and the note on a
 real request. Not "the audits pass": two of today's worst findings survived
 every test and were caught by someone reading the output.
+
+**Which items are walked at 375 before "done"** (the method is
+`.forge/roles/owner-portal-analyst.md`, PR #213, under a minute per screen):
+t38 (two real inboxes, every link in every email tapped on a phone, the
+`sms:` one included); item 1 (the same tap, on the declined email
+specifically); item 2 (Ken's screen at 375: the confirm appears, the reason
+box appears, the reason reaches the outbox row and the customer's page);
+items 3 and 4 (the customer's `/status` in the waiting and declined states,
+the text link present and tappable; the Needs-you card's height, Approve's
+offset from the top and the nav rows re-measured with the driver); item 6 (a
+request found by name, by phone and by reference); item 7 (the note saved
+and shown after reload; the history line); item 9 (the count in the response
+matches the rows on the screen; a priced row untouched). Read instead of
+walked: item 8 (the four numbers), item 5 (the closing comments), the
+sweeper (nothing built this week).
+
+**The resourcing condition.** The acceptance walk and the week-one read are
+the CSM's, and they need a session holding that role awake; the CSM's own
+session was spun down before tonight's brief woke it. If no session holds
+the role, the definition of done silently degrades to "the audits pass",
+which is what tonight's worst findings survived. So: the OWNER AGENT has put
+the session question to the user; until it is answered, the QA TESTER
+(`local_af51bbb2`) walks by the same method and the CSM reads the week-one
+numbers when it is next awake. Whoever walks, writes the line in
+`HANDOFF.md`; an item without the line is not done.
 
 ## What this document does not decide
 
