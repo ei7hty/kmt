@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './OwnerInventory.css'
 import SignIn from './SignIn.jsx'
+import { useNoIndex } from '../noindex.js'
 import { signOut } from './session.js'
 
 const dollars = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
@@ -233,6 +234,7 @@ function TireOffer({ tire, markup, onSaved }) {
 }
 
 export default function OwnerInventory({ navigate }) {
+  useNoIndex()
   const [data, setData] = useState(null)
   const [search, setSearch] = useState('')
   const [size, setSize] = useState('')

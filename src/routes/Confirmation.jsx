@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { requestById } from '../store'
+import { useNoIndex } from '../noindex.js'
 
 /**
  * The end of the customer's journey, read back from the server.
@@ -27,6 +28,7 @@ const NOT_PAID = {
 }
 
 function Confirmation({ navigate }) {
+  useNoIndex()
   const params = new URLSearchParams(window.location.search)
   const requestId = params.get('request')
   const [state, setState] = useState(() => (requestId ? { kind: 'loading' } : { kind: 'missing' }))
