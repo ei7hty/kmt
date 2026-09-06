@@ -18,6 +18,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | service-area-observability | QA ENGINEER (local_1fa1cb9a) | backend/site.mjs (securityHeaders/applySecurityHeaders: add X-KMT-Service-Area on/off, no parameters), backend/server.mjs (wire the existing serviceArea object through, read nothing new), backend/site.test.mjs, .forge/deployed-site-check.mjs (the check that reads it) | 2026-09-06 |
 | cancel-audit-238-r27-r28 | BUG FIXER (local_8ba9f198) | src/routes/Status.jsx (customer cancel: window.confirm -> in-page step), src/routes/QuoteRequests.jsx (owner cancel: window.prompt -> in-page step, only the cancel control), .forge/dead-end-audit.mjs (new cancel checks, EXPECTED_CHECKS moves with them) -- flagging overlap: t35-quote-adjustment's row above also names these three files; scoping to the cancel control only, not quote-adjustment logic | 2026-09-06 |
 | declined-email-reason-optional | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/t62-voice.md, part F only (the declined sketch renders a reason Ken may not have written; voice/product, no code) | 2026-09-06 |
+| growth-marketing-role | GROWTH/MARKETING (local_d80272eb) | one more practical note in .forge/roles/growth-marketing.md, pushed to the open PR #257 (docs only) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
