@@ -123,16 +123,103 @@ specificity entry in .forge/NOTES.md, the phase 2 design reference in
 #71, #72, #76, #77, #78, #85, #107]; claiming nothing new." Gate PASS on
 every item. **Locked 05:46Z at e5e037a.** Deviations: none.
 
-## Agents 4, 6 and 8 (orchestrator)
+## Parallel phase (orchestrator)
 
-Status as relayed at 05:52Z, to be replaced by the orchestrator's own log
-in a second commit on this PR: agent 4 DEV OPS/INFRASTRUCTURE cleared by
-the user, PR #120 (`backend-requests-lane.md`, head 6eba933) open and its
-merge queued with agent 1 after #119, Step A reply pending; agent 6 LEAD
-FULL STACK holding on the SWE-F stand-down the lead relayed earlier in the
-day, correctly, until the user lifts it in that session; agent 8 LEAD
-BACKEND DEV Steps A and B closed, Step C sent, its line cleared once the
-charter became readable on the branch.
+05:15Z, the user's decision in the orchestrator's session ("hurry up with
+onboarding other agents, five agents doing nothing right now"): the
+one-at-a-time rule lifted, per-agent gates kept. Split: the harness agent
+kept agent 2 and opened 3 and 5, then 7; the orchestrator opened 4, 6 and
+8, the `backend-requests-lane.md` dependency chain. Agent 1 told to accept
+merge requests and closures from either id and merge one at a time in
+arrival order. `MEMORY.md` gate relaxed to "line present, earlier lines
+intact". Step A sent to 4, 6 and 8 at 05:17Z, assumed main ab6aaec.
+
+## Agent 8, LEAD BACKEND DEV (`local_b16ac3fb`), orchestrator
+
+New session; no record file. 05:19Z Step A reply: context in five lines
+(phase 4 moved requests and quotes into SQLite with server-side drafting
+and no fallback store; access by 128-bit id or per-browser key; `moveTo()`
+the one transition seam; the CHECK constraint bit production once, hence
+`migrate()` and `migration.test.mjs` from #55; notifications behind one
+module with an outbox; the gate audits `backend/server.mjs`, post-deploy
+read-only); footprint none; pointer `kmt-role-lead-backend-dev.md`,
+`MEMORY.md` line at 12 with lines 1 to 9 intact. PASS. 05:20Z Step B sent;
+05:21Z reply: title "LEAD BACKEND DEV", cwd the repo; boundaries restated
+(owns nothing; not the owner screen, audits, scraper, workflow or
+deployment; schema changes ship with `migrate()` and a migration test).
+PASS. 05:21Z Step C sent, "hold for the temp lead's brief", line held
+until its charter was readable; 05:26Z charter reachable on
+`origin/backend-requests-lane-role` at 6eba933 (PR #120). 05:27Z line:
+"[LEAD BACKEND DEV], [e5e037a], [hold for the temp lead's brief],
+[backend-requests-lane.md (origin/backend-requests-lane-role 6eba933),
+.forge/roles/swe-owner-screen-lane.md, the migration entry in
+.forge/NOTES.md, backend/quotes.mjs, backend/migration.test.mjs, the phase
+4 entries in .forge/decisions.md]; claiming nothing new." Gate PASS on
+every item; the charter was read from the PR branch before its merge, ref
+recorded in the line. **Locked 05:27Z at e5e037a.** Deviations: none.
+
+## Agent 4, DEV OPS/INFRASTRUCTURE (`local_b1b5905a`), orchestrator
+
+cwd `C:\Users\anune\code\forge` by design. 05:17Z Step A sent. 05:18Z
+**stop on authority**, stated in its own session: the last instruction it
+held was the user's stand-down of every SWE session for cost, relayed by
+the lead; a peer cannot reverse it; it would not fetch while stood down
+(its repo picture was stale, "#55 open at 2c8f8a0"). Correct hold, no
+corrective message; a factual note sent; the user cleared it in that
+session. 05:25Z PR #120 open: branch `backend-requests-lane-role`, claim
+4419551, file 3f210bd, release 6eba933, one file
+`backend-requests-lane.md`, 173 lines, body "Author: DEV
+OPS/INFRASTRUCTURE", written against cb8d0a6 and saying so. 05:27Z merge
+requested from agent 1, queued after #119. 05:27Z Step A reply: context in
+five lines (SWE-0 AGENT 1 owned `server.mjs`, `api.mjs`, `quotes.mjs`, the
+schema, `store.js` and the customer path; last work t36 and the CHECK
+migration; proved the flow live in t33); footprint per its roster row,
+plus two old worktrees of its own still registered (`contract-fold` on
+`verification-contract-fold`, #45 closed unmerged, branch to keep;
+`verifypw` on `verify-job-owner-password`, #39 closed), clean, left for the
+temp lead after the sequence; no claim row; pointer
+`kmt-role-dev-ops-infrastructure.md`, `MEMORY.md` line last of 15. Two
+notes from it: the NOTES.md sentence it had flagged at stand-down has since
+landed; `.forge/reset-runbook.md` is the forge-on-KMT runbook and the
+production reset lives in HANDOFF.md's reset section, so the README row is
+corrected in this PR. PASS on the non-merge items. 05:28Z Step B sent;
+05:29Z reply: title "DEV OPS/INFRASTRUCTURE", cwd `code/forge`; boundaries
+restated (owns Dockerfile, fly.toml, .dockerignore #68, USER node #87,
+/api/health and the Fly check #88, docs/operations.md, monitoring #101;
+does not own `.github/workflows/`, the backend it used to own, the owner
+screen, audits or scraper; no Fly action without the user's word in its
+own session). PASS. 05:29Z #120 merged 164b9f6 by agent 1 (gate run
+34013920743 success on 6eba933). 05:30Z Step C sent; line: "[DEV
+OPS/INFRASTRUCTURE], [164b9f6], [hold for the temp lead's brief],
+[.forge/roles/backend-requests-lane.md, .forge/roles/repo-agent.md, the
+Fly cutover entry in .forge/NOTES.md, the reset section of
+.forge/HANDOFF.md, .forge/reset-runbook.md, Dockerfile, fly.toml,
+.github/workflows/fly-deploy.yml]; claiming nothing new." Gate PASS on
+every item. **Locked 05:30Z at 164b9f6.** Deviations: the authority stop,
+resolved by the user in its session.
+
+## Agent 6, LEAD FULL STACK (`local_8f1cdec6`), orchestrator
+
+05:17Z Step A sent (record `owner-screen-lane-swe-agent-3.md`, pointer
+`kmt-role-lead-full-stack.md`, recall). 05:18Z **stop on authority**: the
+lead had relayed the user's stand-down of every SWE-F session; nothing
+from the user in its own session since; a peer message cannot lift a
+relayed user order; it surfaced the conflict to the user in its session
+and holds, with nothing of its in flight. Correct hold, not a compliance
+failure, no corrective message. 05:26Z it sent the branch ref for
+`backend-requests-lane.md` for when it is cleared. **Still stopped at
+05:31Z.** The fix is the user's: lift the stand-down in that session, then
+Steps A to C run.
+
+## Other observations (orchestrator)
+
+Agent 1's classifier refused several read-only commands during its merges;
+each fact was obtained another way and nothing was reshaped. The
+orchestrator's first check of README-referenced files used `git cat-file
+rev:path` without `MSYS_NO_PATHCONV=1` and falsely reported seven files
+missing; corrected with `git ls-tree`. Tally at 05:31Z: locked 1
+(ab6aaec), 2 (cb8d0a6), 5 (e5e037a), 8 (e5e037a), 4 (164b9f6); stopped 3
+(cwd) and 6 (stand-down), each the user's fix; 7 in progress as #122.
 
 ## Agent 7, HARNESS AGENT (`local_461155da`), self
 
