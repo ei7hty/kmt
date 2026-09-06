@@ -1,7 +1,37 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { CANONICAL_EXEMPT, applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, isSecureRequest, parseRequestUrl, securityHeaders } from './site.mjs'
+import { CANONICAL_EXEMPT, applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, isSecureRequest, parseRequestUrl, readRelease, securityHeaders } from './site.mjs'
+
+test('the release is answered as a header when the image says which commit it is, and omitted otherwise', async t => {
+  // A header, not the health body: /api/health stays exactly {"ok":true}.
+  // A header, not a meta tag: it is on API answers and on the 301s, so each
+  // step of a cutover or a rollback is confirmed by one curl -sI.
+  assert.equal(readRelease({ KMT_RELEASE: 'b4009ecba8abc46200b5a16e8ed72a4588ad64b8' }), 'b4009ec', 'a full SHA is answered short')
+  assert.equal(readRelease({ KMT_RELEASE: 'B4009EC' }), 'b4009ec')
+  assert.equal(readRelease({}), '', 'unset is unset')
+  assert.equal(readRelease({ KMT_RELEASE: '' }), '')
+  for (const bad of ['unknown', 'latest', 'v1.2', '$GIT_SHA', 'abc']) {
+    assert.equal(readRelease({ KMT_RELEASE: bad }), '', `${JSON.stringify(bad)} is not a release, and a placeholder must not become a value in someone's comparison`)
+  }
+  assert.equal(securityHeaders({ secure: false, release: 'b4009ec' })['X-KMT-Release'], 'b4009ec')
+  assert.equal('X-KMT-Release' in securityHeaders({ secure: false }), false, 'omitted rather than a placeholder')
+
+  const server = createServer((request, response) => {
+    applySecurityHeaders(request, response, { release: request.url === '/none' ? '' : 'b4009ec' })
+    if (request.url === '/redirect') { response.writeHead(301, { Location: 'https://kensmobiletire.com/' }); return response.end() }
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end('{"ok":true}')
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+  for (const path of ['/', '/redirect']) {
+    const response = await fetch(base + path, { redirect: 'manual' })
+    assert.equal(response.headers.get('x-kmt-release'), 'b4009ec', `${path} names the release`)
+  }
+  assert.equal((await fetch(base + '/none')).headers.get('x-kmt-release'), null)
+})
 
 test('a canonical name the allow-list refuses is a refusal to boot, not a healthy-looking outage', () => {
   // The canonical name would answer 403 while every other name 301s to it,

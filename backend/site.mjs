@@ -103,7 +103,7 @@ export function assertCanonicalIsAllowed({ canonicalHost, allowedHosts }) {
  * meaningless, and a local run should not teach a browser to insist on TLS
  * for localhost.
  */
-export function securityHeaders({ secure }) {
+export function securityHeaders({ secure, release = '' }) {
   const headers = {
     'Content-Security-Policy': [
       "default-src 'self'",
@@ -124,12 +124,30 @@ export function securityHeaders({ secure }) {
     'Cross-Origin-Opener-Policy': 'same-origin',
   }
   if (secure) headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+  // Which commit is answering, on every response including the 301s and the
+  // API, so each step of a cutover or a rollback is confirmed by one curl -sI.
+  // A header rather than the health body keeps /api/health at exactly
+  // {"ok":true}, which is what makes its Host exemption safe. Unset, the
+  // header is omitted: a missing header is honest, and a placeholder is a
+  // value that ends up in someone's comparison.
+  if (release) headers['X-KMT-Release'] = release
   return headers
 }
 
+/**
+ * The release the image was built from, as KMT_RELEASE says it: the short
+ * SHA, seven characters, baked in by the Dockerfile from the workflow's
+ * commit. Anything that is not a short hex SHA is treated as unset rather
+ * than emitted, so a stray value cannot masquerade as a release.
+ */
+export function readRelease(env = process.env) {
+  const value = (env.KMT_RELEASE || '').trim().toLowerCase()
+  return /^[0-9a-f]{7,40}$/.test(value) ? value.slice(0, 7) : ''
+}
+
 /** Put the headers on a response before anything writes it; writeHead keeps them. */
-export function applySecurityHeaders(request, response) {
-  for (const [name, value] of Object.entries(securityHeaders({ secure: isSecureRequest(request) }))) {
+export function applySecurityHeaders(request, response, { release = '' } = {}) {
+  for (const [name, value] of Object.entries(securityHeaders({ secure: isSecureRequest(request), release }))) {
     response.setHeader(name, value)
   }
 }

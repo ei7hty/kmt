@@ -21,6 +21,8 @@
  *   KMT_CANONICAL_HOST   when set, every other accepted name answers 301 to
  *                        this one (except /api/health). Unset: every name serves
  *   KMT_SESSION_HOURS    session lifetime, default 12
+ *   KMT_RELEASE          the short commit SHA the image was built from, set by
+ *                        the Dockerfile; answered as X-KMT-Release. Unset: no header
  *
  * One origin is a deliberate choice, not a convenience: the API's same-origin
  * check keeps working as written, so there is no CORS surface and no token to
@@ -41,7 +43,7 @@ import { Quotes } from './quotes.mjs'
 import { describeServiceArea, readServiceAreaConfig } from './service-area.mjs'
 import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
-import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl } from './site.mjs'
+import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl, readRelease } from './site.mjs'
 import { createStaticHandler } from './static.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -111,6 +113,9 @@ try {
   console.error(error.message)
   process.exit(1)
 }
+// The commit this image was built from, answered on every response as
+// X-KMT-Release when the image says (KMT_RELEASE, baked in by the Dockerfile).
+const release = readRelease()
 
 // The built frontend, served the way backend/static.mjs describes: hashed
 // assets forever, brand files for a day, everything else revalidated.
@@ -126,7 +131,7 @@ const server = createServer(async (request, response) => {
     // as the catalog and then matched no handler.
     request.url = url.pathname + url.search
     const hostname = (request.headers.host || '').split(':')[0]
-    applySecurityHeaders(request, response)
+    applySecurityHeaders(request, response, { release })
 
     // The health check is exempt, and isHostAllowed says why. The canonical
     // redirect below exempts it for the same reason.
@@ -195,6 +200,9 @@ server.listen(port, bind, () => {
   console.log(canonicalHost
     ? `KMT_CANONICAL_HOST=${canonicalHost}: every other name answers 301 to it, except /api/health.`
     : 'KMT_CANONICAL_HOST unset: every accepted name serves; no canonical redirect.')
+  console.log(release
+    ? `Release ${release}: answered as X-KMT-Release on every response.`
+    : 'KMT_RELEASE unset: no X-KMT-Release header (a local build, or an image built without GIT_SHA).')
   if (!process.env.KMT_SESSION_SECRET) {
     console.log('KMT_SESSION_SECRET unset: sessions will not survive a restart.')
   }
