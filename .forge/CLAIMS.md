@@ -16,6 +16,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | analytics-marketing-only-spec | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | new file .forge/analytics.md only (GA4 on marketing routes only: why not in index.html, the CSP change, the dev/CI gate, the /privacy obligation). Planning lane, no code. | 2026-09-06 |
 | reject-confirm-reason | JUNIOR FULL STACK ENGINEER (kmt-e8) | src/routes/QuoteRequests.jsx only (UI half: Reject gets asks:true and reuses the existing cancel reason box, generalized for both actions) -- not backend/api.mjs, which is JUNIOR BACKEND DEV's route half | 2026-09-06 |
 | status-declined-copy | JUNIOR FRONT END DEV (local_376e0377) | src/routes/Status.jsx (the declined-state sentence and the waiting-state line plus its text button only; stacked on reject-confirm-decline / #296, which owns the chip, the cancelled state and the .status-outcome wrapper; not QuoteRequests.jsx, not backend/), .forge/dead-end-audit.mjs (check 7's one locator following the new sentence; EXPECTED_CHECKS unmoved) | 2026-09-06 |
+| issue-sweep-phase-a | JUNIOR PROJECT MANAGER (local_0143d9a0) | GitHub issue state/comments only, no code -- verifying already-fixed issues against current main and closing with a file:line pointer; direct to main, no branch | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
