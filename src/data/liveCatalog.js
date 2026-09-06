@@ -20,8 +20,31 @@ import { catalogFromLiveRows, getAllTires } from './catalog'
  * detection here, on purpose.
  */
 export async function loadCatalog(signal) {
+  return loadLive('/api/catalog', signal, rows => rows)
+}
+
+/**
+ * The catalog for one size, asked for after the customer has chosen it.
+ *
+ * After the supplier import the whole catalog is about 170 KB compressed, and
+ * the flow used to download all of it on first paint, before the size step,
+ * on a phone at a roadside. Nothing on that screen needs it: the size selector
+ * runs on the static fitment ranges. So the flow asks for one size once one
+ * is chosen (#154: a few hundred bytes, a millisecond), and composes it into
+ * the static catalog exactly as the whole answer was composed -- seeds, then
+ * the live rows for that size, then generated coverage for every other size.
+ *
+ * A server from before #154 ignores `?size=` and answers everything; the
+ * rows are filtered to the size here as well, so this works, only bigger,
+ * against either.
+ */
+export async function loadCatalogForSize(size, signal) {
+  return loadLive(`/api/catalog?size=${encodeURIComponent(size)}`, signal, rows => rows.filter(tire => tire.size === size))
+}
+
+async function loadLive(path, signal, select) {
   try {
-    const response = await fetch('/api/catalog', {
+    const response = await fetch(path, {
       ...(signal ? { signal } : {}),
       headers: { Accept: 'application/json' },
     })
@@ -35,7 +58,7 @@ export async function loadCatalog(signal) {
 
     // Composed, not substituted: the endpoint answers with what the owner
     // curated, which is a part of the catalog rather than all of it.
-    return { tires: catalogFromLiveRows(data.tires), source: 'live' }
+    return { tires: catalogFromLiveRows(select(data.tires)), source: 'live' }
   } catch (error) {
     // An abort is the component going away, not a backend failure, and
     // answering it with a catalog nobody will read hides real cancellation.
