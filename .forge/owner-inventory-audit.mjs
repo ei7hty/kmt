@@ -9,6 +9,41 @@ import { signInIfAsked } from './audit-ui.mjs'
 const base = process.env.AUDIT_BASE || 'http://127.0.0.1:4180'
 
 /**
+ * How many of *this script's own* counted checks a complete run performs.
+ *
+ * Unlike the other four audits, most of this script's assertions are plain
+ * `assert.equal` calls that already crash the run on failure -- counting them
+ * too would just duplicate that. This constant covers only the size-filter
+ * checks below, added because that filter had no coverage at all: change it
+ * in the same commit as a check you add or remove there.
+ */
+const EXPECTED_CHECKS = 6
+
+let checksPassed = 0
+let checksFailed = 0
+
+function ok(msg) {
+  checksPassed += 1
+  console.log('OK: ' + msg)
+}
+
+function fail(msg) {
+  checksFailed += 1
+  console.error('FAIL: ' + msg)
+  process.exitCode = 1
+}
+
+function reportCounted() {
+  const ran = checksPassed + checksFailed
+  console.log(`\n${checksPassed} OK, ${checksFailed} FAIL -- ${ran} of ${EXPECTED_CHECKS} expected size-filter checks ran`)
+  if (ran < EXPECTED_CHECKS) {
+    fail(`only ${ran} of ${EXPECTED_CHECKS} size-filter checks ran. A check that stopped running is not a check that passed.`)
+  } else if (ran > EXPECTED_CHECKS) {
+    fail(`${ran} size-filter checks ran but EXPECTED_CHECKS is ${EXPECTED_CHECKS}. Update it in the same commit as the new check.`)
+  }
+}
+
+/**
  * The owner API from outside the browser, signed in when the server asks.
  *
  * backend/server.mjs answers 401 to everything under /api/owner without a
@@ -58,6 +93,34 @@ try {
     await page.screenshot({path:'.forge/shots/owner-inventory-' + viewport.width + '.png'})
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
     assert.equal(overflow, false, 'Owner viewport overflow')
+
+    const sizeInput = page.getByLabel('Tire size')
+    const refreshButton = page.locator('section[aria-label="Supplier refresh"] .oi-primary')
+
+    // Half-typed: a prefix of 205/65R15's digits that is not itself an exact
+    // size, so the filter must stay pending rather than guessing a commit.
+    await sizeInput.fill('20565')
+    await page.locator('.oi-size-matches').waitFor()
+    assert.equal(await refreshButton.isDisabled(), true, 'refresh should be disabled while a size is only half-typed')
+    assert.equal((await refreshButton.innerText()).trim(), 'Finish choosing a size to refresh it')
+    ok('refresh disables while a size is half-typed, at ' + viewport.width)
+
+    // Committing an exact size: value must reach the inventory query, not just the input.
+    const inventoryRequest = page.waitForRequest(req =>
+      req.url().includes('/api/owner/inventory') && req.url().includes(encodeURIComponent('205/65R15')))
+    await sizeInput.fill('205/65R15')
+    await inventoryRequest
+    ok('typing an exact size sends it to the inventory query, at ' + viewport.width)
+
+    assert.equal(await sizeInput.inputValue(), '205/65R15')
+    assert.equal(await refreshButton.isDisabled(), false, 'refresh should enable once a size is committed')
+    assert.equal((await refreshButton.innerText()).trim(), 'Refresh 205/65R15')
+    ok('typing an exact size commits it and enables refresh, at ' + viewport.width)
+
+    // Clear the filter so the later search check isn't scoped to one size.
+    await sizeInput.fill('')
+    await page.waitForTimeout(250)
+
     await page.getByRole('button', {name:'Quote requests'}).click()
     await signInIfAsked(page)
     await page.locator('h1').filter({hasText:'Quote Requests'}).waitFor()
@@ -72,6 +135,7 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log('PASS no browser runtime errors')
+  reportCounted()
 } finally {
   const latest = (await (await ownerFetch('/api/owner/inventory?search=' + encodeURIComponent(initial.id))).json()).items.find(t => t.id === initial.id)
   if (latest) await ownerFetch('/api/owner/offers/' + encodeURIComponent(initial.id), {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...initial.offer, version:latest.offer.version})})
