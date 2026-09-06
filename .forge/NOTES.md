@@ -426,3 +426,74 @@ least as specific as the layout it sits in, and have any check that
 asserts a colour read the computed style, never the stylesheet. Same
 family as the day's `<details>` finding: the file does not say what the
 browser does.
+
+**2026-09-06 — DB ADMIN, incoming repo agent (on behalf of LEAD BACKEND DEV, relayed via the PM -- their handoff, not directly verified against a live run by me except where noted)**
+Six things the outgoing lane knew that were in no file. Read `quotes.get`,
+`api.mjs` and the audit headers directly before writing the three that a grep
+could confirm; the other three are LEAD BACKEND DEV's own measurements,
+recorded as theirs.
+
+**The sharpest one, confirmed by reading `backend/quotes.test.mjs`:**
+`serve()` there (line 371) is a hand-written mirror of `server.mjs`'s
+pipeline, not an import of it. Any pre-dispatch change to `server.mjs` --
+routing order, a new guard before the handlers run -- has to be mirrored
+there by hand too, or the suite is testing the mirror and not the real
+pipeline. That is exactly how `GET /api//catalog` passed its tests and then
+failed under a real `curl`: the mirror answered one way, `server.mjs`
+another, and only one of them ran in the suite. See
+`kmt-server-test-helper-mirrors-pipeline` in the maintainer's own memory --
+this is that same finding, now in the file everyone shares rather than in
+one person's memory alone.
+
+**Customer shape vs. owner shape, confirmed by reading `Quotes.get` in
+`backend/quotes.mjs`:** `get(id, audience = 'customer')` is the one method
+every read goes through, and the second argument decides what a caller sees.
+`submit()`, `pay()` and the customer's own cancel all answer the customer
+shape by default; `decide()`/`finish()`/`cancel()` (the owner's verbs) pass
+`'owner'` explicitly. Any new template, card or panel that reads a
+customer's name, email, phone or address must call `quotes.get(id, 'owner')`
+-- the default silently returns the shape with those fields stripped or
+redacted for a customer's own eyes, and a caller that forgets the second
+argument gets no error, just quietly wrong data.
+
+**`HEAD /api/catalog` answers 401 on purpose, confirmed by reading
+`isPublicApiCall` in `backend/api.mjs` (line 99 plus its comment):** HEAD is
+public *only* for `/api/health` -- `if (method === 'HEAD') return pathname
+=== '/api/health'` -- so a HEAD on any other public GET path, `/api/catalog`
+included, still requires a session and answers 401. The comment beside it
+says why: "nothing HEADs a JSON data endpoint, so `/api/catalog` stays
+GET-only on purpose." Do not let a future tidying pass make this consistent
+with `/api/health`'s exemption -- the inconsistency is the design, not an
+oversight.
+
+**Browser globals reached from Node stay an error, confirmed by reading the
+five audit scripts' headers:** `.forge/a11y-85-measure.mjs`,
+`deployed-site-check.mjs`, `owner-inventory-audit.mjs`,
+`request-flow-check.mjs` and `responsive-check.mjs` each carry a `/* global
+... */` comment naming exactly the browser identifiers (`document`,
+`window`, `getComputedStyle`, `innerWidth`, ...) used inside a
+`page.evaluate`/locator-evaluate callback, which runs in the browser and not
+in the Node process eslint is actually linting. Deliberately not added to
+`.forge`'s eslint config as a blanket browser-globals allowance: if a
+browser identifier is ever referenced *outside* one of those callbacks --
+reached from Node by mistake -- eslint still catches it as undefined. Scope
+a new `/* global */` line to the file that needs it, never widen the config.
+
+**GitHub occasionally creates no `pull_request` check run for a push here
+(LEAD BACKEND DEV's observation, not independently reproduced by me).** When
+a PR shows no gate run at all rather than a red or green one, the recovery
+is `gh workflow run fly-deploy.yml --ref <branch>` -- same check job runs,
+and deploy stays gated to `main` regardless, so dispatching it manually
+carries no deploy risk. Expect to meet this as the merger: "no checks
+reported" here can mean either the concurrency-cancellation trap already in
+this file, or this.
+
+**The audits' shared test address hits its own rate limit on a second full
+run against one already-up server (LEAD BACKEND DEV's measurement: 14
+submits per run against a cap of 30, so a third run in the same process
+would trip it).** The pre-merge gate never sees this, because it boots a
+fresh server per run and the limiter's state dies with the process. Anyone
+running the audits repeatedly against a server they left running --
+locally, or against a hosted throwaway -- can hit it after two full passes;
+read a submit failure there as the cap, not a regression, before chasing it
+as one.
