@@ -9,7 +9,6 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| retire-owner-review-link | LEAD UI ENGINEER | src/routes/CustomerRequest.jsx footer, src/routes/Status.jsx nav, src/routes/NotFound.jsx (R4: customer-facing Owner review link off), after #176 | 2026-09-06 |
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
