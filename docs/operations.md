@@ -511,7 +511,7 @@ credentials, and the file contains every customer's name, email, phone and
 address.
 
 ```bash
-flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \".backup /tmp/owner-backup.sqlite\""
+flyctl ssh console -a kmt -C "sqlite3 -readonly /data/owner.sqlite \".backup /tmp/owner-backup.sqlite\""
 flyctl ssh sftp get /tmp/owner-backup.sqlite -a kmt
 flyctl ssh console -a kmt -C "rm /tmp/owner-backup.sqlite"
 ```
@@ -519,6 +519,12 @@ flyctl ssh console -a kmt -C "rm /tmp/owner-backup.sqlite"
 One command per `ssh console` call: nested quoting through `-C` breaks in ways
 that are hard to see. `Error: The handle is invalid` prints after every call on
 Windows and is a console quirk -- the output above it is real.
+
+**This procedure has still never been run end to end.** The restore drill was
+run on 2026-09-06 and passed; the monthly copy was not, and it is the procedure
+whose `sqlite3` call went undiscovered longest for exactly that reason. Expect
+to correct a step the first time, and correct this file when you do -- that is
+what the drill was worth, and it is worth the same here.
 
 **Use `.backup`, not `cp`.** The database is in WAL mode and is being written to
 while you copy. `cp` of a live SQLite file can produce a torn copy that opens
@@ -539,10 +545,32 @@ customer record inside the container.
 records came back, all of them".
 
 ```bash
-flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite 'select (select count(*) from requests), (select count(*) from quotes)'"
+flyctl ssh console -a kmt -C "sqlite3 -readonly /data/owner.sqlite 'select (select count(*) from requests), (select count(*) from quotes)'"
 ```
 
-Write the two numbers down with the time. `Error: The handle is invalid` prints
+Write the two numbers down with the time.
+
+**`-readonly` is not decoration.** Opening a SQLite database read-write is not
+inert: it can replay a hot journal and checkpoint a WAL, so an inspection can
+quietly alter the live database it was sent to read. Every read against
+production in this document carries that flag; the redaction statements later on
+deliberately do not, because they write.
+
+**On an image built before 2026-09-06, `sqlite3` is not installed** and these
+commands fail with `executable file not found in $PATH` -- found by running the
+restore drill, which is what a first drill is for. Node 24 and `node:sqlite` are
+in every image, so this is the fallback that works on any of them, with the same
+read-only guard:
+
+```bash
+flyctl ssh console -a kmt -C 'node -e "const s=require(\"node:sqlite\");const d=new s.DatabaseSync(\"/data/owner.sqlite\",{readOnly:true});console.log(JSON.stringify(d.prepare(\"select (select count(*) from requests) req,(select count(*) from quotes) quo\").get()))"'
+```
+
+Two quoting notes, each of which has cost someone a cycle: nested quotes through
+`ssh -C` break in ways that are hard to see, so single-quote the outer and
+double-quote inside; and in PowerShell the escape character is a backtick, which
+only works inside a **double**-quoted string -- inside single quotes it arrives
+literally. `Error: The handle is invalid` prints
 after every `ssh console` call on Windows and is a console quirk; the output
 above it is real.
 
@@ -776,14 +804,14 @@ puts you on the machine; one `sqlite3` invocation per call, per the rule above
 By id, if you have one:
 
 ```bash
-flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, payload FROM requests WHERE id='<request-id>';\""
+flyctl ssh console -a kmt -C "sqlite3 -readonly /data/owner.sqlite \"SELECT id, payload FROM requests WHERE id='<request-id>';\""
 ```
 
 By name or phone, if that is all you have -- the payload is JSON, so this
 reads inside it:
 
 ```bash
-flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, json_extract(payload,'\$.customerName'), json_extract(payload,'\$.customerPhone') FROM requests WHERE json_extract(payload,'\$.customerName') LIKE '%<name>%' OR json_extract(payload,'\$.customerPhone') LIKE '%<digits>%';\""
+flyctl ssh console -a kmt -C "sqlite3 -readonly /data/owner.sqlite \"SELECT id, json_extract(payload,'\$.customerName'), json_extract(payload,'\$.customerPhone') FROM requests WHERE json_extract(payload,'\$.customerName') LIKE '%<name>%' OR json_extract(payload,'\$.customerPhone') LIKE '%<digits>%';\""
 ```
 
 A name with an apostrophe (O'Brien) needs it doubled for SQL, not backslash-escaped:
@@ -796,8 +824,8 @@ next step -- there is no undo on the write that follows.
 Then, with the request id in hand, find everything attached to it:
 
 ```bash
-flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, status FROM quotes WHERE request_id='<request-id>';\""
-flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"SELECT id, type, status FROM outbox WHERE request_id='<request-id>';\""
+flyctl ssh console -a kmt -C "sqlite3 -readonly /data/owner.sqlite \"SELECT id, status FROM quotes WHERE request_id='<request-id>';\""
+flyctl ssh console -a kmt -C "sqlite3 -readonly /data/owner.sqlite \"SELECT id, type, status FROM outbox WHERE request_id='<request-id>';\""
 ```
 
 An inquiry is not attached to a request at all -- there is no `request_id` to

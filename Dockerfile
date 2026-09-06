@@ -20,8 +20,16 @@ FROM node:24-bookworm-slim
 # xauth is not optional and not pulled in by xvfb: xvfb-run shells out to it to
 # create the X authority file, and without it exits 3 with "xauth command not
 # found" before Node ever starts. That reads as the app crash-looping.
+# sqlite3 is here for the operator, not the app: nothing in the server shells
+# out to it -- the backend uses node:sqlite. docs/operations.md reaches for it
+# in three procedures that run against this container by ssh -- the pre-restore
+# row counts, the monthly off-Fly `.backup` copy, and the by-hand redaction a
+# privacy request triggers -- and every one of them failed at the prompt with
+# "executable file not found in $PATH", found by running the restore drill.
+# The third is the expensive one: a privacy obligation, under time pressure,
+# failing in a way that reads as a broken machine rather than a missing binary.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      chromium fonts-liberation xvfb xauth tini ca-certificates \
+      chromium fonts-liberation xvfb xauth tini ca-certificates sqlite3 \
   && rm -rf /var/lib/apt/lists/*
 
 # Use the distro's Chromium rather than downloading a second copy through
