@@ -23,14 +23,15 @@
 export const PUBLIC_BODY_LIMIT = 8 * 1024
 
 /**
- * What one gate run asks of the server, counted from the three audit scripts:
- * dead-end submits three requests per viewport at two viewports, the
- * responsive check two per viewport at two, the request-flow check one, every
- * one from the same address with the same email; pays and cancels fewer; the
- * owner signs in a handful of times and never wrongly. Rounded up, so a script
- * gaining a scenario does not put the gate on the line.
+ * What one gate run asks of the server, measured rather than estimated: the
+ * three audits run in sequence against one server on 2026-09-06 left 14
+ * requests in its database, every one from the same address with the same
+ * email, 4 of them paid, and 12 owner sign-ins, none wrong. Rounded up, so a
+ * script gaining a scenario does not put the gate on the line; when one does,
+ * count again and raise these, and limits.test.mjs says whether the limits
+ * still clear them.
  */
-export const AUDIT_BUDGET = { publicPosts: 24, submitsPerEmail: 16, loginFailures: 0 }
+export const AUDIT_BUDGET = { publicPosts: 24, submitsPerEmail: 20, loginFailures: 0 }
 
 export const LIMITS = {
   /** Public POSTs (submit, pay, cancel) from one address. */
