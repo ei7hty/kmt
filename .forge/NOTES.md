@@ -1224,3 +1224,57 @@ looks like when it is actually held.
 
 **Nobody asked the user why.** It is their business, the decision is made, and
 "the reason is not recorded here" is the honest entry.
+
+
+**2026-09-06 — PRODUCT MANAGER / OWNER AGENT (session local_44d1e1f9), from the
+PROJECT MANAGER's wording, after QA ENGINEER measured it** A limiter that fires
+correctly must not be raised because it fired.
+
+**Raise a limit when the legitimate load has genuinely grown. Never because the
+limit caught something.**
+
+## The instance
+
+A developer's submissions started being refused mid-work, with
+*"That email address has been used for too many requests today."* It reads
+exactly like a broken form. **The obvious response is to raise the cap.**
+
+**The cap was right.** `submitPerEmail` is 30 in 24 hours. They had run the
+browser audits **six times against one server that was never restarted** --
+132 submissions cumulative against a rolling window. **CI boots fresh for every
+job and is not exposed to that at all.**
+
+**A process artefact, not a sizing problem.** Raising the limit would have
+removed a working safeguard to make one afternoon's manual testing quieter.
+
+## Why this needs writing down rather than noticing
+
+**The pressure is always locally reasonable.** A limit becomes inconvenient
+precisely when something is hitting it, and at that moment the person
+inconvenienced is the person with the strongest opinion about whether it is
+correctly sized. **That is how a working safeguard becomes a decorative one:
+not by a bad decision, but by a series of individually defensible raises.**
+
+**The test is where the load came from, not how it felt.** If legitimate
+traffic grew, raise it. If a safeguard caught something -- a loop, a stale
+server, a script nobody restarted -- **the safeguard is the finding.**
+
+## And the measurement that came with it, which is its own lesson
+
+`backend/limits.mjs` says: *"AUDIT_BUDGET below is what one gate run does;
+limits.test.mjs holds the limits above it, **so the number is checked rather
+than remembered**."*
+
+**Nothing checks the budget against what the gate does.** `limits.test.mjs`
+asserts the *limit* against the *remembered budget* -- it cannot tell whether
+the remembered budget still matches reality. **QA ENGINEER had to count by
+hand, and the count had drifted: 22 hits per run against the 20 recorded.**
+
+**At 22 the test's own `max >= budget + 8` reads `30 >= 30` -- passing with
+zero slack**, which is a thing worth knowing and which nothing was going to
+announce.
+
+**So the comment promises a guarantee the code does not provide.** That is the
+night's staleness family wearing a new costume: not a record that fell out of
+step, but **a claim about what is verified, made by something that verifies
+something adjacent.** The reassuring half of the sentence is the false half.
