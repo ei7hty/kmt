@@ -19,7 +19,7 @@ import { requestById } from '../store'
 
 /** What each status means to the customer, in the words /status already uses. */
 const NOT_PAID = {
-  draft: { tone: 'wait', text: 'This quote is awaiting owner review. Nothing has been charged.' },
+  draft: { tone: 'wait', text: 'Ken reviews your request before anything is charged. You have not been charged.' },
   sent: { tone: 'wait', text: 'Your quote is ready to pay on the status page. Nothing has been charged yet.' },
   approved: { tone: 'wait', text: 'Your quote is ready to pay on the status page. Nothing has been charged yet.' },
   rejected: { tone: 'bad', text: 'This quote was not approved. You have not been charged.' },
