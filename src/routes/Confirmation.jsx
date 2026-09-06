@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { requestById } from '../store'
 import { useNoIndex } from '../noindex.js'
 import { PrivacyFooter } from './Privacy.jsx'
+import { TEXT_HREF, TEXT_LABEL } from '../contact.js'
 
 /**
  * The end of the customer's journey, read back from the server.
@@ -101,14 +102,14 @@ function Confirmation({ navigate }) {
     const outdated = state.kind === 'missing'
     panel = <>
       <p className="eyebrow">{outdated ? 'OUT OF DATE' : 'NOT FOUND'}</p>
-      <h1 className="confirmation-heading">{outdated ? 'This link is out of date' : 'We could not find that request'}</h1>
+      <h1 className="confirmation-heading">{outdated ? 'This link is out of date' : "That request wasn't found"}</h1>
       <p className="status-note status-note-bad" role="alert">
         {outdated
           ? 'This confirmation link is from an older version and no longer points at a request. Your quotes are listed on the status page.'
           : `${state.message} Nothing has been charged from this page.`}
       </p>
       <dl className="confirmation-detail">
-        <div><dt>Need a hand?</dt><dd><a href="tel:6174108319" className="link-action">Call (617) 410-8319</a></dd></div>
+        <div><dt>Need a hand?</dt><dd><a href={TEXT_HREF} className="link-action">{TEXT_LABEL}</a></dd></div>
       </dl>
       <a href={statusPath} onClick={go(statusPath)} className="btn btn-primary confirmation-action">
         {outdated ? 'See my quotes →' : 'View quote status →'}

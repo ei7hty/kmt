@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { cancelRequest, myRequests, payRequest, requestById } from '../store'
 import { useNoIndex } from '../noindex.js'
 import { PrivacyFooter } from './Privacy.jsx'
+import { TEXT_HREF, TEXT_LABEL } from '../contact.js'
 
 /**
  * What the customer sees after asking for a quote.
@@ -96,7 +97,7 @@ function Status({ navigate }) {
           <p className="status-note status-note-bad" role="alert">{error}</p>
           <div className="tire-empty-actions">
             <button className="btn btn-neutral" onClick={load}>Try again</button>
-            <a className="btn btn-primary" href="tel:6174108319">Call (617) 410-8319</a>
+            <a className="btn btn-primary" href={TEXT_HREF}>{TEXT_LABEL}</a>
           </div>
         </div>}
         {!loading && !error && rows.length === 0 ? <div className="panel"><p className="text-secondary">No quote requests yet. Start one from the home page.</p></div> : (

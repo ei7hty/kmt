@@ -54,14 +54,14 @@ async function call(path, options = {}) {
       headers: { 'Content-Type': 'application/json', ...options.headers },
     })
   } catch {
-    throw new Error('We could not reach the shop. Check your connection and try again.')
+    throw new Error("Couldn't reach the shop. Check your connection and try again.")
   }
 
   // A server that does not know the route answers 200 with index.html, and
   // parsing that as JSON is a confusing crash where a clear message belongs.
   const type = response.headers.get('content-type') || ''
   if (!type.includes('application/json')) {
-    throw new Error('We could not reach the shop. Please try again in a moment.')
+    throw new Error("The shop's site isn't answering right now. Please try again in a moment.")
   }
 
   const data = await response.json()

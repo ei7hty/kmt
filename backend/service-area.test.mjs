@@ -56,7 +56,7 @@ test('inside the radius is served; the review band names the miles; beyond is re
   assert.equal(worcester.serviceable, true)
   assert.equal(worcester.reason, REASONS.REVIEW)
   assert.equal(worcester.miles, 40)
-  assert.match(worcester.message, /About 40 miles/, 'the owner is told how far, not just that it is far')
+  assert.match(worcester.message, /About 40 miles from Malden/, 'the owner is told how far, not just that it is far')
 
   // The city is in the cut on purpose: a visitor from there is told they are
   // about 190 miles away, which is true, rather than that their ZIP is not
@@ -67,12 +67,12 @@ test('inside the radius is served; the review band names the miles; beyond is re
     assert.equal(far.reason, REASONS.BEYOND_RADIUS)
     assert.ok(far.miles > 100)
     assert.match(far.message, new RegExp(`about ${far.miles} miles`))
-    assert.match(far.message, /100 mile area/)
+    assert.match(far.message, /outside the 100 miles I cover/)
   }
 })
 
 test('an unknown or malformed ZIP is refused before any distance is computed', () => {
-  assert.deepEqual(isServiceable('99999', AREA), { serviceable: false, reason: REASONS.UNKNOWN, miles: null, message: 'We do not recognise that ZIP code.' })
+  assert.deepEqual(isServiceable('99999', AREA), { serviceable: false, reason: REASONS.UNKNOWN, miles: null, message: "That ZIP code isn't one I recognize." })
   for (const bad of ['2148', '021480', 'abcde', '', null, undefined, '02148-', '0214x']) {
     const result = isServiceable(bad, AREA)
     assert.equal(result.serviceable, false, `${JSON.stringify(bad)} is refused`)

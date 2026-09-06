@@ -9,9 +9,12 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| t63-text-controls | BUG FIXER (local_8ba9f198) | rebase PR #210 onto current main, conflicts in src/components/RequestDetails.jsx and src/routes/CustomerRequest.jsx | 2026-09-06 |
-| form-fields-partition | JUNIOR BACK END DEV (local_0b9989ef) | backend/quotes.mjs, backend/quotes.test.mjs (exhaustive FORM_FIELDS partition, follow-up to #233) | 2026-09-06 |
 | claims-direct-commit-rule | TEMP REPO AGENT (local_b2ab10bb) | .forge/AGENTS.md (docs only, one paragraph) | 2026-09-06 |
+| removal-completeness | TECHNICAL ARCHITECT (local_5b133312) | new file .forge/personal-data-removal.md only; reads across backend/, docs/, .github/ (completeness audit of the removal set + redact() design, no code change) | 2026-09-06 |
+| date-floor-plus-7 | BUG FIXER (local_8ba9f198) | backend/quotes.mjs: cleanDate() only, near the top of the file (not the quote-adjustment functions); backend/quotes.test.mjs (date boundary cases); src/components/RequestDetails.jsx; .forge/audit-ui.mjs and any audit script with a baked-in submit date | 2026-09-06 |
+| t35-quote-adjustment | JUNIOR BACK END DEV (local_0b9989ef) | backend/quotes.mjs, backend/quotes.test.mjs, src/routes/QuoteRequests.jsx, .forge/dead-end-audit.mjs, backend/api.mjs, src/App.css, src/routes/Confirmation.jsx, src/routes/Status.jsx, src/store.js (inherited: rebasing and reviewing an orphaned agent's finished-but-unopened PR, not new work) | 2026-09-06 |
+| product-record-reconcile | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/state.json, .forge/sprint-live.md, .forge/roadmap.md (product record only: task/milestone status verified against merged code, t57-t66 entered, m13 added, stage gates marked; no code, no audit scripts) | 2026-09-06 |
+| growth-front-door | GROWTH/MARKETING (local_d80272eb) | index.html (head only: meta description + LocalBusiness JSON-LD), docs/brand.md (correct it if its watermark claim is stale), public/brand/ (read-only verification), and the audit script whose EXPECTED_CHECKS moves if a head check is added | 2026-09-06 |
 | tire-offers-by-brand | DB ADMIN (local_adccdadc) | src/data/brand.js (new), backend/inventory.mjs, backend/api.mjs, src/owner/OwnerInventory.jsx, .forge/owner-inventory-audit.mjs, backend tests (bulk enable/disable offers by brand, PM-approved plan) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and

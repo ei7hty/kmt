@@ -19,7 +19,7 @@ function Privacy({ navigate }) {
         <p className="eyebrow">PRIVACY</p>
         <h1 className="owner-heading">How KMT handles your details</h1>
         <div className="panel privacy-panel">
-          <h2>What we collect</h2>
+          <h2>What Ken&apos;s Mobile Tire collects</h2>
           <p>Your name, your email address, your mobile number if you give one, the address where the vehicle is, any notes on finding it, and the vehicle and tires you chose.</p>
           <h2>Why</h2>
           <p>To draft your quote, to reach you about it, and to come to the right place with the right tires.</p>
@@ -28,7 +28,7 @@ function Privacy({ navigate }) {
           <h2>How long it is kept</h2>
           <p>Your request and quote are kept as the record of what was quoted, approved and paid. They are not deleted automatically.</p>
           <h2>Removing your details</h2>
-          <p>To ask for your name, contact details and address to be removed, call <a href="tel:6174108319">(617) 410-8319</a>. The quote itself stays, as the record of what was sold.</p>
+          <p>To ask for your name, contact details and address to be removed, call <span className="privacy-number">(617) 410-8319</span>. The quote itself stays, as the record of what was sold.</p>
           <h2>Your status link</h2>
           <p>The link to your quote is private to whoever holds it. Anyone with the link can see the quote, so keep it to yourself.</p>
         </div>
