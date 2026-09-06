@@ -86,7 +86,8 @@ file from opposite ends.
 | `backend/`, `src/owner/` | owner workspace and its API |
 | `src/markup.js` | supplier price -> customer price |
 | `Dockerfile`, `fly.toml`, `.github/workflows/` | deployment |
-| `index.html`'s marketing head (title, description, JSON-LD, `og:*`), `public/robots.txt`, `public/sitemap.xml`, `public/brand/`, `docs/brand.md`, landing copy | growth and marketing (`roles/growth-marketing.md`); the first three are **shared with SEO** until the PM rules — see below |
+| `index.html`'s marketing head (title, description, JSON-LD content, `og:*`/`twitter:*`), `public/brand/`, `docs/brand.md`, landing copy | growth and marketing (`roles/growth-marketing.md`) |
+| `index.html`'s `<link rel="canonical">`, `public/robots.txt`, `public/sitemap.xml` | SEO — crawler plumbing, no copy; see the ruling below |
 
 `package.json` and `README.md` are shared. Touch them in a commit of their own so
 a conflict is trivial to resolve.
@@ -94,16 +95,25 @@ a conflict is trivial to resolve.
 Two rows above overlap on purpose and the split is by *kind of change*, not by
 file. In `src/routes/CustomerRequest.jsx` the landing **copy** is growth's and
 the **markup and CSS** are UI's: changing a string is one lane, anything
-needing structure is a claim row that says so and a pairing. In `index.html`'s
-head, the marketing tags are growth's while viewport, `theme-color` and the
-icon and manifest links stay UI's. Say which you are doing in your claim row.
+needing structure is a claim row that says so and a pairing.
 
-A third overlap is **open, not settled**: an SEO agent now works the same
-surface. The proposed split — technical SEO (crawlability, canonical and
-redirect behaviour, sitemap accuracy, page speed) to SEO; brand, copy and
-on-page content to growth — is a proposal, not a ruling, and it divides
-`robots.txt`, `sitemap.xml` and the structured data between them. Until the
-PROJECT MANAGER rules, treat those three as shared and claim them explicitly.
+**`index.html`'s head splits three ways, ruled by the PROJECT MANAGER on
+2026-09-06.** The split is by *whose question a tag answers*, not by position
+in the file: growth owns `<title>`, the meta description, `og:*`/`twitter:*`
+and the structured data's **content**; UI keeps `viewport`, `theme-color` and
+the icon and manifest links — the app shell; SEO owns `<link rel="canonical">`
+— crawler plumbing, no copy. Three lanes now hold regions of one file, the
+same region-not-lock principle as a claim row applied to a whole document:
+say which region you are touching, in your claim row, every time.
+
+**`public/robots.txt` and `public/sitemap.xml` are SEO's outright** — not
+shared, not growth's: machine directives about what to fetch, not statements
+about the business. The general rule the ruling drew: **growth owns what the
+page says; SEO owns what the site is to a crawler, and whether it behaves
+that way live.** Verification of the live surface is SEO's even where the
+file being verified is marketing's — a problem SEO finds in growth's content
+routes to the PROJECT MANAGER with the measurement, not a quiet fix from
+either side.
 
 ---
 
