@@ -64,7 +64,8 @@ const now = () => new Date().toISOString()
 /** 128 bits from the platform CSPRNG: not guessable, not enumerable. */
 export const newId = () => randomBytes(16).toString('hex')
 
-const FORM_FIELDS = [
+/** Exported only so quotes.test.mjs can check it against the partition below -- not an invitation to import or derive from it elsewhere. */
+export const FORM_FIELDS = [
   'vehicleInfo',
   'tireSelection',
   'location',
@@ -97,6 +98,23 @@ const FORM_FIELDS = [
  */
 export const REQUEST_PERSONAL_DATA_KEYS = [
   'customerName', 'customerEmail', 'customerPhone', 'location', 'locationNotes', 'customerNotes',
+]
+
+/**
+ * Every `FORM_FIELDS` key that is not personal -- named so that "not in
+ * `REQUEST_PERSONAL_DATA_KEYS`" has somewhere to be *said*, not just noticed
+ * by its absence. Together with `REQUEST_PERSONAL_DATA_KEYS`, this is meant
+ * to be an exhaustive partition of `FORM_FIELDS`: a test asserts every form
+ * field lands in exactly one of the two lists, so a new intake field with
+ * neither -- the likelier mistake than changing an existing key, since
+ * nothing has to be touched for it to happen -- fails loudly instead of
+ * quietly reaching the database unclassified. `customerPhone` is
+ * deliberately outside `FORM_FIELDS` (see the comment above) and is not
+ * expected here either; the partition test names that exception rather than
+ * silently passing it through.
+ */
+export const REQUEST_NON_PERSONAL_FIELDS = [
+  'vehicleInfo', 'tireSelection', 'date', 'locationType', 'serviceZip',
 ]
 
 /** Bounded so a request cannot carry an essay. */

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
-import { Quotes, REQUEST_PERSONAL_DATA_KEYS, todayInServiceArea } from './quotes.mjs'
+import { FORM_FIELDS, Quotes, REQUEST_NON_PERSONAL_FIELDS, REQUEST_PERSONAL_DATA_KEYS, todayInServiceArea } from './quotes.mjs'
 import { readServiceAreaConfig } from './service-area.mjs'
 import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
@@ -147,6 +147,40 @@ test('the personal keys a redaction has to find inside requests.payload are name
     ['customerName', 'customerEmail', 'customerPhone', 'location', 'locationNotes', 'customerNotes'],
     'update the UPDATE requests statement in docs/operations.md, and check whether this key also reaches outbox.data or inquiries',
   )
+})
+
+test('every FORM_FIELDS key is classified as personal or not -- a new intake field cannot silently land in neither', () => {
+  const classified = new Set([...REQUEST_PERSONAL_DATA_KEYS, ...REQUEST_NON_PERSONAL_FIELDS])
+  const unclassified = FORM_FIELDS.filter(field => !classified.has(field))
+  assert.deepEqual(
+    unclassified,
+    [],
+    'a new intake field must be classified as personal or not; if personal, add it to REQUEST_PERSONAL_DATA_KEYS ' +
+    'and to the UPDATE requests statement in docs/operations.md',
+  )
+  // The partition also has to be exact, not just covering: nothing miscounted into both lists,
+  // and nothing in either list that FORM_FIELDS does not actually carry -- except customerPhone,
+  // the one key that is personal data but never passes through the form-field loop (see the
+  // comment on REQUEST_PERSONAL_DATA_KEYS), covered by its own test below.
+  const inFormFieldsOrPhone = key => FORM_FIELDS.includes(key) || key === 'customerPhone'
+  assert.deepEqual(
+    [...REQUEST_PERSONAL_DATA_KEYS].sort(),
+    REQUEST_PERSONAL_DATA_KEYS.filter(inFormFieldsOrPhone).sort(),
+    'REQUEST_PERSONAL_DATA_KEYS has an entry that is neither in FORM_FIELDS nor customerPhone',
+  )
+  assert.deepEqual(
+    [...REQUEST_NON_PERSONAL_FIELDS].sort(),
+    REQUEST_NON_PERSONAL_FIELDS.filter(key => FORM_FIELDS.includes(key)).sort(),
+    'REQUEST_NON_PERSONAL_FIELDS has an entry FORM_FIELDS does not carry',
+  )
+  const overlap = REQUEST_PERSONAL_DATA_KEYS.filter(key => REQUEST_NON_PERSONAL_FIELDS.includes(key))
+  assert.deepEqual(overlap, [], 'a field cannot be both personal and non-personal')
+})
+
+test('customerPhone is deliberately outside FORM_FIELDS, and outside the partition too', () => {
+  assert.ok(!FORM_FIELDS.includes('customerPhone'), 'customerPhone is cleaned separately via cleanCustomerPhone, not through the form-field loop')
+  assert.ok(REQUEST_PERSONAL_DATA_KEYS.includes('customerPhone'), 'customerPhone is still personal data and still belongs on the redaction list')
+  assert.ok(!REQUEST_NON_PERSONAL_FIELDS.includes('customerPhone'), 'customerPhone is not a FORM_FIELDS entry, so it has no place in the non-personal partition either')
 })
 
 /* ------------------------------------------- where and when (t48, #95, #70) */
