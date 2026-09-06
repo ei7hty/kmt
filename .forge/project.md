@@ -199,7 +199,8 @@ the rest. Phase 3 (m8, t25-t28) wired that inventory to the customer: `/` asks
 falling back to the static catalog alone if the backend is unreachable.
 
 Two statements elsewhere in this file are now history rather than fact:
-hosting is one container on Fly.io (https://kmt.fly.dev), deployed from CI on
+hosting is one container on Fly.io at https://kensmobiletire.com (Ken's own domain
+since 2026-09-06; `kmt.fly.dev` still answers), deployed from CI on
 every push to `main`, and it runs the owner backend, so production exercises
 the live catalog path. Vercel only redirects there.
 
