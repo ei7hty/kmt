@@ -10,7 +10,6 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
-| t105-stock-warning | JUNIOR FRONT END DEV (local_376e0377) | #105, the owner card's amber zero-stock warning line only (src/routes/QuoteRequests.jsx); LEAD UI ENGINEER owns the facts row (#170) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
