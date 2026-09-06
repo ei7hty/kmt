@@ -38,7 +38,7 @@
 :where(.min-h-screen) a.inline-block {
   border: 1px solid var(--accent);
   border-radius: 3px;
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
   font-family: var(--sans);
   font-weight: 800;
@@ -230,7 +230,7 @@
 
 .brand-mark small {
   margin-top: 5px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--sans);
   font-size: 8px;
   font-weight: 900;
@@ -260,7 +260,7 @@
 .site-links button:hover,
 .site-links button.active {
   border-bottom-color: var(--accent) !important;
-  color: var(--accent) !important;
+  color: var(--accent-text) !important;
   transform: none !important;
 }
 
@@ -268,7 +268,7 @@
   padding: 12px 18px;
   border: 1px solid var(--accent);
   border-radius: 4px;
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
   font-size: 12px;
   font-weight: 900;
@@ -304,7 +304,7 @@
 .eyebrow,
 .panel-kicker {
   margin: 0 0 12px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 13px;
   font-weight: 900;
   letter-spacing: 1.8px;
@@ -321,7 +321,7 @@
 }
 
 .hero-copy h1 span {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .hero-lede {
@@ -344,7 +344,7 @@
   padding: 15px 20px !important;
   border: 1px solid var(--accent) !important;
   border-radius: 4px !important;
-  background: var(--accent) !important;
+  background: var(--accent-solid) !important;
   color: #fff !important;
   font-size: 13px;
   font-weight: 900;
@@ -407,7 +407,7 @@
 }
 
 .service-strip > div:last-child { border-right: 0; }
-.service-strip strong { color: var(--accent); font-size: 27px; }
+.service-strip strong { color: var(--accent-text); font-size: 27px; }
 .service-strip span { display: grid; gap: 3px; color: #9c9c9f; font-size: 12px; }
 .service-strip b { color: #f3f3f3; font-size: 12px; letter-spacing: 0.5px; }
 
@@ -441,7 +441,7 @@
   align-items: center;
   gap: 12px;
   padding: 17px 8px;
-  color: #626267;
+  color: #8f8f93;
   font-size: 12px;
   text-transform: uppercase;
 }
@@ -449,7 +449,7 @@
 .order-step:not(:last-child)::after { position: absolute; top: 50%; right: 0; width: 1px; height: 24px; background: #333; content: ''; transform: translateY(-50%); }
 .order-step span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #4c4c50; border-radius: 50%; font-weight: 900; }
 .order-step.current { color: #f3f3f3; }
-.order-step.current span { border-color: var(--accent); background: var(--accent); color: #fff; }
+.order-step.current span { border-color: var(--accent); background: var(--accent-solid); color: #fff; }
 .order-step.complete { color: #bcbcc0; }
 .order-step.complete span { border-color: #4eaf68; color: #5ed47b; }
 
@@ -460,13 +460,13 @@
 .size-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
 .size-card { display: flex; flex-direction: column; align-items: flex-start; min-height: 132px; padding: 18px !important; border: 1px solid #3a3a3d !important; border-radius: 3px !important; background: #101010 !important; color: #fff !important; text-align: left; }
 .size-card:hover, .size-card.selected { border-color: var(--accent) !important; background: var(--accent-bg) !important; transform: translateY(-2px); }
-.size-icon { color: var(--accent); font-size: 27px; }
+.size-icon { color: var(--accent-text); font-size: 27px; }
 .size-card strong { margin-top: 14px; font-family: var(--mono); font-size: 17px; }
 .size-card small { margin-top: 4px; color: #8a8a8e; font-size: 11px; }
 .fitment-modal { overflow: hidden; border: 1px solid #242427; border-radius: 5px; background: #f8f8f8; color: #242326; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38); }
 .fitment-heading { display: flex; align-items: center; gap: 10px; padding: 20px 22px 12px; }
 .fitment-heading h3 { margin: 0; color: #17161a; font-family: var(--sans); font-size: 24px; font-weight: 800; letter-spacing: -0.4px; text-transform: none; }
-.fitment-wheel { display: grid; place-items: center; width: 27px; height: 27px; border: 2px solid #ef4b54; border-radius: 50%; color: #ef4b54; font-size: 17px; }
+.fitment-wheel { display: grid; place-items: center; width: 27px; height: 27px; border: 2px solid #c41118; border-radius: 50%; color: #c41118; font-size: 17px; }
 .fitment-close { margin-left: auto; padding: 0 !important; border: 0 !important; background: transparent !important; color: #252329 !important; font-family: var(--sans); font-size: 31px; font-weight: 300; line-height: 1; }
 .fitment-close:hover { background: transparent !important; transform: none !important; }
 .fitment-progress { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 16px 16px 0; }
@@ -475,7 +475,7 @@
 .fitment-progress-item:first-child::after { left: 50%; }
 .fitment-progress-item:last-child::after { right: 50%; }
 .fitment-progress-item span { position: relative; z-index: 1; width: 8px; height: 8px; border-radius: 50%; background: #77777a; }
-.fitment-progress-item.active { color: #ef4b54; font-weight: 800; }
+.fitment-progress-item.active { color: #c41118; font-weight: 800; }
 .fitment-progress-item.active span { background: #ef4b54; box-shadow: 0 0 0 1px #ef4b54; }
 .fitment-progress-item.active::after { background: linear-gradient(90deg, #f09ba0 0 52%, #e5e5e5 52%); }
 .fitment-visual { position: relative; height: 172px; margin-top: 12px; overflow: hidden; background: linear-gradient(180deg, #fff, #f1f1f1); }
@@ -501,7 +501,7 @@
 .fitment-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 18px 16px; color: #656269; font-size: 12px; }
 .fitment-footer .primary-action { min-width: 175px; margin-top: 0; }
 .fitment-footer .primary-action:disabled { cursor: not-allowed; opacity: 0.45; }
-.back-action { padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent) !important; font-size: 12px; }
+.back-action { padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent-text) !important; font-size: 12px; }
 .tire-options { display: grid; gap: 10px; margin-top: 25px; }
 .tire-option { display: grid; grid-template-columns: 66px 1fr auto; align-items: center; gap: 15px; padding: 13px !important; border: 1px solid #353538 !important; border-radius: 3px !important; background: #101010 !important; color: #fff !important; text-align: left; }
 .tire-option:hover, .tire-option.selected { border-color: var(--accent) !important; background: var(--accent-bg) !important; transform: none; }
@@ -521,8 +521,10 @@
 .order-summary-line b { color: #f1f1f1; }
 .step-error { margin-top: 16px; color: #ff7077; font-size: 13px; }
 .success-message { margin-top: 16px; padding: 16px; border: 1px solid #3ca75b; background: rgba(60, 167, 91, 0.1); color: #71df8b; }
-.site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #2b2b2e; color: #737377; font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
-.site-footer button { padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent) !important; font-size: 11px; }
+.site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #2b2b2e; color: #858589; font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
+/* A text-only control, but a full-height one: it was 12px tall, which is not
+   a touch target for anyone, let alone at a roadside (#85). */
+.site-footer button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent-text) !important; font-size: 11px; }
 
 @media (max-width: 760px) {
   .customer-shell > .site-nav { flex-wrap: wrap; gap: 14px; }
@@ -600,7 +602,7 @@
 }
 
 .internal-nav .brand-word span {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .internal-nav-links {
@@ -670,7 +672,7 @@
 
 .btn-primary {
   border-color: var(--accent);
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
 }
 
@@ -678,14 +680,15 @@
   background: var(--accent-dark);
 }
 
+/* White on the old #3ca75b was 3.06:1; this green reads at 4.91:1 (#85). */
 .btn-approve {
-  border-color: #3ca75b;
-  background: #3ca75b;
+  border-color: #2b8044;
+  background: #2b8044;
   color: #fff;
 }
 
 .btn-approve:hover {
-  background: #2f8a49;
+  background: #237038;
 }
 
 .btn-reject {
@@ -748,6 +751,10 @@
   gap: 18px;
 }
 
+/* Contact links on a request card were browser-default blue on near-black,
+   2.13:1. Brand red text reads at 5:1 on the panel. */
+.owner-request a { color: var(--accent-text); }
+
 .owner-request {
   display: grid;
   gap: 12px;
@@ -794,7 +801,7 @@
 
 .owner-quote-total {
   margin: 2px 0 0;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 30px;
   font-weight: 800;
   letter-spacing: -0.01em;
@@ -1059,7 +1066,7 @@
    opposite Reject and the pairing is what carries the meaning there. */
 .btn-primary {
   border-color: var(--accent);
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
 }
 
@@ -1111,7 +1118,7 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--accent-text);
   font: inherit;
   font-size: 14px;
   cursor: pointer;
@@ -1174,7 +1181,7 @@
 }
 
 .confirmation-total {
-  color: var(--accent) !important;
+  color: var(--accent-text) !important;
   font-size: 28px !important;
   font-weight: 800;
 }
