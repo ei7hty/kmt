@@ -166,13 +166,13 @@ function Status({ navigate }) {
                         {/* The words of the decline email (t62 part F), so the page a
                             declined customer lands on is as kind as the mail that sent
                             them here. The colon and the reason appear together or not at
-                            all; nothing is invented for a reason Ken did not write, and his
-                            reason is rendered exactly as he typed it, the way the email
-                            renders it (a doubled full stop is fixed once for both surfaces,
-                            issue #302, not here). The resubmit line stays only when he
-                            said what to change. */}
+                            all; nothing is invented for a reason Ken did not write. His words
+                            are his; only the seam is formatted: a full stop he typed is
+                            dropped so it does not double the sentence's (the email still
+                            doubles it, and #302 moves this into one function both surfaces
+                            call). The resubmit line stays only when he said what to change. */}
                         <p className="status-note status-note-bad">
-                          I can&apos;t take this one on{quote.reason ? `: ${quote.reason}` : ''}. You haven&apos;t been charged. Text me at {SHOP_NUMBER} if you&apos;d like to talk it through.{quote.reason ? ' Please submit a new request.' : ''}
+                          I can&apos;t take this one on{quote.reason ? `: ${quote.reason.replace(/[.!?]+$/, '')}` : ''}. You haven&apos;t been charged. Text me at {SHOP_NUMBER} if you&apos;d like to talk it through.{quote.reason ? ' Please submit a new request.' : ''}
                         </p>
                         <div className="tire-empty-actions">
                           <a className="btn btn-primary" href={TEXT_HREF}>{TEXT_LABEL}</a>
