@@ -99,3 +99,12 @@ Ken buys tires at giga-tires.com's public listed price today. So the scraped pri
 
 **Rejected:** Treating the listed price as a dealer cost, or hiding the supplier's identity from customers as a substitute for a real cost basis.
 
+## 2026-09-06 -- Page-one coverage is the data definition of done; the deep pass is a separate decision
+The breadth-first walk reads one page per size, so 197 of the first 302 sizes are partial and `--complete` cannot be used on that file (the #51 guard refuses the whole import). The lead confirmed to the project manager that "stock data on all sizes" is met when every listed size shows real supplier tires with stock and price, imported without `--complete` (every tire lands, nothing is retired), and that reading the remaining 2681 pages is a second stage the user decides on with its four-to-seven-hour cost attached.
+
+**Rejected:** forcing `--complete` or finishing every listing before importing anything, which would delay real tires on every size by an evening to buy the retirement of rows nobody has evidence about.
+
+## 2026-09-06 -- The final sprint goes data, safety, domain, email, and the cutover does not wait on email
+Ordered so that the moment real customers arrive on the client's domain the app already refuses what it should (contact details on shared links, unthrottled endpoints, out-of-area requests, a root container) and something is watching it. Email is last because it depends on the sending domain's DNS, the rate limits and the cookie change, and on a provider account the client opens; the site is useful before it, with Ken reviewing on `/owner` and the customer watching `/status`. The lead recommends a subdomain of the client's domain rather than replacing the marketing site at the root; the user decides.
+
+**Rejected:** cutting over first and hardening after, which puts real personal data behind a shared link before the shape is fixed; and holding the domain for email, which ties the launch to DNS propagation and deliverability work that has its own clock.

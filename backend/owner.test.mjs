@@ -308,6 +308,60 @@ test('auth refuses to start without a usable password', () => {
   assert.equal(config.generatedSecret, true, 'a missing secret is generated rather than fatal')
 })
 
+test('a session lifetime that is not a positive number of hours refuses to boot', () => {
+  const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password' }
+  for (const bad of ['abc', '0', '-1', 'NaN', 'Infinity']) {
+    assert.throws(() => readAuthConfig({ ...env, KMT_SESSION_HOURS: bad }), /KMT_SESSION_HOURS must be a positive number/,
+      `KMT_SESSION_HOURS=${bad} must refuse`)
+  }
+  assert.equal(readAuthConfig(env).ttlMs, 12 * 3600_000, 'unset keeps the default of 12 hours')
+  assert.equal(readAuthConfig({ ...env, KMT_SESSION_HOURS: '' }).ttlMs, 12 * 3600_000, 'empty is unset')
+  assert.equal(readAuthConfig({ ...env, KMT_SESSION_HOURS: '6' }).ttlMs, 6 * 3600_000)
+  assert.equal(readAuthConfig({ ...env, KMT_SESSION_HOURS: '0.5' }).ttlMs, 30 * 60_000, 'fractions of an hour are hours too')
+})
+
+test('a malformed login body is refused with a JSON error, not a stack trace', async t => {
+  const auth = createAuth(readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'secret-one' }))
+  const logged = []
+  const { error: originalError } = console
+  console.error = (...args) => logged.push(args)
+  t.after(() => { console.error = originalError })
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (await auth.handle(request, response, url, readJsonBody)) return
+    response.writeHead(404).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+  const post = (body, headers = {}) => fetch(`${base}/api/owner/login`, { method: 'POST', headers, body })
+
+  // Measured on production: a body of "x" with no content type answered 500
+  // with a stack trace. Each refusal is the status the body reader assigns.
+  const noType = await post('x')
+  assert.equal(noType.status, 415)
+  assert.equal(noType.headers.get('content-type'), 'application/json')
+  const noTypeBody = await noType.text()
+  assert.deepEqual(JSON.parse(noTypeBody), { error: 'Expected JSON' })
+  assert.doesNotMatch(noTypeBody, /at .*\.mjs/, 'no stack frame reaches the response')
+
+  const malformed = await post('{not json', { 'content-type': 'application/json' })
+  assert.equal(malformed.status, 400)
+  assert.deepEqual(await malformed.json(), { error: 'Invalid JSON' })
+
+  const oversized = await post(JSON.stringify({ password: 'x'.repeat(40_000) }), { 'content-type': 'application/json' })
+  assert.equal(oversized.status, 413)
+  assert.deepEqual(await oversized.json(), { error: 'Request is too large' })
+
+  assert.deepEqual(logged, [], 'input errors are not logged as faults')
+
+  // And a well-formed body still gets the real answer.
+  const wrong = await post(JSON.stringify({ password: 'wrong-but-long-enough' }), { 'content-type': 'application/json' })
+  assert.equal(wrong.status, 401)
+  const right = await post(JSON.stringify({ password: 'a-long-enough-password' }), { 'content-type': 'application/json' })
+  assert.equal(right.status, 200)
+})
+
 test('sessions are signed, expire, and cannot be forged', async t => {
   const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'secret-one' }
   const auth = createAuth(readAuthConfig(env))
@@ -343,13 +397,23 @@ test('sessions are signed, expire, and cannot be forged', async t => {
   const tampered = token.replace(/=(.*)\./, `=${Buffer.from(String(Date.now() + 9e9)).toString('base64url')}.`)
   assert.equal((await fetch(`${base}/anything`, { headers: { cookie: tampered } })).status, 401)
 
-  // An expired session is refused even though its signature is valid.
-  const expired = createAuth(readAuthConfig({ ...env, KMT_SESSION_HOURS: '-1' }))
-  const stale = await fetch(`${base}/api/owner/login`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'a-long-enough-password' }),
-  })
-  assert.equal(stale.status, 200)
-  assert.equal(expired.isAuthenticated({ headers: { cookie: token }, socket: {} }), true, 'ttl affects issuing, not this token')
+  // An expired session is refused even though its signature is valid. A
+  // negative lifetime no longer boots, so this issues with a tiny positive
+  // one and waits it out. The lifetime affects issuing, not existing tokens:
+  // the long-lived one above is still good on this instance.
+  const brief = createAuth(readAuthConfig({ ...env, KMT_SESSION_HOURS: String(1 / 3600_000) }))
+  assert.equal(brief.isAuthenticated({ headers: { cookie: token }, socket: {} }), true, 'ttl affects issuing, not this token')
+  const sent = {}
+  await brief.handle(
+    { method: 'POST', headers: {}, socket: {} },
+    { writeHead: (status, headers) => { sent.status = status; sent.cookie = headers['Set-Cookie'] }, end: () => {} },
+    new URL('http://localhost/api/owner/login'),
+    async () => ({ password: 'a-long-enough-password' }),
+  )
+  assert.equal(sent.status, 200)
+  const staleToken = sent.cookie.split(';')[0]
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal((await fetch(`${base}/anything`, { headers: { cookie: staleToken } })).status, 401, 'a signed but expired cookie is refused')
 })
 
 test('the API origin check follows the request scheme', async t => {

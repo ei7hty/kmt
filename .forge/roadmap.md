@@ -301,3 +301,35 @@ reason it always is.
 - Scheduling: a confirmed time, not just a preferred date.
 - Photo of the tire or the sidewall on the request, for cases where the
   customer is not sure of the size.
+
+# Phase 5 -- Live on the client's own domain
+
+One milestone, m12, planned by the lead on 2026-09-06 on the user's
+instruction to plan the final sprint to live. The plan, the four gates, the
+assignment table by agent name and the inputs only the user can supply are in
+[`sprint-live.md`](sprint-live.md); `state.json` carries t42 to t56.
+
+## Why this sequence
+
+**Data first (t42, t43)**, because the user's stated priority is stock data on
+every size and the walk is already running. Page-one coverage is the
+definition of done; the deep pass is a separate decision with a cost.
+
+**Safe before public (t44 to t51)**, because the domain is the moment real
+customers arrive, and a shared status link that hands out a phone number, an
+unthrottled owner login or a container running as root are cheaper to fix
+the week before than the week after.
+
+**The domain (t52, t53, t54, t56)** as four commands and two DNS records in a
+written order, run by the user, with the gate proving the new name and a
+schedule watching it.
+
+**Email last (t37, t38)**, as m10 always had it: it needs the sending domain's
+records from t52, the rate limits from t45 and the cookie change from t47,
+and a provider account that is the client's to open. The cutover does not
+wait on it.
+
+## Later
+
+Unchanged from phase 4's list: real payments, refunds, scheduling, photos.
+After them, the items deferred from this sprint in `sprint-live.md`.

@@ -79,6 +79,13 @@
       "description": "Decided by the user on 2026-09-06 after the v1 baseline push and the scrutiny reports: supplier data must leave the public bundle (#61), invented tires must route to owner review rather than auto-quote (#62), and a job is quoted for the number of tires asked for, default four (#93). Three PRs in that order from the owner-screen lane; the gate gains a bundle check.",
       "status": "done",
       "order": 9
+    },
+    {
+      "id": "m12",
+      "title": "Live on the client's own domain",
+      "description": "The final sprint to live, decided by the user on 2026-09-06: stock data on every listed size (page-one coverage), the app made safe for real customers, the client's domain with certificate, monitoring and a rehearsed restore, then email (m10's t37 and t38) last. The plan, gates and assignment table by agent name are in .forge/sprint-live.md. The owner approval gate is untouched throughout.",
+      "status": "planned",
+      "order": 11
     }
   ],
   "tasks": [
@@ -695,9 +702,11 @@
       "dependsOn": [
         "t36"
       ],
-      "notes": [],
+      "notes": [
+        "Stage 4 of the final sprint (.forge/sprint-live.md): preconditions t45 and t47, and the sending-domain records from t52; staffing is the user's decision. The domain cutover (t56) does not wait on it."
+      ],
       "createdAt": "2026-09-05T21:52:40.692Z",
-      "updatedAt": "2026-09-05T23:36:35.812Z"
+      "updatedAt": "2026-09-06T05:59:55.546Z"
     },
     {
       "id": "t38",
@@ -709,9 +718,11 @@
       "dependsOn": [
         "t37"
       ],
-      "notes": [],
+      "notes": [
+        "Stage 4 of the final sprint (.forge/sprint-live.md): preconditions t45 and t47, and the sending-domain records from t52; staffing is the user's decision. The domain cutover (t56) does not wait on it."
+      ],
       "createdAt": "2026-09-05T21:52:40.692Z",
-      "updatedAt": "2026-09-05T23:36:35.812Z"
+      "updatedAt": "2026-09-06T05:59:55.546Z"
     },
     {
       "id": "t39",
@@ -758,8 +769,215 @@
       ],
       "createdAt": "2026-09-06T03:37:19.565Z",
       "updatedAt": "2026-09-06T04:42:09.431Z"
+    },
+    {
+      "id": "t42",
+      "title": "The walk reads page one of every size the supplier lists",
+      "description": "Breadth-first, one page per size, with #81 (empty versus block) fixed before the 19-24 and 12-14 inch bands, under the five approved rules; output stays outside the repository. Owner: DB ADMIN local_31eab57d, inside the user's optimise instruction.",
+      "milestoneId": "m12",
+      "status": "in_progress",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t43",
+      "title": "Stage-1 import and read-only verification of the live catalog",
+      "description": "The breadth file imported without --complete by the user; /api/catalog row count, five per-band size samples, no supplier fields, deployed-site check green. Gate 1. Owner: the user runs it; DB ADMIN prepares; QA ENGINEER verifies.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t42"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t44",
+      "title": "Customer-facing request shape without contact details (#65)",
+      "description": "get() and listForCustomer() drop customerName, customerEmail, customerPhone and locationNotes; listForOwner keeps the full row; a test per shape. Owner: LEAD BACKEND DEV.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t45",
+      "title": "Rate limits on public endpoints, login throttling, logout invalidation (#63, #66, #98)",
+      "description": "Per-IP and per-key limits on submit, pay and cancel; owner login throttled; logout invalidates the session; body-size and address validation; tests, with the gate audits staying under the limits. Owner: LEAD BACKEND DEV.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t44"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t46",
+      "title": "Security headers and the env-driven canonical host (#67, app half of #102)",
+      "description": "Headers on every response, HSTS only over HTTPS; when KMT_CANONICAL_HOST is set every other host gets a 301 to it, /api/health exempt. Owner: LEAD BACKEND DEV; DEVSCOPS/AUDITOR reads.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t45"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t47",
+      "title": "Owner cookie SameSite=Lax and the /owner/quotes?request= deep link (#89)",
+      "description": "Cookie half with a test; deep link opens the request card. Precondition of t37. Owner: LEAD BACKEND DEV (cookie), LEAD UI ENGINEER (deep link).",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t44"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t48",
+      "title": "Service area at submit, date and ZIP validation (#95, #70)",
+      "description": "Configured ZIP allow-list or radius refused with a clear message and the phone number; date today or later; ZIP five digits. Waits on the user for the area. Owner: LEAD BACKEND DEV (validation), LEAD UI ENGINEER (message).",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t45"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t49",
+      "title": "Production copy, sign-out, contrast, not-found (#72, #96, #85, #76)",
+      "description": "Page title, stale owner-screen strings, formatted phone, a sign-out control, AA contrast at 375, unknown paths render not-found. Owner: LEAD UI ENGINEER, after #126.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t50",
+      "title": "Privacy notice page and link (#100)",
+      "description": "/privacy with what is collected, why, retention (R27 stated as policy), who sees it, how to ask for deletion; linked under the email field and in the footer. Text drafted by the lead, approved by the user or Ken before merge. Owner: LEAD UI ENGINEER.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t49"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t51",
+      "title": "Container as non-root, .dockerignore excludes secrets (#87, #68)",
+      "description": "USER node with Chromium still launching under Xvfb; secrets/, .worktrees/, data/ and walk output ignored. Owner: DEV OPS/INFRASTRUCTURE after #123; DEVSCOPS/AUDITOR reads.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t52",
+      "title": "Domain cutover runbook: DNS, certificate, allowed hosts, canonical flip, rollback (#102)",
+      "description": "docs/operations.md: the steps in order, how each is verified, the rollback; plus the sending subdomain records (SPF, DKIM, DMARC) for stage 4. The user executes every flyctl and registrar step. Owner: DEV OPS/INFRASTRUCTURE writes; the user executes.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t46"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t53",
+      "title": "Workflow on the public URL variable, domain checks, docs-only merges skip deploy, scheduled uptime check (#103, #101)",
+      "description": "One repository variable for the URL; three new deployed-site checks (canonical 200, kmt.fly.dev 301, /api/health 200) with EXPECTED_CHECKS moved in the same commit; docs-only merges do not redeploy; a ten-minute schedule reads /api/health and fails loudly. Owner: KMT-F REPO AGENT (workflow); QA ENGINEER or DEV OPS (check script).",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t46"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t54",
+      "title": "Operations runbook: backups, restore drill, rotation, incidents (#99, #80)",
+      "description": "Fly snapshot retention, a monthly off-Fly copy, a restore exercised once and recorded, rotation of the owner password and session secret, incident steps. Owner: DEV OPS/INFRASTRUCTURE writes; the user runs the drill.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t51"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t55",
+      "title": "Gate coverage: #79 flake, #113 quantity audit, #78 cancel audit",
+      "description": "Wait for the chip instead of a sleep; an audit step that picks quantity 2 and checks set price and total; cancel through an in-page confirm; counts bumped where they move. #79 waits on the user's word. Owner: QA ENGINEER once reopened in the repository.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
+    },
+    {
+      "id": "t56",
+      "title": "Cutover and live test on the domain",
+      "description": "The user runs t52; QA ENGINEER drives the customer side on an emulated phone against the domain with a TEST request; the user drives the owner side; DEVSCOPS/AUDITOR reads the domain before and after. Recorded step by step in HANDOFF.md. Gate 3. Owner: the user, QA ENGINEER, DEVSCOPS/AUDITOR; the PM runs the checklist.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t52",
+        "t53",
+        "t54",
+        "t47",
+        "t48",
+        "t49",
+        "t50",
+        "t51"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T05:59:55.546Z",
+      "updatedAt": "2026-09-06T05:59:55.546Z"
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-06T04:42:09.431Z"
+  "updatedAt": "2026-09-06T05:59:55.546Z"
 }
