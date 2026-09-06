@@ -20,7 +20,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { createBrowserFetcher } from './browser-fetch.mjs'
+import { createBrowserFetcher, RateLimitedError } from './browser-fetch.mjs'
 import { canonicalSize, fetchSizePage, parseListingPage, parseSize } from './giga-tires.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -45,7 +45,13 @@ Options:
   --limit N          Keep the N cheapest in-stock tires per size (default 8).
                      Use 0 to keep everything found.
   --pages N          Listing pages to read per size, 10 tires each (default 1).
-  --delay MS         Pause between requests (default 1500).
+  --delay MS         Pause between pages within one size (default 1500).
+  --min-interval MS  Minimum time between one size's request and the next,
+                     regardless of outcome -- empty, full or error alike
+                     (default 10000). See docs/supplier-refresh.md for why
+                     this exists: an empty result used to take long enough
+                     that it paced requests by accident, and does not
+                     anymore.
   --out PATH         Snapshot path (default src/data/scraped-tires.json).
   --dry-run          Print the report, write nothing.
   --replace          Drop sizes this run did not cover. Off by default: a run
@@ -69,6 +75,7 @@ function parseArgs(argv) {
     limit: 8,
     pages: 1,
     delay: 1500,
+    minInterval: 10000,
     out: DEFAULT_OUT,
     dryRun: false,
     replace: false,
@@ -90,6 +97,7 @@ function parseArgs(argv) {
     else if (arg === '--limit') options.limit = Number(value())
     else if (arg === '--pages') options.pages = Number(value())
     else if (arg === '--delay') options.delay = Number(value())
+    else if (arg === '--min-interval') options.minInterval = Number(value())
     else if (arg === '--out') options.out = path.resolve(ROOT, value())
     else if (arg.startsWith('-')) throw new Error(`Unknown option: ${arg}`)
     else options.sizes.push(arg)
@@ -244,6 +252,67 @@ function reportDiff(diff, hadPrevious) {
   }
 }
 
+/**
+ * Walk every size, pacing requests so the rate does not depend on outcome.
+ *
+ * Before #129, an empty size took ~20s to conclude -- accidentally pacing
+ * requests as a side effect of a slow failure. #129 made empty and full
+ * alike resolve in ~1.7s, which is faster and more honest, and also removed
+ * that accidental pacing on exactly the runs that are mostly empty. This is
+ * the explicit replacement: at least `options.minInterval` between the
+ * start of one size's request and the next, measured regardless of whether
+ * that size turned out empty, full, or failed, so a fast path can never
+ * shrink the gap back down. See docs/supplier-refresh.md.
+ *
+ * A 429 is not a per-size failure. It is the supplier saying the rate is
+ * too high, and the runbook's rule is to stop the whole run rather than
+ * retry, back off and continue, or route around it -- so it breaks the loop
+ * immediately rather than joining `failures`.
+ */
+export async function scrapeAll(sizes, options, fetcher) {
+  const tires = []
+  const failures = []
+  const coverage = {}
+  const scrapedAt = new Date().toISOString()
+  let totalSkipped = 0
+  let stoppedOnRateLimit = null
+  let lastStart = 0
+
+  for (const [index, size] of sizes.entries()) {
+    if (index > 0) {
+      const wait = options.minInterval - (Date.now() - lastStart)
+      if (wait > 0) await sleep(wait)
+    }
+    lastStart = Date.now()
+
+    try {
+      const result = await scrapeSize(size, options, fetcher)
+      coverage[size] = sizeCoverage({ limit: options.limit, pagesRead: result.pagesRead, totalPages: result.totalPages, scrapedAt })
+      const kept = rank(result.rows, options.limit)
+      tires.push(...kept)
+      totalSkipped += result.skipped.length
+
+      const cheapest = kept.length ? money(Math.min(...kept.map(tire => tire.price))) : 'n/a'
+      const outOfStock = kept.filter(tire => !tire.inStock).length
+      console.log(
+        `  ${size.padEnd(12)} ${String(result.rows.length).padStart(3)} found` +
+        ` -> ${String(kept.length).padStart(2)} kept, from ${cheapest}` +
+        (outOfStock ? `, ${outOfStock} out of stock` : '') +
+        (coverage[size].complete ? ', complete' : `, partial (page ${result.pagesRead} of ${result.totalPages}${options.limit ? `, limit ${options.limit}` : ''})`)
+      )
+    } catch (error) {
+      if (error instanceof RateLimitedError) {
+        stoppedOnRateLimit = { size, retryAfter: error.retryAfter }
+        break
+      }
+      failures.push({ size, message: error.message })
+      console.log(`  ${size.padEnd(12)} FAILED: ${error.message}`)
+    }
+  }
+
+  return { tires, failures, coverage, totalSkipped, scrapedAt, stoppedOnRateLimit }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
 
@@ -268,7 +337,10 @@ async function main() {
   sizes = [...new Set(sizes.map(canonicalSize))]
 
   console.log(`Reading ${sizes.length} size${sizes.length === 1 ? '' : 's'} from giga-tires.com`)
-  console.log(`${options.pages} page(s) each, keeping ${options.limit || 'all'} per size, ${options.delay}ms between requests`)
+  console.log(
+    `${options.pages} page(s) each, keeping ${options.limit || 'all'} per size, ` +
+    `${options.delay}ms between pages, ${options.minInterval}ms between sizes`
+  )
   console.log(options.plainFetch ? 'Using plain HTTP.\n' : 'Opening a browser window.\n')
 
   const browser = options.plainFetch
@@ -278,37 +350,21 @@ async function main() {
     ? (size, page) => browser.fetchSizePage(size, page)
     : (size, page) => fetchSizePage(size, page, { userAgent: USER_AGENT })
 
-  const tires = []
-  const failures = []
-  const coverage = {}
-  const scrapedAt = new Date().toISOString()
-  let totalSkipped = 0
-
+  let result
   try {
-    for (const [index, size] of sizes.entries()) {
-      if (index > 0) await sleep(options.delay)
-      try {
-        const result = await scrapeSize(size, options, fetcher)
-        coverage[size] = sizeCoverage({ limit: options.limit, pagesRead: result.pagesRead, totalPages: result.totalPages, scrapedAt })
-        const kept = rank(result.rows, options.limit)
-        tires.push(...kept)
-        totalSkipped += result.skipped.length
-
-        const cheapest = kept.length ? money(Math.min(...kept.map(tire => tire.price))) : 'n/a'
-        const outOfStock = kept.filter(tire => !tire.inStock).length
-        console.log(
-          `  ${size.padEnd(12)} ${String(result.rows.length).padStart(3)} found` +
-          ` -> ${String(kept.length).padStart(2)} kept, from ${cheapest}` +
-          (outOfStock ? `, ${outOfStock} out of stock` : '') +
-          (coverage[size].complete ? ', complete' : `, partial (page ${result.pagesRead} of ${result.totalPages}${options.limit ? `, limit ${options.limit}` : ''})`)
-        )
-      } catch (error) {
-        failures.push({ size, message: error.message })
-        console.log(`  ${size.padEnd(12)} FAILED: ${error.message}`)
-      }
-    }
+    result = await scrapeAll(sizes, options, fetcher)
   } finally {
     if (browser) await browser.close()
+  }
+  const { tires, failures, coverage, totalSkipped, scrapedAt, stoppedOnRateLimit } = result
+
+  if (stoppedOnRateLimit) {
+    const { size, retryAfter } = stoppedOnRateLimit
+    console.error(
+      `\n429 from the supplier at ${size}${retryAfter ? ` (Retry-After: ${retryAfter})` : ''}. ` +
+      'Stopped -- a 429 is a stop, not a backoff. See docs/supplier-refresh.md.'
+    )
+    process.exitCode = 1
   }
 
   // Zero tires is not the same claim as zero progress: a run of genuinely
@@ -340,6 +396,10 @@ async function main() {
   console.log(`${completeSizes} of ${snapshot.sizes.length} size(s) read completely; only those can be imported with --complete.`)
   if (totalSkipped) console.log(`${totalSkipped} card(s) skipped for having no price.`)
   if (failures.length) console.log(`${failures.length} size(s) failed.`)
+  if (stoppedOnRateLimit) {
+    const unattempted = sizes.length - Object.keys(coverage).length
+    console.log(`${unattempted} size(s) never attempted -- stopped on the 429 before reaching them.`)
+  }
 
   if (options.dryRun) {
     console.log('\n--dry-run: nothing written.')
