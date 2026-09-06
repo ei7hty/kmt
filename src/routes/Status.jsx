@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { cancelRequest, myRequests, payRequest, requestById } from '../store'
 import { useNoIndex } from '../noindex.js'
 import { PrivacyFooter } from './Privacy.jsx'
-import { TEXT_HREF, TEXT_LABEL } from '../contact.js'
+import { SHOP_NUMBER, TEXT_HREF, TEXT_LABEL } from '../contact.js'
 
 /**
  * What the customer sees after asking for a quote.
@@ -151,13 +151,28 @@ function Status({ navigate }) {
                         <div><p className="text-secondary">Your quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div>
                         <span className="owner-quote-status">{STATUS_LABEL[quote.status] ?? quote.status}</span>
                       </div>
-                      {quote.status === 'draft' && <p className="status-note status-note-wait">This quote is awaiting owner review.</p>}
+                      {/* Ken's own promise while he looks it over (sprint item 4): a
+                          range, never a time, and the way to reach him at hour zero. */}
+                      {quote.status === 'draft' && <div className="status-outcome">
+                        <p className="status-note status-note-wait">I answer most requests within a few hours on working days. If you need it today, text me at {SHOP_NUMBER}.</p>
+                        <div className="tire-empty-actions">
+                          <a className="btn btn-primary" href={TEXT_HREF}>{TEXT_LABEL}</a>
+                        </div>
+                      </div>}
                       {(quote.status === 'sent' || quote.status === 'approved') && <div className="owner-actions"><button onClick={() => pay(request.id)} className="btn btn-primary" disabled={busyId === request.id}>{busyId === request.id ? 'Paying…' : `Pay $${quote.total.toFixed(2)}`}</button></div>}
                       {quote.status === 'paid' && <div className="status-paid"><p className="status-note status-note-ok">Payment received. Your service is confirmed.</p><button className="link-action" onClick={() => navigate(`/confirmation?request=${encodeURIComponent(request.id)}`)}>View confirmation →</button></div>}
                       {quote.status === 'done' && <div className="status-paid"><p className="status-note status-note-ok">Fitted. Thanks for choosing KMT.</p><button className="link-action" onClick={() => navigate(`/confirmation?request=${encodeURIComponent(request.id)}`)}>View confirmation →</button></div>}
                       {quote.status === 'rejected' && <div className="status-outcome">
+                        {/* The words of the decline email (t62 part F), so the page a
+                            declined customer lands on is as kind as the mail that sent
+                            them here. The colon and the reason appear together or not at
+                            all; nothing is invented for a reason Ken did not write. His words
+                            are his; only the seam is formatted: a full stop he typed is
+                            dropped so it does not double the sentence's (the email still
+                            doubles it, and #302 moves this into one function both surfaces
+                            call). The resubmit line stays only when he said what to change. */}
                         <p className="status-note status-note-bad">
-                          This quote was declined.{quote.reason ? ` ${quote.reason}` : ''} Please submit a new request.
+                          I can&apos;t take this one on{quote.reason ? `: ${quote.reason.replace(/[.!?]+$/, '')}` : ''}. You haven&apos;t been charged. Text me at {SHOP_NUMBER} if you&apos;d like to talk it through.{quote.reason ? ' Please submit a new request.' : ''}
                         </p>
                         <div className="tire-empty-actions">
                           <a className="btn btn-primary" href={TEXT_HREF}>{TEXT_LABEL}</a>

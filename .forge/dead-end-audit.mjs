@@ -424,7 +424,7 @@ async function main() {
       await page.click('button:has-text("My Quote")');
       await page.waitForURL('**/status');
     await waitForStatus(page);
-      const rejectedMsgVisible = await page.locator('text=This quote was declined').isVisible().catch(() => false);
+      const rejectedMsgVisible = await page.locator("text=I can't take this one on").isVisible().catch(() => false);
       const reasonReachedCustomer = await page.locator('text=That size is back-ordered until next month').isVisible().catch(() => false);
       if (rejectedMsgVisible && reasonReachedCustomer) {
         ok('/status: declined quote shows a clear message explaining the outcome, including the reason Ken typed.');
