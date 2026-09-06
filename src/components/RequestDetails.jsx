@@ -34,6 +34,7 @@ export function ServiceDetails({ formData, onChange, errors }) {
     <div className="contact-fields"><h5 id="contact-heading">Where do we send your quote?</h5>
       <div><label htmlFor="customerName">Name</label><input id="customerName" name="customerName" autoComplete="name" value={formData.customerName || ''} onChange={onChange} placeholder="Your name" aria-invalid={!!errors.customerName} aria-describedby="customerName-help" /><p id="customerName-help" className="detail-help">{errors.customerName || ''}</p></div>
       <div><label htmlFor="customerEmail">Email</label><input id="customerEmail" name="customerEmail" type="email" autoComplete="email" value={formData.customerEmail || ''} onChange={onChange} placeholder="you@example.com" aria-invalid={!!errors.customerEmail} aria-describedby="customerEmail-help" /><p id="customerEmail-help" className="detail-help">{errors.customerEmail || 'The quote is sent to this address.'}</p></div>
+      <p className="detail-help detail-footnote">Your details go to Ken and nobody else. <a href="/privacy" target="_blank" rel="noopener">How KMT handles them</a></p>
       <div><label htmlFor="customerPhone">Mobile <span className="optional">optional</span></label><input id="customerPhone" name="customerPhone" type="tel" autoComplete="tel" value={formData.customerPhone || ''} onChange={onChange} placeholder="(617) 555-0100" /></div>
     </div>
   </section>

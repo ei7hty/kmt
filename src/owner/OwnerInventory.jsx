@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import './OwnerInventory.css'
 import SignIn from './SignIn.jsx'
 import { signOut } from './session.js'
+import { PrivacyFooter } from '../routes/Privacy.jsx'
 
 const dollars = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const dateLabel = value => value ? new Date(value).toLocaleString() : 'Never refreshed'
@@ -404,5 +405,6 @@ export default function OwnerInventory({ navigate }) {
       </div>
       {data && data.total > data.pageSize && <nav className="oi-pagination" aria-label="Inventory pages"><button className="oi-button" disabled={data.page <= 1 || loading} onClick={() => setPage(data.page - 1)}>← Previous</button><span>Page {data.page} of {Math.ceil(data.total / data.pageSize)}</span><button className="oi-button" disabled={data.page * data.pageSize >= data.total || loading} onClick={() => setPage(data.page + 1)}>Next →</button></nav>}
     </main>
+    <PrivacyFooter navigate={navigate} />
   </div>
 }
