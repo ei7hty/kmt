@@ -34,38 +34,41 @@ exist.
 
 ## What a removal request does: redaction, not deletion
 
-A customer's removal request is honoured by **redacting the contact
-fields** -- name, email, phone -- while the quote record stays intact:
-its line items, total, status, version, and timestamps are untouched. The
-ledger stays true; the way to reach that customer does not.
+A customer's removal request is honoured by **redacting name, email,
+phone, the service address (`location`), and the access notes
+(`locationNotes`)** -- while the quote record stays intact: its line
+items, total, status, version, and timestamps are untouched. The ledger
+stays true; the way to reach that customer, and where they were found,
+does not.
 
-**Open question, not yet resolved: does "contact fields" include the
-service address (`location`)?** The field list this section currently
-implements is name, email, phone -- `locationNotes` is grouped with them
-because it can carry personal detail incidentally (a gate code, a
-description of the customer's car), but the address line itself
-(`location`: street, city, state) is not currently redacted. That is worth
-naming here rather than deciding by omission: a street address, usually a
-home, is the strongest identifier in the row -- stronger than the notes
-field beside it that *did* make the list. The business record that has to
-survive is what was sold and for how much, not necessarily where the truck
-went; if the address is needed as a business record at all, the ZIP (stored
-separately from the free-text address) may be the right coarser form to
-keep. This is a policy call, not an implementation one, and is with the
-lead for a ruling. **Until it is resolved, do not describe removal to a
-customer as covering their address.**
+The address is in scope deliberately, not by the same omission that
+almost left it out: a street address, usually a home, is the strongest
+identifier in the row, and leaving it in place after "removing" a
+customer's details would make the promise thinner than it sounds. What
+stays instead is `serviceZip` -- service-area evidence without the
+doorstep -- plus the vehicle, the tire, the quantity, and the quote's own
+lines, total, status, versions and dates. The vehicle stays on purpose:
+"a set of four for a 2019 F-150 at $X" is what was sold, weakly
+identifying on its own, and the detail Ken needs if the same customer
+calls back. This wording matches the privacy notice (t50) exactly --
+"your name, contact details and address" -- so the public promise and
+this policy say the same thing, in the same words.
 
 ## What redaction does not touch, and why
 
-- **`quotes.status`, `.version`, `.total`, `.lineItems`, both timestamps.**
-  A removal request is about how to reach the customer, not about what was
-  sold. Rewriting any of these would make the ledger this policy exists to
-  protect unreliable.
+- **`requests.serviceZip`, `.vehicleInfo`, `.tireSelection`, `.quantity`,
+  and `quotes.status`, `.version`, `.total`, `.lineItems`, both
+  timestamps.** A removal request is about how to reach the customer and
+  where they were found, not about what was sold. Rewriting any of these
+  would make the ledger this policy exists to protect unreliable -- see
+  "What is kept, and why" above for what that ledger is for.
 - **`requests.customer_key`.** This is an opaque per-browser token, not
-  contact information -- it is what lets that browser find its own request
-  again at `/status`. Redacting contact fields and revoking a device's
-  access to its own history are two different asks; a removal request is
-  the first one, not the second, and conflating them would take away
+  contact information. **Redacting contact information and revoking device
+  access are two different asks, and only one was made.** That key is what
+  lets the customer's own device still see its history at `/status`; the
+  instinct on a removal request is to scrub everything that looks like an
+  identifier, and someone will eventually propose clearing this one too as
+  a tidiness improvement. It stays, because clearing it would take away
   something nobody asked to lose.
 - **A row that was never given these fields** (any request submitted before
   contact fields existed, pre-#53). Redacting an already-absent field is
@@ -75,16 +78,21 @@ customer as covering their address.**
 
 ## The mechanism, for whoever implements it
 
-Not a schema change, and not `migrate()`'s concern. The contact fields live
-inside `requests.payload`, a JSON blob in a column that already exists --
-redaction is `UPDATE requests SET payload=?, updated_at=? WHERE id=?` with
-the parsed JSON's `customerName`/`customerEmail`/`customerPhone` overwritten
-to a redacted marker (not deleted from the object entirely, so a reader
-can tell "this was redacted" apart from "this was never collected").
-Belongs as a method on `Quotes`, next to `shapeRow` which is the one place
-a stored row becomes an API shape. It should be **idempotent**: redacting
-an already-redacted row is a no-op, not an error, since "was this one
-already handled" should not need its own bookkeeping.
+Not a schema change, and not `migrate()`'s concern. The redacted fields
+live inside `requests.payload`, a JSON blob in a column that already
+exists -- redaction is `UPDATE requests SET payload=?, updated_at=? WHERE
+id=?` with the parsed JSON's `customerName`/`customerEmail`/
+`customerPhone`/`location`/`locationNotes` overwritten to a redacted
+marker (not deleted from the object entirely, so a reader can tell "this
+was redacted" apart from "this was never collected"). Belongs as a method
+on `Quotes`, next to `shapeRow` which is the one place a stored row
+becomes an API shape.
+
+It should be **idempotent: redacting an already-redacted row is a no-op,
+not an error.** Without that, "has this request already been handled"
+would need its own tracking separate from the row itself; the answer
+should be readable off the row by re-running the same operation, not kept
+in a second place that can drift from what the row actually says.
 
 ## What a migration must preserve
 
