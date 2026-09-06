@@ -736,14 +736,35 @@ point this procedure is the thing being replaced, not a reference for it.
 costs seconds, and it is the difference between one problem and two if a typed
 `WHERE` clause is wrong. See "Taking a snapshot by hand," above.
 
-**`requests`, `quotes`, `outbox` and `inquiries` are all live tables today**
-(#157 and #205 merged, #206 wired `mail.mjs` to write outbox rows on submit,
-on quote-sent, and on payment -- the outbox is not empty the way it was when
-this section was first written). Everything below applies to all four; there
-is no longer a "check which blocks apply" step. If a future schema change
-ever drops one of these tables, a query against it fails loudly with
-`no such table` rather than silently skipping -- that failure is correct,
-not a sign this procedure is out of date.
+**`requests`, `quotes` and `outbox` are live tables today** (#157 and #205
+merged, #206 wired `mail.mjs` to write outbox rows on submit, on quote-sent,
+and on payment -- the outbox is not empty the way it was when this section was
+first written). Everything below applies to those three unconditionally.
+
+**`inquiries` is not one of them yet, whatever the rest of this document
+implies.** The module and its tests are on main, but nothing imports them:
+
+```bash
+grep -n "Inquiries" backend/server.mjs backend/dev.mjs backend/api.mjs
+```
+
+returns nothing today, so the table is never created and every command below
+that names `inquiries` answers `no such table` until t65 wires it up. Read
+that as this line being accurate, not as a broken database -- and note there
+is nothing to redact there either, because with no table there is nowhere for
+an inquiry to have been stored. Run the grep before you believe either way;
+a command that finds nothing looks identical to a command that did not run,
+so satisfy yourself it works by grepping `Quotes` the same way first, which
+must return lines.
+
+**When t65 lands, this paragraph is what needs deleting**: move `inquiries`
+back into the sentence above and remove this exception in the same pull
+request that wires the module up. A correction that outlives the thing it
+corrected is the failure this paragraph exists to fix.
+
+If a future schema change ever drops one of these tables, a query against it
+fails loudly with `no such table` rather than silently skipping -- that
+failure is correct, not a sign this procedure is out of date.
 
 ### 1. Find what you have
 
