@@ -9,6 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
+| owner-portal-analyst-role | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/roles/owner-portal-analyst.md (docs only) | 2026-09-06 |
 | m13-inventory-summary | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md (docs only) | 2026-09-06 |
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
 | workflow-t53 | KMT-F REPO AGENT- TEMP LEAD (repo agent) | .github/workflows/fly-deploy.yml, .github/workflows/health-monitor.yml, README.md (lint line) | 2026-09-06 |
