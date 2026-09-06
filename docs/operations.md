@@ -658,6 +658,19 @@ against `inquiries` directly, once it exists.
 
 ### 2. Redact exactly what `docs/data-policy.md` promises -- no more, no less
 
+**This is a deliberate, authorised exception to R27 ("nothing is deleted"),
+not a violation of it -- read closely, they say different things.** R27
+governs the *row*: a request or quote is never deleted, through every state
+including cancelled, and this procedure does not delete one either. What it
+blanks is a handful of columns inside a row that stays. `docs/data-policy.md`
+draws exactly this line -- "redaction, not deletion" -- and its own header
+says the policy behind it was decided by the lead under the user's standing
+direction, with the user holding veto; `/privacy` making this promise in
+production is that authorisation already exercised, not something this
+procedure grants itself. If a future reader still sees a contradiction
+between R27 and this section, that reading is worth a ruling from the PM or
+the lead rather than either DB ADMIN or DEV OPS deciding it in a doc.
+
 **What gets blanked:** `requests.payload`'s `customerName`, `customerEmail`,
 `customerPhone`, `location` and `locationNotes`; `outbox`'s `to_address`,
 `to_name`, and inside its `data` the same personal keys
@@ -714,37 +727,75 @@ Read the row back -- the same `SELECT`s as step 1 -- and confirm the five
 fields now read `[redacted]` and nothing else moved: the quote's status, the
 outbox row's `type`, the inquiry's `vehicle_info`, all unchanged.
 
+**Then check the customer's own access paths, not only the table.** The
+request is reachable by its 128-bit id at `GET /api/requests/<request-id>`
+and by the per-browser key at `/status` -- a row whose columns are blanked in
+`sqlite3` but which still answers with the old name over the API has not been
+removed from the one point of view that actually matters. If you have the id:
+
+```bash
+curl -s https://kensmobiletire.com/api/requests/<request-id>
+```
+
+The shaped response must no longer carry the real name, email, phone or
+location. Checking the table alone would not have caught a redaction that
+missed the row the public API actually reads.
+
 Then pull a copy off the machine (the same `.backup` and `sftp get` as "The
 monthly copy that leaves Fly," above) and run the read-only checker against
-it, from your own machine:
+it, from your own machine, the same way "Prove the file is sound" above does:
 
 ```bash
 node .forge/restore-integrity-check.mjs /path/to/owner-backup.sqlite
 ```
 
-A hand-edited database is exactly the case `integrity_check` and
-`foreign_key_check` exist for -- a typo in a `WHERE` clause, a quoted value
-that did not close the way it looked like it would, or a request whose
-`outbox` rows were missed is a mistake this catches, not one it prevents.
-Expect **SOUND** if `outbox` and `inquiries` both already exist; expect
-**OLDER SCHEMA** rather than **NOT SOUND** if only one of them does yet --
-that is the checker correctly saying the file predates a table, not that
-this procedure broke anything. Delete the local copy once you have read the
-result, the same as after any other backup.
+A hand-edited database is exactly the case that checker exists for -- a typo
+in a `WHERE` clause, a quoted value that did not close the way it looked like
+it would, or a request whose `outbox` rows were missed is a mistake it
+catches, not one it prevents. Read its own output for what passed; a database
+that predates the `outbox` or `inquiries` tables reads as such on its own
+terms and is not evidence this procedure went wrong. Delete the local copy
+once you have read the result, the same as after any other backup.
 
-### What this does not reach
+### What "removed" actually means here
 
-**Mail already sent.** Once `mail.mjs` exists and a message has actually left
-for the customer's own inbox, this procedure can redact KMT's record of having
-sent it -- it cannot recall the message itself. Say so on the call if it comes
-up; it is the honest boundary, not a gap in this procedure.
+**Blanking a column does not erase the old bytes from the file.** SQLite
+writes the new value elsewhere on disk and leaves the previous one in
+freelist pages until something reuses them; the WAL holds the prior version
+too, until it is checkpointed. Your `UPDATE` reporting success means the app
+can no longer reach the name and address through any query -- it does not
+mean those bytes are gone from `/data/owner.sqlite`. If someone asks precisely
+what "removed" means, the honest answer is **no longer reachable by the app,
+today** -- not **erased from the file, today**.
 
-**A snapshot or off-Fly copy taken before this was run.** It holds the
-original values until it ages out on its own schedule -- five days for a Fly
-snapshot, whenever it is next replaced for a monthly copy someone kept
-encrypted. This procedure reaches the live table; it does not reach back into
-history to redact a version of the file that already existed before the call
-came in.
+**`VACUUM` is what actually reclaims those pages**, rewriting the database
+without them. It is not part of this procedure by default, because it is not
+free: it needs roughly the size of the database again in free space, holds an
+exclusive lock for the duration, and on a live file that duration is real
+time, not instant. Whether it is worth running right after a removal, or
+batched for a quiet moment, is a judgement call -- but it is the tool for
+"gone from the file," and this procedure does not reach that state on its
+own.
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"VACUUM;\""
+```
+
+**And every snapshot or off-Fly copy taken before this was run still holds
+the original bytes, in full**, until it ages out on its own schedule -- five
+days for a Fly snapshot, whenever it is next replaced for a monthly copy
+someone kept encrypted. Neither an `UPDATE` nor a `VACUUM` against the live
+volume reaches back into a copy that already existed before the call came in.
+
+**Mail already sent** is the fourth boundary. Once `mail.mjs` exists and a
+message has actually left for the customer's own inbox, this procedure can
+redact KMT's record of having sent it -- it cannot recall the message itself.
+
+Say all of this on the call if it comes up, in the terms above: reachable
+today, gone from the file only after a `VACUUM`, and out of every backup only
+once each ages out on its own schedule. That is the honest shape of the
+promise `/privacy` makes, not a weaker one than it sounds, but not a stronger
+one either.
 
 ## When it breaks
 
