@@ -907,6 +907,36 @@ test('rejecting moves a draft the same way', async t => {
   assert.equal(quotes.get(request.id).quote.status, 'rejected')
 })
 
+test('a rejection carries the owner\'s reason when he wrote one -- optional means optional', async t => {
+  const { quotes } = setup(t)
+  const withReason = quotes.submit(form())
+  const rejected = quotes.decide(withReason.request.id, 'rejected', withReason.quote.version, '  Out of stock by the time I checked  ')
+  assert.equal(rejected.quote.reason, 'Out of stock by the time I checked', 'trimmed, same as cancel\'s reason')
+  assert.equal(quotes.get(withReason.request.id, 'owner').quote.reason, 'Out of stock by the time I checked')
+
+  const blank = quotes.submit(form())
+  const rejectedBlank = quotes.decide(blank.request.id, 'rejected', blank.quote.version, '   ')
+  assert.equal(rejectedBlank.quote.reason, null, 'blank is Ken saying nothing, never a guessed sentence')
+
+  const noReason = quotes.submit(form())
+  const rejectedNoReason = quotes.decide(noReason.request.id, 'rejected', noReason.quote.version)
+  assert.equal(rejectedNoReason.quote.reason, null, 'omitted the same as blank')
+})
+
+test('a reason on an approval is ignored -- decide only carries one for the outcome it is meaningful on, but does not reject a stray one', async t => {
+  const { quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+  const sent = quotes.decide(request.id, 'sent', quote.version, 'This should not normally be sent, but must not crash')
+  assert.equal(sent.quote.status, 'sent')
+  assert.equal(sent.quote.reason, 'This should not normally be sent, but must not crash', 'moveTo stores whatever reason it is given regardless of decision; the route layer is what decides whether to ask for one')
+})
+
+test('a reason over 500 characters is refused, and too long to be true even for a rejection', async t => {
+  const { quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+  assert.throws(() => quotes.decide(request.id, 'rejected', quote.version, 'x'.repeat(501)), /too long/)
+})
+
 test('a stale version is refused rather than overwriting the newer decision', async t => {
   // Two owner windows, or a phone and a laptop. The second save must not
   // silently undo the first -- the same rule PUT /api/owner/offers/:id makes.
@@ -995,6 +1025,28 @@ test('the owner endpoints need a session, and the customer endpoints are unchang
   const paid = await post(base, `/api/requests/${request.id}/pay`, { customerKey: KEY })
   assert.equal(paid.status, 200)
   assert.equal((await paid.json()).quote.status, 'paid')
+})
+
+test('the reject route over HTTP carries a reason the same way approve carries none', async t => {
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory)
+  const { cookie } = await signIn(base)
+  const headers = { cookie, 'Content-Type': 'application/json' }
+
+  const { request, quote } = quotes.submit(form())
+  const rejected = await fetch(`${base}/api/owner/quotes/${request.id}/reject`, {
+    method: 'POST', headers, body: JSON.stringify({ version: quote.version, reason: 'Out of stock by the time I checked' }),
+  })
+  assert.equal(rejected.status, 200)
+  const rejectedBody = await rejected.json()
+  assert.equal(rejectedBody.quote.status, 'rejected')
+  assert.equal(rejectedBody.quote.reason, 'Out of stock by the time I checked')
+
+  const { request: other, quote: otherQuote } = quotes.submit(form())
+  const rejectedNoReason = await fetch(`${base}/api/owner/quotes/${other.id}/reject`, {
+    method: 'POST', headers, body: JSON.stringify({ version: otherQuote.version }),
+  })
+  assert.equal((await rejectedNoReason.json()).quote.reason, null, 'a reject with no reason still works, same as before this change')
 })
 
 /* ----------------------------------------------------- the lifecycle (t36) */

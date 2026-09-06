@@ -693,14 +693,22 @@ export class Quotes {
    * Only a draft can be decided. Re-approving an approved quote, or rejecting
    * one the customer has already paid, is not a decision -- it is a screen that
    * was looking at something out of date, which is what the version says.
+   *
+   * `reason` matters only for a rejection -- approving carries nothing to
+   * explain -- but is cleaned the same way regardless of which decision is
+   * made, through the same `cleanReason` cancel already uses (#78's rule:
+   * "optional means optional", blank stays blank, never a guessed sentence).
+   * Without this, quote-declined's reason branch was unreachable: nothing
+   * ever passed a rejection a reason to carry.
    */
-  decide(id, decision, version) {
+  decide(id, decision, version, reason) {
     if (decision !== 'sent' && decision !== 'rejected') {
       throw new InputError('A quote is either sent to the customer or rejected.')
     }
     return this.moveTo(id, version, {
       to: decision,
       from: ['draft'],
+      reason: cleanReason(reason),
       refused: status => `This quote is already ${status}, so there is nothing to decide.`,
       audience: 'owner',
     })
