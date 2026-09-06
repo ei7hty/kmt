@@ -118,6 +118,30 @@ test('a phone is optional, and a US number typed any of the usual ways is stored
   assert.throws(() => quotes.submit(form({ customerPhone: '12345' })), /US phone number/)
 })
 
+test('a request stored before contact fields existed renders without error, contact simply absent', async t => {
+  // Production has exactly this: a request written before this field set
+  // existed. Simulated by writing a payload shaped the old way (no
+  // customerName/Email/Phone) straight into the table, bypassing cleanRequest
+  // -- the only way a live database still holds one.
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form())
+  const legacyPayload = JSON.stringify({
+    vehicleInfo: request.vehicleInfo, tireSelection: request.tireSelection,
+    location: request.location, date: request.date, locationType: request.locationType,
+    serviceZip: request.serviceZip, locationNotes: request.locationNotes,
+  })
+  quotes.db.prepare('UPDATE requests SET payload=? WHERE id=?').run(legacyPayload, request.id)
+
+  const byId = quotes.get(request.id)
+  assert.equal(byId.request.customerName, undefined)
+  assert.equal(byId.request.customerEmail, undefined)
+  assert.equal(byId.request.customerPhone, undefined)
+  assert.equal(byId.request.vehicleInfo, request.vehicleInfo, 'the rest of the row is unaffected')
+
+  const owner = quotes.listForOwner().find(row => row.request.id === request.id)
+  assert.equal(owner.request.customerEmail, undefined, 'the owner list renders the same row without throwing')
+})
+
 test('a browser sees its own requests and nobody else', async t => {
   const { quotes } = setup(t)
   const mine = quotes.submit(form())
