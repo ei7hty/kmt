@@ -247,7 +247,7 @@ export function createHealthApi(inventory) {
  * nothing without the id or the key. Without a limiter, as in most tests,
  * nothing is counted.
  */
-export function createRequestsApi(quotes, { limiter = null } = {}) {
+export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}) {
   /** Count one hit; answer 429 and return true if it was over. */
   const over = (response, rule, id, message) => {
     if (!limiter || !id) return false
@@ -280,7 +280,15 @@ export function createRequestsApi(quotes, { limiter = null } = {}) {
         const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
         if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
         if (over(response, 'submitPerEmail', emailOf(body), TOO_MANY_EMAIL)) return true
-        send(201, quotes.submit(body))
+        const submitted = quotes.submit(body)
+        send(201, submitted)
+        // After the answer, never before it, and never awaited: the customer's
+        // acknowledgement and the owner's alert go out on the seam in mail.mjs,
+        // and a provider outage is a failed outbox row, not a failed submit.
+        if (mailer) {
+          mailer.after('request-received', submitted.request.id)
+          mailer.after('request-arrived', submitted.request.id)
+        }
         return true
       }
 
@@ -295,7 +303,9 @@ export function createRequestsApi(quotes, { limiter = null } = {}) {
       if (request.method === 'POST' && payMatch) {
         const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
         if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
-        send(200, quotes.pay(decodeURIComponent(payMatch[1]), body?.customerKey))
+        const paid = quotes.pay(decodeURIComponent(payMatch[1]), body?.customerKey)
+        send(200, paid)
+        if (mailer && paid?.quote?.status === 'paid') mailer.after('payment-recorded', paid.request.id)
         return true
       }
 
@@ -326,7 +336,7 @@ export function createRequestsApi(quotes, { limiter = null } = {}) {
   }
 }
 
-export function createApi(inventory, refresher, importer = null, quotes = null) {
+export function createApi(inventory, refresher, importer = null, quotes = null, { mailer = null } = {}) {
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
     if (!url.pathname.startsWith('/api/owner/')) return false
@@ -393,7 +403,18 @@ export function createApi(inventory, refresher, importer = null, quotes = null) 
         // line only says which one the owner asked for.
         if (action === 'done') send(200, quotes.finish(id, body?.version))
         else if (action === 'cancel') send(200, quotes.cancel(id, body?.version, body?.reason))
-        else send(200, quotes.decide(id, action === 'approve' ? 'sent' : 'rejected', body?.version))
+        else {
+          const decided = quotes.decide(id, action === 'approve' ? 'sent' : 'rejected', body?.version)
+          send(200, decided)
+          // The quote itself, itemised, once the owner has sent it (R25).
+          if (mailer && decided?.quote?.status === 'sent') mailer.after('quote-sent', decided.request.id)
+        }
+      } else if (request.method === 'GET' && url.pathname === '/api/owner/outbox') {
+        // What was sent, or would have been, about every request: the outbox
+        // the owner screen shows (R25). Session-gated like everything here.
+        if (!mailer) throw new InputError('Owner endpoint not found', 404)
+        const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 50))
+        send(200, { provider: mailer.adapter.name, messages: mailer.outbox.list({ limit }) })
       } else if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
         send(200, { ...inventory.list(Object.fromEntries(url.searchParams)), summary: inventory.summary() })
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/')) {

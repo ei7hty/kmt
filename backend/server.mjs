@@ -45,6 +45,8 @@ import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
 import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl, readRelease } from './site.mjs'
 import { createStaticHandler } from './static.mjs'
+import { Outbox } from './outbox.mjs'
+import { createMailer, readMailConfig } from './mail.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
@@ -59,6 +61,16 @@ if (!existsSync(path.join(dist, 'index.html'))) {
 let authConfig
 try {
   authConfig = readAuthConfig()
+} catch (error) {
+  console.error(error.message)
+  process.exit(1)
+}
+
+// Mail configuration is checked before the database is opened for the same
+// reason as the password: a key without a sending address is a deploy that
+// would look healthy and send nothing.
+try {
+  readMailConfig()
 } catch (error) {
   console.error(error.message)
   process.exit(1)
@@ -114,14 +126,22 @@ try {
   process.exit(1)
 }
 const quotes = new Quotes(inventory, { serviceArea })
-const api = createApi(inventory, refresher, importer, quotes)
+// Every message about a request is recorded here whether or not a provider is
+// configured; the mailer decides whether anything is actually sent.
+const outbox = new Outbox(inventory.db)
+const mailer = createMailer({
+  outbox, quotes,
+  origin: (process.env.KMT_PUBLIC_ORIGIN || '').trim() ||
+    (canonicalHost ? `https://${canonicalHost}` : `http://localhost:${process.env.PORT || 8080}`),
+})
+const api = createApi(inventory, refresher, importer, quotes, { mailer })
 const catalogApi = createCatalogApi(inventory)
 // The platform's health check, mounted here too so the local server and the
 // hosted one answer the same routes.
 const healthApi = createHealthApi(inventory)
 // Requests and their quotes live in the same database as inventory. The three
 // public writes are limited per address, per browser key and per email (#63).
-const requestsApi = createRequestsApi(quotes, { limiter: new RateLimiter() })
+const requestsApi = createRequestsApi(quotes, { limiter: new RateLimiter(), mailer })
 
 const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'
