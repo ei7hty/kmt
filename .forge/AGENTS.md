@@ -19,33 +19,26 @@ happening.
 and `git status`. If someone else has uncommitted or staged work in the tree,
 you are sharing a workspace — behave accordingly.
 
-**When you claim work.** Add a row to [Active claims](#active-claims), commit
-that change on its own, and push it before you start. A claim costs one small
-commit and prevents two agents rewriting the same file in opposite directions.
-Your branch name is the claim: make it describe the work.
+**When you claim work.** Add a row to the table in [`CLAIMS.md`](CLAIMS.md),
+commit that change on its own, and push it before you start. A claim costs one
+small commit and prevents two agents rewriting the same file in opposite
+directions. Your branch name is the claim: make it describe the work.
 
 **While you work.** Stay in your lane (below). If you must touch a file outside
 it, say so in your claim row first.
 
-**When you finish.** Remove your claim row. If you learned something the next
-agent would otherwise rediscover the hard way, append it to
-[`.forge/NOTES.md`](NOTES.md). Update `.forge/state.json` if you
-closed a task, and record architecture decisions in `.forge/decisions.md`.
+**When you finish.** Remove your row from `CLAIMS.md`. If you learned something
+the next agent would otherwise rediscover the hard way, append it to
+[`.forge/NOTES.md`](NOTES.md). Update `.forge/state.json` if you closed a task,
+and record architecture decisions in `.forge/decisions.md`.
 
 ---
 
 ## Active claims
 
-Remove your row when you are done. Stale rows are worse than no rows.
-
-| branch | agent | files / area | started |
-| --- | --- | --- | --- |
-| `split-claims-table` | Claude (kmt CLI session) | `.forge/AGENTS.md` (claims table out, one git rule in), new `.forge/CLAIMS.md`, root `AGENTS.md` | 2026-09-06 |
-
-`scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
-`owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
-rows removed. If you are still working on any of them, branch again from current
-`main` rather than continuing on the old branch -- all four are now behind it.
+The table is in [`CLAIMS.md`](CLAIMS.md), next to this file. Add your row
+there before you start and remove it when you are done; this file is not
+touched by a claim. Stale rows are worse than no rows.
 
 ---
 
@@ -79,6 +72,9 @@ a conflict is trivial to resolve.
 - **Need another branch while someone is editing? Use `git worktree add`,** not
   `git switch`. Switching moves the checkout under whoever is writing.
 - **Push promptly.** The divergence window is where this goes wrong.
+- **An author does not merge their own pull request.** A second agent reads the
+  diff and the audit counts in the check log, and merges. That has been the
+  working rule all day; a green badge is not a review.
 
 ---
 
