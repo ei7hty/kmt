@@ -404,13 +404,15 @@ async function main() {
     const sitemapType = sitemapResponse.headers.get('content-type') || '';
     const sitemapBody = await sitemapResponse.text();
     const locMatches = [...sitemapBody.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
-    const expectedLoc = `https://${CANONICAL_HOST}/`;
+    // The pages meant for an index and nothing else: the customer flow and the
+    // privacy notice (t50). A page a customer owns never appears here.
+    const expectedLocs = [`https://${CANONICAL_HOST}/`, `https://${CANONICAL_HOST}/privacy`];
     check(sitemapResponse.status === 200 && sitemapType.startsWith('application/xml') &&
-      locMatches.length === 1 && locMatches[0] === expectedLoc,
-      '/sitemap.xml answers 200 as application/xml with exactly one <loc>, the canonical host',
+      JSON.stringify(locMatches) === JSON.stringify(expectedLocs),
+      '/sitemap.xml answers 200 as application/xml listing exactly / and /privacy on the canonical host',
       `status ${sitemapResponse.status}, content-type ${sitemapType || 'none'}, locs ${JSON.stringify(locMatches)}`);
   } catch (error) {
-    fail(`/sitemap.xml answers 200 as application/xml with exactly one <loc>, the canonical host — ${describeFetchError(error)}`);
+    fail(`/sitemap.xml answers 200 as application/xml listing exactly / and /privacy on the canonical host — ${describeFetchError(error)}`);
   }
 
   // Three behaviors, not just files: caching that actually works, a method
