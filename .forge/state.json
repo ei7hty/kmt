@@ -54,7 +54,7 @@
     },
     {
       "id": "m8",
-      "title": "m8 \u2014 Customer quotes are priced from the owner's real inventory, not the static demo catalog",
+      "title": "m8 — Customer quotes are priced from the owner's real inventory, not the static demo catalog",
       "description": "A separate effort already built a real owner backend (SQLite: supplier inventory, owner-set prices/offers, a markup fallback rule) at /owner, reachable via node backend/dev.mjs. It was deliberately scoped as \"customer catalog integration is a separate, deliberate step\" (see .forge/owner-backend.md) and never wired up: the customer flow at / and the quote engine in pricing.js still read the fully-generated static catalog (src/data/catalog.js's buildCatalog() with no options), and requests/quotes still live in localStorage (src/store.js), untouched by the backend. This milestone closes that gap: when the real backend is running, a customer sees and gets quoted the tires the owner actually chose to offer, at the prices he actually set (falling back to markup where he has not priced a tire), and falls back to today's generated catalog when the backend is not reachable (e.g. the static Vercel deployment). No changes to the quote/request storage mechanism, the exception rules, or payment in this milestone -- those are flagged as open questions in roadmap.md because they need an owner decision, not assumed here.",
       "status": "done",
       "order": 7
@@ -70,6 +70,13 @@
       "id": "m10",
       "title": "The quote is a real exchange between two people",
       "description": "Second phase 4 milestone, after m9. The request carries a name and an email address (mobile optional); the owner can adjust the price and add lines and a note before sending; the customer is emailed when the request is received, when the quote is sent (the quote itself, itemised, with a link to view and pay) and when payment is recorded (a receipt); the owner is emailed when a request arrives; a request has a lifecycle with an end, and the owner list is usable once real requests arrive. Email goes through a provider's REST API behind a one-module seam with an outbox fallback so nothing waits on the account. R23-R28. Revised from text messages to email on 2026-09-05 on the client's direction.",
+      "status": "planned",
+      "order": 10
+    },
+    {
+      "id": "m11",
+      "title": "Live baseline corrections",
+      "description": "Decided by the user on 2026-09-06 after the v1 baseline push and the scrutiny reports: supplier data must leave the public bundle (#61), invented tires must route to owner review rather than auto-quote (#62), and a job is quoted for the number of tires asked for, default four (#93). Three PRs in that order from the owner-screen lane; the gate gains a bundle check.",
       "status": "planned",
       "order": 9
     }
@@ -635,16 +642,17 @@
       "title": "The request carries a name and an email address, and optionally a mobile number",
       "description": "Add customerName (required), customerEmail (required, syntactically validated and stored lower-cased and trimmed) and customerPhone (optional; when given, a US number accepted the ways people type it and stored E.164, +1XXXXXXXXXX) to the request, validated server-side in backend/quotes.mjs the way other fields are. Collect them at the service-details step in src/components/RequestDetails.jsx / the customer route, under a short 'Where do we send your quote?' heading, with autoComplete name/email/tel so phones fill them in one tap, inline validation in the existing style, and one plain sentence under the email field: the quote is sent to this address. No checkbox. Show name, email (mailto: link) and phone (tel: link) on the owner's request card in the quote-review screen; the customer-facing endpoints return them only to the holder of that request's key or id. Update .forge/request-flow-check.mjs and the dead-end audit to fill the new fields, and record the new counts. Tests: a submit without name or email is refused with a field-specific message; a malformed email is refused; a phone typed as (617) 410-8319 is stored as +16174108319 and a missing phone is fine; the owner list shows the contact; another customer's key cannot read it.",
       "milestoneId": "m10",
-      "status": "todo",
+      "status": "done",
       "priority": "medium",
       "dependsOn": [
         "t33"
       ],
       "notes": [
-        "Opened as PR #53 (branch contact-fields), not yet merged -- leaving status as todo until the repo agent merges it. Coordinated with the session doing t36 in the same file (backend/quotes.mjs) before starting: this PR only touches cleanRequest/shapeRow's field list, not status/transition logic. Verified against backend/server.mjs serving the built branch (merged with origin/main first) with a throwaway database: node --test backend/*.test.mjs 57/57 pass (2 new), eslint clean, build clean, dead-end 42/42 (was 40, +1/viewport for the owner-card contact check), request-flow 34/34 (was 30, +2/viewport for inline-error and owner-contact-display checks), responsive 8/8 (unchanged)."
+        "Opened as PR #53 (branch contact-fields), not yet merged -- leaving status as todo until the repo agent merges it. Coordinated with the session doing t36 in the same file (backend/quotes.mjs) before starting: this PR only touches cleanRequest/shapeRow's field list, not status/transition logic. Verified against backend/server.mjs serving the built branch (merged with origin/main first) with a throwaway database: node --test backend/*.test.mjs 57/57 pass (2 new), eslint clean, build clean, dead-end 42/42 (was 40, +1/viewport for the owner-card contact check), request-flow 34/34 (was 30, +2/viewport for inline-error and owner-contact-display checks), responsive 8/8 (unchanged).",
+        "Shipped in PR #53 (contact fields, no schema change); closed by the lead in the v1 handoff update."
       ],
       "createdAt": "2026-09-05T21:52:40.692Z",
-      "updatedAt": "2026-09-06T01:20:00.000Z"
+      "updatedAt": "2026-09-06T03:37:19.565Z"
     },
     {
       "id": "t35",
@@ -704,8 +712,48 @@
       "notes": [],
       "createdAt": "2026-09-05T21:52:40.692Z",
       "updatedAt": "2026-09-05T23:36:35.812Z"
+    },
+    {
+      "id": "t39",
+      "title": "Supplier data leaves the public bundle",
+      "description": "src/data/catalog.js stops importing scraped-tires.json; the static fallback is seed tires plus generated coverage; the backend alone reads the snapshot; the live catalog still composes through catalogFromLiveRows. A script under .forge/ fails if dist/ contains listPrice, sku: or giga-tires.com after the build; the repo agent wires it into the check job. Report bundle size before and after. Issue #61.",
+      "milestoneId": "m11",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [],
+      "createdAt": "2026-09-06T03:37:19.565Z",
+      "updatedAt": "2026-09-06T03:37:19.565Z"
+    },
+    {
+      "id": "t40",
+      "title": "Invented tires route to owner review",
+      "description": "In src/pricing.js a tire whose id does not start with giga- adds the exception reason \"Not a supplier-listed tire; owner review required\". The audits' clean path moves from the seed All-Weather Standard to a real supplier tire present in the seeded gate database; the off-road seed stays for the exception path; EXPECTED_CHECKS bumped where counts move. Tests for both branches. Issue #62.",
+      "milestoneId": "m11",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t39"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T03:37:19.565Z",
+      "updatedAt": "2026-09-06T03:37:19.565Z"
+    },
+    {
+      "id": "t41",
+      "title": "A job is quoted for the number of tires asked for, default four",
+      "description": "The tire step asks how many (1, 2, 4; default 4); the payload carries quantity; cleanRequest validates it; calculateDraftQuote multiplies the tire line by quantity and keeps the mobile-service fee as one line; the set price on the tire step, the owner card and /status show quantity times unit price; audits fill the default and update expected totals. Tests: default 4, explicit 2, invalid refused, fee unmultiplied. Issue #93.",
+      "milestoneId": "m11",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [
+        "t40"
+      ],
+      "notes": [],
+      "createdAt": "2026-09-06T03:37:19.565Z",
+      "updatedAt": "2026-09-06T03:37:19.565Z"
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-06T01:08:50.415Z"
+  "updatedAt": "2026-09-06T03:37:19.565Z"
 }

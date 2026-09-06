@@ -1,196 +1,254 @@
-# Lead handoff, 2026-09-06
+# Lead handoff, 2026-09-06 (v1 baseline push)
 
-Written by the outgoing KMT lead session at the agreed pause point, for the
-next lead. Read this, then `AGENTS.md`, `NOTES.md`, `CLAIMS.md`, `project.md`,
-`requirements.md`, `roadmap.md`, `state.json`, in that order. Everything here
-was true at the pause; verify the SHAs and PR states before acting on them.
+Written by the KMT LEAD AGENT at the end of the v1 baseline push, for the next
+lead. Read this, then `roles/lead.md`, `AGENTS.md`, `NOTES.md`, `CLAIMS.md`,
+`project.md`, `requirements.md`, `roadmap.md`, `state.json`, in that order.
+Everything here was true when written; verify the SHAs, PR states and
+production facts before acting on them. The earlier pause-point handoff (at
+`598d4e2`) is in git history; its rules now live in `AGENTS.md`, `NOTES.md`
+and `roles/`, and its production claims were superseded by what this push
+found.
 
-## Where the project is
+Answered by the user while this was being written: Ken buys at the
+supplier's public listed price today, so the markup sits on retail by design,
+and the supplier integration is to be revisited when he gets a commercial or
+dealer account. Still open: what the renamed sessions (QA ENGINEER, DB ADMIN,
+KMT-O PROJECT MANAGER) are meant to become; the outgoing lead kept them in the
+roles they had served.
 
-Phase 4's first milestone is done: **m9**, 33 of 38 tasks, requests and quotes
-live in the backend and the flow was proven between three devices on the
-public site (PR #50). The second milestone, **m10**, has its first task, t34
-contact fields, merged (PR #53) and the rest planned: t35 owner adjusts the
-quote, t36 lifecycle, t37 email, t38 proof between two inboxes.
+## v1 baseline push, 2026-09-06
 
-`main` at the pause: `598d4e2` (the #57 merge of this document), green through
-all three CI jobs on re-run; the first run of that commit lost the race
-described in queue item 5 and nothing else. Merged in the final hour: #53 contact
-fields (`1e0489c`), #54 size-filter checks (`fb19a0f`), #56 one description of
-the gate (`e086760`). #45 was closed as superseded by #56.
+Charter from the user, in force: the lead owns business context, priority and
+definitions; the repo agent owns structure, rules, automation and merges; only
+SWE-S sessions do implementation; agents act on the lead's instruction task by
+task and wind down. No SWE-F or SWE-O session works.
 
-One thing the previous lead got wrong, kept here so the next does not repeat
-it: the lead asked the repo agent to self-merge a docs PR "under the docs-only
-exception", and no such exception exists in the checked-in rule. The repo agent
-refused, correctly, and the lead merged it as second reader. If a docs-only
-exception should exist, write it and have someone else merge that first.
+### Completed
 
-Production: https://kmt.fly.dev, one Fly machine, SQLite on a volume. The live
-catalog serves 118 supplier tires across four sizes plus generated coverage for
-906 more. One real request exists, the t33 proof: id
-`f80ada133275b41c327b6c35fb5555a4`, vehicle "TEST 2021 Honda Civic (forge t33
-verification)", status paid, stored before contact fields existed. It stays
-until t36 adds "done"; the owner then marks it done. No owner price is set in
-production; every price is the placeholder markup.
+- #55 (t36 request lifecycle, with the schema migration as its first commit):
+  merged as `f1e7781` at 02:35Z on 2026-09-06 by the repo agent on head
+  `17b968e`, after the lead's second read and against two snapshots on the
+  volume; deployed green through all three jobs at 02:37Z. The repo agent had
+  read production's real `quotes` schema over ssh before the merge and found
+  exactly the old shape the migration test hand-builds, four statuses and no
+  `reason` column. After the deploy the TEST request still read paid at
+  version 3, and the schema readout from `sqlite_master` over ssh matched the
+  prediction stated before looking: a `reason` column, all seven statuses in
+  the CHECK, the table name now quoted `"quotes"` (SQLite's own artifact of
+  RENAME TO, so independent evidence of a rebuild), zero `quotes_migrating`
+  tables left, the `quotes_request` index present, three requests and three
+  quotes unchanged with their versions. The migration is spent; the next boot
+  is a no-op by the guard.
+- Fresh supplier scrape of the four sizes with `--limit 0` and every page read
+  (18, 29, 33 and 31 pages): 1083 tires (177 / 281 / 323 / 302), coverage
+  complete on all four; landed as the tracked snapshot in #59 (`c52dbcf`,
+  merged 02:47Z). Side effect noted there: the client bundle grew from 286 KB
+  to 614 KB because the static fallback embeds the snapshot.
+- Production database reset at 02:54Z on 2026-09-06, by the user's own hands
+  after the repo agent's permission layer refused the destructive command: the
+  four runbook commands, old files kept on the volume as `owner.sqlite.old`
+  and the -wal/-shm pair, fresh file seeded from the 1083-tire snapshot on
+  boot. Verified read-only by the repo agent with the count predicted first:
+  the old TEST request 200 to 404, `/api/catalog` 1083 rows across the four
+  sizes with only the seven customer fields, supplier table 177/281/323/302,
+  offers 0, metadata only `seeded`, the quotes table carrying all seven
+  statuses, deployed-site check 19 of 19. The 1.5 markup and eight prices are
+  gone as the user intended; pricing is on the placeholder rate.
+- Monthly supplier-refresh runbook, `docs/supplier-refresh.md`, in #60
+  (`f42610f`, merged 02:53Z): batch order by rim diameter with counts reproduced from the
+  catalog (439 sizes at 15 to 18 inch, 92 at 12 to 14, 379 at 19 to 24), the
+  per-batch checklist (coverage complete, dry-run, `--complete` import, confirm
+  on /owner), the stop rule on a supplier challenge, and honest time bounds.
+- Live end-to-end test on f42610f, 03:00 to 03:12Z: customer submit, owner
+  Approve & Send, customer pay, cold link by id, owner Mark done, customer sees
+  done; every step rendered and the server recorded them as versions 1 to 4 of
+  one request. Nothing failed. Details under "Verified live".
+- Fixes made because they blocked the workflow: none were needed.
+- Role knowledge stacks under `.forge/roles/`, asked for by the user so
+  successors start where these agents ended: `repo-agent.md` (#83, `12cc746`,
+  merged by the lead as second reader), `swe-owner-screen-lane.md` (#82),
+  `swe-scraper-lane.md` (pending, written between walk chunks), and the lead's
+  own `lead.md` in this update.
 
-## The one open PR, and why it is open
+### Verified live
 
-**PR #55, t36 request lifecycle** (SWE-0 AGENT 1, branch `request-lifecycle`)
-is open, green, and deliberately unmerged. Its first commit is a schema
-migration: a rebuild of the `quotes` table without its status CHECK, foreign
-keys off around it, deciding whether to run by inspecting the stored schema,
-with status validation moved into code. `backend/migration.test.mjs` builds the
-old schema by hand, seeds it with the shape of the production row, and proves
-the paid row survives with its version intact. It exists because tests and CI
-build fresh databases while production's persists, and SQLite cannot alter a
-CHECK, so t36's new statuses would have failed on production's first write.
-Commits two and three are the lifecycle itself: `done` only from paid, `sent`
-written while `approved` stays readable, `finish()` and `cancel()` as separate
-methods over one version check, customer cancel answering 404, a `reason`
-column through `shapeRow`, owner list filters, the refund sentence.
+Request `d6dab88175459eea653db6f3817e5756` on `f42610f`, 2026-09-06 03:00 to
+03:10Z. Customer side by SWE-S AGENT 2 (emulated phone, 375 wide, driving the
+page's own handlers because the browser pane rendered hidden); owner side by
+the user on their own device.
 
-**Merging it is deploying it.** The workflow deploys every push to `main`
-with no gate between merge and deploy; the migration runs on the new
-release's first boot against the real volume. Re-deploying an earlier commit
-restores code, not data, so the volume snapshot is the only rollback. Your
-first act:
-
-1. Merge `main` into it if #53 landed after its last run (both touch
-   `QuoteRequests.jsx` and `quotes.mjs`); re-run the gate; the baseline is
-   then 42 / 34 / 8.
-2. Read it as its second reader (the lead reads anything that runs before the
-   repo agent merges it). Check: the old-schema test starts from the narrow
-   CHECK and the paid row survives; a second open is a no-op; an invalid
-   status is still refused; the audits that now assert SENT run in the check
-   job only.
-3. Have the user run `fly volumes snapshots create kmt_data -a kmt`.
-4. Tell the repo agent "merge". Watch all three jobs and the post-deploy
-   19-check log line. Then have the owner mark the TEST request done.
-5. Then t35 (SWE-S AGENT 2): read `moveTo()` first; it is the seam the
-   adjustment work wants, and `decide()` no longer has this morning's shape.
-
-## Who is who
-
-Sessions are named in the user's sidebar. All PRs come from one GitHub login,
-so authors are told apart only by branch and message; from now on every PR
-body opens with `Author: <session name>`. Write that into `AGENTS.md`.
-
-| Session | Lane | State at pause |
+| step | device / context | result |
 | --- | --- | --- |
-| KMT LEAD AGENT | planning, briefing, product calls, second reader for anything that runs | stopped; this document |
-| KMT REPO AGENT | merges every PR after reading the diff and each script's own count line; owns `.github/workflows/` | stopped after the queue drained |
-| SWE-0 AGENT 1 | backend and customer flow: t25–t33 done; #55 (migration + t36) open | stopped |
-| SWE-S AGENT 1 | scraper and import lane; did t34 (#53) | stopped |
-| SWE-S AGENT 2 | owner screen and verification; #54 | stopped, holding t35 |
-| SWE-F AGENT 1, SWE-F AGENT 2 | former SWE 3 and SWE 2, high-usage models | spun down, archived; their handoffs are forwarded to SWE-S 2 and SWE-S 1 |
+| submit: 205/65R15, Waterfall Quattro $42.04, vehicle "TEST v1 baseline 2026-09-06", name and email, location, date today | phone | request created, draft $92.03; acknowledgement "Ken reviews it before anything is charged"; /status at step 1, chip DRAFT, cancel action; no overflow |
+| owner sees it beside their own hand-test draft, contact shown, Approve & Send | user's device | chip SENT in place; server: status sent, version 2 |
+| customer reloads, pays | phone | chip SENT then PAY $92.03; /confirmation "Payment confirmed", amount $92.03; server: paid, version 3 |
+| cold link by id, key deliberately cleared | third context | chip PAID, "Payment received. Your service is confirmed." |
+| owner confirms paid, Mark done | user's device | server: status done, version 4, 03:11:33Z |
+| customer sees done | phone | chip DONE, "Fitted. Thanks for choosing KMT."; all four stepper steps complete |
 
-The user's rules: no new high-usage sessions; a replacement does not start
-until the agent it replaces has stopped; the lead says "go".
+Read-only alongside: `/api/catalog` 1083 rows; `/api/owner/inventory` 401
+without a session; no horizontal overflow on / and /status at 375.
 
-## Rules in force that the docs may not yet say
+### Known broken or incomplete
 
-- An author never merges their own PR, the lead included. The repo agent
-  merges; anything that runs gets a second reader first (the lead). There is
-  no docs-only exception; whether one should exist is the next lead's open
-  question, and whoever would benefit from it must not be its author.
-- The merger claims a PR by a one-line message before starting on it.
-- An author merges `origin/main` into the branch and lets the gate run on
-  that before asking for a merge.
-- "No checks reported" or a zero count is no gate. Cancelled is not failed;
-  read `.conclusion`.
-- Merges are announced by SHA to the lead and the author.
-- The post-deploy job is read-only by design (#42). Never point the flow
-  audits at production; they write.
-- Each audit script carries `EXPECTED_CHECKS` and fails on any mismatch, up
-  or down. No numbers live in prose.
-- Claims go in `CLAIMS.md`; notes in `NOTES.md`; `AGENTS.md` is the protocol.
+- **Supplier data ships in the public bundle** (scrutiny finding 1, verified
+  live by the lead on 2026-09-06: the deployed JS carries 1083 SKUs, 1085
+  supplier list prices, 1088 supplier URLs and the markup rate, so KMT's
+  margin on every tire is computable by anyone). Cause: `src/data/catalog.js`
+  imports `scraped-tires.json` for the static fallback. This breaks R16 and
+  grew with #59. Fix is the same change as "snapshot out of the client bundle":
+  the fallback keeps seeds plus generated rows, the snapshot seeds the backend
+  only, plus a build check that fails if `dist` contains `listPrice` or `sku:`.
+  Decision recorded: the user said fix it; assigned to SWE-S AGENT 2 as the
+  first of three tasks (t39 in `state.json`); the gate check is the repo
+  agent's.
+- **Invented tires are orderable on the live site** (finding 2): 906 of 910
+  sizes show generated placeholders, and the six seed tires sit beside real
+  ones; a customer can be quoted, approved and charged for a tire that does
+  not exist. The cheap guard is one rule in `src/pricing.js`: a tire whose id
+  does not start with `giga-` becomes an exception reason, so the owner's
+  approval gate catches it. The full fix is the all-sizes walk. Decision
+  recorded: the user said add the guard; assigned as t40, after the leak fix.
+- **Public POSTs have no rate limit** (finding 3): fine today, an open relay
+  the day t37 sends email. Adopted as a constraint on t37's brief: per-IP and
+  per-key throttling on submit, pay and cancel, and no customer email until
+  the owner has sent the quote.
+- The scrutiny agent's full report (20 findings) is filed as issues #61 to
+  #80, one per finding, each marked verified by the repo agent or relayed
+  unchecked. Verified: 1 (the leak; #61), 4 (backend lint has zero rules), 5,
+  7, 9, 16. Nothing is assigned from them without the user's decision.
+- The scrutiny agent's second pass (relayed to the repo agent for the issue
+  list, #84 to #107, with corrections commented on #61, #72, #79, #80) adds,
+  checked: the "no compression, 850 KB" finding was wrong, Fly's proxy serves
+  brotli and a phone downloads about 213 KB before the first price, though
+  `/api/catalog` is `no-store` and refetched every visit (#84, downgraded);
+  AA contrast failures on brand red under
+  white text and the muted greys at 375; `KMT_SESSION_HOURS` unvalidated
+  (a non-number silently locks the owner out); Chromium running as root in
+  the container; no Fly health check; and `SameSite=Strict` on the owner
+  cookie, which will send the owner to sign-in from every t37 email link
+  (`Lax` plus a request deep link on /owner/quotes must precede t37). And
+  unplanned: **quantity** (every job is two or four tires and the flow quotes
+  one, so every real quote is under-quoted until the owner decides), tax and
+  invoice lines before the email, service area, sign-out, iOS clearing the
+  status key after seven days, backups and retention, a privacy notice,
+  monitoring, the client's own domain, every merge redeploying production,
+  screens that never refresh, and whether "supplier price" is retail or
+  dealer cost. Quantity is decided: the form asks, default four (t41,
+  assigned third). The supplier price is the public retail listing, which
+  is what Ken pays today (user, 2026-09-06); the markup is on retail by
+  design until he has a commercial or dealer account.
+- `state.json` had t34 as todo after #53 merged it; corrected in this update.
+  m10 stays planned: t35, t37 and t38 remain.
+- The owner-inventory audit is real but ungated (no workflow runs it).
+- `git worktree remove` on this machine fails once with permission denied and
+  succeeds on retry; seen three times, harmless, worth a NOTES.md line.
+- A future quote status means another table rebuild through `migrate()`: the
+  status list is still a database CHECK, widened, not removed.
 
-## Queue after #55, in order
+### Direction from the user after the migration landed
 
-1. **t35** owner adjusts the quote (SWE-S AGENT 2): totals computed
-   server-side from lines, never trusted from the client; every transition
-   bumps the version; draft kept alongside the sent quote; a later migration
-   that adds columns checks for the column the way #55's checks the schema.
-   SWE-0 AGENT 1 is free for t37's backend seam meanwhile if you want the two
-   in parallel; they do not share files until the send hooks.
-2. **t37** email through a provider's REST API behind one module with an
-   outbox; needs the user's provider account and a verified sending domain.
-3. **t38** two-inbox proof on the live site; the user does the owner side.
-4. Repo agent lane, after the above are not touching the workflow: fold the
-   check and verify jobs into one definition with two targets; add a fixture
-   step (one owner price, one delisted tire) before the flow audits; add the
-   owner-inventory audit to the gate now that it reads `AUDIT_BASE`.
-5. **A flaky check in the gate, one call site, fix first.** The dead-end
-   audit's "/owner: status visibly updates to APPROVED after clicking Approve"
-   went red then green on the identical commit `598d4e2`, phone viewport, on
-   the night of the pause. Cause, `.forge/dead-end-audit.mjs` around line
-   171: `click`, `waitForTimeout(200)`, then `isVisible()`, which samples once
-   and does not wait; Approve is a network round trip. Fix: replace the sleep
-   and sample with `locator('text=APPROVED').first().waitFor({ state:
-   'visible', timeout: 5000 })` in a try/catch that calls the same `ok`/`fail`,
-   and delete the sleep. Same assertion, same count of 42, no race. The repo
-   agent grepped the other audits: the 200 ms sleep after Reject is followed
-   by real waits, and the 500 ms sleep in the deployed-site check is a layout
-   settle before a measurement; neither races. A flaky check teaches the
-   merger to re-run until green, which is the habit that lets a real failure
-   through, so this goes ahead of the other follow-ups.
-6. Small follow-ups, any idle agent: comments in `scripts/worktree.mjs`
-   stating the two guards it relies on, and wrapping its `git worktree add`
-   failure into the one-line `fail()`; a comment pair tying `compactSize` in
-   `OwnerInventory.jsx` to `fitment.js`'s exclusion of other size grammars;
-   the bookmarklet's 910-entry size select on `/owner`.
+Pricing logic, including installation, shipping and taxes, is deferred to a
+later issue; the 1.5 rate and the eight owner prices found in production were
+exploration, and t35 (the owner adjusting a quote) is out of the current
+push. What matters next: a production database with real supplier stock on
+every size the customer can select (today 4 of 910), and a documented monthly
+supplier refresh, with supplier prices imported and the markup rate applied
+automatically as now. After that, the m10 plan resumes.
 
-## Waiting on the user
+### Recommended next step
 
-- Volume snapshot before the migration merge (above).
-- Mark the TEST request done once t36 lands.
-- Ken's real markup rate; the placeholder is still what prices untouched
-  tires.
-- For t37: an email provider account, a domain with SPF and DKIM, Ken's
-  address, the sending address. Secrets go to Fly by the user, never through
-  an agent or a PR.
-- Phase 5 will need a payment processor account.
+- **First, before any all-sizes scrape: take the snapshot out of the client
+  bundle.** `src/data/catalog.js` imports `scraped-tires.json`, so the static
+  fallback ships every scraped row to the browser; #59's 1083 tires took the
+  bundle from 286 KB to 614 KB, and 910 sizes would be tens of megabytes. The
+  snapshot should seed the backend only; the fallback keeps the seed tires plus
+  generated coverage, and the live catalog comes from `/api/catalog` as now.
+  Frontend task, SWE-S AGENT 2's lane, with the audits' by-name seeds unchanged.
+- The all-sizes walk, under way in SWE-S AGENT 1's lane, writing to
+  `C:/Users/anune/kmt-walk/supplier-walk.json` outside the repository and
+  reaching production only through `import-tires` run by the user (the guard
+  from #51 refuses `--complete` for any size not fully read, so single-page
+  sizes import as partial coverage automatically). Pilot of 27 sizes at 15
+  inch: 18 complete, 9 "blocked or unexpected page" interleaved with successes
+  (probably empty listings, retest pending), 1114 tires, 5.4 s per page across
+  two independent measurements. Of the 18, 12 needed one or two pages, so a
+  single page per size is often the whole inventory. Plan: breadth-first pass
+  over the remaining 879 sizes at one page each (about 80 minutes), then deep
+  batches for the common sizes. Imports were held until the live test ended.
+  The monthly runbook is `docs/supplier-refresh.md` (#60).
+- After t39 lands: the bundle check is wired into the check job by the repo
+  agent, asserting on `dist/` only for what the fix removed, never before the
+  fix (main contains `listPrice` 1085 times until then, so a check first
+  would block its own fix); and `/api/catalog` moves from `no-store` to a
+  public five-minute max-age, decided 2026-09-06, backend lane, not started.
+- Then t37 email, which needs the user's provider account and a verified
+  sending domain, with the rate-limit and SameSite constraints above. t35
+  waits for the pricing decision.
 
-## Hazards, briefly (full text in NOTES.md)
+### What the production database actually held before the reset
 
-Tests and CI build fresh databases; production's persists on the Fly volume.
-Any schema change needs a migration and a test that starts from the old
-schema, or it passes everything and fails on production's first write.
-SQLite can add a nullable column but cannot alter a constraint or add a
-required column without a rebuild. The owner-inventory audit is real but
-ungated: no workflow runs it, so run it yourself against `backend/server.mjs`
-before trusting a change to `/owner`.
+The previous handoff said "no owner price is set in production; every price
+is the placeholder markup". Both halves were wrong, found by the repo agent
+reading the database over ssh on 2026-09-06: 8 offers, all priced and enabled
+(set 19:07 to 22:23 on 2026-09-05; one carried a plainly exploratory note), a
+markup rate of 1.5 marked as deliberately set at 22:23 the same day, and three
+requests: two fabricated by the flow audits before #42 made the post-deploy run
+read-only, and the t33 TEST request. The lead stopped the reset and asked the
+user whether the rate and prices were real; the answer and what was done are
+recorded under "Completed". Lesson: a handoff statement about production data
+is a claim to verify over ssh, not a summary to carry forward.
 
-Worktrees share `node_modules` by junction; `git worktree remove --force`
-deletes through it into the main checkout. Use `scripts/worktree.mjs`, or a
-real `npm ci` per worktree. Two `dev.mjs` at once share Vite's HMR port and
-poison the owner-inventory audit. `kill $!` releases a port inconsistently on Windows: curl the port before
-believing the next result.
-Edit scripts matching LF miss CRLF files. `git show origin/main:path` needs
-`MSYS_NO_PATHCONV=1` in Git Bash. Registered worktrees on merged branches are
-not work in flight; each is its owner's to remove.
+### The database reset, and how to tell it happened
 
-## Decisions made tonight that are in `decisions.md`
+Three facts the repo agent established by reading the code, which the obvious
+plan gets wrong:
 
-Post-deploy read-only (#42); email instead of SMS for m10 (#33); the m10
-answers (#30); the migration split (in the migration PR's body; add it to
-`decisions.md` when it merges).
+- **The seed is silent.** `Inventory.importSnapshot` logs nothing; the boot log
+  shows only "listening" and "Database: /data/owner.sqlite". Do not look for a
+  seed line.
+- **Merging a new `src/data/scraped-tires.json` does not change the live
+  catalog.** Seeding runs once, guarded by the `seeded` flag already set in
+  production. A deploy carrying a new snapshot imports nothing; that is correct
+  behaviour, not a failed import, and it is why the reset must follow the
+  scrape PR, not precede it.
+- **The decisive check is the old TEST request answering 404.** Before the
+  reset `GET /api/requests/f80ada133275b41c327b6c35fb5555a4` returns 200; after
+  a real reset it returns 404. A catalog count is evidence only once the
+  deployed snapshot's tire count differs from the old 118 and the expected
+  number was stated before the reset.
 
-## The repo agent's handoff, verbatim
+Note for the next lead: an agent's own permission layer refused the first
+destructive `mv` over ssh (the auto-mode classifier), independently of the
+user's instruction and the lead's authorisation. The correct response, which
+the repo agent gave, is no retry and no reshaping; the user either approves the
+action in that session or runs the commands themselves. flyctl on Windows prints
+"Error: The handle is invalid" after each ssh command; that is a console quirk,
+not a failure.
 
-1. Main is e086760, green: check, deploy and the deployed-site check all passed, and kmt.fly.dev is serving it.
-2. One PR open: #55 (t36, request-lifecycle), open-and-pending. Its first commit is the schema migration that rebuilds the quotes table. Merge IS deploy and the migration runs on first boot, so the volume snapshot happens before the merge, not after; re-deploying an older commit restores code and not data. It needs main merged in first, because it predates #53, which touched quotes.mjs and QuoteRequests.jsx.
-3. Nothing else is open. #45 was closed as superseded by #56, which is merged. CLAIMS.md is empty and no worktree of mine remains.
-4. Audit baseline is 42 dead-end / 34 request-flow / 8 responsive / 19 deployed-site / 6 owner-inventory, but do not carry those numbers anywhere. Each script owns EXPECTED_CHECKS and fails on a mismatch in either direction; AGENTS.md now names none, on purpose.
-5. `.forge/owner-inventory-audit.mjs` is real but UNGATED: the workflow never runs it. I merged #54 on my own run of that script, not on its badge. Adding it to the check job is unclaimed.
-6. Cancelled is not failed and is not passed. The concurrency group cancels queued runs, and "no checks reported" means every run was cancelled. I merged twice on that mistake (#35, #42). Read `.conclusion`, never the tick.
-7. Every PR comes from the single GitHub login `ei7hty`, so authors are identifiable only by branch, task id, and who messages you. The "Author: <sidebar title>" line in PR bodies started today and is not yet in AGENTS.md.
-8. Cross-session messages arrive stale. Several today told me to do work already done, in both directions. Check repo state before acting on any queue instruction, including mine.
-9. There is no branch protection: private repo on a free plan, the API answers 403. The gate is convention and the person merging is the rest of it.
-10. The no-self-merge rule has NO docs-only exception, deliberately. I wrote #56 and did not merge it; the lead did. I declined to write the exception I would have been the beneficiary of. Whether one should exist is the lead's to decide, and the reasoning is that the beneficiary should not be its author.
-11. Production holds real data: request f80ada13..., paid. Never point the flow audits at it: they submit, approve and pay. Only deployed-site-check is read-only, which is why the live-URL instruction in AGENTS.md now names it.
-12. Legacy contact fields come back `null` from production but are `undefined` in #53's test. The guard is a truthiness check so both pass; tightening it to `!== undefined` would pass the suite and break every legacy row. SWE-S AGENT 1 will extend the test after the pause.
-13. Registered worktrees on merged branches are not work in flight; each is its owner's to remove with `scripts/worktree.mjs`. Removal refuses while any process holds the directory, which is correct behaviour and not a fault.
-14. Never `rm -rf` a worktree whose node_modules is a junction; unlink it first (`cmd rmdir`). It destroyed the shared install once. Node's lstat reports a junction as a symlink; Python's `islink` does not, so tools disagree about what it is.
-15. Unclaimed in the repo agent's lane: fold the check and verify job definitions into one with two targets; add a fixture to the gate that sets an owner price and delists a tire, with assertions the customer sees both; add the owner-inventory audit to the check job.
+Runbook, as executed on 2026-09-06: the read-only lines by the repo agent with
+the user's authenticated CLI at `C:/Users/anune/.fly/bin/flyctl.exe` (not on
+PATH), the destructive lines by the user after the agent's permission layer
+refused them; one simple remote command per call so nothing needs nested
+quoting. Everything destructive is a rename;
+the `.old` files stay on the volume beside the user's snapshot
+(`vs_O717p6ZzqQnFz9BZ1z45bXR` on `vol_42k8dgjpg8jo3j34`).
 
+```
+flyctl volumes snapshots list vol_42k8dgjpg8jo3j34
+flyctl ssh console -a kmt -C "ls -la /data"
+flyctl ssh console -a kmt -C "mv /data/owner.sqlite /data/owner.sqlite.old"
+flyctl ssh console -a kmt -C "mv /data/owner.sqlite-wal /data/owner.sqlite-wal.old"   # if ls showed it
+flyctl ssh console -a kmt -C "mv /data/owner.sqlite-shm /data/owner.sqlite-shm.old"   # if ls showed it
+flyctl ssh console -a kmt -C "ls -la /data"
+flyctl machine restart d89459da9703e8 -a kmt
+flyctl logs -a kmt --no-tail
+curl -s -o /dev/null -w "%{http_code}\n" https://kmt.fly.dev/api/requests/f80ada133275b41c327b6c35fb5555a4   # expect 404
+```
+
+Then, read-only: `/api/catalog` row count equals the deployed snapshot's tire
+count (stated in advance), distinct sizes equal the snapshot's `sizes`, no row
+carries a supplier, cost or markup field, and the deployed-site check passes.
+
+Merge is deploy; a deploy carrying a migration runs it on first boot; rolling
+back a commit restores code, not data.
