@@ -33,6 +33,27 @@ test('the release is answered as a header when the image says which commit it is
   assert.equal((await fetch(base + '/none')).headers.get('x-kmt-release'), null)
 })
 
+test('the service-area check answers on or off as a header, and never its parameters', async t => {
+  // Minimal by the same rule as X-KMT-Release: a boolean, never the radius,
+  // base ZIP or review distance readServiceAreaConfig() also produces.
+  assert.equal(securityHeaders({ secure: false, serviceAreaOn: true })['X-KMT-Service-Area'], 'on')
+  assert.equal(securityHeaders({ secure: false, serviceAreaOn: false })['X-KMT-Service-Area'], 'off')
+  assert.equal('X-KMT-Service-Area' in securityHeaders({ secure: false }), false, 'omitted rather than a placeholder when the caller has no answer')
+
+  const server = createServer((request, response) => {
+    if (request.url === '/none') { applySecurityHeaders(request, response); response.writeHead(200); return response.end() }
+    applySecurityHeaders(request, response, { serviceAreaOn: request.url !== '/off' })
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end('{"ok":true}')
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+  assert.equal((await fetch(base + '/')).headers.get('x-kmt-service-area'), 'on')
+  assert.equal((await fetch(base + '/off')).headers.get('x-kmt-service-area'), 'off')
+  assert.equal((await fetch(base + '/none')).headers.get('x-kmt-service-area'), null)
+})
+
 test('a canonical name the allow-list refuses is a refusal to boot, not a healthy-looking outage', () => {
   // The canonical name would answer 403 while every other name 301s to it,
   // and /api/health, exempt from both, would keep the checker green.
