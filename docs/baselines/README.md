@@ -53,8 +53,11 @@ changes alongside the cutover's. Each line below says which change owns it.
   `/api//catalog` answer as their single-slash forms rather than `500`.
 - `HEAD /api/health` is `401` (the allow-list is GET-only); monitors use GET.
 - `/api/catalog` was 173,723 bytes brotli and `no-store` (6,169 tires, 511
-  sizes, exactly the seven customer fields). #154 changes its caching; the
-  size and the field list should not change without a reason.
+  sizes, exactly the seven customer fields). After #154 and #169 (merged,
+  live) it answers `public, max-age=300`, and a `?size=` query returns just
+  that size instead of the whole list (`215/60R16` ~9.6 KB brotli, a sparse
+  size under 1 KB). The full catalog's field list and its size and tire count
+  should not change without a reason.
 - `/brand/*` read `no-cache` with no validators. After #147 (merged, live)
   the same paths read `public, max-age=86400, stale-while-revalidate=604800`
   with an `ETag` and a `Last-Modified`, and a conditional GET (`If-None-Match`)
