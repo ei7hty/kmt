@@ -1,71 +1,71 @@
 /* Request-only refinements. Keep legacy element rules out of new controls. */
 .order-section { max-width: 1000px; text-align: left; scroll-margin-top: 20px; }
 .order-section .section-heading { max-width: 650px; }
-.order-section .section-heading > p:last-child { color: #96a6b0; line-height: 1.6; }
-.order-section .step-panel { padding: clamp(20px, 4vw, 40px); border-radius: 14px; background: #122430; }
+.order-section .section-heading > p:last-child { color: #a3a3ab; line-height: 1.6; }
+.order-section .step-panel { padding: clamp(20px, 4vw, 40px); border-radius: 14px; background: #121212; }
 .order-section .step-panel h3 { margin-top: 8px; line-height: 1.15; }
-.order-section .panel-kicker { margin-top: 24px; color: #96a6b0; font-size: 11px; }
-.order-section .panel-note { line-height: 1.6; color: #96a6b0; }
-.order-section .back-action { color: #b3c0c8 !important; min-height: 44px; }
+.order-section .panel-kicker { margin-top: 24px; color: #a3a3ab; font-size: 11px; }
+.order-section .panel-note { line-height: 1.6; color: #a3a3ab; }
+.order-section .back-action { color: #c4c4ca !important; min-height: 44px; }
 .order-section .order-step { gap: 10px; font-size: 11px; }
 .order-section .order-step span { flex-shrink: 0; }
 .order-section .primary-action { width: 100%; min-height: 54px; margin-top: 28px; border-radius: 8px !important; }
 .order-section .tire-options { gap: 12px; }
-.tire-list-heading { margin: 30px 0 0; padding-top: 26px; border-top: 1px solid #1d3745; font-size: 21px; color: #f5f5f7; }
-.order-section .tire-options .tire-option:hover { background: #16303c !important; border-color: #7d8e98 !important; }
+.tire-list-heading { margin: 30px 0 0; padding-top: 26px; border-top: 1px solid #303033; font-size: 21px; color: #f5f5f7; }
+.order-section .tire-options .tire-option:hover { background: #171717 !important; border-color: #909094 !important; }
 .order-section .tire-info strong { text-transform: none; font-weight: 650; letter-spacing: 0; }
 .order-section .tire-option { border-radius: 10px !important; padding: 18px !important; }
-.order-section .tire-option.selected { border-color: #ababba !important; background: #16303c !important; box-shadow: inset 3px 0 #c9d3d9; }
+.order-section .tire-option.selected { border-color: #ababba !important; background: #171717 !important; box-shadow: inset 3px 0 #dedee3; }
 .order-section .tire-info { gap: 6px; }
 .order-section .tire-info small { font-size: 12px; text-transform: none; font-weight: 400; line-height: 1.5; }
-.tire-quantity { margin-top: 26px; padding-top: 22px; border-top: 1px solid #1d3745; }
-.tire-quantity-label { display: block; margin-bottom: 10px; font-size: 12px; font-weight: 600; color: #c9d3d9; }
+.tire-quantity { margin-top: 26px; padding-top: 22px; border-top: 1px solid #303033; }
+.tire-quantity-label { display: block; margin-bottom: 10px; font-size: 12px; font-weight: 600; color: #dedee3; }
 .quantity-options { display: flex; gap: 10px; }
-.order-section .quantity-option { min-width: 64px; min-height: 48px; padding: 10px 14px; border: 1px solid #27404d; border-radius: 8px; background: #16303c; color: #c9d3d9; font-size: 15px; font-weight: 600; text-align: center; }
-.order-section .quantity-option[aria-pressed="true"] { border-color: #c9d3d9; background: #1d3745; color: white; box-shadow: inset 0 0 0 1px #c9d3d9; }
-.order-section .quantity-option:hover { background: #1d3745; }
-.tire-quantity-total { margin-top: 14px; color: #b3c0c8; font-size: 14px; }
+.order-section .quantity-option { min-width: 64px; min-height: 48px; padding: 10px 14px; border: 1px solid #3e3e42; border-radius: 8px; background: #171717; color: #dedee3; font-size: 15px; font-weight: 600; text-align: center; }
+.order-section .quantity-option[aria-pressed="true"] { border-color: #dedee3; background: #303033; color: white; box-shadow: inset 0 0 0 1px #dedee3; }
+.order-section .quantity-option:hover { background: #303033; }
+.tire-quantity-total { margin-top: 14px; color: #c4c4ca; font-size: 14px; }
 .tire-quantity-total b { color: #f5f5f7; }
-.request-details { margin-top: 32px; padding-top: 28px; border-top: 1px solid #1d3745; }
+.request-details { margin-top: 32px; padding-top: 28px; border-top: 1px solid #303033; }
 .detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.detail-index { color: #96a6b0; font-size: 10px; letter-spacing: 1.8px; font-weight: 700; }
+.detail-index { color: #a3a3ab; font-size: 10px; letter-spacing: 1.8px; font-weight: 700; }
 .detail-heading h4 { margin: 6px 0 0; color: #f5f5f7; font-size: 23px; font-weight: 650; letter-spacing: -.5px; line-height: 1.3; }
-.detail-badge { border: 1px solid #27404d; border-radius: 30px; padding: 5px 10px; font-size: 11px; white-space: nowrap; color: #b3c0c8; }
-.detail-help { margin-top: 8px; color: #96a6b0; font-size: 13px; line-height: 1.6; }
+.detail-badge { border: 1px solid #3e3e42; border-radius: 30px; padding: 5px 10px; font-size: 11px; white-space: nowrap; color: #c4c4ca; }
+.detail-help { margin-top: 8px; color: #a3a3ab; font-size: 13px; line-height: 1.6; }
 .detail-footnote { font-size: 12px; }
 .vehicle-fields { display: grid; grid-template-columns: .7fr 1.25fr 1.5fr; gap: 14px; margin-top: 24px; }
-.request-details label, .location-types legend { font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: .2px; color: #c9d3d9; }
+.request-details label, .location-types legend { font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: .2px; color: #dedee3; }
 .request-details input { min-height: 50px; min-width: 0; border-radius: 7px !important; font: inherit; font-size: 16px; }
-.request-details input:focus-visible { outline: 2px solid #c9d3d9; outline-offset: 3px; }
+.request-details input:focus-visible { outline: 2px solid #dedee3; outline-offset: 3px; }
 .request-details input[aria-invalid="true"] { border-color: #ff7077 !important; }
 .manual-vehicle { margin-top: 18px; }
-.manual-vehicle summary { width: fit-content; padding: 10px 0; color: #b3c0c8; cursor: pointer; font-size: 13px; text-decoration: underline; text-underline-offset: 4px; }
+.manual-vehicle summary { width: fit-content; padding: 10px 0; color: #c4c4ca; cursor: pointer; font-size: 13px; text-decoration: underline; text-underline-offset: 4px; }
 .manual-vehicle label { margin-top: 12px; }
-.vehicle-preview { display: flex; gap: 10px; margin-top: 18px; padding: 13px 16px; background: #16303c; border: 1px solid #304638; border-radius: 8px; color: #d9e9de; overflow-wrap: anywhere; }
+.vehicle-preview { display: flex; gap: 10px; margin-top: 18px; padding: 13px 16px; background: #171717; border: 1px solid #304638; border-radius: 8px; color: #d9e9de; overflow-wrap: anywhere; }
 .vehicle-preview span { color: #74c68e; }
 .location-types { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 22px 0; padding: 0; border: 0; }
 .location-types legend { margin-bottom: 10px; }
-.order-section .location-choice, .order-section .date-choice { min-height: 48px; padding: 14px; border: 1px solid #27404d; border-radius: 8px; background: #16303c; color: #c9d3d9; text-transform: none; letter-spacing: 0; text-align: left; }
+.order-section .location-choice, .order-section .date-choice { min-height: 48px; padding: 14px; border: 1px solid #3e3e42; border-radius: 8px; background: #171717; color: #dedee3; text-transform: none; letter-spacing: 0; text-align: left; }
 .location-choice strong, .location-choice small { display: block; }
 .location-choice strong { font-size: 14px; font-weight: 600; }
-.location-choice small { margin-top: 4px; color: #96a6b0; font-size: 11px; font-weight: 400; line-height: 1.4; }
-.order-section .location-choice[aria-pressed="true"], .order-section .date-choice[aria-pressed="true"] { border-color: #c9d3d9; background: #1d3745; color: white; box-shadow: inset 0 0 0 1px #c9d3d9; }
-.order-section .location-choice:hover, .order-section .date-choice:hover { background: #1d3745; transform: none; }
+.location-choice small { margin-top: 4px; color: #a3a3ab; font-size: 11px; font-weight: 400; line-height: 1.4; }
+.order-section .location-choice[aria-pressed="true"], .order-section .date-choice[aria-pressed="true"] { border-color: #dedee3; background: #303033; color: white; box-shadow: inset 0 0 0 1px #dedee3; }
+.order-section .location-choice:hover, .order-section .date-choice:hover { background: #303033; transform: none; }
 .address-fields { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); gap: 16px; }
-.optional { color: #96a6b0; font-weight: 400; margin-left: 4px; }
+.optional { color: #a3a3ab; font-weight: 400; margin-left: 4px; }
 .access-notes { margin-top: 22px; }
-.date-section { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; margin-top: 28px; padding-top: 26px; border-top: 1px solid #1d3745; }
+.date-section { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; margin-top: 28px; padding-top: 26px; border-top: 1px solid #303033; }
 .date-shortcuts { display: flex; align-items: end; gap: 8px; }
 .date-section > .detail-help { grid-column: 1 / -1; margin-top: 0; }
 .request-details input[type="date"] { color-scheme: dark; }
-.quote-reassurance { margin-top: 28px; font-size: 12px; color: #96a6b0; text-align: center; }
-.order-section .order-summary-line { flex-direction: column; gap: 6px; padding: 18px 20px; border: 1px solid #1d3745; border-radius: 10px; background: #16303c; overflow-wrap: anywhere; }
+.quote-reassurance { margin-top: 28px; font-size: 12px; color: #a3a3ab; text-align: center; }
+.order-section .order-summary-line { flex-direction: column; gap: 6px; padding: 18px 20px; border: 1px solid #303033; border-radius: 10px; background: #171717; overflow-wrap: anywhere; }
 .order-section .order-summary-line b { order: -1; font-size: 16px; }
 .order-section .fitment-modal { border-radius: 14px; }
 .order-section .fitment-heading { padding: 26px 24px 12px; }
 .order-section .fitment-footer { flex-wrap: wrap; padding: 20px 24px; }
 .order-section .fitment-footer .primary-action { margin-top: 0; width: auto; }
-.order-section button:focus-visible, .manual-vehicle summary:focus-visible { outline: 2px solid #c9d3d9; outline-offset: 4px; }
+.order-section button:focus-visible, .manual-vehicle summary:focus-visible { outline: 2px solid #dedee3; outline-offset: 4px; }
 @media (max-width: 600px) {
   .order-section { padding: 42px 16px; }
   .order-section .order-step { flex-direction: column; align-items: flex-start; font-size: 10px; gap: 8px; }
