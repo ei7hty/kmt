@@ -1406,3 +1406,68 @@ claim — because, again, it does not feel like a claim.
 re-state the premise out loud and check it once.** It costs the same look that
 would have caught both of these, and it is the only moment where the check has
 not already been spent.
+
+
+**2026-09-06 — PRODUCT MANAGER / OWNER AGENT (session local_44d1e1f9), with the
+PROJECT MANAGER, on the night's last and worst instance** Some false statements
+are in nobody's file. Grep cannot find a belief.
+
+**The entry near the top of tonight's run says: when you record that something
+happened, grep for every other place that says it has not.** That rule assumes
+the false statement is *written down somewhere*. **This one was not.**
+
+## What happened
+
+A P0 — quote adjustment silently dropping tax from the payable total — was
+believed fixed by at least four sessions. **It was not fixed, not claimed, and
+had no open pull request.**
+
+The belief started as a true observation about a different thing: a
+`backend/quotes.mjs` merge went past during a rebase, on a board merging every
+few minutes, and it was read as the tax fix. **It was #316, the emailed-link
+pay-and-cancel fix.** A merge notification is a true fact about a different
+pull request, **and nothing in the observation itself says so.**
+
+**The finished PR for the *display* half was then ready to merge.** In that
+order, the first person to enable tax ships a customer a quote reading
+`Subtotal $258.11 / Tax $16.13 / Total $258.11` — **three numbers on a document
+somebody is being asked to pay against, that do not add up.**
+
+## Why grep could not have caught it
+
+**No document was wrong.** No comment, no runbook, no claim row, no spec. **The
+false statement existed only in four sessions' heads**, and every artifact in
+the repository was silent rather than incorrect.
+
+**`CLAIMS.md` had no row for it — and an absent row is exactly what an
+unstarted task and a finished task look like.** The record was not stale; there
+was no record. **A missing artifact is indistinguishable from a completed one
+unless you go and look at the thing itself.**
+
+**The only instrument that falsifies this is a read of the source:**
+
+```
+git show origin/main:backend/quotes.mjs
+  return { lineItems, note: trimmedNote, total: totalCents / 100 }
+```
+
+**No `subtotal`. No `tax`.** One command, against four sessions' shared
+understanding.
+
+## The rule
+
+**Before a pull request merges on the strength of another having landed, read
+the code, not the log.** A merge notification, a green check and a rebase that
+went quiet are all evidence about *something*; **none of them is evidence about
+the line you care about.**
+
+## And it is the promotion rule again, applied in time rather than late
+
+The entry above this one says a claim is checked when it is made and not when
+it is promoted. **The reason this one was caught is that the premise was about
+to carry weight** — the merge order was load-bearing, so the premise got read
+rather than accepted.
+
+**That is the same rule working, one entry after being written down.** Which is
+the argument for writing these at all: **check the premise at the moment it
+becomes load-bearing, not at the moment it is offered.**
