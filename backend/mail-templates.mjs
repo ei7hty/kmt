@@ -72,7 +72,7 @@ export const TEMPLATES = {
     audience: 'customer',
     data: baseData,
     render: d => {
-      const text = `Hi ${d.to_name},\n\nGot your request for ${d.quantity} × ${d.tireName}${d.tireSize ? ` (${d.tireSize})` : ''} on your ${d.vehicleInfo}, to be fitted at ${d.locationType?.toLowerCase() || 'your location'} on ${d.date}.\n\nI'll look it over and send you a quote. Nothing is charged until I do. Until then, your request is here:\n${d.statusUrl}${signoff}`
+      const text = `Hi ${d.to_name},\n\nGot your request for ${d.quantity} × ${d.tireName}${d.tireSize ? ` (${d.tireSize})` : ''} on your ${d.vehicleInfo}, to be fitted at ${d.locationType?.toLowerCase() || 'your location'} on ${d.date}.\n\nI'll look it over and send you a quote. Nothing is charged until I do. Your request is here:\n${d.statusUrl}${signoff}`
       return { subject: `Got your tire request, ${d.to_name}`, text, html: htmlOf(text) }
     },
   },
