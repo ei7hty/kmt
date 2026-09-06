@@ -98,6 +98,39 @@ so Step 2 is blocked today and Step 1 is not.
 
 ---
 
+## The failure that hides: a canonical host not in the allow-list
+
+**If `KMT_CANONICAL_HOST` names a host that `KMT_ALLOWED_HOSTS` does not
+contain, the site is down and every monitor says it is fine.** Measured by the
+auditor on a throwaway server:
+
+- the canonical name answers **403**, because the Host guard runs before the
+  redirect;
+- every other name **301s to it**, so every visitor is sent to the 403;
+- nothing at boot warns.
+
+**Why nothing catches it.** `/api/health` is exempt from both guards -- which is
+what makes Fly's check work at all -- so the platform check, any uptime monitor
+and the boot log all keep reporting a healthy machine. The only thing that
+reveals it is a plain GET on the canonical name. And `flyctl secrets set`
+restarts the machine *outside a deploy*, so the post-deploy verify job never
+runs and CI never sees it either.
+
+This is exactly the shape of Steps 1 and 2 below, which is why the order matters
+and why each one is verified with a GET rather than with the health probe.
+
+**The rule: `KMT_ALLOWED_HOSTS` contains the canonical name before
+`KMT_CANONICAL_HOST` is ever set.** Step 1 does that -- it sets all four names,
+canonical included -- which is the reason it comes first. Do not reorder them,
+and do not narrow the allow-list later without checking what the canonical host
+is set to.
+
+LEAD BACKEND DEV is adding a boot refusal for this in #167: with a canonical
+host set and a non-empty allow-list that does not contain it, the process
+refuses to start and names both variables, the way `readAuthConfig` already
+refuses a bad password. That turns a healthy-looking 403 into a crash loop
+visible in `flyctl status`. Until it ships, the checks below are the only guard.
+
 ## Step 1 — `KMT_ALLOWED_HOSTS`
 
 **Set all four names in one command.** Not incrementally, and not one per name.
@@ -130,7 +163,12 @@ Host also `200` -- the guard is inert while `KMT_ALLOWED_HOSTS` is unset, which
 is the state this step changes. That bogus-Host line going from `200` to `403`
 is the single clearest proof that Step 1 took effect.
 
-**Then check health immediately**, before doing anything else:
+**A GET on each name is the check that matters, not the health probe.**
+`/api/health` is exempt from the host guard, so it answers 200 whether this step
+worked or not. The four 200s above are the proof; health confirms something
+narrower, below.
+
+**Then check health**, which confirms the exemption is doing its job:
 
 ```bash
 curl -s https://kensmobiletire.com/api/health
@@ -163,7 +201,19 @@ writing. One restart.
 flyctl secrets set KMT_CANONICAL_HOST="kensmobiletire.com" -a kmt
 ```
 
-**Proves it worked.** Three redirects, and health on both names:
+**Proves it worked.** The canonical name first -- if this is not 200, the site
+is down for everyone and the rollback below is immediate:
+
+```bash
+curl -sI https://kensmobiletire.com/ | head -1
+```
+
+`HTTP/2 200`. A `403` here means the canonical name is missing from
+`KMT_ALLOWED_HOSTS`; unset `KMT_CANONICAL_HOST` at once and fix Step 1 before
+trying again. Do not diagnose further while it is set: every visitor is being
+redirected into that 403, and health will keep saying the machine is well.
+
+Then the three redirects, and health on both names:
 
 ```bash
 for h in www.kensmobiletire.com order.kensmobiletire.com kmt.fly.dev; do
@@ -213,6 +263,32 @@ site depends on it.
 
 ---
 
+## What changes for people on the day, and is not a bug
+
+Four consequences of the cutover that will look like faults if nobody has
+written them down.
+
+**Ken has to sign in again on the new name.** The owner session cookie is scoped
+per host, so his session on `kmt.fly.dev` does not carry to
+`kensmobiletire.com`. Expected. Tell him before the flip, or the first thing he
+meets on the new site is a password prompt that reads as the cutover having
+broken his login.
+
+**The import bookmarklet has to be regenerated.** One generated on
+`kmt.fly.dev` posts to `kmt.fly.dev`, which now answers 301, and the post
+fails. Regenerate it from the owner screen on the new name after the flip.
+
+**Customers who submitted before the cutover will not see their list at
+`/status` on the new name.** The per-browser key is stored per origin, so the
+new origin starts empty. Their request is not lost and is reachable by its link
+-- which is what the emailed link is for. Nobody has to do anything; it is worth
+knowing before someone reports "my request disappeared".
+
+**One open tab may fail its next submit.** A POST to a non-canonical name gets a
+301, and browsers turn a redirected POST into a GET, so a form submitted from a
+tab opened before the flip fails once and works on reload. Acceptable, and
+short-lived; name it so it is not chased as a bug.
+
 ## Rollback summary
 
 | step | rollback | effect | site down? |
@@ -220,6 +296,14 @@ site depends on it.
 | 1 | `flyctl secrets unset KMT_ALLOWED_HOSTS -a kmt` | any Host accepted | no, one restart |
 | 2 | `flyctl secrets unset KMT_CANONICAL_HOST -a kmt` | redirects stop | no, one restart |
 | 3 | set the variable back to `https://kmt.fly.dev` | CI tests the old name | no |
+
+After any rollback, confirm with a GET rather than a health probe, for the same
+reason as above:
+
+```bash
+curl -sI https://kensmobiletire.com/ | head -1
+curl -sI https://kmt.fly.dev/ | head -1
+```
 
 `kmt.fly.dev` keeps serving through all three, which is the property that makes
 every step reversible. Do not remove it from `KMT_ALLOWED_HOSTS` as a tidying-up
