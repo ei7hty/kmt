@@ -1416,3 +1416,10 @@
 .brand-mark {
   min-height: 44px;
 }
+
+/* The size search's empty state: a sentence and a way back, never a blank
+   list. On the light modal, so the dark text tokens of that panel. */
+.fitment-empty { display: grid; gap: 10px; justify-items: start; padding: 14px 4px 6px; color: #16303c; font-size: 14px; line-height: 1.5; }
+.fitment-empty p { margin: 0; }
+.fitment-clear { min-height: 44px; padding: 10px 16px !important; border: 1px solid #34505e !important; border-radius: 6px !important; background: #fff !important; color: #16303c !important; font-size: 13px; font-weight: 800; }
+.fitment-clear:hover { background: #e8edf0 !important; }
