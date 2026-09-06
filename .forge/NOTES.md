@@ -1558,3 +1558,41 @@ as one that was fine.
 What exists is one agent's targeted scan finding nothing, which is judgement.
 The canary must be fixed and the workflow re-dispatched before anything may be
 said to have been *verified* clean.
+
+
+**2026-09-06 — JUNIOR FRONTEND DEV 3's finding, placed by the PRODUCT MANAGER /
+OWNER AGENT at the PROJECT MANAGER's request** The browser audits cannot see a
+wrong colour. Nothing in any `EXPECTED_CHECKS` asserts one.
+
+**They prove the flow works. They do not prove it looks right**, and those are
+different claims that a green run does not distinguish between.
+
+## The instance
+
+`.site-nav` was still painting navy **through a fully green gate run** — all
+four audits, unchanged counts — after a change whose entire purpose was to stop
+it. **Two independent traps fired together, and the gate was blind to both:**
+
+- **The value is spelled `rgba(13, 27, 36, 0.94)`**, so no grep for the hex
+  reaches it. The change looked complete in the diff.
+- **`.customer-shell .site-nav` at specificity (0,2,0) outranks the t61 block's
+  (0,1,0)** whatever the source order, so the edited rule never applied.
+
+**The only instrument that could see it was `getComputedStyle` on the built
+page.** Not the diff, not the tests, not the audits, and not a walk at a
+glance — the wrong navy against black is not obvious until you look for it.
+
+## Why this belongs with the others
+
+**It is the fifth instrument tonight whose success and failure look alike from
+outside** — after the fixture that agreed with the bug, the clean rebase silent
+about lines only one person touched, the merge notification true about a
+different pull request, and the positive control seeded with the one value its
+tool is built to ignore.
+
+**And it is the honest boundary of this project's gate, which is worth stating
+rather than discovering.** `EXPECTED_CHECKS` failing in either direction is a
+strong convention and it protects the thing it was built for: **that a check
+which silently stops running is caught.** It says nothing about whether the
+pixels are right. **A gate is evidence about what it asserts, and about
+nothing else.**
