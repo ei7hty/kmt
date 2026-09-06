@@ -92,8 +92,9 @@ npx eslint src backend
 node --test backend/*.test.mjs       # 52 tests: owner (34) and quotes (18)
 node .forge/responsive-check.mjs     # 8 checks, overflow at 375px and 1280px
 node .forge/dead-end-audit.mjs       # 36 checks across the full click path
-node .forge/request-flow-check.mjs   # 26 checks across the request flow
+node .forge/request-flow-check.mjs   # 30 checks across the request flow
 node .forge/owner-inventory-audit.mjs  # needs the owner server running
+node .forge/deployed-site-check.mjs   # 19 read-only checks, AUDIT_BASE only
 ```
 
 Start the app with `node backend/dev.mjs` (http://127.0.0.1:4180), not
@@ -109,14 +110,29 @@ passes; see `NOTES.md`. Always set `AUDIT_BASE`.
 
 GitHub Actions runs the backend tests, lint, build **and the three browser
 audits** on every push to `main` and on every pull request -- the audits against
-a `vite preview` of the build. It then deploys `main` to https://kmt.fly.dev and
-runs the audits a second time against the live site. Nothing deploys from any
-other branch.
+`backend/server.mjs` serving the built `dist/`, with a temporary database and a
+throwaway `KMT_OWNER_PASSWORD`, not against a `vite preview`. It then deploys
+`main` to https://kmt.fly.dev and runs the read-only deployed-site check against
+the live site. Nothing deploys from any other branch.
 
 The second run is not redundant: only it exercises the SPA fallback on the real
-host, which is server configuration a preview cannot test. What the first run
-buys is that a change breaking a click path fails **before** it merges, instead
-of passing its PR and only failing once main is already deployed.
+host, which is server configuration the first run cannot test. What the first
+run buys is that a change breaking a click path fails **before** it merges,
+instead of passing its PR and only failing once main is already deployed.
+
+Two runs, two different questions. Confusing them is how a green tick starts
+meaning less than it looks like.
+| run | where | proves |
+| --- | --- | --- |
+| the gate, on every pull request | `backend/server.mjs` with the built `dist/`, a temporary database and a throwaway password | **the flow**: a customer submits, the owner approves, the customer pays, and every click path leads somewhere |
+| the deployed-site check, after a merge deploys | `https://kmt.fly.dev`, read-only | **the deploy**: the site is up, the catalog is the shape the customer flow expects and leaks no supplier fields, the routes resolve through the SPA fallback, the owner API still refuses without a session, nothing scrolls sideways |
+The flow audits perform the journey -- they submit, approve and pay. That is
+right against a database built for the run and thrown away after it. It is
+wrong against production, where it would leave a fabricated request in the
+owner's list on every deploy, marked paid. So the deployed-site check reads and
+never writes, signs into nothing, and needs no production password in CI.
+Counts: **36** dead-end, **30** request-flow, **8** responsive, **19**
+deployed-site. A count that drops is a check that stopped running.
 
 **Nothing enforces any of this. The gate is convention.** Branch protection is
 unavailable on this repository -- it is private on a free plan, and the API
@@ -129,7 +145,9 @@ Read the diff, not the badge: confirm the audit counts in the log rather than
 trusting the tick, and merge nothing red. A check that was skipped is not a
 check that passed.
 
-**Run the dead-end audit against the live URL before calling a deploy good.**
+**Run the deployed-site check against the live URL before calling a deploy
+good.** Not the flow audits: they submit, approve and pay, and against
+production that writes a fabricated request into the owner's list.
 This build has passed every local check and 404'd in production: a missing SPA
 rewrite meant `/owner` and `/status` returned 404 on hard navigation while
 click-through worked fine.
@@ -175,25 +193,6 @@ script errors before reaching its assertions, say so loudly.
 - No new dependencies without a justification that beats keeping the surface small.
 
 ---
-
-## What each check run proves
-
-Two runs, two different questions. Confusing them is how a green tick starts
-meaning less than it looks like.
-
-| run | where | proves |
-| --- | --- | --- |
-| the gate, on every pull request | `backend/server.mjs` with the built `dist/`, a temporary database and a throwaway password | **the flow**: a customer submits, the owner approves, the customer pays, and every click path leads somewhere |
-| the deployed-site check, after a merge deploys | `https://kmt.fly.dev`, read-only | **the deploy**: the site is up, the catalog is the shape the customer flow expects and leaks no supplier fields, the routes resolve through the SPA fallback, the owner API still refuses without a session, nothing scrolls sideways |
-
-The flow audits perform the journey -- they submit, approve and pay. That is
-right against a database built for the run and thrown away after it. It is
-wrong against production, where it would leave a fabricated request in the
-owner's list on every deploy, marked paid. So the deployed-site check reads and
-never writes, signs into nothing, and needs no production password in CI.
-
-Counts: **36** dead-end, **30** request-flow, **8** responsive, **19**
-deployed-site. A count that drops is a check that stopped running.
 
 ## Notes to each other
 
