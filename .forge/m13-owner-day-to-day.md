@@ -142,15 +142,15 @@ deep pass (2,681 unread pages) is where it stops being fine.
 ### m13.6 The inventory summary once, not on every page
 
 Recorded on the PROJECT MANAGER's ruling of 2026-09-06, measured by LEAD
-FULL STACK under Slow 3G (,
-PR #180): every page of  carries the same
-, and the summary is most of the response.
+FULL STACK under Slow 3G (`docs/measurements/2026-09-06-owner-slow-3g.md`,
+PR #180): every page of `GET /api/owner/inventory` carries the same
+`summary`, and the summary is most of the response.
 
 | part of one inventory response | raw |
 | --- | --- |
 | the 24 tire cards asked for | 10 KB |
-| , the 910 supported sizes | 11 KB |
-| , 511 rows | 72 KB |
+| `summary.sizes`, the 910 supported sizes | 11 KB |
+| `summary.coverage`, 511 rows | 72 KB |
 | whole response | 98 KB; about 3 KB brotli on a synthetic database, which is a floor, since uniform invented coverage rows compress better than real ones |
 
 Resent on every filter change and every page turn: moving from page 1 to
@@ -168,11 +168,11 @@ size's row. Not built during launch week: Ken's measured experience is
 fine, and it is an API shape change plus a UI change.
 
 What that measurement also settled, so this milestone is read correctly:
-nothing on Ken's side is slow today. Cold  to the password field
+nothing on Ken's side is slow today. Cold `/owner` to the password field
 is 3.7 s on production (111 KB, four requests, all bundle and brand image,
 no data); sign-in to the first tire card is estimated at 1 to 1.5 s;
-committing  with its 281 tires reaches the first card in 2.7 s
-locally under the same throttle;  with five requests is
+committing `215/60R16` with its 281 tires reaches the first card in 2.7 s
+locally under the same throttle; `/owner/quotes` with five requests is
 1.0 s and 5 KB. m13.1 to m13.3 are about the shape of Ken's work, the
 scrolling, the 281 saves and the missing search, not about waiting. The
 customer-side pass of the same day is in PR #179 (t61), cited rather than
