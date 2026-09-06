@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './OwnerInventory.css'
 import SignIn from './SignIn.jsx'
+import { signOut } from './session.js'
 
 const dollars = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const dateLabel = value => value ? new Date(value).toLocaleString() : 'Never refreshed'
@@ -308,6 +309,14 @@ export default function OwnerInventory({ navigate }) {
     setNotice('Offer saved. Your selection and price are stored in the owner database.')
   }
 
+  // Sign out ends the session on this device. Hosted, the cookie is cleared
+  // and the gate comes straight back; the local server has no session and
+  // answers 404, so there is nothing to leave but the page (#96).
+  const leave = async () => {
+    const { hosted } = await signOut()
+    if (hosted) { setData(null); setNeedsSignIn(true) } else navigate('/')
+  }
+
   if (needsSignIn) return <SignIn onSignedIn={load} navigate={navigate}
     what="This workspace holds supplier costs and your prices." />
 
@@ -336,9 +345,9 @@ export default function OwnerInventory({ navigate }) {
     setPage(1)
   }
   return <div className="oi-shell">
-    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}>KMT<span>.</span></button><span>OWNER WORKSPACE</span><button className="oi-button" onClick={() => navigate('/owner/quotes')}>Quote requests →</button></nav>
+    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}>KMT<span>.</span></button><span>OWNER WORKSPACE</span><button className="oi-button" onClick={() => navigate('/owner/quotes')}>Quote requests →</button><button className="oi-button" onClick={leave}>Sign out</button></nav>
     <main className="oi-content">
-      <header className="oi-heading"><div><p className="oi-kicker">YOUR INVENTORY. YOUR PRICES.</p><h1>Build your tire offering</h1><p>Explore Giga Tires, choose what you want to offer, and set your price.</p></div><span className="oi-owner-badge">Owner only · local workspace</span></header>
+      <header className="oi-heading"><div><p className="oi-kicker">YOUR INVENTORY. YOUR PRICES.</p><h1>Build your tire offering</h1><p>Explore Giga Tires, choose what you want to offer, and set your price.</p></div><span className="oi-owner-badge">Owner only</span></header>
       <div className="oi-metrics">
         <div><strong>{summary?.supplierCount ?? '—'}</strong><span>Supplier tires saved</span></div>
         <div><strong>{summary?.offeredCount ?? '—'}</strong><span>Chosen for KMT</span></div>
@@ -368,7 +377,7 @@ export default function OwnerInventory({ navigate }) {
       {size && <p className="oi-coverage">{size}: {coverage ? `${coverage.completeness === 'full' ? 'Full refresh' : coverage.completeness === 'snapshot' ? 'Limited snapshot' : 'Not refreshed'} · ${dateLabel(coverage.last_success)}` : 'Not refreshed yet. Select Refresh above to fetch its tires.'}{coverage?.error && ` · Last attempt failed: ${coverage.error}`}</p>}
       {error && <div className="oi-error oi-notice" role="alert">{error}</div>}
       {notice && <div className="oi-notice" role="status">{notice}</div>}
-      <div className="oi-results-heading"><p>{data ? `${data.total} matching tires` : 'Loading inventory…'}</p><span>{loading ? 'Updating…' : 'Selections are saved for the owner; customer catalog comes later.'}</span></div>
+      <div className="oi-results-heading"><p>{data ? `${data.total} matching tires` : 'Loading inventory…'}</p><span>{loading ? 'Updating…' : 'Selections and prices are saved, and offered tires reach the customer catalog.'}</span></div>
       <div className="oi-results" aria-busy={loading}>
         {data?.items.map(tire => <TireOffer key={`${tire.id}:${tire.offer.version}`} tire={tire} markup={summary?.markup} onSaved={saved} />)}
         {data && !data.items.length && <div className="oi-empty"><h2>No tires to show yet</h2><p>{size && !coverage ? 'Refresh this size to load supplier inventory.' : 'Try another search or filter, or refresh a size to add supplier inventory.'}</p></div>}
