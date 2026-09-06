@@ -848,26 +848,14 @@ merged, #206 wired `mail.mjs` to write outbox rows on submit, on quote-sent,
 and on payment -- the outbox is not empty the way it was when this section was
 first written). Everything below applies to those three unconditionally.
 
-**`inquiries` is not one of them yet, whatever the rest of this document
-implies.** The module and its tests are on main, but nothing imports them:
+`inquiries` is live too. Confirm the wiring rather than trusting this line:
 
 ```bash
 grep -n "Inquiries" backend/server.mjs backend/dev.mjs backend/api.mjs
 ```
 
-returns nothing today, so the table is never created and every command below
-that names `inquiries` answers `no such table` until t65 wires it up. Read
-that as this line being accurate, not as a broken database -- and note there
-is nothing to redact there either, because with no table there is nowhere for
-an inquiry to have been stored. Run the grep before you believe either way;
-a command that finds nothing looks identical to a command that did not run,
-so satisfy yourself it works by grepping `Quotes` the same way first, which
-must return lines.
-
-**When t65 lands, this paragraph is what needs deleting**: move `inquiries`
-back into the sentence above and remove this exception in the same pull
-request that wires the module up. A correction that outlives the thing it
-corrected is the failure this paragraph exists to fix.
+This must return the live imports and handlers; as a positive control,
+grepping `Quotes` the same files must return lines too.
 
 If a future schema change ever drops one of these tables, a query against it
 fails loudly with `no such table` rather than silently skipping -- that
@@ -1153,6 +1141,28 @@ drill above and compare, rather than repairing the live file in place.
 **The supplier is blocking the scraper.** Not an outage. The catalogue in the
 database is what customers see and it does not go away when a scrape fails; see
 `docs/supplier-refresh.md`.
+
+**A CI job failed and its log is gone.** `gh run view --log` returns `log not
+found` once a log has aged out or while a re-run is in flight. That is the
+absence of one instrument, not the absence of an answer -- the jobs API still
+holds each step's outcome:
+
+```bash
+gh api "repos/ei7hty/kmt/actions/runs/<run-id>/jobs" \
+  --jq '.jobs[] | select(.conclusion=="failure") | {name, steps_run: (.steps|length), failed: [.steps[]|select(.conclusion=="failure")|.name]}'
+```
+
+**Read `steps_run` first.** An empty steps array means the job failed before
+running anything -- a runner that never started -- and nothing in the job body
+can be responsible. A named failed step means the opposite. Those are different
+diagnoses and only one of them is ours, and distinguishing them costs one call
+rather than an evening of pattern-matching across runs.
+
+Three failures on 2026-09-06 looked like one story and were three: a job with
+zero steps (infrastructure), a verify job timing out at step 11 on a deploy that
+had actually succeeded (a real defect, since fixed), and both monitor jobs firing
+correctly during the restore drill's rogue machine. Only the middle one needed a
+change.
 
 **In every case, before acting: take a snapshot.** It costs seconds and
 kilobytes, and it is the difference between one problem and two.

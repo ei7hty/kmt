@@ -13,6 +13,8 @@ import { Outbox } from './outbox.mjs'
 import { createMailer, describeMail } from './mail.mjs'
 import { RateLimiter } from './limits.mjs'
 import { describeServiceArea, readServiceAreaConfig } from './service-area.mjs'
+import { Inquiries } from './inquiries.mjs'
+import { createInquiriesApi } from './inquiries-api.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const filename = process.env.KMT_OWNER_DB || path.join(root, 'backend/data/owner.sqlite')
@@ -35,7 +37,9 @@ const catalogApi = createCatalogApi(inventory)
 const healthApi = createHealthApi(inventory)
 // Requests and their quotes live in the same database as inventory. The same
 // limits as the hosted server, so a local run trips over them before a deploy does.
-const requestsApi = createRequestsApi(quotes, { limiter: new RateLimiter(), mailer })
+const publicLimiter = new RateLimiter()
+const requestsApi = createRequestsApi(quotes, { limiter: publicLimiter, mailer })
+const inquiriesApi = createInquiriesApi(new Inquiries(inventory.db), { limiter: publicLimiter })
 const port = Number(process.env.KMT_OWNER_PORT || 4180)
 const vite = await createViteServer({ root, server: {
   middlewareMode: true,
@@ -50,6 +54,7 @@ const server = createHttpServer(async (request, response) => {
   if (await healthApi(request, response)) return
   if (await catalogApi(request, response)) return
   if (await requestsApi(request, response)) return
+  if (await inquiriesApi(request, response)) return
   if (await api(request, response)) return
   if (request.url.startsWith('/api/')) {
     response.writeHead(404); response.end('Not found'); return

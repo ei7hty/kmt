@@ -9,6 +9,7 @@ import Status from './routes/Status.jsx'
 import Confirmation from './routes/Confirmation.jsx'
 import NotFound from './routes/NotFound.jsx'
 import Privacy from './routes/Privacy.jsx'
+import Inquiry from './routes/Inquiry.jsx'
 
 /** The apex domain, and the two routes the sitemap lists under it (t46). */
 const CANONICAL_HOST = 'https://kensmobiletire.com'
@@ -96,6 +97,7 @@ function App() {
   }
 
   if (route === '/privacy') return <Privacy navigate={navigate} />
+  if (route === '/inquiry') return <Inquiry navigate={navigate} />
 
   if (route === '/') return <CustomerRequest navigate={navigate} />
 
