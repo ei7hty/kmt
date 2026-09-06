@@ -88,6 +88,19 @@ export async function waitForStatus(page) {
  * the wizard replaced the old single-page form, an audit that filled four
  * fields on load stopped running its checks and nobody noticed.
  */
+/**
+ * Open the whole tire list when the step is showing only its cheapest dozen.
+ *
+ * The seed tires the audits pick by name are priced above every supplier tire
+ * in their size, so on a real size they sit behind the "Show all" control.
+ * Clicking it is what a customer looking for that tire would do; when the
+ * list is short enough to have no control, there is nothing to click.
+ */
+export async function expandTireList(page) {
+  const showAll = page.locator('button:has-text("Show all")')
+  if (await showAll.count()) await showAll.first().click()
+}
+
 export async function submitRequest(page, { base, size, tireName, vehicle, location, date, notes }) {
   const [width, rest] = size.split('/')
   const [ratio, diameter] = rest.split('R')
@@ -100,6 +113,7 @@ export async function submitRequest(page, { base, size, tireName, vehicle, locat
   await page.fill('#fitmentZip', '02149').catch(() => {})
   await page.click('button:has-text("Continue to tires")', step)
 
+  await expandTireList(page)
   await page.click(`.tire-option:has-text("${tireName}")`, step)
   await page.locator('.manual-vehicle summary').click()
   await page.fill('#vehicleInfo', vehicle, step)

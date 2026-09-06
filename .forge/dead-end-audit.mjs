@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { freshPage, openOwnerQuotes, waitForStatus } from './audit-ui.mjs';
+import { expandTireList, freshPage, openOwnerQuotes, waitForStatus } from './audit-ui.mjs';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
 
@@ -45,6 +45,7 @@ async function submitRequest(page, { size, tireName, vehicle, location, date }) 
     await page.click('button:has-text("Continue to tires")', step);
 
     // Step 2: pick the tire by its catalog name, and say what it is going on.
+    await expandTireList(page);
     await page.click(`.tire-option:has-text("${tireName}")`, step);
     await page.locator('.manual-vehicle summary').click();
     await page.fill('#vehicleInfo', vehicle, step);
