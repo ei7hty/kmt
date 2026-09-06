@@ -61,15 +61,32 @@ export const OUTBOX_STATUSES = ['queued', 'sent', 'failed', 'bounced']
 export const OUTBOX_PERSONAL_DATA_KEYS = ['to_name', 'to_email', 'customerPhone', 'location', 'locationNotes', 'customerNotes']
 
 /**
- * The two real columns above -- `to_address` and `to_name` -- that a removal
- * request blanks directly, as distinct from the personal keys inside `data`
- * this module already names. `OUTBOX_PERSONAL_DATA_KEYS` does not cover
- * these two: they are their own columns, not JSON keys, and a hand-list with
- * only one of its two halves pinned is exactly the shape of gap #230 found
- * in `requests.payload`. If you change this list, update the UPDATE outbox
- * statement in docs/operations.md's manual removal procedure to match.
+ * The real columns -- as distinct from the personal keys inside `data` this
+ * module already names. `OUTBOX_PERSONAL_DATA_KEYS` does not cover them:
+ * they are their own columns, not JSON keys, and a hand-list with only one
+ * of its halves pinned is exactly the shape of gap #230 found in
+ * `requests.payload`.
+ *
+ * `error` joined `to_address` and `to_name` here for a different reason than
+ * they are here, and the reason is worth keeping. Those two are ours: we put
+ * the address in them. `error` holds `String(error?.message)` from the mail
+ * provider (`mail.mjs`), which is **unbounded text from a system we do not
+ * control**, written into a row a removal request is supposed to clear. SMTP
+ * replies to `RCPT TO` conventionally name the mailbox -- `550 5.1.1
+ * <someone@example.com>: Recipient address rejected` is the ordinary shape --
+ * so the failure path is the one that keeps the address the success path
+ * never stored in prose. Its content is the provider's choice, not ours, and
+ * that decides the classification whatever any particular bounce turns out
+ * to say. Found by the completeness audit, `.forge/personal-data-removal.md`
+ * finding 2; note that no bounce was produced against the live relay, so
+ * this is classified on the mechanism rather than on a measured leak.
+ *
+ * If you change this list, `backend/redaction.mjs` picks the change up on its
+ * own -- it builds its statement from this array rather than restating it --
+ * but the fallback SQL in docs/operations.md's manual removal procedure is
+ * hand-typed and does not. Update it there too.
  */
-export const OUTBOX_REDACTED_COLUMNS = ['to_address', 'to_name']
+export const OUTBOX_REDACTED_COLUMNS = ['to_address', 'to_name', 'error']
 
 /**
  * The current shape of the table, as one place both creation and migration use.
