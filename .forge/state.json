@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "KMT Tire Quoting",
-  "summary": "Automated draft quotes for Ken's Mobile Tire, reviewed by the owner before they go out.",
+  "summary": "Automated draft quotes for Ken's Mobile Tire, reviewed by the owner before they go out. Task status below was reconciled against merged code on 2026-09-06 after the record had stood still for eleven hours; each task's notes name the artifact that settled it.",
   "milestones": [
     {
       "id": "m1",
@@ -69,7 +69,7 @@
     {
       "id": "m10",
       "title": "The quote is a real exchange between two people",
-      "description": "Second phase 4 milestone, after m9. The request carries a name and an email address (mobile optional); the owner can adjust the price and add lines and a note before sending; the customer is emailed when the request is received, when the quote is sent (the quote itself, itemised, with a link to view and pay) and when payment is recorded (a receipt); the owner is emailed when a request arrives; a request has a lifecycle with an end, and the owner list is usable once real requests arrive. Email goes through a provider's REST API behind a one-module seam with an outbox fallback so nothing waits on the account. R23-R28. Revised from text messages to email on 2026-09-05 on the client's direction.",
+      "description": "Second phase 4 milestone, after m9. The request carries a name and an email address (mobile optional); the owner can adjust the price and add lines and a note before sending; the customer is emailed when the request is received, when the quote is sent (the quote itself, itemised, with a link to view and pay) and when payment is recorded (a receipt); the owner is emailed when a request arrives; a request has a lifecycle with an end, and the owner list is usable once real requests arrive. Email goes through a provider's REST API behind a one-module seam with an outbox fallback so nothing waits on the account. R23-R28. Revised from text messages to email on 2026-09-05 on the client's direction. Sequenced as stage 4 of the m12 sprint (sprint-live.md): the seam, the outbox and the SMTP adapter are merged (t37); what remains is t38, which is the user's hands. Reading this milestone as the live front is what misled a JUNIOR FULL STACK engineer on 2026-09-06.",
       "status": "planned",
       "order": 10
     },
@@ -83,9 +83,16 @@
     {
       "id": "m12",
       "title": "Live on the client's own domain",
-      "description": "The final sprint to live, decided by the user on 2026-09-06: stock data on every listed size (page-one coverage), the app made safe for real customers, the client's domain with certificate, monitoring and a rehearsed restore, then email (m10's t37 and t38) last. The plan, gates and assignment table by agent name are in .forge/sprint-live.md. The owner approval gate is untouched throughout.",
-      "status": "planned",
+      "description": "The final sprint to live, decided by the user on 2026-09-06: stock data on every listed size (page-one coverage), the app made safe for real customers, the client's domain with certificate, monitoring and a rehearsed restore, then email (m10's t37 and t38) last. The plan, gates and assignment table by agent name are in .forge/sprint-live.md. The owner approval gate is untouched throughout. Stage 3 is the open gate as of 2026-09-06 16:50Z: every task an agent can do in it is done, and what remains -- SPF/DKIM, KMT_ALLOWED_HOSTS, KMT_CANONICAL_HOST and the restore drill -- is the user's hands.",
+      "status": "in_progress",
       "order": 11
+    },
+    {
+      "id": "m13",
+      "title": "Ken's day-to-day: finding a request, remembering a customer, pricing a size",
+      "description": "The first post-launch milestone for the owner portal, planned in .forge/m13-owner-day-to-day.md by the OWNER PORTAL ANALYST against measurements recorded there. Ken finds the request a customer is calling about in one search, remembers what he told them last time, and prices a whole size in one action. Nothing in it starts before gate 3 of sprint-live.md.",
+      "status": "planned",
+      "order": 12
     }
   ],
   "tasks": [
@@ -666,14 +673,16 @@
       "title": "The owner adjusts the quote before sending, and the draft is kept",
       "description": "Backend: quotes gain an editable 'sent' version alongside the draft: lineItems (each with description, quantity, unitPrice), a customer note, and a total computed server-side from the lines, never trusted from the client. PUT /api/owner/quotes/:id {lineItems, note, version} under the session gate saves an adjustment on a draft (409 on a stale version; refused on anything but a draft). Approve & Send sends whatever the current lines are; the original draft lineItems and total are kept in their own columns and never overwritten. Frontend, /owner/quotes: each draft's lines become editable in place (unit price, quantity, remove), an 'Add line' with description and amount, and a note field; the total updates as they type; Approve & Send uses the adjusted numbers and the exception banner stays until sent. /status and /confirmation show the sent total and the note. src/pricing.js is unchanged: it still drafts; adjusting is a separate, owner-only operation. Tests: adjustment changes the sent total and not the draft; a total sent from the client is ignored in favour of the computed one; approving after adjusting sends the adjusted total to the customer endpoint; adjusting a sent or paid quote is refused.",
       "milestoneId": "m10",
-      "status": "todo",
+      "status": "in_progress",
       "priority": "medium",
       "dependsOn": [
         "t34"
       ],
-      "notes": [],
+      "notes": [
+        "Status todo -> in_progress: No `adjust` path in backend/api.mjs or backend/quotes.mjs. Claimed as t35-quote-adjustment by JUNIOR BACK END DEV in CLAIMS.md. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-05T21:52:40.692Z",
-      "updatedAt": "2026-09-05T21:52:40.692Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t36",
@@ -697,32 +706,34 @@
       "title": "Email to the customer and the owner, through a provider behind a seam with an outbox",
       "description": "One module, backend/mail.mjs: send({to, subject, text, html}) that, when EMAIL_PROVIDER and its credential are set (start with one provider, e.g. EMAIL_PROVIDER=resend with EMAIL_API_KEY and EMAIL_FROM as 'Ken's Mobile Tire <quotes@domain>'), POSTs to the provider's send endpoint with fetch, no SDK; and when unset, writes the message to an outbox table with status 'unsent'. Every send, real or not, is recorded in the outbox (to, subject, body, status sent/failed/unsent, provider id, error, timestamp); a provider failure is recorded, logged, and never breaks the request that triggered it. Four messages, each plain text with a simple HTML version in the existing brand colours and each carrying one link built from KMT_PUBLIC_URL: (1) to the customer on submit, 'We received your request', restating vehicle, tire, size, location and preferred date, saying the shop will reply with a quote, with the /status?request=<id> link; (2) to the owner (KMT_OWNER_EMAIL) on submit, the same details plus the customer's name, email and phone, with the link to /owner/quotes; (3) to the customer when the quote is sent, the quote itself laid out as an invoice -- each line with description, quantity, unit price and amount, the total, the owner's note -- and the link to view and pay; (4) to the customer when payment is recorded, a receipt with the same lines marked paid and the request id as the reference. Owner screen: an 'Outbox' panel (session-gated GET /api/owner/outbox) listing recent messages with status and a way to open one and read it, so the flow is verifiable with no account and a failed send is visible. Document the variables in .forge/owner-backend.md's configuration table and README's environment table. Tests use the outbox only: each event produces exactly one message to the right address with the right subject and link; the quote email's lines and total equal the sent quote's; a failing provider marks the message failed and the triggering request still succeeds; nothing is sent to an address the request does not carry.",
       "milestoneId": "m10",
-      "status": "todo",
+      "status": "done",
       "priority": "medium",
       "dependsOn": [
         "t36"
       ],
       "notes": [
-        "Stage 4 of the final sprint (.forge/sprint-live.md): preconditions t45 and t47, and the sending-domain records from t52; staffing is the user's decision. The domain cutover (t56) does not wait on it."
+        "Stage 4 of the final sprint (.forge/sprint-live.md): preconditions t45 and t47, and the sending-domain records from t52; staffing is the user's decision. The domain cutover (t56) does not wait on it.",
+        "Status todo -> done: backend/mail.mjs, backend/mail-templates.mjs and backend/outbox.mjs on main; MAIL_TYPES carries four types and mail.test.mjs asserts a template for each. Merged as #206. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
       ],
       "createdAt": "2026-09-05T21:52:40.692Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t38",
       "title": "Deploy, configure the email provider, and prove the exchange between two inboxes",
       "description": "Merge to main, let CI deploy, and confirm the post-deploy audit job on its own. The client opens the email provider account, verifies the sending domain (SPF and DKIM records at the DNS host) and sets the secrets on Fly (fly secrets set, values never in the repo or the PR); until then, prove every step with the outbox on the live site. Then with the provider configured: from phone A, submit a request with inbox A's address; inbox A receives the acknowledgement and inbox B (owner) receives the alert; on device B open the link, sign in, adjust a line, add a note, send; inbox A receives the quote email with the right lines and total, open its link, pay; inbox A receives the receipt; on device B mark the job done; the owner list shows the request under closed. Check each email lands in the inbox and not spam, and say so. Record each step as its own line with the device or inbox. Close m10.",
       "milestoneId": "m10",
-      "status": "todo",
+      "status": "in_progress",
       "priority": "medium",
       "dependsOn": [
         "t37"
       ],
       "notes": [
-        "Stage 4 of the final sprint (.forge/sprint-live.md): preconditions t45 and t47, and the sending-domain records from t52; staffing is the user's decision. The domain cutover (t56) does not wait on it."
+        "Stage 4 of the final sprint (.forge/sprint-live.md): preconditions t45 and t47, and the sending-domain records from t52; staffing is the user's decision. The domain cutover (t56) does not wait on it.",
+        "Status todo -> in_progress: The SMTP adapter is in backend/mail.mjs. Outstanding and the user's alone: Google Workspace admin, the SPF/DKIM records, and proving the exchange between two real inboxes. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
       ],
       "createdAt": "2026-09-05T21:52:40.692Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t39",
@@ -778,63 +789,73 @@
       "status": "in_progress",
       "priority": "high",
       "dependsOn": [],
-      "notes": [],
+      "notes": [
+        "Status confirmed: /api/catalog answered 6169 rows live at 16:47Z, the stage-1 breadth. The walk is stopped on a supplier 429 and waits on the user's word after a pacing change. Off the launch critical path. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t43",
       "title": "Stage-1 import and read-only verification of the live catalog",
       "description": "The breadth file imported without --complete by the user; /api/catalog row count, five per-band size samples, no supplier fields, deployed-site check green. Gate 1. Owner: the user runs it; DB ADMIN prepares; QA ENGINEER verifies.",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t42"
       ],
-      "notes": [],
+      "notes": [
+        "Status todo -> done: Gate 1 recorded met in HANDOFF.md and re-measured here: /api/catalog answered 6169 rows on the live domain at 16:47Z. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t44",
       "title": "Customer-facing request shape without contact details (#65)",
       "description": "get() and listForCustomer() drop customerName, customerEmail, customerPhone and locationNotes; listForOwner keeps the full row; a test per shape. Owner: LEAD BACKEND DEV.",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [],
-      "notes": [],
+      "notes": [
+        "Status todo -> done: backend/quotes.mjs names and pins the personal keys (line 99) and partitions the customer shape from the owner shape. Merged as #143, pinned by #233. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t45",
       "title": "Rate limits on public endpoints, login throttling, logout invalidation (#63, #66, #98)",
       "description": "Per-IP and per-key limits on submit, pay and cancel; owner login throttled; logout invalidates the session; body-size and address validation; tests, with the gate audits staying under the limits. Owner: LEAD BACKEND DEV.",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t44"
       ],
-      "notes": [],
+      "notes": [
+        "Status todo -> done: backend/limits.test.mjs on main; createAuth in backend/auth.mjs takes a throttle and a server-side session store, so logout can invalidate. Merged for #63, #66, #98. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t46",
       "title": "Security headers and the env-driven canonical host (#67, app half of #102)",
       "description": "Headers on every response, HSTS only over HTTPS; when KMT_CANONICAL_HOST is set every other host gets a 301 to it, /api/health exempt. Owner: LEAD BACKEND DEV; DEVSCOPS/AUDITOR reads.",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t45"
       ],
-      "notes": [],
+      "notes": [
+        "Status todo -> done: backend/server.mjs carries the KMT_CANONICAL_HOST 301 with /api/health exempt, plus the security headers. Merged as #167. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t47",
@@ -846,103 +867,119 @@
       "dependsOn": [
         "t44"
       ],
-      "notes": [],
+      "notes": [
+        "Status confirmed: BOTH halves are open, not just the deep link. `SameSite=Strict` is live at backend/auth.mjs:209 and backend/owner.test.mjs:391 asserts Strict; src/routes/QuoteRequests.jsx reads no ?request= parameter. sprint-live.md makes t47 a precondition for stage 4, so email cannot ship correctly ahead of it. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t48",
       "title": "Service area at submit, date and ZIP validation (#95, #70)",
       "description": "Configured ZIP allow-list or radius refused with a clear message and the phone number; date today or later; ZIP five digits. Waits on the user for the area. Owner: LEAD BACKEND DEV (validation), LEAD UI ENGINEER (message).",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t45"
       ],
-      "notes": [],
+      "notes": [
+        "Status todo -> done: backend/service-area.mjs holds the rule and backend/quotes.mjs:379 reads it at submit; ZIP and date validation merged as #214. Enforcement in production is a separate configuration switch -- see the note below. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t49",
       "title": "Production copy, sign-out, contrast, not-found (#72, #96, #85, #76)",
       "description": "Page title, stale owner-screen strings, formatted phone, a sign-out control, AA contrast at 375, unknown paths render not-found. Owner: LEAD UI ENGINEER, after #126.",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [],
-      "notes": [],
+      "notes": [
+        "Status todo -> done: src/routes/NotFound.jsx on main; signOut imported and wired in src/routes/QuoteRequests.jsx. Merged for #72, #96, #85, #76. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t50",
       "title": "Privacy notice page and link (#100)",
       "description": "/privacy with what is collected, why, retention (R27 stated as policy), who sees it, how to ask for deletion; linked under the email field and in the footer. Text drafted by the lead, approved by the user or Ken before merge. Owner: LEAD UI ENGINEER.",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t49"
       ],
-      "notes": [],
+      "notes": [
+        "Status todo -> done: src/routes/Privacy.jsx on main. Merged for #100. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t51",
       "title": "Container as non-root, .dockerignore excludes secrets (#87, #68)",
       "description": "USER node with Chromium still launching under Xvfb; secrets/, .worktrees/, data/ and walk output ignored. Owner: DEV OPS/INFRASTRUCTURE after #123; DEVSCOPS/AUDITOR reads.",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "in_progress",
       "priority": "high",
       "dependsOn": [],
-      "notes": [],
+      "notes": [
+        "Status todo -> in_progress: Half done. .dockerignore is present (#68), but the Dockerfile carries no USER instruction at all, so the container still runs as root beside the customer database. #87 is open and corroborates. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t52",
       "title": "Domain cutover runbook: DNS, certificate, allowed hosts, canonical flip, rollback (#102)",
       "description": "docs/operations.md: the steps in order, how each is verified, the rollback; plus the sending subdomain records (SPF, DKIM, DMARC) for stage 4. The user executes every flyctl and registrar step. Owner: DEV OPS/INFRASTRUCTURE writes; the user executes.",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t46"
       ],
-      "notes": [],
+      "notes": [
+        "Status todo -> done: docs/operations.md carries the cutover runbook, the secret table and the boot-line guidance. Executing the steps is t56 and the user's hands. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t53",
       "title": "Workflow on the public URL variable, domain checks, docs-only merges skip deploy, scheduled uptime check (#103, #101)",
       "description": "One repository variable for the URL; three new deployed-site checks (canonical 200, kmt.fly.dev 301, /api/health 200) with EXPECTED_CHECKS moved in the same commit; docs-only merges do not redeploy; a ten-minute schedule reads /api/health and fails loudly. Owner: KMT-F REPO AGENT (workflow); QA ENGINEER or DEV OPS (check script).",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "done",
       "priority": "high",
       "dependsOn": [
         "t46"
       ],
-      "notes": [],
+      "notes": [
+        "Status todo -> done: vars.DEPLOY_URL drives the wait loop and the verify job in .github/workflows/fly-deploy.yml; .github/workflows/health-monitor.yml runs on a schedule (#101); docs-only pushes are gated off deploy by the `ship` signal (#103). -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t54",
       "title": "Operations runbook: backups, restore drill, rotation, incidents (#99, #80)",
       "description": "Fly snapshot retention, a monthly off-Fly copy, a restore exercised once and recorded, rotation of the owner password and session secret, incident steps. Owner: DEV OPS/INFRASTRUCTURE writes; the user runs the drill.",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "in_progress",
       "priority": "high",
       "dependsOn": [
         "t51"
       ],
-      "notes": [],
+      "notes": [
+        "Status todo -> in_progress: .forge/restore-integrity-check.mjs and its test are on main and docs/operations.md is written, but the restore drill itself has never been run. It is the one board item whose failure mode is unbounded, and it is the user's hands. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t55",
@@ -952,16 +989,18 @@
       "status": "todo",
       "priority": "high",
       "dependsOn": [],
-      "notes": [],
+      "notes": [
+        "Status confirmed: Not started. .forge/dead-end-audit.mjs contains no occurrence of \"cancel\", and window.prompt / window.confirm are still live at src/routes/QuoteRequests.jsx:99 and src/routes/Status.jsx:68, so no audit can exercise cancel. #78 is open. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     },
     {
       "id": "t56",
       "title": "Cutover and live test on the domain",
       "description": "The user runs t52; QA ENGINEER drives the customer side on an emulated phone against the domain with a TEST request; the user drives the owner side; DEVSCOPS/AUDITOR reads the domain before and after. Recorded step by step in HANDOFF.md. Gate 3. Owner: the user, QA ENGINEER, DEVSCOPS/AUDITOR; the PM runs the checklist.",
       "milestoneId": "m12",
-      "status": "todo",
+      "status": "in_progress",
       "priority": "high",
       "dependsOn": [
         "t52",
@@ -973,11 +1012,125 @@
         "t50",
         "t51"
       ],
-      "notes": [],
+      "notes": [
+        "Status todo -> in_progress: QA TESTER completed live Part B on production (two TEST-marked rows, one paid and one cancelled). Cutover Steps 1 and 2 -- KMT_ALLOWED_HOSTS and KMT_CANONICAL_HOST -- are both unset, and both are the user's hands. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
       "createdAt": "2026-09-06T05:59:55.546Z",
-      "updatedAt": "2026-09-06T05:59:55.546Z"
+      "updatedAt": "2026-09-06T16:54:23.628Z"
+    },
+    {
+      "id": "t59",
+      "title": "The owner screen puts the tire list first and the controls in one collapsed panel",
+      "description": "The first tire on /owner began 2,048 px below the top, behind two and a half screens of refresh, import and markup controls. Tire list first, shorter cards, first tire within one screen at 375 px.",
+      "milestoneId": "m12",
+      "status": "done",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [
+        "Entered into the record on 2026-09-06, having been worked and merged without ever existing here. Merged as #145 and #149 with the brand overhaul, per HANDOFF.md; m13-owner-day-to-day.md assumes it has landed. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
+      "createdAt": "2026-09-06T16:54:23.628Z",
+      "updatedAt": "2026-09-06T16:54:23.628Z"
+    },
+    {
+      "id": "t60",
+      "title": "Brand assets served with validators and a day of cache, plus the web manifest",
+      "description": "The wheel favicon and the rest of the brand assets, cached and validated, with brand-asset checks in the deployed-site check.",
+      "milestoneId": "m12",
+      "status": "done",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [
+        "Entered into the record on 2026-09-06, having been worked and merged without ever existing here. Merged as #147; .forge/deployed-site-check.mjs gained 20 brand-asset checks and EXPECTED_CHECKS moved 25 -> 45 in #186. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
+      "createdAt": "2026-09-06T16:54:23.628Z",
+      "updatedAt": "2026-09-06T16:54:23.628Z"
+    },
+    {
+      "id": "t61",
+      "title": "The palette returns to black, white and red",
+      "description": "Ken's call after seeing the navy overhaul: the original black, white and red come back; the rest of the overhaul stays.",
+      "milestoneId": "m12",
+      "status": "done",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [
+        "Entered into the record on 2026-09-06, having been worked and merged without ever existing here. Merged; .forge/roles/lead-ui-engineer-lane.md records the two-token red with its numbers and what survived the revert on purpose. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
+      "createdAt": "2026-09-06T16:54:23.628Z",
+      "updatedAt": "2026-09-06T16:54:23.628Z"
+    },
+    {
+      "id": "t62",
+      "title": "The site speaks as Ken, in the first person",
+      "description": "First person where a person could truthfully say it; no pronoun where the speaker is a loading state, the browser or a server error. The privacy page stays third person. 32 sentences, approved line by line in .forge/t62-voice.md.",
+      "milestoneId": "m12",
+      "status": "in_progress",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [
+        "Entered into the record on 2026-09-06, having been worked and merged without ever existing here. The backend half merged as #228. The customer-facing half rides in PR #210, green and awaiting a second reader. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
+      "createdAt": "2026-09-06T16:54:23.628Z",
+      "updatedAt": "2026-09-06T16:54:23.628Z"
+    },
+    {
+      "id": "t63",
+      "title": "Every customer-facing call control becomes a text control",
+      "description": "Ken's call: text, not call. Customer-facing controls only -- the owner card's tel: link stays.",
+      "milestoneId": "m12",
+      "status": "in_progress",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [
+        "Entered into the record on 2026-09-06, having been worked and merged without ever existing here. PR #210, green, rebased twice today; expedited on the user's direct request. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
+      "createdAt": "2026-09-06T16:54:23.628Z",
+      "updatedAt": "2026-09-06T16:54:23.628Z"
+    },
+    {
+      "id": "t64",
+      "title": "A special-instructions field on the service step",
+      "description": "customerNotes, 500 characters, shown on the owner card and in the email, redacted the way location notes are.",
+      "milestoneId": "m12",
+      "status": "in_progress",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [
+        "Entered into the record on 2026-09-06, having been worked and merged without ever existing here. Backend done: customerNotes is a named personal key in backend/quotes.mjs with a 500-character cap. No occurrence of customerNotes anywhere in src/, so the field the customer types into does not exist yet. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
+      "createdAt": "2026-09-06T16:54:23.628Z",
+      "updatedAt": "2026-09-06T16:54:23.628Z"
+    },
+    {
+      "id": "t65",
+      "title": "\"Looking for more than just tires?\" with an inquiry form and an owner list",
+      "description": "An inquiries table, a public form, an owner list, and \"Need it today? Text ... or message me on social\". Ken's line for the section is the user's to supply.",
+      "milestoneId": "m12",
+      "status": "in_progress",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [
+        "Entered into the record on 2026-09-06, having been worked and merged without ever existing here. Storage only: backend/inquiries.mjs is on main with typed columns and no CHECK constraint. No /api/inquiries route in backend/api.mjs and no inquiries screen in src/routes/. Intake issue #226 is open. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
+      "createdAt": "2026-09-06T16:54:23.628Z",
+      "updatedAt": "2026-09-06T16:54:23.628Z"
+    },
+    {
+      "id": "t66",
+      "title": "Socials and testimonials from site-content.json, empty-safe until Ken's arrive",
+      "description": "The handles and quotes render only when present, so the section is safe to ship before Ken supplies them.",
+      "milestoneId": "m12",
+      "status": "todo",
+      "priority": "high",
+      "dependsOn": [],
+      "notes": [
+        "Entered into the record on 2026-09-06, having been worked and merged without ever existing here. Not started: no site-content.json exists anywhere in the repository. Ken's handles and testimonials are the user's to supply. -- PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9), 2026-09-06, verified at main eabe2e8"
+      ],
+      "createdAt": "2026-09-06T16:54:23.628Z",
+      "updatedAt": "2026-09-06T16:54:23.628Z"
     }
   ],
   "createdAt": "2026-09-05T00:32:16.289Z",
-  "updatedAt": "2026-09-06T05:59:55.546Z"
+  "updatedAt": "2026-09-06T16:54:23.628Z"
 }

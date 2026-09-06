@@ -9,6 +9,42 @@ AGENT owns the gate, the workflow and every merge. Product calls stay with
 the lead and the user. Session ids are in `roles/README.md`; a title is never
 an address.
 
+## Where the gates actually stand, 2026-09-06 16:50Z
+
+Written by the PRODUCT MANAGER / OWNER AGENT (`local_44d1e1f9`) at main
+`eabe2e8`, from artifacts on main and one live read of the domain, not from
+reports. This is **state**, which is a measurement with a timestamp: re-measure
+anything you are about to act on. The plan below this section is **intent** and
+keeps.
+
+| gate | stands | what is actually left |
+| --- | --- | --- |
+| **1, data** | **met** | `/api/catalog` answered 6169 rows on the live domain at 16:47Z, the stage-1 breadth across 511 sizes. The walk (t42) is stopped on a supplier 429 and waits on the user's word after a pacing change; it is off the critical path and does not hold this gate. |
+| **2, safe for customers** | **not met, one task** | t44, t45, t46, t48, t49, t50 are merged and verified on main. **t47 is open in both halves** -- `SameSite=Strict` is live at `backend/auth.mjs:209` with `owner.test.mjs:391` asserting it, and `QuoteRequests.jsx` reads no `?request=`. **t51 is half open**: `.dockerignore` landed, the Dockerfile carries no `USER` instruction, so the container still runs as root beside the customer database (#87). |
+| **3, the domain** | **open, and the only gate the team cannot close** | The domain answers with a valid certificate. t52 (runbook) and t53 (workflow, monitor, docs-only skip) are done. What is left is four things only the user's hands can do: SPF/DKIM, `KMT_ALLOWED_HOSTS`, `KMT_CANONICAL_HOST`, and the t54 restore drill. |
+| **4, email** | **blocked on gate 2** | t37's seam, outbox and SMTP adapter are merged. t38 needs Google Workspace admin and two real inboxes -- the user's. Note the ordering trap: **sprint-live.md makes t47 a precondition of this stage**, and t47's cookie half is exactly what a mail link to the owner needs. Email that ships ahead of it sends Ken to a sign-in screen every time. |
+| **5, gate coverage** | **not started** | `dead-end-audit.mjs` contains no occurrence of "cancel", and `window.prompt`/`window.confirm` are still live in `QuoteRequests.jsx:99` and `Status.jsx:68`, so no audit exercises cancel (#78). |
+
+### The one thing that is a decision, not a defect
+
+The service-area check is a configuration switch, and the repository holds two
+readings of it that cannot both be true of the same moment: the repo agent
+recorded `#182` as "active by default in production, verified live via the boot
+log" at ~16:00Z, and the PROJECT MANAGER reports it resolving to `off` across
+three deploys. `docs/operations.md` says only the boot line settles it and that
+presence is not resolution. **Somebody with log access reads the current boot
+line once and writes the answer here**, because this exact confusion has already
+cost three sessions an hour.
+
+The product ruling does not wait on that: **enforcement is on at launch.** It is
+not a new call -- the user already made it ("on by default, off only by explicit
+switch"), and `backend/service-area.mjs` says in its own header that a fix
+shipping inactive is the bug wearing the fix's clothes. Off is legitimate only
+while live testing runs from outside the area; turning it back on is a **launch
+gate item**, listed beside `KMT_ALLOWED_HOSTS` and `KMT_CANONICAL_HOST`, not a
+thing anyone remembers on the day.
+
+
 ## The goal, in one sentence
 
 A customer in Ken's service area opens Ken's own domain on a phone, asks for
