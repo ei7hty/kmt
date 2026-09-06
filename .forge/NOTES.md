@@ -391,3 +391,35 @@ the patterns matched quoted JSON keys. The author rewrote it on bare `key:`
 markers and showed both results, and #114 wired it in only after that. Before
 a gate step ships, run it once on a build it must reject and quote the failing
 output in the pull request.
+
+**2026-09-06 — Claude (DEV OPS/INFRASTRUCTURE, writing t52)**
+A tool that is not installed answers nothing, and nothing reads as "no".
+
+`dig` is not on this machine. It does not print "command not found" in a way a
+pipeline notices -- in a `$(...)` it yields an empty string, and
+`for i in $(seq 1 10); do dig +short www.kensmobiletire.com; done` prints ten
+blank lines. That is indistinguishable from a name that does not resolve, which
+is exactly what it was read as: `www` was reported as flapping on 2026-09-06,
+the cutover runbook nearly shipped with a precondition built on it, and
+`Resolve-DnsName` then answered eight times out of eight with no failures.
+
+Same family as the `grep -P` entry above, and as the empty-count reads further
+up: **a verification that returns nothing is agreeing with whatever you already
+feared, not reporting.** The habit that catches all three is to run the tool
+once against a case it must answer positively -- resolve a name you know is
+good, grep for a string you know is there -- before trusting a negative from it.
+
+For DNS on this machine, use PowerShell, which fails loudly:
+
+```powershell
+1..8 | ForEach-Object {
+  try { (Resolve-DnsName www.kensmobiletire.com -ErrorAction Stop |
+         Where-Object {$_.IPAddress}).IPAddress -join ',' }
+  catch { "FAILED: $($_.Exception.Message)" }
+  Start-Sleep -Milliseconds 400
+}
+```
+
+`nslookup` also works and shows the CNAME chain. Neither is `dig`; do not
+translate a `dig` recipe from a web page and assume it ran.
+

@@ -413,3 +413,43 @@ owner inventory screen, preserving coverage of the existing quote/payment demo.
 Live verification: the owner refresh button fetched 70 supplier tires across all
 7 listing pages for 185/55R15 on 2026-09-05. This data lives in the local database;
 the tracked seed snapshot remains unchanged.
+
+## An assumption the rate limits rest on, which nobody has tested
+
+`clientIp()` in `backend/limits.mjs` reads the `Fly-Client-IP` header whenever
+it is present, and falls back to the socket peer. Its comment says the header
+is trusted "only because nothing but the proxy can reach the process on the
+platform".
+
+**That sentence is an assumption, not a measurement. It has not been tested,
+and this paragraph exists so nobody reads the comment as though it had been.**
+
+What rests on it: if anything ever reaches port 8080 without Fly Proxy in
+front, a caller can send whatever `Fly-Client-IP` it likes, and each new value
+opens a fresh rate-limit bucket. Both the public write limits and the owner
+login throttle are then bypassed by rotating one header -- the login throttle
+being the one that matters, because it is what stands between a guessable
+password and an attacker with time.
+
+The auditor measured the mechanism itself on a scratch server (t45 read): a
+client-supplied value does open a new bucket. What is untested is the
+platform-level premise -- whether a forged header actually survives to the
+process, or whether Fly Proxy overwrites it with the real peer, which is what
+the design expects.
+
+**How to settle it**, when someone with Fly credentials has an hour: deploy a
+scratch Fly app, or a temporary echo route on one, and send a request carrying
+a forged `Fly-Client-IP`. If the value arriving at the process is the proxy's
+rather than the forged one, the assumption holds and this section can say so
+with a date. **Never against production** -- the experiment involves sending
+deliberately malformed headers at the machine holding customer records, and
+proving a rate limiter can be bypassed is not something to do where the limiter
+is protecting real people.
+
+Until then, two rules follow from it. `KMT_BIND` stays at `0.0.0.0` only
+because Fly's network is what makes that safe; on any host where the port is
+reachable directly, `clientIp()` must stop reading the header. And if the app is
+ever put behind a second proxy, a CDN, or a tunnel, this assumption breaks
+silently -- the limits keep reporting they are working, because a limiter that
+is being bypassed looks exactly like a limiter nobody is testing.
+
