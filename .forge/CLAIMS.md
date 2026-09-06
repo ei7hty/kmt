@@ -15,7 +15,6 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | doc-staleness-note | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/NOTES.md, one appended entry (the three stale-record instances of 2026-09-06 and a detection proposal). At the PROJECT MANAGER's request. | 2026-09-06 |
 | seo-canonical-tag | SEO ANALYST (local_f596e88c) | src/App.jsx (new region only: a route-keyed effect adding/clearing one `<link rel="canonical">`, not the route dispatch conditionals -- flagging in case terra-t65-inquiries also needs a new route there), .forge/deployed-site-check.mjs (two new checks for `/` and `/privacy`'s canonical tag, EXPECTED_CHECKS moved with them). Not index.html: it is one static shell for every route and cannot carry two pages' canonical tags statically, per the PM's ruling and Google's own guidance for this constraint. Not src/noindex.js or its call sites. PR #273, open. | 2026-09-06 |
 | handoff-resend-key-path | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | .forge/HANDOFF.md, one note beside the Resend key line (the file was on disk misspelled; a name that does not match is not a key that is absent). At the user's instruction. | 2026-09-06 |
-| `mail-records-remeasured` | DEV OPS/INFRASTRUCTURE | `docs/operations.md` mail section (docs only) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
