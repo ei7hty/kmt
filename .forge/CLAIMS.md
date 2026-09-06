@@ -13,7 +13,6 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | m13-owner-day-to-day | OWNER PORTAL ANALYST (local_a76ad1cd) | .forge/m13-owner-day-to-day.md, .forge/shots/m13-*.png (docs only) | 2026-09-06 |
 | t63-text-controls | BUG FIXER (local_8ba9f198) | rebase PR #210 onto current main, conflicts in src/components/RequestDetails.jsx and src/routes/CustomerRequest.jsx | 2026-09-06 |
 | release-m13-claims | TEMP REPO AGENT (local_b2ab10bb) | .forge/CLAIMS.md (rebase, releasing two merged rows) | 2026-09-06 |
-| owner-outbox-panel | JUNIOR FULL STACK ENGINEER (kmt-e8) | new src/routes/Outbox.jsx, App.jsx route wiring, src/routes/QuoteRequests.jsx nav link only | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
