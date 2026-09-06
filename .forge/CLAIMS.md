@@ -12,6 +12,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 | t63-text-controls | BUG FIXER (local_8ba9f198) | rebase PR #210 onto current main, conflicts in src/components/RequestDetails.jsx and src/routes/CustomerRequest.jsx | 2026-09-06 |
 | form-fields-partition | JUNIOR BACK END DEV (local_0b9989ef) | backend/quotes.mjs, backend/quotes.test.mjs (exhaustive FORM_FIELDS partition, follow-up to #233) | 2026-09-06 |
 | claims-direct-commit-rule | TEMP REPO AGENT (local_b2ab10bb) | .forge/AGENTS.md (docs only, one paragraph) | 2026-09-06 |
+| tire-offers-by-brand | DB ADMIN (local_adccdadc) | src/data/brand.js (new), backend/inventory.mjs, backend/api.mjs, src/owner/OwnerInventory.jsx, .forge/owner-inventory-audit.mjs, backend tests (bulk enable/disable offers by brand, PM-approved plan) | 2026-09-06 |
 
 `scraper-catalog-updater`, `codex/refine-order-flow`, `wire-scraped-catalog` and
 `owner-inventory-backend` were all merged into `main` on 2026-09-05 and their
