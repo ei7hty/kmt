@@ -182,6 +182,13 @@ Everything comes from the environment, so the same image runs anywhere:
 | `KMT_SERVICE_BASE_ZIP` | Where the van starts, default `02148` (Malden). Must be in the centroid table. |
 | `KMT_SERVICE_RADIUS_MILES` | Straight-line miles beyond which a request is refused, default 100. `off` (or `0`) accepts every known ZIP and the boot line says so; the only place that is a default is `backend/dev.mjs`, so a laptop in another state is not refused. Read by t48 part two once wired. |
 | `KMT_SERVICE_REVIEW_MILES` | Miles beyond which a request is flagged for the owner with its distance, default 25; `off` flags nothing. |
+| `KMT_MAIL_SMTP_HOST` | SMTP host for Google Workspace. Any SMTP setting enables live delivery; with none, mail remains dormant and every message is recorded `queued` in the outbox. Defaults to `smtp-relay.gmail.com` once configured. |
+| `KMT_MAIL_SMTP_PORT` | Defaults to `587` for STARTTLS; `465` uses implicit TLS. |
+| `KMT_MAIL_SMTP_USER`, `KMT_MAIL_SMTP_PASSWORD` | Set together for an authenticated mailbox or relay, or leave both unset for an IP-allow-listed relay. The user sets the password directly in the host environment; it never enters the repository or an agent session. |
+| `KMT_MAIL_FROM` | Required with SMTP: the address authenticated by the sending server. Do not send from the domain until SPF and DKIM pass at a real recipient. |
+| `KMT_OWNER_EMAIL` | Required with SMTP: receives the owner alert and receives customer replies. Never hardcoded. |
+| `KMT_OWNER_NAME` | Optional owner-recipient display name; defaults to `Ken's Mobile Tire`. |
+| `KMT_PUBLIC_ORIGIN` | Origin used for request, review and payment links. Defaults to `https://` plus `KMT_CANONICAL_HOST`. |
 
 ### Deploying
 
