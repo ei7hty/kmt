@@ -13,7 +13,26 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 44;
+const EXPECTED_CHECKS = 54;
+
+/**
+ * Preferred dates, always ahead of today. The server refuses a day in the
+ * past (#70), and a fixed date in a script is a gate that goes red on a
+ * morning nobody changed anything.
+ */
+const daysAhead = (days) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+const SOON = daysAhead(7);
+const LATER = daysAhead(8);
+const LATEST = daysAhead(9);
+
+/**
+ * ZIPs the service-area check answers differently (t48). The base is Malden
+ * 02148 with a 100-mile radius and a 25-mile review band by default; Everett
+ * is next door, Worcester is about 40 miles, Bangor about 200.
+ */
+const ZIP_IN_AREA = '02149';
+const ZIP_REVIEW = '01608';
+const ZIP_OUT_OF_AREA = '04401';
 
 let passed = 0;
 let failed = 0;
@@ -56,7 +75,7 @@ function reportCount() {
  *
  * @param size  Tire size as it appears in the catalog, e.g. '265/70R16'.
  */
-async function submitRequest(page, { size, tireName, vehicle, location, date, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
+async function submitRequest(page, { size, tireName, vehicle, location, date, zip = ZIP_IN_AREA, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
   const [width, rest] = size.split('/');
   const [ratio, diameter] = rest.split('R');
 
@@ -65,11 +84,13 @@ async function submitRequest(page, { size, tireName, vehicle, location, date, cu
   try {
     await page.goto(BASE + '/');
 
-    // Step 1: fitment. Each stage advances as soon as a value is chosen.
+    // Step 1: fitment. Each stage advances as soon as a value is chosen. The
+    // ZIP typed here carries into the service details, and the server needs
+    // it: it is where the van goes.
     for (const value of [width, ratio, diameter]) {
       await page.click(`.fitment-option:has-text("${value}")`, step);
     }
-    await page.fill('#fitmentZip', '02149').catch(() => {}); // Optional field.
+    await page.fill('#fitmentZip', zip, step);
     await page.click('button:has-text("Continue to tires")', step);
 
     // Step 2: pick the tire by its catalog name, and say what it is going on.
@@ -103,6 +124,15 @@ async function submitRequest(page, { size, tireName, vehicle, location, date, cu
 /** A size whose matching tires include the off-road option, which forces owner review. */
 const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain' };
 
+/**
+ * A size with no seed tire, so its standard (generated-only) list has
+ * nothing that would also survive into a mocked live answer by construction
+ * -- unlike a seeded size, where catalogFromLiveRows always prepends every
+ * seed regardless of what the live rows say. Confirm against
+ * src/data/catalog.js's SEED_TIRES before reusing this size elsewhere.
+ */
+const NO_SEED_SIZE = '135/80R12';
+
 async function main() {
   const browser = await chromium.launch();
   // Resolved once, against whatever the server is actually offering right
@@ -126,7 +156,7 @@ async function main() {
       ...EXCEPTION_TIRE,
       vehicle: '2019 Ford F-150 Pickup',
       location: '123 Demo St',
-      date: '2025-06-01',
+      date: SOON,
     });
 
     const submissionMsg = await page.locator('[role="status"]').first().textContent().catch(() => null);
@@ -298,6 +328,46 @@ async function main() {
       }
     }
 
+    // 6b. The service area (t48). Beyond the radius, the customer is refused
+    //     with the distance and a way to call, not a quote for a job nobody
+    //     will do. Past the review distance but inside the radius, the
+    //     request goes through and the owner's card says how far.
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
+    await submitRequest(page, {
+      ...CLEAN_TIRE,
+      vehicle: '2021 Honda Civic',
+      location: '1 Far Away Rd, Bangor, ME',
+      date: SOON,
+      zip: ZIP_OUT_OF_AREA,
+    });
+    const refusal = await page.locator('.submit-failure').first();
+    const refusalText = (await refusal.textContent().catch(() => '')) || '';
+    const refusalPhone = await refusal.locator('a[href^="tel:"]').first().isVisible().catch(() => false);
+    if (/about \d+ miles/.test(refusalText) && /outside the \d+ mile area/.test(refusalText) && refusalPhone) {
+      ok(`Customer form: a ZIP beyond the service area (${ZIP_OUT_OF_AREA}) is refused with the distance and a visible phone link.`);
+    } else {
+      fail(`Customer form: out-of-area ZIP ${ZIP_OUT_OF_AREA} was not refused with the distance and a phone link. Got: ${refusalText.slice(0, 200)}`);
+    }
+
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
+    await submitRequest(page, {
+      ...CLEAN_TIRE,
+      vehicle: '2021 Honda Civic',
+      location: '100 Front St, Worcester, MA',
+      date: SOON,
+      zip: ZIP_REVIEW,
+    });
+    await openOwnerQuotes(page);
+    const reviewCard = await page.locator('.owner-request', { hasText: 'Worcester' }).first();
+    const reviewText = (await reviewCard.textContent().catch(() => '')) || '';
+    if (/Owner review required/.test(reviewText) && /about \d+ miles from base/.test(reviewText)) {
+      ok(`/owner: a request from the review band (${ZIP_REVIEW}) shows "Owner review required" with the distance in miles.`);
+    } else {
+      fail(`/owner: the review-band request (${ZIP_REVIEW}) did not show the review reason with the miles. Got: ${reviewText.slice(0, 200)}`);
+    }
+
     // 7. Rejected quote path: does the customer have a next action, or a dead end?
     await context.close();
     ({ context, page } = await freshPage(browser, viewport));
@@ -305,7 +375,7 @@ async function main() {
       ...CLEAN_TIRE,
       vehicle: '2021 Honda Civic',
       location: '456 Demo Ave',
-      date: '2025-06-02',
+      date: LATER,
     });
     await openOwnerQuotes(page);
     const rejectVisible = await page.locator('button:has-text("Reject")').first().isVisible().catch(() => false);
@@ -348,6 +418,9 @@ async function main() {
     for (const value of [qWidth, qRatio, qDiameter]) {
       await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
     }
+    // The ZIP is required at submit now (t48); this scenario drives the
+    // fitment step itself rather than through submitRequest(), so it types it.
+    await page.fill('#fitmentZip', ZIP_IN_AREA, { timeout: 5000 });
     await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
     await expandTireList(page);
     await page.click(`.tire-option:has-text("${CLEAN_TIRE.tireName}")`, { timeout: 5000 });
@@ -361,7 +434,7 @@ async function main() {
     await page.fill('#vehicleInfo', '2020 Toyota Camry', { timeout: 5000 });
     await page.click('button:has-text("Continue to mobile service")', { timeout: 5000 });
     await page.fill('#location', '789 Demo Blvd', { timeout: 5000 });
-    await page.fill('#date', '2025-06-03', { timeout: 5000 });
+    await page.fill('#date', LATEST, { timeout: 5000 });
     await page.fill('#customerName', 'Jamie Rivera', { timeout: 5000 });
     await page.fill('#customerEmail', 'jamie@example.com', { timeout: 5000 });
     await page.click('button[type="submit"]', { timeout: 5000 });
@@ -382,6 +455,151 @@ async function main() {
           'multiplies with quantity, or a tire line that does not, would both surface here.',
       );
     }
+
+    // 9. The tire step under a slow or stalled connection (t62, the lead's
+    //    ruling): full-speed checks cannot see this class of defect, since
+    //    the swap completes before a human -- or a normal audit -- could
+    //    interact. Routing the catalog-for-size request rather than
+    //    emulating a slow connection: LEAD FULL STACK measured the live
+    //    build on real Slow 3G, Edge and Drip profiles and none of them
+    //    ever missed the 8s window (4.5s worst case), so throttling cannot
+    //    reach the branches this exists to prove. Delaying or failing the
+    //    actual response the component reacts to tests the property
+    //    directly, the way LEAD UI ENGINEER proved the feature correct
+    //    while building it; approximating a network condition and hoping
+    //    the timing lands would test it through a weaker instrument.
+
+    // 9a. No selectable tire renders before the live answer, and Continue
+    //     says so rather than silently doing nothing.
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
+    await page.route('**/api/catalog?size=*', async route => {
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ tires: [] }) });
+    });
+    await page.goto(BASE + '/');
+    for (const value of ['215', '60', '16']) {
+      await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
+    }
+    await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
+
+    const loadingVisible = await page.locator('.tire-loading').first().isVisible().catch(() => false);
+    const tireOptionCount = await page.locator('.tire-option').count();
+    await page.click('button:has-text("Continue to mobile service")', { timeout: 5000 });
+    const stillCheckingVisible = await page.locator('.step-error:has-text("still checking")').isVisible().catch(() => false);
+    const stillOnTireStep = await page.locator('h3:has-text("Your tires. Your vehicle.")').isVisible().catch(() => false);
+
+    if (loadingVisible && tireOptionCount === 0 && stillCheckingVisible && stillOnTireStep) {
+      ok('Tire step under a slow connection: no selectable tire renders before the live answer, and Continue is refused with a visible reason.');
+    } else {
+      fail(
+        `Tire step under a slow connection: expected .tire-loading visible (${loadingVisible}), zero .tire-option ` +
+          `(${tireOptionCount}), a "still checking" error on Continue (${stillCheckingVisible}), and no advance past ` +
+          `the tire step (${stillOnTireStep}).`,
+      );
+    }
+    await page.unroute('**/api/catalog?size=*');
+
+    // 9b. A live answer arriving after the standard list is offered as a
+    //     refresh, not swapped in silently, and the customer's own choice
+    //     survives the refresh when it is still in the live list. 215/60R16
+    //     carries a seed tire ("All-Weather Standard"), and catalogFromLiveRows
+    //     always prepends every seed regardless of what a live answer
+    //     carries -- so this is not a special case, it is what a real
+    //     supplier answer does for any size that also has a seed.
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
+    let releaseLiveAnswerB;
+    const liveAnswerHeldB = new Promise(resolve => { releaseLiveAnswerB = resolve; });
+    await page.route('**/api/catalog?size=*', async route => {
+      await liveAnswerHeldB;
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ tires: [] }) });
+    });
+    await page.goto(BASE + '/');
+    for (const value of ['215', '60', '16']) {
+      await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
+    }
+    await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
+    // The request stays held; the app's own 8s wait fires first.
+    await page.waitForSelector('.tire-options[data-source="standard"]', { timeout: 12000 });
+    await page.click('.tire-option:has-text("All-Weather Standard")', { timeout: 5000 });
+
+    releaseLiveAnswerB();
+    await page.waitForSelector('button.tire-refresh', { timeout: 5000 });
+    await page.click('button.tire-refresh', { timeout: 5000 });
+
+    const movedNote = await page.locator('.tire-reselect-note[data-outcome="moved"]').first().isVisible().catch(() => false);
+    const stillSelectedB = await page.locator('.tire-option.selected:has-text("All-Weather Standard")').isVisible().catch(() => false);
+    const sourceIsLiveB = (await page.locator('.tire-options').getAttribute('data-source').catch(() => '')) === 'live';
+
+    if (movedNote && stillSelectedB && sourceIsLiveB) {
+      ok('Tire step refresh: a chosen tire that survives into the live list keeps its selection and reports "moved".');
+    } else {
+      fail(
+        `Tire step refresh: expected the moved note (${movedNote}), the same tire still selected (${stillSelectedB}), ` +
+          `and data-source="live" (${sourceIsLiveB}) after refreshing.`,
+      );
+    }
+    await page.unroute('**/api/catalog?size=*');
+
+    // 9c. A live answer that does not carry the customer's choice clears the
+    //     selection, says so, and holds Continue until a new choice is made
+    //     -- the recovery path, and the part a customer actually needs to
+    //     work. NO_SEED_SIZE carries no seed, so the standard list for it
+    //     is entirely generated coverage; the mocked live answer names that
+    //     size covered with one different tire, so generateTires() skips
+    //     placeholder coverage for it and the originally chosen tire is
+    //     genuinely absent from the live-composed list, not just reordered.
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
+    let releaseLiveAnswerC;
+    const liveAnswerHeldC = new Promise(resolve => { releaseLiveAnswerC = resolve; });
+    const [cWidth, cRest] = NO_SEED_SIZE.split('/');
+    const [cRatio, cDiameter] = cRest.split('R');
+    await page.route('**/api/catalog?size=*', async route => {
+      await liveAnswerHeldC;
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          tires: [{
+            id: 'audit-live-replacement', name: 'Audit Live Replacement', size: NO_SEED_SIZE,
+            price: 99.99, inStock: true, category: 'all-season', description: 'Injected for the refresh-clears check',
+          }],
+        }),
+      });
+    });
+    await page.goto(BASE + '/');
+    for (const value of [cWidth, cRatio, cDiameter]) {
+      await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
+    }
+    await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
+    await page.waitForSelector('.tire-options[data-source="standard"]', { timeout: 12000 });
+    await page.locator('.tire-option').first().click({ timeout: 5000 });
+
+    releaseLiveAnswerC();
+    await page.waitForSelector('button.tire-refresh', { timeout: 5000 });
+    await page.click('button.tire-refresh', { timeout: 5000 });
+
+    const clearedNote = await page.locator('.tire-reselect-note[data-outcome="cleared"]').first().isVisible().catch(() => false);
+    const continueButton = page.locator('button.primary-action:has-text("Continue to mobile service")');
+    const continueDisabledAfterClear = await continueButton.isDisabled().catch(() => false);
+
+    await page.locator('.tire-option').first().click({ timeout: 5000 });
+    const noteGoneAfterChoice = !(await page.locator('.tire-reselect-note').first().isVisible().catch(() => true));
+    const continueEnabledAfterChoice = !(await continueButton.isDisabled().catch(() => true));
+
+    if (clearedNote && continueDisabledAfterClear && noteGoneAfterChoice && continueEnabledAfterChoice) {
+      ok(
+        'Tire step refresh: a chosen tire that does not survive into the live list clears the selection, reports ' +
+          '"cleared", disables Continue, and a new choice clears the note and re-enables it.',
+      );
+    } else {
+      fail(
+        `Tire step refresh: expected the cleared note (${clearedNote}), Continue disabled right after (${continueDisabledAfterClear}), ` +
+          `the note gone after a new choice (${noteGoneAfterChoice}), and Continue enabled again (${continueEnabledAfterChoice}).`,
+      );
+    }
+    await page.unroute('**/api/catalog?size=*');
 
     await context.close();
   }
