@@ -9,7 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
-| mail-boot-warning | LEAD FULL STACK (local_8f1cdec6) | backend/mail.mjs (describeMail, the from/user domain warning, interim flag), backend/mail.test.mjs, backend/server.mjs and backend/dev.mjs (one boot line each), backend/api.mjs (interim on the outbox route) | 2026-09-06 |
+| mail-quote-declined | LEAD FULL STACK (local_8f1cdec6) | backend/mail-templates.mjs (MAIL_TYPES + the quote-declined template), backend/mail.test.mjs; NOT the api.mjs hook, which follows t35 as its own PR | 2026-09-06 |
 | claim-row-region-rule | TEMP REPO AGENT (local_b2ab10bb) | .forge/AGENTS.md (docs only, one paragraph) | 2026-09-06 |
 | removal-completeness | TECHNICAL ARCHITECT (local_5b133312) | new file .forge/personal-data-removal.md only; reads across backend/, docs/, .github/ (completeness audit of the removal set + redact() design, no code change) | 2026-09-06 |
 | t35-quote-adjustment | JUNIOR BACK END DEV (local_0b9989ef) | backend/quotes.mjs, backend/quotes.test.mjs, src/routes/QuoteRequests.jsx, .forge/dead-end-audit.mjs, backend/api.mjs, src/App.css, src/routes/Confirmation.jsx, src/routes/Status.jsx, src/store.js (inherited: rebasing and reviewing an orphaned agent's finished-but-unopened PR, not new work) | 2026-09-06 |
