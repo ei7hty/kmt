@@ -53,10 +53,13 @@ const REQUIRED = ['vehicleInfo', 'tireSelection', 'location', 'date', 'customerN
  *
  * Everything the status screen and the receipt need, and nothing that
  * identifies the customer to whoever else opens the link: no name, email or
- * phone, and no location notes, which is free text where people write where
- * a key is hidden or what the gate code is. The owner reads the full payload.
+ * phone; no street address, which is the strongest identifier on the row and
+ * the same reason it is in the removal set (the ZIP stays as the coarse form,
+ * and the kind of place is one of three fixed words); and no location notes,
+ * which is free text where people write where a key is hidden or what the
+ * gate code is. The owner reads the full payload.
  */
-const CUSTOMER_REQUEST_FIELDS = ['vehicleInfo', 'tireSelection', 'quantity', 'location', 'date', 'locationType', 'serviceZip']
+const CUSTOMER_REQUEST_FIELDS = ['vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip']
 
 /** Deliberately permissive: catches typos, not RFC edge cases. */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/

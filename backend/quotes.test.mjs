@@ -193,8 +193,8 @@ test('a request stored before contact fields existed renders without error, cont
 /* ------------------------------------------------- who reads what (t44, #65) */
 
 /** The fields a customer read may carry, and the ones it never may. */
-const CUSTOMER_FIELDS = ['id', 'vehicleInfo', 'tireSelection', 'quantity', 'location', 'date', 'locationType', 'serviceZip', 'createdAt', 'updatedAt']
-const OWNER_ONLY = ['customerName', 'customerEmail', 'customerPhone', 'locationNotes']
+const CUSTOMER_FIELDS = ['id', 'vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip', 'createdAt', 'updatedAt']
+const OWNER_ONLY = ['customerName', 'customerEmail', 'customerPhone', 'location', 'locationNotes']
 
 test('a request read by id is the customer shape: no name, email, phone or location notes', async t => {
   // The id is the access and the status link is meant to be shared (R19), so
