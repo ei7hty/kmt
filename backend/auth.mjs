@@ -53,10 +53,25 @@ export function readAuthConfig(env = process.env) {
     throw new Error('KMT_OWNER_PASSWORD must be at least 12 characters.')
   }
 
+  // Unset means the default. Anything set has to be a positive number of
+  // hours: `KMT_SESSION_HOURS=abc` used to become NaN, so login answered 200
+  // with `Max-Age=NaN`, the browser dropped the cookie, and the owner was
+  // locked out with nothing in the log saying why. Refusing to boot names
+  // the variable instead, the way a missing password does (#86).
+  const hours = env.KMT_SESSION_HOURS === undefined || env.KMT_SESSION_HOURS === ''
+    ? DEFAULT_TTL_HOURS
+    : Number(env.KMT_SESSION_HOURS)
+  if (!Number.isFinite(hours) || hours <= 0) {
+    throw new Error(
+      `KMT_SESSION_HOURS must be a positive number of hours; got ${JSON.stringify(env.KMT_SESSION_HOURS)}. ` +
+      `Unset it for the default of ${DEFAULT_TTL_HOURS}.`,
+    )
+  }
+
   return {
     password,
     secret: env.KMT_SESSION_SECRET || randomBytes(32).toString('hex'),
-    ttlMs: Number(env.KMT_SESSION_HOURS || DEFAULT_TTL_HOURS) * 3600_000,
+    ttlMs: hours * 3600_000,
     generatedSecret: !env.KMT_SESSION_SECRET,
   }
 }
@@ -154,7 +169,20 @@ export function createAuth(config) {
       }
 
       if (url.pathname === '/api/owner/login' && request.method === 'POST') {
-        const input = await body(request)
+        // The body reader refuses a wrong content type, an oversized body and
+        // malformed JSON with a status of its own. Uncaught, each of those was
+        // a 500 with a stack trace in the response (#69). Input errors carry a
+        // status and are answered as written; anything without one is a real
+        // fault, logged here and answered without detail.
+        let input
+        try {
+          input = await body(request)
+        } catch (error) {
+          if (!error.status) console.error(error)
+          return json(error.status || 500, {
+            error: error.status ? error.message : 'Could not complete the request. Nothing was changed.',
+          })
+        }
         if (!equals(input?.password ?? '', config.password)) {
           // No detail about why. A wrong password and an absent one are the
           // same answer to whoever is guessing.
