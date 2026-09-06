@@ -12,6 +12,16 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # A run that ships nothing must not be allowed to evict a queued run that
+    # ships everything. CLAIMS.md changes several times an hour now that
+    # claim and release commits go straight to main (.forge/AGENTS.md), and
+    # each one is a push in this same concurrency group: it superseded #210's
+    # deploy 57 seconds after the merge, and the next run computed scope
+    # against that push, saw only CLAIMS.md, and correctly skipped -- so the
+    # real deploy was never retried, just silently lost. Named the exact
+    # path, not the directory: the audit scripts under .forge/ genuinely must
+    # run the gate, and a change to one of them still has to.
+    paths-ignore: ['.forge/CLAIMS.md']
   pull_request:
   workflow_dispatch:
 
