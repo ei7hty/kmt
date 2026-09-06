@@ -50,7 +50,7 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 47;
+const EXPECTED_CHECKS = 50;
 
 let passed = 0;
 let failed = 0;
@@ -114,6 +114,67 @@ function checkOgImageTag(html, canonicalHost) {
     return { ok: false, url: content, reason: `host is ${host}, not the canonical host ${canonicalHost}` };
   }
   return { ok: true, url: content, reason: '' };
+}
+
+/**
+ * The meta description, and the JSON-LD block beside it.
+ *
+ * Both are invisible on the page and visible only to a search engine, which
+ * is the whole reason they need a check: nothing a person clicks through
+ * would ever reveal that either had gone missing, and a build that dropped
+ * them would look perfect in every other assertion here. Same argument as
+ * og:image above, one layer further in -- that tag at least shows itself the
+ * moment somebody shares a link.
+ *
+ * The description is checked for being present and non-empty rather than for
+ * its wording, which is copy and changes; an empty content attribute is the
+ * failure worth catching, because it reads as "described deliberately as
+ * nothing" to a crawler rather than as an omission it would work around.
+ */
+function checkMetaDescription(html) {
+  const tag = html.match(/<meta\b[^>]*name=["']description["'][^>]*>/i)?.[0];
+  if (!tag) return { ok: false, reason: 'no meta description tag found' };
+  const content = tag.match(/content=["']([^"']*)["']/i)?.[1] ?? '';
+  if (!content.trim()) return { ok: false, reason: 'meta description is present but empty' };
+  return { ok: true, reason: `${content.trim().length} characters` };
+}
+
+/**
+ * The structured data, parsed rather than pattern-matched. A JSON-LD block
+ * with a trailing comma is not partially valid: every consumer drops the
+ * whole thing silently, so the parse is the check.
+ *
+ * `AutoRepair` is a LocalBusiness subtype; the assertion is on the family
+ * rather than the exact word so that narrowing the type later is not a
+ * failure, while replacing it with something that is not a business is.
+ */
+const LOCAL_BUSINESS_TYPES = new Set(['LocalBusiness', 'AutoRepair', 'AutomotiveBusiness', 'TireShop', 'Store']);
+
+function checkStructuredData(html, canonicalHost) {
+  const block = html.match(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i)?.[1];
+  if (!block) return { ok: false, data: null, reason: 'no application/ld+json block found' };
+  let data;
+  try {
+    data = JSON.parse(block);
+  } catch (error) {
+    return { ok: false, data: null, reason: `JSON-LD does not parse: ${error.message.split('\n')[0]}` };
+  }
+  const types = [data['@type']].flat().filter(Boolean);
+  if (!types.some(type => LOCAL_BUSINESS_TYPES.has(type))) {
+    return { ok: false, data, reason: `@type is ${types.join(', ') || 'absent'}, not a LocalBusiness type` };
+  }
+  if (!data.name) return { ok: false, data, reason: 'no name' };
+  let host;
+  try {
+    host = new URL(data.url).hostname.toLowerCase();
+  } catch {
+    return { ok: false, data, reason: `url is not absolute: ${data.url ?? 'absent'}` };
+  }
+  if (host !== canonicalHost.toLowerCase()) {
+    return { ok: false, data, reason: `url host is ${host}, not the canonical host ${canonicalHost}` };
+  }
+  if (!data.telephone) return { ok: false, data, reason: 'no telephone' };
+  return { ok: true, data, reason: `${types.join(', ')}, ${data.name}` };
 }
 
 /**
@@ -516,6 +577,43 @@ async function main() {
     }
   } catch (error) {
     fail(`og:image is absolute and names the canonical host — ${describeFetchError(error)}`);
+  }
+
+  try {
+    const homeHtml = await (await fetch(`${BASE}/`)).text();
+
+    const description = checkMetaDescription(homeHtml);
+    check(description.ok, 'the live index.html serves a non-empty meta description', description.reason);
+
+    const structured = checkStructuredData(homeHtml, CANONICAL_HOST);
+    check(structured.ok, 'the JSON-LD block parses and describes this business at the canonical host', structured.reason);
+
+    // The two images the structured data points a search engine at. They are
+    // separate URLs from og:image above and can rot independently of it --
+    // a renamed brand file would leave the share preview working and the
+    // search listing without a picture.
+    const assets = [['image', structured.data?.image], ['logo', structured.data?.logo]].filter(([, url]) => url);
+    if (assets.length === 0) {
+      fail('the JSON-LD image and logo resolve with an image content-type — no image or logo in the structured data');
+    } else {
+      const problems = [];
+      for (const [field, url] of assets) {
+        try {
+          const response = await fetch(/^https?:\/\//i.test(url) ? url : new URL(url, BASE).toString());
+          const type = response.headers.get('content-type') || '';
+          if (response.status !== 200 || !type.startsWith('image/')) {
+            problems.push(`${field}: status ${response.status}, content-type ${type || 'none'}`);
+          }
+        } catch (error) {
+          problems.push(`${field}: ${describeFetchError(error)}`);
+        }
+      }
+      check(problems.length === 0,
+        'the JSON-LD image and logo resolve with an image content-type',
+        problems.join('; '));
+    }
+  } catch (error) {
+    fail(`the live index.html serves a non-empty meta description — ${describeFetchError(error)}`);
   }
 
   reportCount();
