@@ -7,6 +7,11 @@ name: Health monitor
 # {"ok":true} only when the database on the volume is reachable -- the one
 # endpoint whose failure nobody is watching a screen for.
 #
+# It also answers a second question, in its own job: is production running
+# what has been merged? A healthy machine serving a build from an hour ago is
+# the failure this pipeline actually had -- /api/health was green throughout,
+# honestly, because the machine was well. Health is not currency.
+#
 # Scheduled workflows run from the default branch once this file is on it, and
 # GitHub's cron is best-effort and can lag under load; this is a heartbeat, not
 # a millisecond SLA.
@@ -48,4 +53,94 @@ jobs:
             sleep 10
           done
           echo "FAIL: $DEPLOY_URL/api/health did not answer ok:true in 5 attempts over ~50s."
+          exit 1
+
+  # Is production running what merged?
+  #
+  # Twice in one afternoon a deploy was queued, evicted by a bookkeeping commit,
+  # and never retried -- the scope step computes from `github.event.before`, so
+  # the next run saw only its own push and correctly skipped. The deploy was not
+  # delayed, it was forgotten, under a green tick. Both were found by a person
+  # happening to look at the release header.
+  #
+  # `paths-ignore` on the deploy trigger closed the cause we saw. It did not
+  # close the class: a run that fails, times out, or is cancelled by hand loses
+  # its deploy exactly as silently. This job is the thing that notices, whatever
+  # the reason.
+  #
+  # It detects and does not correct. A gate that re-deployed automatically would
+  # also undo a deliberate rollback -- roll production back at 2am, and the next
+  # push of any kind puts the broken build back. That is a considered change
+  # with its own mechanism, not a monitor.
+  divergence:
+    name: Production is running what merged
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The whole history: the deployed commit may be well behind HEAD, and
+          # a shallow clone cannot diff against a commit it does not have.
+          fetch-depth: 0
+
+      - name: Compare the deployed release against main
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
+        run: |
+          # The paths whose change reaches the running image. This list MUST
+          # match `ship_paths` in fly-deploy.yml: if they drift, this job
+          # under-reports (misses an undelivered change) or cries wolf (alerts
+          # on something that was never going to deploy). Written as pathspecs
+          # rather than the regex that file uses, because git can answer the
+          # question directly. Extracting one shared list is the right fix and
+          # is filed; duplicating it with this warning is the honest interim.
+          SHIP='Dockerfile .dockerignore fly.toml package.json package-lock.json backend src index.html public .github/workflows'
+
+          header="$(curl -fsSI --max-time 10 "$DEPLOY_URL/" 2>/dev/null | tr -d "\r" | grep -i "^x-kmt-release:" | cut -d" " -f2 || true)"
+
+          if [ -z "$header" ]; then
+            echo "FAIL: $DEPLOY_URL serves no X-KMT-Release header."
+            echo "Either the site is down (the health job above says which), or the"
+            echo "running image was built without --build-arg GIT_SHA. Until that"
+            echo "header is back, nothing can tell what is deployed."
+            exit 1
+          fi
+          echo "deployed: $header"
+
+          if ! git cat-file -e "${header}^{commit}" 2>/dev/null; then
+            echo "FAIL: the deployed commit $header is not in this repository."
+            echo "A force-push, a deploy from a branch, or an image built elsewhere."
+            echo "Do not guess what is running; find out before shipping over it."
+            exit 1
+          fi
+
+          undelivered="$(git log --oneline "${header}..HEAD" -- $SHIP)"
+          if [ -z "$undelivered" ]; then
+            echo "OK: nothing that reaches the image has merged since $header."
+            echo "(Documentation may be ahead; that is correct and does not deploy.)"
+            exit 0
+          fi
+
+          # A deploy takes minutes, and a merge seconds ago is not a fault. What
+          # matters is the OLDEST undelivered change, not the newest: measuring
+          # the newest lets steady merge activity reset the clock forever, so a
+          # commit stranded an hour ago never trips the alarm as long as someone
+          # merges every half hour. Replayed against the real incident, the
+          # newest-commit version PASSED while five shipping commits sat
+          # undelivered; the oldest-commit version fires at 2096s. This is the
+          # age of the debt, not the age of the last thing added to it.
+          oldest="$(git log --format=%ct "${header}..HEAD" -- $SHIP | tail -1)"
+          age=$(( $(date +%s) - oldest ))
+          echo "undelivered commits that reach the image:"
+          echo "$undelivered"
+          echo "the oldest has been waiting ${age}s"
+
+          if [ "$age" -lt 1800 ]; then
+            echo "OK: the oldest is under 30 minutes old and is probably still deploying."
+            exit 0
+          fi
+
+          echo "FAIL: production is running $header, and the commits above reach the"
+          echo "image and have been merged for over 30 minutes without shipping."
+          echo "A deploy was almost certainly evicted, cancelled or failed and was"
+          echo "never retried. Redeploy with: gh workflow run \"Deploy\" --ref main"
           exit 1
