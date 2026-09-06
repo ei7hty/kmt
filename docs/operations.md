@@ -1075,6 +1075,28 @@ drill above and compare, rather than repairing the live file in place.
 database is what customers see and it does not go away when a scrape fails; see
 `docs/supplier-refresh.md`.
 
+**A CI job failed and its log is gone.** `gh run view --log` returns `log not
+found` once a log has aged out or while a re-run is in flight. That is the
+absence of one instrument, not the absence of an answer -- the jobs API still
+holds each step's outcome:
+
+```bash
+gh api "repos/ei7hty/kmt/actions/runs/<run-id>/jobs" \
+  --jq '.jobs[] | select(.conclusion=="failure") | {name, steps_run: (.steps|length), failed: [.steps[]|select(.conclusion=="failure")|.name]}'
+```
+
+**Read `steps_run` first.** An empty steps array means the job failed before
+running anything -- a runner that never started -- and nothing in the job body
+can be responsible. A named failed step means the opposite. Those are different
+diagnoses and only one of them is ours, and distinguishing them costs one call
+rather than an evening of pattern-matching across runs.
+
+Three failures on 2026-09-06 looked like one story and were three: a job with
+zero steps (infrastructure), a verify job timing out at step 11 on a deploy that
+had actually succeeded (a real defect, since fixed), and both monitor jobs firing
+correctly during the restore drill's rogue machine. Only the middle one needed a
+change.
+
 **In every case, before acting: take a snapshot.** It costs seconds and
 kilobytes, and it is the difference between one problem and two.
 
