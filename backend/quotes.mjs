@@ -48,6 +48,19 @@ const LIMITS = {
 
 const REQUIRED = ['vehicleInfo', 'tireSelection', 'location', 'date', 'customerName', 'customerEmail']
 
+/**
+ * What a customer-facing read of a request carries.
+ *
+ * Everything the status screen and the receipt need, and nothing that
+ * identifies the customer to whoever else opens the link: no name, email or
+ * phone; no street address, which is the strongest identifier on the row and
+ * the same reason it is in the removal set (the ZIP stays as the coarse form,
+ * and the kind of place is one of three fixed words); and no location notes,
+ * which is free text where people write where a key is hidden or what the
+ * gate code is. The owner reads the full payload.
+ */
+const CUSTOMER_REQUEST_FIELDS = ['vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip']
+
 /** Deliberately permissive: catches typos, not RFC edge cases. */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -296,14 +309,33 @@ export class Quotes {
     })
   }
 
-  shapeRow(row) {
+  /**
+   * A stored row as an API shape, for one of two audiences.
+   *
+   * The customer shape is a list of fields, not the payload minus a few. The
+   * contact fields were never decided to be public: t34 added them to the
+   * payload and the spread here passed everything through, so `GET
+   * /api/requests/:id` answered name, email and phone to anyone holding the
+   * link -- a link that is designed to be shared (R19), to a request whose
+   * contact details must never reach another customer (R23). Listing what a
+   * customer read carries means the next field added to the payload stays
+   * with the owner until someone decides otherwise (#65).
+   *
+   * Legacy rows lack some fields and read `null` for others; the list copies
+   * what is present and invents nothing, so both shapes stay as they were.
+   */
+  shapeRow(row, audience = 'customer') {
     if (!row) return null
     const quote = this.db
       .prepare('SELECT * FROM quotes WHERE request_id=? ORDER BY created_at DESC')
       .get(row.id)
+    const payload = JSON.parse(row.payload)
+    const request = audience === 'owner'
+      ? payload
+      : Object.fromEntries(CUSTOMER_REQUEST_FIELDS.filter(field => field in payload).map(field => [field, payload[field]]))
     return {
       request: {
-        id: row.id, ...JSON.parse(row.payload),
+        id: row.id, ...request,
         createdAt: row.created_at, updatedAt: row.updated_at,
       },
       quote: quote
@@ -320,10 +352,16 @@ export class Quotes {
     }
   }
 
-  /** One request by id alone: holding the id is the access. */
-  get(id) {
+  /**
+   * One request by id alone: holding the id is the access.
+   *
+   * Because the id is the access, this is the customer shape unless the caller
+   * says it is the owner asking: whoever holds the link gets the request and
+   * the quote, and not who the customer is or where the key is hidden.
+   */
+  get(id, audience = 'customer') {
     if (typeof id !== 'string' || !id) return null
-    return this.shapeRow(this.db.prepare('SELECT * FROM requests WHERE id=?').get(id))
+    return this.shapeRow(this.db.prepare('SELECT * FROM requests WHERE id=?').get(id), audience)
   }
 
   /** Everything one browser submitted, newest first, and nobody else's. */
@@ -347,7 +385,7 @@ export class Quotes {
   listForOwner() {
     const catalog = this.catalog()
     return this.db.prepare('SELECT * FROM requests ORDER BY created_at DESC').all().map(row => {
-      const shaped = this.shapeRow(row)
+      const shaped = this.shapeRow(row, 'owner')
       const tire = catalog.find(item => item.id === shaped.request.tireSelection) ?? null
       return {
         ...shaped,
@@ -406,6 +444,7 @@ export class Quotes {
       to: decision,
       from: ['draft'],
       refused: status => `This quote is already ${status}, so there is nothing to decide.`,
+      audience: 'owner',
     })
   }
 
@@ -425,7 +464,7 @@ export class Quotes {
    * they share is only this: a version, the statuses the move is legal from,
    * and a sentence for when it is not.
    */
-  moveTo(id, version, { to, from, reason = null, refused }) {
+  moveTo(id, version, { to, from, reason = null, refused, audience = 'customer' }) {
     if (!Number.isInteger(version) || version < 0) {
       throw new InputError('Send the version you were shown, so a stale screen cannot overwrite a newer decision.')
     }
@@ -446,7 +485,7 @@ export class Quotes {
           SET status=?, reason=COALESCE(?, reason), version=version+1, updated_at=?
           WHERE id=?`)
         .run(to, reason, now(), found.quote.id)
-      return this.get(id)
+      return this.get(id, audience)
     })
   }
 
@@ -464,6 +503,7 @@ export class Quotes {
       refused: status => status === 'done'
         ? 'This request is already closed.'
         : `This request is ${status}, and only a paid request can be marked done.`,
+      audience: 'owner',
     })
   }
 
@@ -482,6 +522,7 @@ export class Quotes {
       refused: status => status === 'paid'
         ? 'This request has been paid, so it cannot be cancelled. Mark it done when the work is finished.'
         : `This request is already ${status}.`,
+      audience: 'owner',
     })
   }
 
