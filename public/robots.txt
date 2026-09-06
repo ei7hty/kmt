@@ -1,0 +1,8 @@
+# Ken's Mobile Tire. The customer flow at / is public; nothing else is meant
+# for a search index. /owner is the shop's sign-in, /status and /confirmation
+# show a customer their own request and receipt, /api is data for the app.
+User-agent: *
+Disallow: /owner
+Disallow: /status
+Disallow: /confirmation
+Disallow: /api/

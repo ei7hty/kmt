@@ -61,6 +61,14 @@ export function createStaticHandler(dist) {
   const distRoot = path.resolve(dist)
 
   return function serveStatic(request, response, pathname) {
+    // Files are read, not written to. Anything else -- POST, TRACE, whatever
+    // a scanner tries -- is refused rather than answered with the app shell.
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      response.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET, HEAD' })
+      response.end('Method Not Allowed')
+      return
+    }
+
     const relative = decodeURIComponent(pathname).replace(/^\/+/, '')
     const candidate = path.join(distRoot, relative)
 

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createServer } from 'node:http'
@@ -17,9 +17,10 @@ function buildDist(t) {
   writeFileSync(path.join(dist, 'brand', 'icon-192.png'), Buffer.from('89504e470d0a1a0a', 'hex'))
   writeFileSync(path.join(dist, 'brand', 'SOURCES.md'), '# Brand assets')
   writeFileSync(path.join(dist, 'manifest.webmanifest'), '{"name":"KMT"}')
+  writeFileSync(path.join(dist, 'robots.txt'), 'User-agent: *\nDisallow: /owner\n')
   // A fixed mtime, so validators are stable across the test.
   const stamp = new Date('2026-09-06T00:00:00Z')
-  for (const file of ['index.html', 'assets/index-abc123.js', 'brand/icon-192.png', 'brand/SOURCES.md', 'manifest.webmanifest']) {
+  for (const file of ['index.html', 'assets/index-abc123.js', 'brand/icon-192.png', 'brand/SOURCES.md', 'manifest.webmanifest', 'robots.txt']) {
     utimesSync(path.join(dist, file), stamp, stamp)
   }
   return dist
@@ -105,6 +106,32 @@ test('hashed assets are immutable; unknown routes and traversal attempts get ind
     assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8', `${route} falls back to the app shell`)
     assert.equal(response.headers.get('cache-control'), 'no-cache', `${route} is never cached`)
     assert.match(await response.text(), /id="root"/, `${route} is index.html, not something outside dist`)
+  }
+})
+
+test('robots.txt is a real file served as text, not the app shell', async t => {
+  const { base } = await serve(t)
+  const response = await fetch(`${base}/robots.txt`)
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'text/plain; charset=utf-8')
+  assert.match(await response.text(), /^User-agent: \*/, 'a crawler reads rules, not HTML')
+})
+
+test('the shipped robots.txt keeps the owner and customer screens out of search indexes', () => {
+  const rules = readFileSync(path.join(import.meta.dirname, '..', 'public', 'robots.txt'), 'utf8')
+  for (const route of ['/owner', '/status', '/confirmation', '/api/']) {
+    assert.match(rules, new RegExp(`^Disallow: ${route.replaceAll('/', '\\/')}$`, 'm'), `${route} is disallowed`)
+  }
+  assert.match(rules, /^User-agent: \*$/m)
+})
+
+test('only GET and HEAD reach the files; anything else is 405, not the app shell', async t => {
+  const { base } = await serve(t)
+  for (const method of ['POST', 'PUT', 'DELETE', 'TRACE', 'OPTIONS']) {
+    const response = await fetch(`${base}/`, { method })
+    assert.equal(response.status, 405, `${method} /`)
+    assert.equal(response.headers.get('allow'), 'GET, HEAD')
+    assert.doesNotMatch(await response.text(), /id="root"/, `${method} does not get index.html`)
   }
 })
 
