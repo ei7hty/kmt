@@ -117,6 +117,14 @@ function BrowserImport({ sizes }) {
  * there are hundreds of supported sizes and pricing each one by hand does not
  * finish.
  */
+/**
+ * A size as typed, reduced to what identifies it: "205/55R16", "205 55 16"
+ * and "2055516" are the same size to the owner, and the filter should agree.
+ * Every supported size is width/ratio R rim, so the digits are the identity
+ * and the separators, R included, are punctuation.
+ */
+const compactSize = value => String(value).replace(/\D/g, '')
+
 function MarkupRule({ markup, onSaved }) {
   const [rate, setRate] = useState(String(markup.rate))
   const [saving, setSaving] = useState(false)
@@ -224,6 +232,10 @@ export default function OwnerInventory({ navigate }) {
   const [data, setData] = useState(null)
   const [search, setSearch] = useState('')
   const [size, setSize] = useState('')
+  // What the owner has typed into the size filter. `size` is only ever a
+  // supported size or '', because it flows into the inventory query and the
+  // refresh request; the typed text commits to it on an exact match or a pick.
+  const [sizeQuery, setSizeQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
@@ -302,6 +314,27 @@ export default function OwnerInventory({ navigate }) {
   const summary = data?.summary
   const job = summary?.job
   const coverage = summary?.coverage.find(item => item.size === size)
+
+  // 910 supported sizes is too many for a dropdown to be usable, and the owner
+  // knows the size they are after. Type-to-find: the text filters the list as
+  // it is typed, an exact match commits on its own, and anything short of one
+  // offers the matches to pick from. Until it commits, the list shows every size.
+  const sizes = summary?.sizes ?? []
+  const sizePending = Boolean(sizeQuery) && !size
+  const sizeDigits = compactSize(sizeQuery)
+  const sizeMatches = sizePending && sizeDigits ? sizes.filter(value => compactSize(value).includes(sizeDigits)) : []
+  const SHOWN_MATCHES = 24
+  function typeSize(text) {
+    setSizeQuery(text)
+    const exact = sizes.find(value => compactSize(value) === compactSize(text))
+    setSize(exact || '')
+    setPage(1)
+  }
+  function pickSize(value) {
+    setSizeQuery(value)
+    setSize(value)
+    setPage(1)
+  }
   return <div className="oi-shell">
     <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}>KMT<span>.</span></button><span>OWNER WORKSPACE</span><button className="oi-button" onClick={() => navigate('/owner/quotes')}>Quote requests →</button></nav>
     <main className="oi-content">
@@ -313,17 +346,25 @@ export default function OwnerInventory({ navigate }) {
       </div>
       <section className="oi-refresh" aria-label="Supplier refresh">
         <div><h2>Supplier inventory</h2><p>{summary?.importedSizeCount ? `${summary.importedSizeCount} sizes started from a limited snapshot. ` : ''}Refresh reads every results page for the selected size and opens a browser on this computer. Refresh all covers the {summary?.refreshableSizes.length ?? '…'} sizes that already have supplier data, not the {summary?.sizes.length ?? '…'} sizes a customer can choose. To walk every size, run the scrape from a home connection (npm run scrape-tires -- --from-catalog), then push it in with npm run import-tires.</p><p className="oi-muted">Supplier prices and stock are last-seen listings, not guaranteed quotes. Your saved KMT prices stay under your control.</p></div>
-        <div className="oi-refresh-actions"><button className="oi-button oi-primary" onClick={refresh} disabled={!data || busy || jobRunning || (!size && !summary?.refreshableSizes.length)}>{size ? `Refresh ${size}` : summary && !summary.refreshableSizes.length ? 'No sizes with supplier data to refresh yet' : `Refresh all ${summary?.refreshableSizes.length ?? '…'} sizes with supplier data`}</button>{jobRunning && <button className="oi-button" onClick={cancel} disabled={busy}>Stop refresh</button>}</div>
+        <div className="oi-refresh-actions"><button className="oi-button oi-primary" onClick={refresh} disabled={!data || busy || jobRunning || sizePending || (!size && !summary?.refreshableSizes.length)}>{size ? `Refresh ${size}` : sizePending ? 'Finish choosing a size to refresh it' : summary && !summary.refreshableSizes.length ? 'No sizes with supplier data to refresh yet' : `Refresh all ${summary?.refreshableSizes.length ?? '…'} sizes with supplier data`}</button>{jobRunning && <button className="oi-button" onClick={cancel} disabled={busy}>Stop refresh</button>}</div>
       </section>
       <BrowserImport sizes={summary?.sizes} />
       {summary?.markup && <MarkupRule markup={summary.markup} onSaved={markupSaved} />}
       {job && <div className={`oi-job ${['failed', 'interrupted'].includes(job.status) ? 'oi-attention' : ''}`} role="status"><strong>{job.status.toUpperCase()}</strong><span>{job.message}</span><span>{job.completed} / {job.sizes.length} sizes · {job.tiresRead} tires · {job.pagesRead} pages</span>{job.failed?.length > 0 && <span>Earlier saved inventory and offers are preserved. Choose the failed size to retry.</span>}</div>}
       <div className="oi-filters">
         <label>Search tires or SKU<input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Brand, model, supplier SKU…" /></label>
-        <label>Tire size<select aria-label="Tire size" value={size} onChange={e => { setSize(e.target.value); setPage(1) }}><option value="">All KMT sizes</option>{summary?.sizes.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label>Tire size<input aria-label="Tire size" value={sizeQuery} onChange={e => typeSize(e.target.value)} placeholder="Any size · type to find, e.g. 205/55R16" autoComplete="off" spellCheck={false} /></label>
         <label>Show<select aria-label="Show tires" value={filter} onChange={e => { setFilter(e.target.value); setPage(1) }}><option value="all">All supplier tires</option><option value="offered">Chosen for KMT</option><option value="unselected">Not yet chosen</option><option value="available">Supplier in stock</option></select></label>
         <button className="oi-button" onClick={load} disabled={loading}>Reload inventory</button>
       </div>
+      {sizePending && <div className="oi-size-matches" role="status" aria-live="polite">
+        {sizeMatches.length === 0
+          ? <span>No KMT size matches “{sizeQuery}”. Sizes read width/ratio R rim, like 205/55R16.</span>
+          : <>
+            <span>{sizeMatches.length} of {sizes.length} sizes match{sizeMatches.length > SHOWN_MATCHES ? `, showing ${SHOWN_MATCHES} — keep typing` : ''}:</span>
+            {sizeMatches.slice(0, SHOWN_MATCHES).map(value => <button type="button" key={value} className="oi-size-match" onClick={() => pickSize(value)}>{value}</button>)}
+          </>}
+      </div>}
       {size && <p className="oi-coverage">{size}: {coverage ? `${coverage.completeness === 'full' ? 'Full refresh' : coverage.completeness === 'snapshot' ? 'Limited snapshot' : 'Not refreshed'} · ${dateLabel(coverage.last_success)}` : 'Not refreshed yet. Select Refresh above to fetch its tires.'}{coverage?.error && ` · Last attempt failed: ${coverage.error}`}</p>}
       {error && <div className="oi-error oi-notice" role="alert">{error}</div>}
       {notice && <div className="oi-notice" role="status">{notice}</div>}
