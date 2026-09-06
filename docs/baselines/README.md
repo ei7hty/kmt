@@ -36,8 +36,17 @@ post-cutover read should expect to see move:
   no canonical redirect. After t46 and t52, every non-canonical host answers
   a `301` to the canonical one, except `/api/health`, which the Host guard and
   the redirect both exempt so Fly's checker keeps passing.
-- Every security header on `/` reads `ABSENT` today. After t46 the expected
-  set is present, with `Strict-Transport-Security` only over TLS.
+- Every security header on `/` reads `ABSENT` today. After t46 (#167) six are
+  present on every response, redirects and errors included:
+  `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`, plus
+  `Strict-Transport-Security` only over TLS. The `301` from a non-canonical
+  host carries `Cache-Control: no-store`, so unsetting `KMT_CANONICAL_HOST`
+  rolls browsers back too.
+- `/api/nope` reads `401` today. After #167 an `/api/` path no handler knows
+  answers `404 {"error":"No such endpoint."}`; an unknown path under
+  `/api/owner/` still answers `401` without a session. `GET //` and
+  `/api//catalog` answer as their single-slash forms rather than `500`.
 - `HEAD /api/health` is `401` (the allow-list is GET-only); monitors use GET.
 - `/api/catalog` was 173,723 bytes brotli and `no-store` (6,169 tires, 511
   sizes, exactly the seven customer fields). #154 changes its caching; the
