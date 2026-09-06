@@ -65,11 +65,36 @@ export function readMailConfig(env = process.env) {
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`KMT_MAIL_SMTP_PORT must be a port number, got ${JSON.stringify(env.KMT_MAIL_SMTP_PORT)}.`)
     if ((user && !password) || (!user && password)) throw new Error('KMT_MAIL_SMTP_USER and KMT_MAIL_SMTP_PASSWORD go together: set both for an authenticated mailbox or relay, or neither for an IP-allowlisted relay.')
   }
+  // The site's own domain, for two facts the operator confirms at boot. An
+  // interim sender is a from-address not on it: the user's stopgap while the
+  // domain's mail records are broken, flagged the way isPlaceholder flags the
+  // markup rate, so nobody reads it as the end state. And the one trap this
+  // file cannot refuse, only name: a from-domain that differs from the
+  // authenticating mailbox's needs SPF and DKIM of its own, or the mail is
+  // filed as spam while the outbox records it sent. Skipped when there is no
+  // user, because an IP-allow-listed relay has no mailbox to compare against.
+  const siteDomain = (env.KMT_CANONICAL_HOST || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '').replace(/^www\./, '').toLowerCase()
+  const domainOf = address => address.includes('@') ? address.slice(address.lastIndexOf('@') + 1).toLowerCase() : ''
+  const interim = configured && Boolean(siteDomain) && Boolean(domainOf(from)) && domainOf(from) !== siteDomain
+  const warnings = []
+  if (configured && user && domainOf(from) && domainOf(user) && domainOf(from) !== domainOf(user)) {
+    warnings.push(`KMT_MAIL_FROM is on ${domainOf(from)} but the authenticating mailbox KMT_MAIL_SMTP_USER is on ${domainOf(user)}. ${domainOf(from)}'s SPF and DKIM must authorise this server, or mail is filed as spam while the outbox records it sent.`)
+  }
   return {
     provider: configured ? 'smtp' : 'none',
     host: host || 'smtp-relay.gmail.com', port, user, password,
     from, ownerEmail, ownerName,
+    interim, warnings,
   }
+}
+
+/** The boot lines for mail: what a person confirms before believing a send. */
+export function describeMail(config) {
+  const lines = []
+  if (config.provider === 'none') lines.push('Mail: no SMTP configured; every message is recorded in the outbox as queued and nothing is sent.')
+  else lines.push(`Mail: SMTP via ${config.host}:${config.port}${config.user ? ' (authenticated mailbox)' : ' (relay, no auth)'}${config.interim ? ' -- INTERIM sender, not on the site domain; a stopgap, not the end state' : ''}.`)
+  for (const warning of config.warnings) lines.push(`WARNING: ${warning}`)
+  return lines
 }
 
 /** Sends nothing; the row stays `queued`. The default, and what the gate runs. */

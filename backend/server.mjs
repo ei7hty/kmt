@@ -46,7 +46,7 @@ import { LoginThrottle, RateLimiter } from './limits.mjs'
 import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl, readRelease } from './site.mjs'
 import { createStaticHandler } from './static.mjs'
 import { Outbox } from './outbox.mjs'
-import { createMailer, readMailConfig } from './mail.mjs'
+import { createMailer, describeMail, readMailConfig } from './mail.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
@@ -239,6 +239,7 @@ server.listen(port, bind, () => {
     console.log('KMT_SESSION_SECRET unset: sessions will not survive a restart.')
   }
   console.log(describeServiceArea(serviceArea))
+  for (const line of describeMail(mailer.config)) console.log(line)
 })
 
 let stopping = false

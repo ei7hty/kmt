@@ -10,7 +10,7 @@ import { PageImporter } from './import.mjs'
 import { createApi, createCatalogApi, createHealthApi, createRequestsApi } from './api.mjs'
 import { Quotes } from './quotes.mjs'
 import { Outbox } from './outbox.mjs'
-import { createMailer } from './mail.mjs'
+import { createMailer, describeMail } from './mail.mjs'
 import { RateLimiter } from './limits.mjs'
 import { describeServiceArea, readServiceAreaConfig } from './service-area.mjs'
 
@@ -59,6 +59,7 @@ const server = createHttpServer(async (request, response) => {
 server.listen(port, '127.0.0.1', () => {
   console.log(`Owner workspace: http://127.0.0.1:${port}/owner`)
   console.log(describeServiceArea(serviceArea))
+  for (const line of describeMail(mailer.config)) console.log(line)
 })
 
 let stopping = false
