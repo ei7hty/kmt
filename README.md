@@ -326,7 +326,7 @@ Environment for the hosted server:
 | `KMT_MAIL_SMTP_HOST` | Where mail is sent through: the owner's Google Workspace, `smtp-relay.gmail.com` (default when any SMTP setting is present) or `smtp.gmail.com`. With no SMTP setting at all the server sends nothing and records every message in the outbox as `queued` (R25). |
 | `KMT_MAIL_SMTP_PORT` | Default `587` (STARTTLS); `465` is implicit TLS. |
 | `KMT_MAIL_SMTP_USER`, `KMT_MAIL_SMTP_PASSWORD` | Together or not at all: the mailbox and its App Password, or the relay credential. Unset for an IP-allow-listed relay. The password is set by the owner as a Fly secret and read by nothing else. |
-| `KMT_MAIL_FROM` | Required with any SMTP setting: the mailbox on the domain mail is sent from, e.g. `quotes@kensmobiletire.com`. |
+| `KMT_MAIL_FROM` | Required with any SMTP setting: a mailbox that authenticates on the sending server (for Gmail, the `KMT_MAIL_SMTP_USER` mailbox). Until the domain has SPF and DKIM, a domain address sent through another provider fails authentication silently, filed as spam while the outbox says sent. |
 | `KMT_OWNER_EMAIL` | Required with any SMTP setting: where the owner's copy goes and what customers reply to. |
 | `KMT_PUBLIC_ORIGIN` | The origin links in emails point at. Unset, `https://` plus `KMT_CANONICAL_HOST`. |
 
