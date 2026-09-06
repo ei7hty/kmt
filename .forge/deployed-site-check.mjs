@@ -54,7 +54,18 @@ async function overflow(page) {
   }));
 }
 
-/** Walk the size selector the way a customer does, and see where it lands. */
+/**
+ * Walk the size selector the way a customer does, and see where it lands.
+ *
+ * It counts tire options; it never looks for a tire by name, and it never
+ * expands the list. The customer list is capped with a "Show all N" control, so
+ * a named tire may sit behind it and its position moves as the owner curates.
+ * What a deploy has to prove is that a completed selection leads somewhere --
+ * one or more options rather than a dead end -- and that answer is the same
+ * before and after any change to how the list is paged. Naming a tire here
+ * would make this check fail for reasons that have nothing to do with the
+ * deploy.
+ */
 async function selectSize(page, size) {
   const [width, rest] = size.split('/');
   const [ratio, diameter] = rest.split('R');
