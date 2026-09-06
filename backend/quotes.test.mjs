@@ -38,6 +38,9 @@ const form = (overrides = {}) => ({
   locationType: 'home',
   serviceZip: '02149',
   locationNotes: 'Driveway',
+  customerName: 'Jamie Rivera',
+  customerEmail: 'Jamie@Example.com',
+  customerPhone: '(617) 410-8319',
   ...overrides,
 })
 
@@ -86,6 +89,57 @@ test('a request is required to carry the fields a quote needs', async t => {
   assert.throws(() => quotes.submit(form({ location: '   ' })), /location is required/)
   assert.throws(() => quotes.submit(form({ customerKey: 'not-a-key' })), /customer key/)
   assert.throws(() => quotes.submit(form({ locationNotes: 'x'.repeat(1001) })), /too long/)
+})
+
+test('a name and email are required; the email is stored lower-cased and trimmed', async t => {
+  const { quotes } = setup(t)
+  assert.throws(() => quotes.submit(form({ customerName: '' })), /customerName is required/)
+  assert.throws(() => quotes.submit(form({ customerName: '   ' })), /customerName is required/)
+  assert.throws(() => quotes.submit(form({ customerEmail: '' })), /customerEmail is required/)
+  assert.throws(() => quotes.submit(form({ customerEmail: 'not-an-email' })), /valid email/)
+  assert.throws(() => quotes.submit(form({ customerEmail: 'missing-domain@' })), /valid email/)
+
+  const { request } = quotes.submit(form({ customerEmail: '  Jamie@Example.COM  ' }))
+  assert.equal(request.customerEmail, 'jamie@example.com')
+})
+
+test('a phone is optional, and a US number typed any of the usual ways is stored E.164', async t => {
+  const { quotes } = setup(t)
+
+  const noPhone = quotes.submit(form({ customerPhone: '' })).request
+  assert.equal(noPhone.customerPhone, '', 'missing phone is fine')
+
+  const typed = quotes.submit(form({ customerPhone: '(617) 410-8319' })).request
+  assert.equal(typed.customerPhone, '+16174108319')
+
+  const withCountryCode = quotes.submit(form({ customerPhone: '1-617-410-8319' })).request
+  assert.equal(withCountryCode.customerPhone, '+16174108319')
+
+  assert.throws(() => quotes.submit(form({ customerPhone: '12345' })), /US phone number/)
+})
+
+test('a request stored before contact fields existed renders without error, contact simply absent', async t => {
+  // Production has exactly this: a request written before this field set
+  // existed. Simulated by writing a payload shaped the old way (no
+  // customerName/Email/Phone) straight into the table, bypassing cleanRequest
+  // -- the only way a live database still holds one.
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form())
+  const legacyPayload = JSON.stringify({
+    vehicleInfo: request.vehicleInfo, tireSelection: request.tireSelection,
+    location: request.location, date: request.date, locationType: request.locationType,
+    serviceZip: request.serviceZip, locationNotes: request.locationNotes,
+  })
+  quotes.db.prepare('UPDATE requests SET payload=? WHERE id=?').run(legacyPayload, request.id)
+
+  const byId = quotes.get(request.id)
+  assert.equal(byId.request.customerName, undefined)
+  assert.equal(byId.request.customerEmail, undefined)
+  assert.equal(byId.request.customerPhone, undefined)
+  assert.equal(byId.request.vehicleInfo, request.vehicleInfo, 'the rest of the row is unaffected')
+
+  const owner = quotes.listForOwner().find(row => row.request.id === request.id)
+  assert.equal(owner.request.customerEmail, undefined, 'the owner list renders the same row without throwing')
 })
 
 test('a browser sees its own requests and nobody else', async t => {
@@ -259,6 +313,9 @@ test('the owner sees every request with the tire it was quoted for', async t => 
   assert.equal(mine.tire.size, SIZE)
   assert.equal(mine.quote.status, 'draft')
   assert.ok(Array.isArray(mine.quote.exceptionReasons))
+  assert.equal(mine.request.customerName, 'Jamie Rivera', 'the owner sees who to contact')
+  assert.equal(mine.request.customerEmail, 'jamie@example.com')
+  assert.equal(mine.request.customerPhone, '+16174108319')
 })
 
 test('a tire that has since left the catalog still shows what was quoted', async t => {
