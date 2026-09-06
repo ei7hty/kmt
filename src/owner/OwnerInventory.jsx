@@ -114,7 +114,8 @@ function BrowserImport({ sizes }) {
  *
  * It is a fallback, not a policy. Every price set below overrides it, and this
  * only decides what a tire nobody has reached costs -- which matters because
- * there are 290 supported sizes and pricing each one by hand does not finish.
+ * there are hundreds of supported sizes and pricing each one by hand does not
+ * finish.
  */
 function MarkupRule({ markup, onSaved }) {
   const [rate, setRate] = useState(String(markup.rate))
@@ -264,7 +265,10 @@ export default function OwnerInventory({ navigate }) {
   async function refresh() {
     setBusy(true); setError(''); setNotice('')
     try {
-      await api('refresh', { method: 'POST', body: JSON.stringify({ sizes: size ? [size] : data.summary.sizes }) })
+      // One size from the filter may be anything the catalog supports. "Refresh
+      // all" is the sizes that already have supplier data, which is the only
+      // list the backend accepts in bulk; the full walk is a local scrape.
+      await api('refresh', { method: 'POST', body: JSON.stringify({ sizes: size ? [size] : data.summary.refreshableSizes }) })
       await load()
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
@@ -305,11 +309,11 @@ export default function OwnerInventory({ navigate }) {
       <div className="oi-metrics">
         <div><strong>{summary?.supplierCount ?? '—'}</strong><span>Supplier tires saved</span></div>
         <div><strong>{summary?.offeredCount ?? '—'}</strong><span>Chosen for KMT</span></div>
-        <div><strong>{summary ? `${summary.fullSizeCount} / ${summary.sizes.length}` : '—'}</strong><span>Sizes fully refreshed</span></div>
+        <div><strong>{summary ? `${summary.fullSizeCount} / ${summary.refreshableSizes.length}` : '—'}</strong><span>Sizes with supplier data fully refreshed</span></div>
       </div>
       <section className="oi-refresh" aria-label="Supplier refresh">
-        <div><h2>Supplier inventory</h2><p>{summary?.importedSizeCount ? `${summary.importedSizeCount} sizes started from a limited snapshot. ` : ''}Refresh reads every results page for the selected size. All-size refreshes can take a while and open a browser on this computer.</p><p className="oi-muted">Supplier prices and stock are last-seen listings, not guaranteed quotes. Your saved KMT prices stay under your control.</p></div>
-        <div className="oi-refresh-actions"><button className="oi-button oi-primary" onClick={refresh} disabled={!data || busy || jobRunning}>{size ? `Refresh ${size}` : `Refresh all ${summary?.sizes.length ?? ''} sizes`}</button>{jobRunning && <button className="oi-button" onClick={cancel} disabled={busy}>Stop refresh</button>}</div>
+        <div><h2>Supplier inventory</h2><p>{summary?.importedSizeCount ? `${summary.importedSizeCount} sizes started from a limited snapshot. ` : ''}Refresh reads every results page for the selected size and opens a browser on this computer. Refresh all covers the {summary?.refreshableSizes.length ?? '…'} sizes that already have supplier data, not the {summary?.sizes.length ?? '…'} sizes a customer can choose. To walk every size, run the scrape from a home connection (npm run scrape-tires -- --from-catalog), then push it in with npm run import-tires.</p><p className="oi-muted">Supplier prices and stock are last-seen listings, not guaranteed quotes. Your saved KMT prices stay under your control.</p></div>
+        <div className="oi-refresh-actions"><button className="oi-button oi-primary" onClick={refresh} disabled={!data || busy || jobRunning || (!size && !summary?.refreshableSizes.length)}>{size ? `Refresh ${size}` : summary && !summary.refreshableSizes.length ? 'No sizes with supplier data to refresh yet' : `Refresh all ${summary?.refreshableSizes.length ?? '…'} sizes with supplier data`}</button>{jobRunning && <button className="oi-button" onClick={cancel} disabled={busy}>Stop refresh</button>}</div>
       </section>
       <BrowserImport sizes={summary?.sizes} />
       {summary?.markup && <MarkupRule markup={summary.markup} onSaved={markupSaved} />}

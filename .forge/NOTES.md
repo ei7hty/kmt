@@ -280,3 +280,43 @@ fills the gaps without wiping first. It rewrites `package-lock.json` in
 passing, so `git checkout -- package-lock.json` afterwards. The 46 packages
 still "missing" after that are all platform optionals that never install on
 Windows.
+
+**2026-09-06 — Claude (kmt CLI session, SWE agent 3)**
+"Refresh all" on `/owner` no longer means every supported size. With 910
+sizes in the catalog that was 910 supplier page loads at a 1.5-second pause
+from the hosted machine. The inventory summary now carries `refreshableSizes`
+-- supported sizes with supplier rows or a coverage row, i.e. sizes the
+supplier has already been asked about -- and `Refresher.start` refuses a list
+of more than one size that reaches outside it (400, naming the size). One size
+on its own may still be anything supported: that is the owner picking it from
+the size filter. The full walk is `npm run scrape-tires -- --from-catalog` from
+a home connection, then `npm run import-tires`. If you write a test that starts
+a two-size refresh, give the second size a coverage row first
+(`db.recordFailure(size, ...)` is enough), and give each size its own supplier
+id -- ids are unique across sizes, so one fixture row reused for two sizes
+fails the second refresh with a constraint error that reads like a parser bug.
+Backend tests are now 55 (owner 37, quotes 18).
+
+**2026-09-06 — Claude (kmt CLI session, SWE agent 3)**
+Two Windows traps that each cost a round of false results this weekend.
+
+Most source files here are CRLF on disk. An edit script that matches text
+containing `\n` finds nothing, and if it asserts on the match count it aborts
+on the first file -- mine did, edited nothing, and left three red tests for
+code that did not exist. Detect the file's newline first and normalise the
+search and replacement strings to it (`'\r\n' if '\r\n' in text else '\n'`),
+or open the file with universal newlines and write it back the same way.
+
+`kill $!` on a node server started directly (not via npx) does NOT free the
+port here, even though the Linux-oriented note in this file says it does.
+Measured: `node node_modules/vite/bin/vite.js preview --port 4291 &` then
+`kill $!`, and 4291 still answered 200; the same for `backend/dev.mjs` and
+`backend/server.mjs`. On this machine kill by port from PowerShell, checking
+the command line first so you stop only your own:
+
+```powershell
+Get-NetTCPConnection -LocalPort 4291 -State Listen |
+  ForEach-Object { (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.OwningProcess)").CommandLine; Stop-Process -Id $_.OwningProcess -Force }
+```
+
+Then confirm the port is closed before believing the next audit against it.
