@@ -15,8 +15,62 @@
 
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
+import { PUBLIC_BODY_LIMIT, clientIp, refuse } from './limits.mjs'
+
 const COOKIE = 'kmt_owner'
 const DEFAULT_TTL_HOURS = 12
+
+/**
+ * Where live sessions are kept, so that logging out means something.
+ *
+ * A session cookie used to be a signed timestamp and nothing else: logging out
+ * cleared the browser's copy, and a copied cookie stayed good for its whole
+ * twelve hours (#66). Each session now has an id the server remembers, and a
+ * cookie whose id the server has forgotten is refused whatever its signature
+ * says. The store is a table in the same database as everything else rather
+ * than process memory, because a deploy restarts the process and the owner
+ * should not be signed out by every merge. Import tokens stay stateless: two
+ * hours, one purpose, and nothing to log out of.
+ */
+export function createSessionStore(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS owner_sessions (
+    id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL
+  )`)
+  const insert = db.prepare('INSERT INTO owner_sessions (id, expires_at) VALUES (?, ?)')
+  const select = db.prepare('SELECT expires_at FROM owner_sessions WHERE id=?')
+  const remove = db.prepare('DELETE FROM owner_sessions WHERE id=?')
+  const sweep = db.prepare('DELETE FROM owner_sessions WHERE expires_at <= ?')
+  return {
+    create(expiresAt) {
+      sweep.run(Date.now())
+      const id = randomBytes(16).toString('hex')
+      insert.run(id, expiresAt)
+      return id
+    },
+    has(id) {
+      const row = select.get(id)
+      return Boolean(row) && row.expires_at > Date.now()
+    },
+    delete(id) { remove.run(id) },
+  }
+}
+
+/** The same contract in memory, for tests and for a server without a database. */
+export function memorySessionStore() {
+  const live = new Map()
+  return {
+    create(expiresAt) {
+      const id = randomBytes(16).toString('hex')
+      live.set(id, expiresAt)
+      return id
+    },
+    has(id) {
+      const expiresAt = live.get(id)
+      return expiresAt !== undefined && expiresAt > Date.now()
+    },
+    delete(id) { live.delete(id) },
+  }
+}
 
 const b64 = (value) => Buffer.from(value).toString('base64url')
 
@@ -85,20 +139,36 @@ const sign = (secret, value) => createHmac('sha256', secret).update(value).diges
  * page on giga-tires.com; the session cookie unlocks the whole workspace. If
  * both were just "a signed timestamp", the first would be the second.
  */
-function issue(config, purpose = 'session', ttlMs = config.ttlMs) {
-  const payload = b64(`${purpose}:${Date.now() + ttlMs}`)
+function issue(config, purpose = 'session', ttlMs = config.ttlMs, id = '') {
+  const payload = b64(`${purpose}:${Date.now() + ttlMs}:${id}`)
   return `${payload}.${sign(config.secret, payload)}`
 }
 
-function verify(config, token, purpose = 'session') {
-  if (typeof token !== 'string') return false
+/**
+ * What a token says, if its signature is good and it has not expired: its
+ * purpose and the session id it names, or null. The signature is checked
+ * first so nothing after it is reading attacker-chosen bytes.
+ */
+function open(config, token) {
+  if (typeof token !== 'string') return null
   const [payload, signature] = token.split('.')
-  if (!payload || !signature) return false
-  if (!equals(signature, sign(config.secret, payload))) return false
+  if (!payload || !signature) return null
+  if (!equals(signature, sign(config.secret, payload))) return null
 
-  const [tokenPurpose, expires] = Buffer.from(payload, 'base64url').toString().split(':')
-  if (tokenPurpose !== purpose) return false
-  return Number.isFinite(Number(expires)) && Number(expires) > Date.now()
+  const [purpose, expires, id = ''] = Buffer.from(payload, 'base64url').toString().split(':')
+  if (!Number.isFinite(Number(expires)) || Number(expires) <= Date.now()) return null
+  return { purpose, id }
+}
+
+function verify(config, token, purpose = 'session') {
+  const opened = open(config, token)
+  return opened !== null && opened.purpose === purpose
+}
+
+/** A session cookie is good only while the server still remembers its id. */
+function verifySession(config, sessions, token) {
+  const opened = open(config, token)
+  return opened !== null && opened.purpose === 'session' && Boolean(opened.id) && sessions.has(opened.id)
 }
 
 /**
@@ -122,8 +192,12 @@ const readCookie = (header, name) =>
  *
  * `secure` follows the request rather than being hardcoded, so the cookie gets
  * the Secure flag behind TLS and still works over plain http on a local run.
+ *
+ * `sessions` is where live session ids are kept (a database table on the
+ * server, memory by default). `throttle` slows wrong passwords per address
+ * (#66); without one, as in most tests, guesses are not counted.
  */
-export function createAuth(config) {
+export function createAuth(config, { sessions = memorySessionStore(), throttle = null } = {}) {
   const isSecure = (request) =>
     (request.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https' ||
     Boolean(request.socket.encrypted)
@@ -137,8 +211,10 @@ export function createAuth(config) {
     `Max-Age=${maxAgeSeconds}`,
   ].filter(Boolean).join('; ')
 
+  const signedIn = (request) => verifySession(config, sessions, readCookie(request.headers.cookie, COOKIE))
+
   return {
-    isAuthenticated: (request) => verify(config, readCookie(request.headers.cookie, COOKIE)),
+    isAuthenticated: signedIn,
 
     /**
      * Bearer authorisation for posting supplier pages back.
@@ -165,10 +241,19 @@ export function createAuth(config) {
       }
 
       if (url.pathname === '/api/owner/session' && request.method === 'GET') {
-        return json(200, { authenticated: verify(config, readCookie(request.headers.cookie, COOKIE)) })
+        return json(200, { authenticated: signedIn(request) })
       }
 
       if (url.pathname === '/api/owner/login' && request.method === 'POST') {
+        // A slowed address is answered before its body is read: the guess is
+        // not even looked at until the wait has passed.
+        const ip = clientIp(request)
+        const wait = throttle ? throttle.check(ip) : { allowed: true }
+        if (!wait.allowed) {
+          refuse(response, wait.retryAfterSeconds, `Too many attempts. Try again in ${wait.retryAfterSeconds} seconds.`)
+          return true
+        }
+
         // The body reader refuses a wrong content type, an oversized body and
         // malformed JSON with a status of its own. Uncaught, each of those was
         // a 500 with a stack trace in the response (#69). Input errors carry a
@@ -176,7 +261,7 @@ export function createAuth(config) {
         // fault, logged here and answered without detail.
         let input
         try {
-          input = await body(request)
+          input = await body(request, PUBLIC_BODY_LIMIT)
         } catch (error) {
           if (!error.status) console.error(error)
           return json(error.status || 500, {
@@ -186,10 +271,14 @@ export function createAuth(config) {
         if (!equals(input?.password ?? '', config.password)) {
           // No detail about why. A wrong password and an absent one are the
           // same answer to whoever is guessing.
+          throttle?.fail(ip)
           return json(401, { error: 'Incorrect password.' })
         }
+        throttle?.succeed(ip)
+        const expiresAt = Date.now() + config.ttlMs
+        const id = sessions.create(expiresAt)
         return json(200, { authenticated: true }, {
-          'Set-Cookie': setCookie(request, issue(config), Math.floor(config.ttlMs / 1000)),
+          'Set-Cookie': setCookie(request, issue(config, 'session', config.ttlMs, id), Math.floor(config.ttlMs / 1000)),
         })
       }
 
@@ -197,13 +286,17 @@ export function createAuth(config) {
       // authenticate is in here, so this route is behind the session like any
       // other read of workspace state.
       if (url.pathname === '/api/owner/import-token' && request.method === 'POST') {
-        if (!verify(config, readCookie(request.headers.cookie, COOKIE))) {
+        if (!signedIn(request)) {
           return json(401, { error: 'Sign in to use the owner workspace.' })
         }
         return json(200, { token: createImportToken(config), expiresInMs: IMPORT_TTL_MS })
       }
 
+      // Logging out forgets the session on the server, so the cookie is dead
+      // wherever a copy of it went, and then clears the browser's copy.
       if (url.pathname === '/api/owner/logout' && request.method === 'POST') {
+        const opened = open(config, readCookie(request.headers.cookie, COOKIE))
+        if (opened?.purpose === 'session' && opened.id) sessions.delete(opened.id)
         return json(200, { authenticated: false }, { 'Set-Cookie': setCookie(request, '', 0) })
       }
 

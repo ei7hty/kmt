@@ -5,6 +5,7 @@ import { Inventory } from './inventory.mjs'
 import { Quotes } from './quotes.mjs'
 import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
+import { PUBLIC_BODY_LIMIT, RateLimiter } from './limits.mjs'
 import { calculateDraftQuote } from '../src/pricing.js'
 
 const SIZE = '215/60R16'
@@ -283,6 +284,80 @@ test('paying needs the key that submitted, and a quote the owner has approved', 
   assert.equal(quotes.pay(request.id, KEY).quote.status, 'paid')
 })
 
+/* --------------------------------------------------- rate limits (t45, #63) */
+
+/** Small windows, so a test can reach them in a handful of calls. */
+const smallRules = {
+  publicPerIp: { max: 4, windowMs: 60_000 },
+  publicPerKey: { max: 2, windowMs: 60_000 },
+  submitPerEmail: { max: 3, windowMs: 60_000 },
+}
+
+test('public writes from one address are refused past the limit, with the wait named, and reads are not', async t => {
+  const { inventory, quotes } = setup(t)
+  const logged = []
+  const limiter = new RateLimiter({ rules: smallRules, log: line => logged.push(line) })
+  const base = await serve(t, quotes, inventory, { limiter })
+
+  // Four allowed: each with its own key and email, so only the address counts.
+  for (let i = 0; i < 4; i++) {
+    const created = await post(base, '/api/requests', form({ customerKey: `0000000000000${String(i).padStart(3, '0')}`, customerEmail: `c${i}@example.com` }))
+    assert.equal(created.status, 201, `submission ${i + 1} is under the limit`)
+  }
+  const fifth = await post(base, '/api/requests', form({ customerKey: '00000000000000ff', customerEmail: 'c9@example.com' }))
+  assert.equal(fifth.status, 429)
+  assert.equal(fifth.headers.get('retry-after'), '60')
+  assert.match((await fifth.json()).error, /Too many requests from this connection/)
+  assert.equal(quotes.listForOwner().length, 4, 'the refused one was never stored')
+  assert.ok(logged.some(line => /publicPerIp refused/.test(line)), 'the refusal is logged')
+
+  // Pay and cancel share the address window: both are refused now too.
+  const id = quotes.listForOwner()[0].request.id
+  assert.equal((await post(base, `/api/requests/${id}/pay`, { customerKey: KEY })).status, 429)
+  assert.equal((await post(base, `/api/requests/${id}/cancel`, { customerKey: KEY })).status, 429)
+
+  // Reads are not counted: the status screen keeps working for everyone.
+  assert.equal((await fetch(`${base}/api/requests/${id}`)).status, 200)
+  assert.equal((await fetch(`${base}/api/requests?customer=${KEY}`)).status, 200)
+  assert.equal((await fetch(`${base}/api/catalog`)).status, 200)
+})
+
+test('one browser key and one email address have limits of their own', async t => {
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory, { limiter: new RateLimiter({ rules: { ...smallRules, publicPerIp: { max: 100, windowMs: 60_000 } }, log: () => {} }) })
+
+  // Two from one key, then the third from that key is refused while a different key still gets through.
+  assert.equal((await post(base, '/api/requests', form({ customerEmail: 'a@example.com' }))).status, 201)
+  assert.equal((await post(base, '/api/requests', form({ customerEmail: 'b@example.com' }))).status, 201)
+  const byKey = await post(base, '/api/requests', form({ customerEmail: 'c@example.com' }))
+  assert.equal(byKey.status, 429)
+  assert.match((await byKey.json()).error, /this browser/)
+  assert.equal((await post(base, '/api/requests', form({ customerKey: OTHER_KEY, customerEmail: 'd@example.com' }))).status, 201)
+
+  // Three naming one address, then the fourth is refused whichever key sends it.
+  const keys = ['0000000000000001', '0000000000000002', '0000000000000003', '0000000000000004']
+  for (const key of keys.slice(0, 3)) {
+    assert.equal((await post(base, '/api/requests', form({ customerKey: key, customerEmail: 'Same@Example.com' }))).status, 201)
+  }
+  const byEmail = await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'same@example.com' }))
+  assert.equal(byEmail.status, 429)
+  assert.match((await byEmail.json()).error, /email address/)
+  assert.equal((await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'other@example.com' }))).status, 201, 'the key itself is fine')
+})
+
+test('a public body past the ceiling is refused before it is parsed, and the health check is never counted', async t => {
+  const { inventory, quotes } = setup(t)
+  const base = await serve(t, quotes, inventory, { limiter: new RateLimiter({ rules: smallRules, log: () => {} }) })
+
+  const oversized = await post(base, '/api/requests', form({ locationNotes: 'x'.repeat(PUBLIC_BODY_LIMIT) }))
+  assert.equal(oversized.status, 413)
+  assert.equal(quotes.listForOwner().length, 0)
+
+  // Fly reads /api/health every fifteen seconds; a limiter that counted it
+  // would mark the machine unhealthy. Many more than any window allows, all 200.
+  for (let i = 0; i < 20; i++) assert.equal((await fetch(`${base}/api/health`)).status, 200)
+})
+
 test('an id that does not exist reads as nothing, not as someone else', async t => {
   const { quotes } = setup(t)
   assert.equal(quotes.get('0'.repeat(32)), null)
@@ -292,9 +367,9 @@ test('an id that does not exist reads as nothing, not as someone else', async t 
 /* ------------------------------------------------------------------- HTTP */
 
 /** A server shaped like server.mjs: the same gate, the same handlers. */
-function serve(t, quotes, inventory) {
+function serve(t, quotes, inventory, { limiter = null } = {}) {
   const auth = createAuth(readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password' }))
-  const requestsApi = createRequestsApi(quotes)
+  const requestsApi = createRequestsApi(quotes, { limiter })
   const catalogApi = createCatalogApi(inventory)
   const healthApi = createHealthApi(inventory)
   const ownerApi = createApi(inventory, { start: () => ({}), cancel: () => ({}) }, null, quotes)
@@ -431,6 +506,38 @@ test('the owner sees every request with the tire it was quoted for', async t => 
   assert.equal(mine.request.customerName, 'Jamie Rivera', 'the owner sees who to contact')
   assert.equal(mine.request.customerEmail, 'jamie@example.com')
   assert.equal(mine.request.customerPhone, '+16174108319')
+})
+
+test("the owner's row carries the supplier's stock and when it was last seen; the customer's carries no tire at all", async t => {
+  // Approval is the one human gate in the flow, and refreshes are monthly.
+  // The customer catalog strips stock and lastSeen by design (R16), so the
+  // owner was deciding against a tire it could not see the state of (#105).
+  const { inventory, quotes } = setup(t)
+  const { request } = quotes.submit(form())
+
+  const listed = quotes.listForOwner().find(row => row.request.id === request.id)
+  assert.equal(listed.tire.supplierStock, 12, 'the count the supplier last showed')
+  assert.equal(listed.tire.supplierLastSeen, '2026-09-05T15:00:00Z', 'when the supplier last showed it')
+  assert.equal(listed.tire.supplierActive, true)
+  assert.equal(listed.tire.price, 70, 'the quoted price is still the marked-up customer price, not the supplier cost')
+
+  // A complete refresh that no longer lists the tire retires it: stock is what
+  // it last was, and the row says the supplier has stopped listing it.
+  inventory.refreshSize(SIZE, [tire('giga-b', { name: 'Replacement' })])
+  const retired = quotes.listForOwner().find(row => row.request.id === request.id)
+  assert.equal(retired.tire.supplierActive, false)
+  assert.equal(retired.tire.supplierStock, 12)
+  assert.equal(retired.tire.name, 'Test Touring', 'the tire that was quoted is still named')
+
+  // A supplier that shows none in stock says so, as a number the card can warn on.
+  inventory.refreshSize(SIZE, [tire('giga-a', { inStock: false, source: { ...tire().source, stock: 0 } })])
+  assert.equal(quotes.listForOwner().find(row => row.request.id === request.id).tire.supplierStock, 0)
+
+  // The customer's shapes carry no tire object, so nothing here can leak that way.
+  assert.equal('tire' in quotes.get(request.id), false)
+  assert.equal('tire' in quotes.listForCustomer(KEY)[0], false)
+  // Nor does the owner row's tire carry the supplier's URL, SKU or list price.
+  assert.deepEqual(Object.keys(listed.tire).sort(), ['id', 'name', 'price', 'size', 'supplierActive', 'supplierLastSeen', 'supplierStock'])
 })
 
 test('a tire that has since left the catalog still shows what was quoted', async t => {
