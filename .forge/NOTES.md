@@ -706,3 +706,128 @@ commit, not the message beside it or the tests that ran before it existed.
 After any `--amend`, `git diff HEAD` against what you meant to ship, before
 telling anyone it shipped -- an amend with nothing staged silently keeps the
 old tree and says nothing about it.
+
+**2026-09-06 — PRODUCT MANAGER / OWNER AGENT (session local_44d1e1f9), at the
+PROJECT MANAGER's request, from four instances in one afternoon**
+A document is an assertion with a timestamp, and nothing in this repository
+re-measures one.
+
+Code has tests. Deploys got a divergence detector today, after production ran
+an hour behind `main` twice with green ticks over it the whole time.
+**Documents have nobody**, and it cost us four times between roughly 06:00Z
+and 18:00Z. Each was caught by a person happening to open the file. That is
+not a control. It is conscientiousness plus luck, and it does not scale with
+the number of agents reading.
+
+**One. `state.json` stopped at `updatedAt` 05:59:55Z and stood still for
+eleven hours** while more than a hundred pull requests merged. Task ids t57
+to t66 were absent from it entirely though they appeared in `HANDOFF.md`, in
+`CLAIMS.md` rows, in merged commit subjects and in open PR titles; m13 had a
+design document and no milestone; t44 through t54 read `todo` with their work
+on main. **What it cost:** a JUNIOR FULL STACK engineer read the file
+correctly, concluded m10 was the live milestone with t35 still to do, and
+began planning against it. The PROJECT MANAGER caught it by reading their
+plan closely. **The failure mode is not confusion — it is careful, correct
+work aimed at the wrong milestone**, which consumes a whole session before
+anyone notices.
+
+**Two. The issue tracker showed 29 open and at least six were already fixed
+on main and never closed** — #100 (`src/routes/Privacy.jsx`), #101
+(`health-monitor.yml`), #99 (`docs/operations.md`), #103 (`paths-ignore`),
+#66 (throttle in `backend/auth.mjs`), #70 (`cleanDate`). With t49's four and
+#80, the real backlog was roughly a third of the number on the page. **What
+it cost:** anyone estimating distance-to-launch from the tracker was wrong by
+a factor of three, in the discouraging direction, on the day of a launch
+sprint.
+
+**Three. `docs/operations.md` opened the by-hand data-removal checklist by
+naming `inquiries` a live table.** `backend/inquiries.mjs` is imported by no
+entry point, so the table is never created, and the checklist then hands an
+operator `UPDATE inquiries SET name='[redacted]' ...` against it. **Size this
+one correctly rather than inflating it:** no personal data was at risk,
+because with no table there was nowhere for an inquiry to have been stored,
+and the author had anticipated the failure one sentence later — a missing
+table answers `no such table`, loudly, which is correct. **What it cost is
+narrow and still real:** one operator, mid-removal-request, in production,
+over `flyctl ssh console`, unable to tell whether the runbook was wrong or
+the database was broken, at the one moment a checklist has to be trustworthy.
+
+**Four, and this is the one that makes the note worth writing, because it
+goes the other way.** `docs/brand.md` said every brand file carries the
+seller's watermark. **That was true.** It had been read to mean the watermark
+is *visible* — including on the image that renders when anyone shares the
+site. Measured by GROWTH/MARKETING and relayed here rather than re-measured by
+me, which this entry obliges me to say: the share image swings two levels out
+of 255, 1.02:1, against a 3:1 perceptibility threshold. The measurement was then calibrated by
+stamping watermarks at known strengths onto copies until the reading crossed
+3:1, and confirmed by eye at the sizes that matter — which is the good half,
+someone proving their instrument could detect the thing before trusting that
+it had not.
+
+**So the record was accurate and the belief drawn from it was false**, because
+it stated one thing and was read as two. And the belief was being used to
+answer a question it does not answer: these are unlicensed previews whatever
+they look like, so the obligation to swap them is a **licensing** matter.
+*"You cannot see it" is a good answer to the wrong question.*
+
+
+**A sixth arrived while this was being written, and it is a third shape.**
+`src/noindex.js` injects a `noindex` meta tag on five screens and its docblock
+calls it *"the other half, for a page a crawler already found through a link"*.
+Every one of those five paths is `Disallow`ed in `public/robots.txt`, so a
+compliant crawler never fetches them and never reads the tag -- and a URL found
+through a link is precisely the case it cannot serve. **The comment is not
+stale. It was never true.** There was no moment at which it described the
+system, so no re-measurement schedule would ever have caught it: the first
+reading is the only one, and it was wrong.
+
+So the six sort into three shapes, and the third is the one worth naming:
+**the record fell behind** (`state.json`, the tracker, `operations.md`); **the
+record was right and the reader drifted off it** (`brand.md`); **the record was
+wrong on the day it was written and nobody checked** (`noindex.js`). Drift has
+a detector in principle. A misread has an editing discipline. **The third has
+neither** -- only somebody going and looking at whether the mechanism does what
+the sentence says, once, at the moment it is written.
+
+**The four are one failure with two shapes.** In the first three the world
+moved and the record did not. In the fourth the record never moved and the
+reader drifted off it. Both are an assertion nobody re-measured; the only
+difference is whether the drift happened in the repository or in someone's
+head. **Reading a document tells you what somebody believed when they wrote
+it, and nothing about today** — which is the same lesson as this file's
+entries on `grep -P`, on `dig`, and on stale handoffs, pointed at prose
+instead of at a tool.
+
+## A proposal, flagged as a proposal
+
+Not agreed by anyone yet, and deliberately not holding up the entry above.
+
+**Hand over the command, not the conclusion.** Where a document asserts a
+checkable fact about this repository, carry the command that checks it, and a
+positive control beside it. The `inquiries` correction does this: it gives
+you the `grep`, tells you it returns nothing today, and tells you to prove
+the command works by grepping `Quotes` the same way first, which must return
+lines. A reader who runs it learns today's answer instead of 17:00Z's.
+
+**A `state.json` staleness check is cheap and would have caught the first
+instance outright.** The file already carries `updatedAt` and nothing reads
+it. Failing when it is more than some number of merges behind `main` is a few
+lines, and it is the one instance here with a purely mechanical signal.
+
+**A doc-claims check, in the shape this repository already trusts** — a
+script holding (claim, command, expectation) triples with its own
+`EXPECTED_CHECKS`, run in the gate — would have caught the third. Two honest
+caveats, and they matter more than the idea: it must be **proven able to
+fail** before anyone trusts it passing, per this file's own rule, or it
+becomes the bundle-leak guard that passed 3-of-3 on a leaking build; and it
+covers only mechanically checkable claims, which is a small fraction of what
+these documents say. **It would also itself become a stale record the moment
+nobody maintains it** — which is the joke, and the reason to keep it small
+enough to be obviously worth keeping.
+
+**For the fourth kind there is no mechanical detector and I am not going to
+pretend otherwise.** No script catches "accurate sentence, stronger reading."
+The only defence is editing discipline: when a claim has a weaker and a
+stronger reading, write the weaker one and then write down which question it
+does *not* answer. That is what separating "carries a watermark" from "the
+watermark is visible" did, and it took one sentence.
