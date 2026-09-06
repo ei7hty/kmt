@@ -128,6 +128,13 @@ function Status({ navigate }) {
                   </div>}
                   {quote ? (
                     <div className="owner-quote">
+                      {/* The tire line always carries how many: reading it
+                          back here is how the customer sees the quantity
+                          the quote was actually priced for. */}
+                      {(() => {
+                        const tireLine = quote.lineItems?.find(item => item.description !== 'Mobile installation service')
+                        return tireLine && <p className="text-secondary owner-quote-item">{tireLine.quantity} × {tireLine.description}</p>
+                      })()}
                       <div className="owner-quote-summary">
                         <div><p className="text-secondary">Your quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div>
                         <span className="owner-quote-status">{quote.status}</span>

@@ -18,6 +18,14 @@
 .order-section .tire-option.selected { border-color: #ababba !important; background: #222226 !important; box-shadow: inset 3px 0 #e5e5eb; }
 .order-section .tire-info { gap: 6px; }
 .order-section .tire-info small { font-size: 12px; text-transform: none; font-weight: 400; line-height: 1.5; }
+.tire-quantity { margin-top: 26px; padding-top: 22px; border-top: 1px solid #303034; }
+.tire-quantity-label { display: block; margin-bottom: 10px; font-size: 12px; font-weight: 600; color: #dedee3; }
+.quantity-options { display: flex; gap: 10px; }
+.order-section .quantity-option { min-width: 64px; min-height: 48px; padding: 10px 14px; border: 1px solid #3a3a42; border-radius: 8px; background: #19191d; color: #d1d1d9; font-size: 15px; font-weight: 600; text-align: center; }
+.order-section .quantity-option[aria-pressed="true"] { border-color: #d1d1de; background: #2a2a30; color: white; box-shadow: inset 0 0 0 1px #d1d1de; }
+.order-section .quantity-option:hover { background: #303036; }
+.tire-quantity-total { margin-top: 14px; color: #c6c6ce; font-size: 14px; }
+.tire-quantity-total b { color: #f5f5f7; }
 .request-details { margin-top: 32px; padding-top: 28px; border-top: 1px solid #303034; }
 .detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .detail-index { color: #9b9ba6; font-size: 10px; letter-spacing: 1.8px; font-weight: 700; }
@@ -73,6 +81,7 @@
   .date-section { grid-template-columns: minmax(0, 1fr); }
   .date-shortcuts { padding-top: 4px; }
   .date-choice { flex: 1; text-align: center !important; }
+  .order-section .quantity-option { flex: 1; min-width: 0; }
   .order-section .tire-option { grid-template-columns: 40px minmax(0, 1fr); gap: 12px; padding: 16px !important; }
   .order-section .tire-art { width: 34px; height: 34px; border-width: 5px; }
   .order-section .tire-option > b { grid-column: 2; justify-self: start; text-align: left; }

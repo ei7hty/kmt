@@ -47,3 +47,19 @@ test('a non-supplier tire stacks with the other exception rules rather than repl
   assert.ok(quote.exceptionReasons.includes('Truck, pickup, van, and SUV requests require owner review'))
   assert.ok(quote.exceptionReasons.includes('Not a supplier-listed tire; owner review required'))
 })
+
+test('quantity and the supplier-id guard are independent: four of a non-supplier tire still multiplies', () => {
+  // Neither #62 nor #93 exercised this combination alone: the guard's fixtures
+  // were always quantity 1, and quantity's fixtures were always a giga- tire.
+  const quote = calculateDraftQuote(
+    request({ tireSelection: 'tire-1', quantity: 4 }),
+    [tire({ id: 'tire-1' })],
+  )
+  const tireLine = quote.lineItems.find(item => item.description !== 'Mobile installation service')
+  assert.equal(tireLine.quantity, 4, 'the exception does not stop the tire line from multiplying')
+  assert.equal(quote.total, Math.round((50 * 4 + 49.99) * 100) / 100)
+  assert.ok(
+    quote.exceptionReasons.includes('Not a supplier-listed tire; owner review required'),
+    'multiplying the quantity does not excuse the tire from owner review',
+  )
+})

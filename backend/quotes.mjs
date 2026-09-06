@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 
 import { InputError } from './inventory.mjs'
 import { catalogFromLiveRows } from '../src/data/catalog.js'
-import { calculateDraftQuote } from '../src/pricing.js'
+import { ALLOWED_QUANTITIES, calculateDraftQuote } from '../src/pricing.js'
 
 /**
  * Requests and the quotes drafted for them.
@@ -50,6 +50,27 @@ const REQUIRED = ['vehicleInfo', 'tireSelection', 'location', 'date', 'customerN
 
 /** Deliberately permissive: catches typos, not RFC edge cases. */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** A job is usually a full set. Offered at the tire step; this is what a request carries if it says nothing. */
+const DEFAULT_QUANTITY = 4
+
+/**
+ * How many tires, validated against the same list the tire step offers.
+ *
+ * A missing quantity is a request from before this existed, or a caller that
+ * has not been told about it -- either way it means a full set, not a
+ * refusal. Anything present that is not exactly one of the offered choices is
+ * refused: this is not a general-purpose number field, it is a fixed choice,
+ * and a stray "3" or "40" reaching the database would be a job nobody quoted.
+ */
+function cleanQuantity(value) {
+  if (value === undefined || value === null || value === '') return DEFAULT_QUANTITY
+  const quantity = Number(value)
+  if (!ALLOWED_QUANTITIES.includes(quantity)) {
+    throw new InputError(`quantity must be one of ${ALLOWED_QUANTITIES.join(', ')}.`)
+  }
+  return quantity
+}
 
 /**
  * The optional sentence attached to a cancellation.
@@ -111,6 +132,7 @@ function cleanRequest(input) {
   }
   cleaned.customerEmail = cleaned.customerEmail.toLowerCase()
   cleaned.customerPhone = cleanCustomerPhone(input.customerPhone)
+  cleaned.quantity = cleanQuantity(input.quantity)
 
   for (const field of REQUIRED) {
     if (!cleaned[field]) throw new InputError(field + ' is required.')
