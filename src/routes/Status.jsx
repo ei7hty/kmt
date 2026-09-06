@@ -136,13 +136,10 @@ function Status({ navigate }) {
                   </div>}
                   {quote ? (
                     <div className="owner-quote">
-                      {/* The tire line always carries how many: reading it
-                          back here is how the customer sees the quantity
-                          the quote was actually priced for. */}
-                      {(() => {
-                        const tireLine = quote.lineItems?.find(item => item.description !== 'Mobile installation service')
-                        return tireLine && <p className="text-secondary owner-quote-item">{tireLine.quantity} × {tireLine.description}</p>
-                      })()}
+                      {(quote.status === 'sent' || quote.status === 'approved' || quote.status === 'paid' || quote.status === 'done') && <div className="quote-lines quote-lines-readonly">
+                        {quote.lineItems?.map((item, index) => <div className="quote-line-readonly" key={`${index}-${item.description}`}><span>{item.quantity} × {item.description}</span><strong>${(item.quantity * item.unitPrice).toFixed(2)}</strong></div>)}
+                        {quote.note && <p className="quote-customer-note"><strong>Note from Ken:</strong> {quote.note}</p>}
+                      </div>}
                       <div className="owner-quote-summary">
                         <div><p className="text-secondary">Your quote</p><p className="owner-quote-total">${quote.total.toFixed(2)}</p></div>
                         <span className="owner-quote-status">{quote.status}</span>

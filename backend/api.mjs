@@ -31,6 +31,7 @@ const SNAPSHOT_BODY_LIMIT = 8 * 1024 * 1024
 
 /** The owner's four actions on one quote, as one pattern the route reads twice. */
 const QUOTE_ACTION = /^\/api\/owner\/quotes\/([^/]+)\/(approve|reject|done|cancel)$/
+const QUOTE_EDIT = /^\/api\/owner\/quotes\/([^/]+)$/
 
 /** The only origins allowed to post pages back. Nothing else gets CORS at all. */
 const IMPORT_ORIGINS = new Set(['https://www.giga-tires.com', 'https://giga-tires.com'])
@@ -393,6 +394,10 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
       if (request.method === 'GET' && url.pathname === '/api/owner/requests') {
         if (!quotes) throw new InputError('Owner endpoint not found', 404)
         send(200, quotes.viewForOwner(url.searchParams.get('view')))
+      } else if (request.method === 'PUT' && QUOTE_EDIT.test(url.pathname)) {
+        if (!quotes) throw new InputError('Owner endpoint not found', 404)
+        const [, raw] = url.pathname.match(QUOTE_EDIT)
+        send(200, quotes.adjust(decodeURIComponent(raw), await readJsonBody(request)))
       } else if (request.method === 'POST' && QUOTE_ACTION.test(url.pathname)) {
         if (!quotes) throw new InputError('Owner endpoint not found', 404)
         const [, raw, action] = url.pathname.match(QUOTE_ACTION)

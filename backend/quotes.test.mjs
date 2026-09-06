@@ -74,6 +74,65 @@ test('a submit stores the request and its quote, priced exactly as the frontend 
   assert.equal(found.quote.total, quote.total)
 })
 
+test('an owner adjustment changes the current quote and keeps the original draft', async t => {
+  const { quotes } = setup(t)
+  const original = quotes.submit(form())
+  const lines = [
+    { description: 'Four tires', quantity: 4, unitPrice: 62.25 },
+    { description: 'Mobile service', quantity: 1, unitPrice: 55 },
+  ]
+
+  const adjusted = quotes.adjust(original.request.id, {
+    lineItems: lines, note: ' Price includes disposal. ', total: 1, version: original.quote.version,
+  })
+
+  assert.deepEqual(adjusted.quote.lineItems, lines)
+  assert.equal(adjusted.quote.note, 'Price includes disposal.')
+  assert.equal(adjusted.quote.total, 304, 'the server computes the total and ignores the client total')
+  assert.deepEqual(adjusted.quote.draftLineItems, original.quote.lineItems)
+  assert.equal(adjusted.quote.draftTotal, original.quote.total)
+  assert.equal(adjusted.quote.version, original.quote.version + 1)
+})
+
+test('approving after an adjustment sends the adjusted numbers', async t => {
+  const { quotes } = setup(t)
+  const original = quotes.submit(form())
+  const adjusted = quotes.adjust(original.request.id, {
+    lineItems: [{ description: 'Complete job', quantity: 1, unitPrice: 275.5 }],
+    note: 'Ready when you are.', version: original.quote.version,
+  })
+  const sent = quotes.decide(original.request.id, 'sent', adjusted.quote.version)
+
+  assert.equal(sent.quote.status, 'sent')
+  assert.equal(sent.quote.total, 275.5)
+  assert.equal(sent.quote.note, 'Ready when you are.')
+  assert.equal(sent.quote.draftTotal, original.quote.total)
+})
+
+test('only a current draft can be adjusted', async t => {
+  const { quotes } = setup(t)
+  const original = quotes.submit(form())
+  const input = { lineItems: [{ description: 'Job', quantity: 1, unitPrice: 200 }], version: original.quote.version }
+  const adjusted = quotes.adjust(original.request.id, input)
+
+  assert.throws(() => quotes.adjust(original.request.id, input), error => error.status === 409 && /changed in another window/.test(error.message))
+  const sent = quotes.decide(original.request.id, 'sent', adjusted.quote.version)
+  assert.throws(() => quotes.adjust(original.request.id, { ...input, version: sent.quote.version }), error => error.status === 409 && /already sent/.test(error.message))
+  const paid = quotes.pay(original.request.id, KEY)
+  assert.throws(() => quotes.adjust(original.request.id, { ...input, version: paid.quote.version }), error => error.status === 409 && /already paid/.test(error.message))
+})
+
+test('quote adjustment validates every line and the note', async t => {
+  const { quotes } = setup(t)
+  const original = quotes.submit(form())
+  const adjust = lineItems => quotes.adjust(original.request.id, { lineItems, version: original.quote.version })
+  assert.throws(() => adjust([]), /between 1 and 25/)
+  assert.throws(() => adjust([{ description: '', quantity: 1, unitPrice: 1 }]), /description/)
+  assert.throws(() => adjust([{ description: 'Tire', quantity: 0, unitPrice: 1 }]), /quantity/)
+  assert.throws(() => adjust([{ description: 'Tire', quantity: 1, unitPrice: 1.001 }]), /two decimal places/)
+  assert.throws(() => quotes.adjust(original.request.id, { lineItems: [{ description: 'Tire', quantity: 1, unitPrice: 1 }], note: 'x'.repeat(1001), version: original.quote.version }), /note is too long/)
+})
+
 test('calculateDraftQuote multiplies the tire line by quantity and leaves the fee alone', () => {
   const catalog = [tire()]
   const quoteOfFour = calculateDraftQuote({ tireSelection: 'giga-a', quantity: 4 }, catalog)
@@ -847,6 +906,7 @@ test('the owner endpoints need a session, and the customer endpoints are unchang
   // Shut without a cookie, exactly like the rest of the owner API.
   assert.equal((await fetch(`${base}/api/owner/requests`)).status, 401)
   assert.equal((await post(base, `/api/owner/quotes/${request.id}/approve`, { version: quote.version })).status, 401)
+  assert.equal((await fetch(`${base}/api/owner/quotes/${request.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lineItems: quote.lineItems, version: quote.version }) })).status, 401)
 
   const { cookie } = await signIn(base)
   const headers = { cookie, 'Content-Type': 'application/json' }
@@ -855,13 +915,23 @@ test('the owner endpoints need a session, and the customer endpoints are unchang
   assert.equal(listed.requests.length, 1)
   assert.equal(listed.requests[0].tire.name, 'Test Touring')
 
+  const edited = await fetch(`${base}/api/owner/quotes/${request.id}`, {
+    method: 'PUT', headers, body: JSON.stringify({
+      lineItems: [{ description: 'Adjusted job', quantity: 2, unitPrice: 75 }],
+      note: 'Customer note', total: 2, version: quote.version,
+    }),
+  })
+  assert.equal(edited.status, 200)
+  const editedBody = await edited.json()
+  assert.equal(editedBody.quote.total, 150)
+
   const stale = await fetch(`${base}/api/owner/quotes/${request.id}/approve`, {
-    method: 'POST', headers, body: JSON.stringify({ version: quote.version + 5 }),
+    method: 'POST', headers, body: JSON.stringify({ version: editedBody.quote.version + 5 }),
   })
   assert.equal(stale.status, 409, 'a stale version is a 409 over HTTP too')
 
   const approved = await fetch(`${base}/api/owner/quotes/${request.id}/approve`, {
-    method: 'POST', headers, body: JSON.stringify({ version: quote.version }),
+    method: 'POST', headers, body: JSON.stringify({ version: editedBody.quote.version }),
   })
   assert.equal(approved.status, 200)
   assert.equal((await approved.json()).quote.status, 'sent')

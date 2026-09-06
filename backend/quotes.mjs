@@ -226,6 +226,34 @@ function cleanReason(value) {
   return trimmed
 }
 
+function cleanQuoteAdjustment(input) {
+  if (!input || typeof input !== 'object') throw new InputError('Send the quote adjustment as an object.')
+  if (!Array.isArray(input.lineItems) || input.lineItems.length === 0 || input.lineItems.length > 25) {
+    throw new InputError('A quote needs between 1 and 25 line items.')
+  }
+
+  const lineItems = input.lineItems.map((item, index) => {
+    if (!item || typeof item !== 'object') throw new InputError(`Line ${index + 1} is not valid.`)
+    const description = typeof item.description === 'string' ? item.description.trim() : ''
+    if (!description || description.length > 200) throw new InputError(`Line ${index + 1} needs a description under 200 characters.`)
+    const quantity = Number(item.quantity)
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) throw new InputError(`Line ${index + 1} needs a quantity from 1 to 100.`)
+    const unitPrice = Number(item.unitPrice)
+    if (!Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 100000 || Math.abs(Math.round(unitPrice * 100) - unitPrice * 100) > 1e-7) {
+      throw new InputError(`Line ${index + 1} needs a valid unit price with no more than two decimal places.`)
+    }
+    return { description, quantity, unitPrice }
+  })
+
+  const note = input.note === undefined || input.note === null ? '' : input.note
+  if (typeof note !== 'string') throw new InputError('The customer note must be text.')
+  const trimmedNote = note.trim()
+  if (trimmedNote.length > 1000) throw new InputError('The customer note is too long.')
+
+  const totalCents = lineItems.reduce((sum, item) => sum + item.quantity * Math.round(item.unitPrice * 100), 0)
+  return { lineItems, note: trimmedNote, total: totalCents / 100 }
+}
+
 function cleanCustomerKey(value) {
   if (typeof value !== 'string' || !/^[a-f0-9]{16,64}$/i.test(value.trim())) {
     throw new InputError('A customer key is required, and must be the one this browser was given.')
@@ -334,6 +362,7 @@ const QUOTES_COLUMNS = `
   id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES requests(id),
   payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
   version INTEGER NOT NULL DEFAULT 1, reason TEXT,
+  draft_line_items TEXT, draft_total_cents INTEGER,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   CHECK(status IN (${QUOTE_STATUSES.map(status => `'${status}'`).join(', ')}))
 `
@@ -389,26 +418,36 @@ export class Quotes {
     const stored = this.db
       .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='quotes'")
       .get()?.sql ?? ''
-    if (QUOTE_STATUSES.every(status => stored.includes(`'${status}'`))) return
+    if (!QUOTE_STATUSES.every(status => stored.includes(`'${status}'`))) {
+      this.db.exec('PRAGMA foreign_keys=OFF')
+      try {
+        this.transaction(() => {
+          this.db.exec(`CREATE TABLE quotes_migrating (${QUOTES_COLUMNS})`)
+          // Named columns, not SELECT *: older tables do not carry every
+          // column the current table does.
+          this.db.exec(`
+            INSERT INTO quotes_migrating
+              (id, request_id, payload, status, version, reason, created_at, updated_at)
+            SELECT id, request_id, payload, status, version, NULL, created_at, updated_at
+            FROM quotes;
+            DROP TABLE quotes;
+            ALTER TABLE quotes_migrating RENAME TO quotes;
+            CREATE INDEX IF NOT EXISTS quotes_request ON quotes(request_id);
+          `)
+        })
+      } finally {
+        this.db.exec('PRAGMA foreign_keys=ON')
+      }
+    }
 
-    this.db.exec('PRAGMA foreign_keys=OFF')
-    try {
-      this.transaction(() => {
-        this.db.exec(`CREATE TABLE quotes_migrating (${QUOTES_COLUMNS})`)
-        // Named columns, not SELECT *: the old table has no reason column, and
-        // a positional copy would put created_at into it.
-        this.db.exec(`
-          INSERT INTO quotes_migrating
-            (id, request_id, payload, status, version, reason, created_at, updated_at)
-          SELECT id, request_id, payload, status, version, NULL, created_at, updated_at
-          FROM quotes;
-          DROP TABLE quotes;
-          ALTER TABLE quotes_migrating RENAME TO quotes;
-          CREATE INDEX IF NOT EXISTS quotes_request ON quotes(request_id);
-        `)
-      })
-    } finally {
-      this.db.exec('PRAGMA foreign_keys=ON')
+    const columns = new Set(this.db.prepare('PRAGMA table_info(quotes)').all().map(column => column.name))
+    if (!columns.has('draft_line_items')) this.db.exec('ALTER TABLE quotes ADD COLUMN draft_line_items TEXT')
+    if (!columns.has('draft_total_cents')) this.db.exec('ALTER TABLE quotes ADD COLUMN draft_total_cents INTEGER')
+    const missing = this.db.prepare('SELECT id, payload FROM quotes WHERE draft_line_items IS NULL OR draft_total_cents IS NULL').all()
+    const saveDraft = this.db.prepare('UPDATE quotes SET draft_line_items=?, draft_total_cents=? WHERE id=?')
+    for (const row of missing) {
+      const payload = JSON.parse(row.payload)
+      saveDraft.run(JSON.stringify(payload.lineItems ?? []), Math.round(Number(payload.total ?? 0) * 100), row.id)
     }
   }
 
@@ -464,9 +503,10 @@ export class Quotes {
       this.db.prepare('INSERT INTO requests VALUES (?, ?, ?, ?, ?)')
         .run(id, customerKey, JSON.stringify(request), stamp, stamp)
       this.db.prepare(`INSERT INTO quotes
-          (id, request_id, payload, status, version, reason, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(newId(), id, JSON.stringify(draft), 'draft', 1, null, stamp, stamp)
+          (id, request_id, payload, status, version, reason, draft_line_items, draft_total_cents, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(newId(), id, JSON.stringify(draft), 'draft', 1, null,
+          JSON.stringify(draft.lineItems), Math.round(draft.total * 100), stamp, stamp)
       return this.get(id)
     })
   }
@@ -508,6 +548,8 @@ export class Quotes {
         ? {
             id: quote.id, requestId: quote.request_id, ...quoteFields,
             status: quote.status, version: quote.version,
+            draftLineItems: JSON.parse(quote.draft_line_items ?? '[]'),
+            draftTotal: (quote.draft_total_cents ?? Math.round(Number(JSON.parse(quote.payload).total ?? 0) * 100)) / 100,
             // Why a quote was rejected or cancelled, when the owner gave a
             // reason. Every screen that shows a closed request reads it here
             // rather than each one inventing a place to keep it.
@@ -629,6 +671,31 @@ export class Quotes {
       from: ['draft'],
       refused: status => `This quote is already ${status}, so there is nothing to decide.`,
       audience: 'owner',
+    })
+  }
+
+  /** Save the owner's current version without changing the immutable draft. */
+  adjust(id, input) {
+    const version = input?.version
+    if (!Number.isInteger(version) || version < 0) {
+      throw new InputError('Send the version you were shown, so a stale screen cannot overwrite a newer adjustment.')
+    }
+    const adjustment = cleanQuoteAdjustment(input)
+
+    return this.transaction(() => {
+      const found = this.get(id)
+      if (!found?.quote) throw new InputError('No such request.', 404)
+      if (found.quote.version !== version) {
+        throw new InputError('This quote changed in another window. Reload the list before saving.', 409)
+      }
+      if (found.quote.status !== 'draft') {
+        throw new InputError(`This quote is already ${found.quote.status}, so it cannot be adjusted.`, 409)
+      }
+      const payload = { ...found.quote, ...adjustment }
+      for (const field of ['id', 'requestId', 'status', 'version', 'reason', 'draftLineItems', 'draftTotal', 'createdAt', 'updatedAt']) delete payload[field]
+      this.db.prepare('UPDATE quotes SET payload=?, version=version+1, updated_at=? WHERE id=?')
+        .run(JSON.stringify(payload), now(), found.quote.id)
+      return this.get(id, 'owner')
     })
   }
 

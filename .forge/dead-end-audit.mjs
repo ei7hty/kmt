@@ -13,7 +13,7 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 62;
+const EXPECTED_CHECKS = 66;
 
 /**
  * Preferred dates, always ahead of today. The server refuses anything inside
@@ -207,6 +207,16 @@ async function main() {
       fail('/owner: no visible Approve action found.');
     }
 
+    const firstPrice = page.locator('input[aria-label="Line 1 unit price"]').first();
+    await firstPrice.fill('60.00');
+    await page.locator('label.quote-note textarea').first().fill('Audit adjustment included.');
+    const adjustedTotal = await page.locator('.quote-editor-total .owner-quote-total').first().textContent();
+    if (adjustedTotal === '$289.99') {
+      ok('/owner: editing a unit price updates the quote total live before send.');
+    } else {
+      fail(`/owner: edited total should be $289.99, got ${adjustedTotal}.`);
+    }
+
     await page.click('button:has-text("Approve")');
 
     // Approve is a network round trip. Wait for the status to appear rather than
@@ -233,6 +243,13 @@ async function main() {
     await page.click('button:has-text("My Quote")');
     await page.waitForURL('**/status');
     await waitForStatus(page);
+
+    const sentNote = await page.locator('text=Note from Ken: Audit adjustment included.').first().isVisible().catch(() => false);
+    if (sentNote) {
+      ok('/status: the sent quote carries the owner adjustment and customer note.');
+    } else {
+      fail('/status: the sent quote did not show the owner adjustment note.');
+    }
 
     const payButtonVisible = await page.locator('button:has-text("Pay $")').first().isVisible().catch(() => false);
     if (payButtonVisible) {
