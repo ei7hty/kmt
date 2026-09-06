@@ -126,6 +126,27 @@ const REQUIRED = ['vehicleInfo', 'tireSelection', 'location', 'date', 'customerN
  */
 const CUSTOMER_REQUEST_FIELDS = ['vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip']
 
+/**
+ * What a customer-facing read of a quote carries, from inside `quotes.payload`.
+ *
+ * The same shape of list as `CUSTOMER_REQUEST_FIELDS` above and for the same
+ * reason (#65): a positive list, not the payload minus a few, so a field
+ * added to the payload later stays with the owner by default instead of
+ * reaching `GET /api/requests/:id` -- a link designed to be shared (R19) --
+ * the moment someone forgets to exclude it. `lineItems` and `total` are the
+ * quote itself, the reason the customer is looking; `exception` and
+ * `exceptionReasons` are shown to the customer by design (not a leak --
+ * see the test pinning that a few lines below the request one). `requestId`
+ * is deliberately absent: it is already set explicitly, from `quote.request_id`,
+ * before this list is applied, and does not need to also come from the payload.
+ *
+ * `id`, `status`, `version`, `reason` and the timestamps are not payload
+ * fields at all -- they are columns, added to both audiences' shape outside
+ * this list, the same way `request`'s `id`/`createdAt`/`updatedAt` sit
+ * outside `CUSTOMER_REQUEST_FIELDS`.
+ */
+const CUSTOMER_QUOTE_FIELDS = ['lineItems', 'total', 'exception', 'exceptionReasons']
+
 /** Deliberately permissive: catches typos, not RFC edge cases. */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -434,6 +455,10 @@ export class Quotes {
     const request = audience === 'owner'
       ? payload
       : Object.fromEntries(CUSTOMER_REQUEST_FIELDS.filter(field => field in payload).map(field => [field, payload[field]]))
+    const quotePayload = quote ? JSON.parse(quote.payload) : null
+    const quoteFields = audience === 'owner'
+      ? quotePayload
+      : Object.fromEntries(CUSTOMER_QUOTE_FIELDS.filter(field => field in quotePayload).map(field => [field, quotePayload[field]]))
     return {
       request: {
         id: row.id, ...request,
@@ -441,7 +466,7 @@ export class Quotes {
       },
       quote: quote
         ? {
-            id: quote.id, requestId: quote.request_id, ...JSON.parse(quote.payload),
+            id: quote.id, requestId: quote.request_id, ...quoteFields,
             status: quote.status, version: quote.version,
             // Why a quote was rejected or cancelled, when the owner gave a
             // reason. Every screen that shows a closed request reads it here

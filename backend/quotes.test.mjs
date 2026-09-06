@@ -227,6 +227,24 @@ test('special instructions are stored for the owner, capped, optional, and never
   assert.throws(() => quotes.submit(form({ customerNotes: 42 })), /customerNotes must be text/)
 })
 
+test('a field added to the quote payload is owner-only until CUSTOMER_QUOTE_FIELDS names it (#65, the quote half)', async t => {
+  // The mirror of the test above, for `quote` rather than `request`: nothing
+  // reaches the customer shape by default, only by being named in
+  // CUSTOMER_QUOTE_FIELDS. There is no public field to submit through yet
+  // (that is t35's job), so this writes directly to the stored quote payload
+  // -- the same thing any future feature does the moment it adds a key --
+  // and proves the allow-list catches it regardless of how it got there.
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form())
+  const row = quotes.db.prepare('SELECT payload FROM quotes WHERE request_id=?').get(request.id)
+  const payload = { ...JSON.parse(row.payload), marginNote: 'Bought these at cost from a closeout, do not undercut retail.' }
+  quotes.db.prepare('UPDATE quotes SET payload=? WHERE request_id=?').run(JSON.stringify(payload), request.id)
+
+  assert.equal(quotes.get(request.id, 'owner').quote.marginNote, payload.marginNote, 'the owner still reads it')
+  assert.equal('marginNote' in quotes.get(request.id).quote, false, 'not in the customer shape by id')
+  assert.equal('marginNote' in quotes.listForCustomer(KEY)[0].quote, false, 'nor in the customer list')
+})
+
 test('a name and email are required; the email is stored lower-cased and trimmed', async t => {
   const { quotes } = setup(t)
   assert.throws(() => quotes.submit(form({ customerName: '' })), /customerName is required/)
