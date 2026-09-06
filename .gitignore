@@ -37,7 +37,9 @@ secrets/
 # serves. Committing one writes a large source image into history permanently
 # (a later git rm does not remove it), and referencing one from the app would
 # ship a source-quality file to a customer instead of the optimised asset.
-# Matched by exact path so public/brand/ and the real assets are never blocked.
-/public/Kens mobile tire logo.jpg
-/public/icm_fullxfull.681608358_isz0wre9asgk00wkwsgo.jpg
-/public/icm_fullxfull.685139857_m8dvmt2fkxwgo8gs4448.jpg
+# Matched by exact path so the rest of public/brand/, the real assets, is
+# never blocked. Path is public/brand/, not public/ -- the files moved there
+# and these three went stale until this line, silently matching nothing.
+/public/brand/Kens mobile tire logo.jpg
+/public/brand/icm_fullxfull.681608358_isz0wre9asgk00wkwsgo.jpg
+/public/brand/icm_fullxfull.685139857_m8dvmt2fkxwgo8gs4448.jpg
