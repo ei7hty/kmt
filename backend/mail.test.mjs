@@ -90,7 +90,7 @@ test('every template names its personal fields the way the outbox redacts them, 
   for (const type of MAIL_TYPES) assert.ok(TEMPLATES[type], `${type} has a template`)
   const data = TEMPLATES['quote-sent'].data({
     request: { id: 'r1', customerPhone: '1', location: 'l', locationNotes: 'n', vehicleInfo: 'v', quantity: 4 },
-    quote: { lines: [{ description: 'T', quantity: 4, unitPrice: 50 }], total: 250 }, tire: { name: 'T', size: SIZE },
+    quote: { lineItems: [{ description: 'T', quantity: 4, unitPrice: 50 }], total: 250 }, tire: { name: 'T', size: SIZE },
     origin: 'https://x', to: 'a@b.c', toName: 'A',
   })
   for (const key of OUTBOX_PERSONAL_DATA_KEYS) assert.ok(key in data, `${key} is a top-level key of the stored data`)
@@ -238,12 +238,27 @@ test('the API sends after it answers: submit records two messages, sending the q
   const decided = await (await post(`/api/owner/quotes/${submitted.request.id}/approve`, { version })).json()
   assert.equal(decided.quote.status, 'sent')
   await mailer.idle()
-  assert.ok(outbox.forRequest(submitted.request.id).some(row => row.type === 'quote-sent'))
+  const sentRow = outbox.forRequest(submitted.request.id).find(row => row.type === 'quote-sent')
+  assert.ok(sentRow)
+  // Rendered from this row's own stored data, not a hand-built fixture: a
+  // fixture that types { lines: [...] } passes whether the template reads
+  // lineItems or lines, because it supplies both keys by never testing the
+  // one that matters. The real quote's field is lineItems (quotes.mjs,
+  // #302), and mail-templates.mjs read `quote?.lines` -- always undefined --
+  // so every quote-sent and payment-recorded email ever sent rendered an
+  // empty invoice, with no test catching it, until this assertion.
+  const sentText = TEMPLATES['quote-sent'].render(sentRow.data).text
+  assert.match(sentText, /Test Touring/, 'the invoice names the tire actually quoted')
+  assert.match(sentText, /Test Touring × 4 @ \$\d+\.\d\d = \$\d+\.\d\d/, 'and shows real quantity, price and line total, not an empty invoice')
 
   const paid = await (await post(`/api/requests/${submitted.request.id}/pay`, { customerKey: KEY })).json()
   assert.equal(paid.quote.status, 'paid')
   await mailer.idle()
   assert.deepEqual(outbox.forRequest(submitted.request.id).map(row => row.type).sort(), ['payment-recorded', 'quote-sent', 'request-arrived', 'request-received'])
+  const receiptRow = outbox.forRequest(submitted.request.id).find(row => row.type === 'payment-recorded')
+  const receiptText = TEMPLATES['payment-recorded'].render(receiptRow.data).text
+  assert.match(receiptText, /Test Touring/, 'the receipt -- the document the customer keeps -- also itemises what was paid for')
+  assert.match(receiptText, /Test Touring × 4 @ \$\d+\.\d\d = \$\d+\.\d\d/)
 
   const refused = await post(`/api/owner/quotes/${submitted.request.id}/reject`, { version: quotes.get(submitted.request.id).quote.version })
   assert.equal(refused.status, 409, 'a rejection after payment is refused')
@@ -330,7 +345,7 @@ test('every customer email speaks as Ken: no "we", a way to reach him, and his n
   const ctx = {
     request: { id: 'r1', customerPhone: '1', location: 'l', locationNotes: 'n', customerNotes: 'c',
       vehicleInfo: '2016 Honda Civic', quantity: 4, locationType: 'Home', serviceZip: '02148', date: SOON },
-    quote: { lines: [{ description: 'T', quantity: 4, unitPrice: 50 }], total: 250, note: 'a note', reason: null },
+    quote: { lineItems: [{ description: 'T', quantity: 4, unitPrice: 50 }], total: 250, note: 'a note', reason: null },
     tire: { name: 'T', size: SIZE }, origin: 'https://x', to: 'a@b.c', toName: 'A',
   }
   const customer = MAIL_TYPES.filter(type => TEMPLATES[type].audience === 'customer')
@@ -359,7 +374,7 @@ test('every email links what it asks the reader to do', () => {
   const ctx = {
     request: { id: 'r1', customerPhone: '1', location: 'l', locationNotes: 'n', customerNotes: 'c',
       vehicleInfo: '2016 Honda Civic', quantity: 4, locationType: 'Home', serviceZip: '02148', date: SOON },
-    quote: { lines: [{ description: 'T', quantity: 4, unitPrice: 50 }], total: 250, note: 'a note', reason: null },
+    quote: { lineItems: [{ description: 'T', quantity: 4, unitPrice: 50 }], total: 250, note: 'a note', reason: null },
     tire: { name: 'T', size: SIZE }, origin: 'https://x', to: 'a@b.c', toName: 'A',
   }
   for (const type of MAIL_TYPES) {

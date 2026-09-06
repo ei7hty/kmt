@@ -74,13 +74,18 @@ function baseData({ request, quote, tire, origin, to, toName }) {
     customerNotes: request.customerNotes ?? null,
     requestId: request.id,
     vehicleInfo: request.vehicleInfo ?? null,
-    tireName: tire?.name ?? quote?.lines?.[0]?.description ?? null,
+    tireName: tire?.name ?? quote?.lineItems?.[0]?.description ?? null,
     tireSize: tire?.size ?? null,
-    quantity: request.quantity ?? quote?.lines?.[0]?.quantity ?? null,
+    quantity: request.quantity ?? quote?.lineItems?.[0]?.quantity ?? null,
     locationType: request.locationType ?? null,
     serviceZip: request.serviceZip ?? null,
     date: request.date ?? null,
-    lines: quote?.lines ?? [],
+    // The quote's own field is lineItems everywhere else in the codebase
+    // (quotes.mjs, the API, the owner and customer screens). This read the
+    // wrong name from the day it shipped -- always undefined, so `invoice()`
+    // below rendered zero rows on every quote-sent and payment-recorded
+    // email ever sent, and the two fallbacks above never once fired.
+    lines: quote?.lineItems ?? [],
     total: quote?.total ?? null,
     note: quote?.note ?? null,
     statusUrl: `${origin}/status?request=${encodeURIComponent(request.id)}`,
