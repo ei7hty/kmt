@@ -143,26 +143,20 @@ export function calculateDraftQuote(request, catalog = null, pricingSettings = D
 
   const settings = normalizePricingSettings(pricingSettings)
 
-  // Each generated line resolves its own taxable status via taxableAs
-  // ('goods' for the tire, 'services' for labour and disposal) rather than
-  // carrying a category for computeQuoteTotals to match later -- see the
-  // comment on taxableAs. A catalogue line resolves its own the same way,
-  // from its own authored flag instead of a guessed category.
+  // The tire resolves its own taxable status via taxableAs ('goods') rather
+  // than carrying a category for computeQuoteTotals to match later -- see
+  // the comment on taxableAs. Every other line on a quote -- mobile service,
+  // disposal, and anything else Ken adds -- is a catalogue entry (#354 stage
+  // 2): calculateDraftQuote no longer hardcodes either built-in fee.
+  // Inventory.seedCatalogueLines() guarantees a mobile-service entry exists
+  // from the moment the database exists, so this is never the reason a
+  // quote is missing that line; disposal is a catalogue entry the customer
+  // opts into like any optional one, chosen via chosenLineIds rather than a
+  // request field calculateDraftQuote itself reads.
   const lineItems = [
     // The visit costs the same whether it fits one tire or four: only the
-    // tire line multiplies, the mobile-service fee stays one line at one price.
+    // tire line multiplies.
     ...(tire ? [{ description: tire.name, quantity, unitPrice: tire.price, taxable: taxableAs('goods', settings) }] : []),
-    { description: 'Mobile installation service', quantity: 1, unitPrice: settings.mobileServiceFee, taxable: taxableAs('services', settings) },
-    // Opt-in only (pricing-settings.md, "Disposal is opt-in"): the customer
-    // chose this at the service step, and it only ever appears once Ken has
-    // set a fee -- disposalFee is null until he does, and that is what "not
-    // configured" looks like, not zero.
-    ...(request?.disposeOldTires && settings.disposalFee !== null
-      ? [{ description: 'Old tire disposal', quantity, unitPrice: settings.disposalFee, taxable: taxableAs('services', settings) }]
-      : []),
-    // The owner's own lines (#354). Empty by default -- a database that has
-    // never called saveCatalogueLines produces nothing here, so this is a
-    // no-op until Ken actually adds one.
     ...catalogueLineItems(catalogueLines, chosenLineIds, quantity, settings),
   ]
 

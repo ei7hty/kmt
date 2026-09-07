@@ -581,12 +581,15 @@ export class Quotes {
 
     const id = newId()
     const stamp = now()
-    // chosenLineIds is always [] until the wizard control exists (#354's
-    // stage 3): an optional catalogue entry cannot be picked yet, so only
-    // automatic entries can appear on a draft today. Passing [] here rather
-    // than omitting the argument keeps this call site the one place that
-    // will need to change once the wizard sends real choices.
-    const draft = calculateDraftQuote({ ...request, id }, catalog, this.inventory.getPricingSettings(), this.inventory.getCatalogueLines(), [])
+    // The compatibility shim for stage 3 (#354): the customer-facing wizard
+    // still shows one hardcoded disposal checkbox, not a generated list, so
+    // this is the one place that translates it into the general
+    // chosenLineIds shape calculateDraftQuote actually reads. The engine
+    // itself never special-cases "disposal" by id -- this line is gone
+    // entirely once the wizard sends real choices for whatever optional
+    // lines exist.
+    const chosenLineIds = request.disposeOldTires ? ['disposal'] : []
+    const draft = calculateDraftQuote({ ...request, id }, catalog, this.inventory.getPricingSettings(), this.inventory.getCatalogueLines(), chosenLineIds)
     if (area.reason === REASONS.REVIEW) {
       draft.exceptionReasons = [...draft.exceptionReasons, `Service address is ${area.message.replace(/^About/, 'about')}`]
       draft.exception = true

@@ -146,6 +146,17 @@
 .oi-tire-more > summary { color: #dedee3; }
 .oi-offer-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: end; }
 .oi-offer-row > .oi-check { margin-bottom: 11px; }
+
+/* PricingLines (#354): a repeatable list, unlike every other .oi-refresh
+   section's single fixed-width form, so it overrides the vertical centering
+   and flex-shrink that suit a short one -- a tall list centred against a
+   two-line description looks wrong, and shrinking a multi-column row is how
+   an input gets too narrow to use. */
+.oi-lines { align-items: flex-start; }
+.oi-lines-form { width: 100%; flex-shrink: 1; }
+.oi-line-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; padding: 14px 0; border-top: 1px solid #303033; }
+.oi-line-row .oi-line-note { grid-column: 1 / -1; margin: -4px 0 0; font-size: 11px; }
+.oi-line-row .oi-button { grid-column: 1 / -1; justify-self: start; }
 @media (max-width: 480px) {
   .oi-content { padding-top: 14px; }
   .oi-heading { margin-bottom: 14px; }
@@ -163,6 +174,7 @@
   .oi-tire-tags { margin-bottom: 6px; }
   .oi-results-heading { margin: 12px 0; }
   .oi-filters { padding: 12px 0; gap: 10px; }
+  .oi-line-row { grid-template-columns: 1fr; }
 }
 
 /* Tap targets on the owner workspace (#85): the inline "Use $x" action, the

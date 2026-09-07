@@ -174,16 +174,19 @@ function MarkupRule({ markup, onSaved }) {
 }
 
 /**
- * The quote-side settings: the mobile fee, disposal, tax. Per
- * .forge/pricing-settings.md (#289): the mobile fee is already charged and
- * this only makes it a number Ken can change; disposal and tax both default
- * off, and turning tax on requires an answer from Ken's accountant about
- * which lines it applies to, so that field is not guessed at here either.
+ * Tax only. Per .forge/pricing-settings.md (#289): tax defaults off, and
+ * turning it on requires an answer from Ken's accountant about which lines
+ * it applies to, so that field is not guessed at here either.
+ *
+ * The mobile fee and disposal used to live on this form too. #354 (stage 2)
+ * moved both into the catalogue below them -- PricingLines -- because they
+ * are quote lines Ken can rename, retire or add siblings to, not fixed
+ * settings. mobileServiceFee/disposalFee are omitted from this save
+ * entirely now: the API treats an omitted fee as "not changing it" (the
+ * same shape saveMarkup already used for shippingPerTire), so this form
+ * only ever asks about tax.
  */
 function PricingSettings({ pricing, onSaved }) {
-  const [mobileServiceFee, setMobileServiceFee] = useState(String(pricing.mobileServiceFee))
-  const [disposalOn, setDisposalOn] = useState(pricing.disposalFee !== null)
-  const [disposalFee, setDisposalFee] = useState(String(pricing.disposalFee ?? ''))
   const [taxOn, setTaxOn] = useState(pricing.tax !== null)
   const [taxRate, setTaxRate] = useState(String(pricing.tax ? pricing.tax.rate * 100 : ''))
   const [taxAppliesTo, setTaxAppliesTo] = useState(pricing.tax?.appliesTo ?? 'all')
@@ -193,17 +196,6 @@ function PricingSettings({ pricing, onSaved }) {
   async function save(event) {
     event.preventDefault()
     setError('')
-    const parsedFee = Number(mobileServiceFee)
-    if (!Number.isFinite(parsedFee) || parsedFee <= 0 || parsedFee > 1000) {
-      setError('Enter a mobile service fee between $0 and $1000.'); return
-    }
-    let parsedDisposal = null
-    if (disposalOn) {
-      parsedDisposal = Number(disposalFee)
-      if (!Number.isFinite(parsedDisposal) || parsedDisposal < 0 || parsedDisposal > 200) {
-        setError('Enter a disposal fee between $0 and $200, or turn disposal off.'); return
-      }
-    }
     let tax = null
     if (taxOn) {
       const parsedRate = Number(taxRate)
@@ -214,33 +206,17 @@ function PricingSettings({ pricing, onSaved }) {
     }
     setSaving(true)
     try {
-      onSaved(await api('pricing', {
-        method: 'PUT',
-        body: JSON.stringify({ mobileServiceFee: parsedFee, disposalFee: parsedDisposal, tax }),
-      }))
+      onSaved(await api('pricing', { method: 'PUT', body: JSON.stringify({ tax }) }))
     } catch (err) { setError(err.message) }
     finally { setSaving(false) }
   }
 
-  return <section className="oi-refresh" aria-label="Pricing settings">
+  return <section className="oi-refresh" aria-label="Tax settings">
     <div>
-      <h2>Pricing settings</h2>
-      <p className="oi-muted">
-        {pricing.mobileServiceFeeIsPlaceholder
-          ? 'The mobile fee is still the starting value — nobody has set it yet.'
-          : `Set ${dateLabel(pricing.updatedAt)}.`}
-      </p>
+      <h2>Tax</h2>
+      <p className="oi-muted">{pricing.tax ? `Set ${dateLabel(pricing.updatedAt)}.` : 'Off. Nothing is charged until your accountant gives you a rate.'}</p>
     </div>
     <form className="oi-refresh-actions" onSubmit={save}>
-      <label htmlFor="pricing-fee" className="oi-kicker">MOBILE SERVICE FEE ($, PER VISIT)</label>
-      <input id="pricing-fee" value={mobileServiceFee} onChange={e => setMobileServiceFee(e.target.value)} inputMode="decimal" disabled={saving} />
-
-      <label><input type="checkbox" checked={disposalOn} onChange={e => setDisposalOn(e.target.checked)} disabled={saving} /> Offer old-tire disposal to customers</label>
-      {disposalOn && <>
-        <label htmlFor="pricing-disposal" className="oi-kicker">DISPOSAL FEE ($, PER TIRE)</label>
-        <input id="pricing-disposal" value={disposalFee} onChange={e => setDisposalFee(e.target.value)} inputMode="decimal" disabled={saving} />
-      </>}
-
       <label><input type="checkbox" checked={taxOn} onChange={e => setTaxOn(e.target.checked)} disabled={saving} /> Charge tax</label>
       {taxOn && <>
         <label htmlFor="pricing-tax-rate" className="oi-kicker">TAX RATE (%)</label>
@@ -249,11 +225,97 @@ function PricingSettings({ pricing, onSaved }) {
         <select id="pricing-tax-applies" value={taxAppliesTo} onChange={e => setTaxAppliesTo(e.target.value)} disabled={saving}>
           <option value="all">Everything</option>
           <option value="goods">Tires only</option>
-          <option value="services">Labour and disposal only</option>
+          <option value="services">Labour and everything else on the quote</option>
         </select>
       </>}
 
-      <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save pricing'}</button>
+      <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save tax'}</button>
+      {error && <p role="alert" className="oi-error">{error}</p>}
+    </form>
+  </section>
+}
+
+/** A blank row for "Add line" -- enabled by default, since a line Ken just added is one he means to charge. */
+const BLANK_CATALOGUE_LINE = { label: '', amountCents: 0, basis: 'perJob', mode: 'automatic', taxable: false, enabled: true }
+
+/**
+ * The owner's own quote lines (#354): installation, and anything else Ken
+ * wants beyond it. One form over the whole ordered list -- saveCatalogueLines
+ * replaces it wholesale, the same shape TireOffer's per-tire save uses for a
+ * single record, widened to an array here because array order is the
+ * invoice's order (stage 2's own ruling: no rule beyond how Ken arranges
+ * them).
+ *
+ * `isPlaceholder` lines (seeded from the old mobile-fee/disposal settings,
+ * never confirmed by Ken) are marked so, and the flag is preserved by
+ * default and only actually cleared server-side once its amount changes --
+ * this form does not send the flag at all, letting the API's own "did the
+ * amount actually change" rule decide, the same way it always has.
+ */
+function PricingLines({ lines: initialLines, onSaved }) {
+  const [lines, setLines] = useState(initialLines)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const change = (index, field, value) => setLines(rows => rows.map((row, i) => i === index ? { ...row, [field]: value } : row))
+  const remove = index => setLines(rows => rows.filter((_, i) => i !== index))
+  const add = () => setLines(rows => [...rows, { ...BLANK_CATALOGUE_LINE }])
+
+  async function save(event) {
+    event.preventDefault()
+    setError('')
+    const payload = []
+    for (const [index, row] of lines.entries()) {
+      const label = row.label.trim()
+      if (!label) { setError(`Line ${index + 1} needs a label.`); return }
+      const amountCents = Math.round(Number(row.amountCents) * 100) / 100
+      if (!Number.isFinite(amountCents) || amountCents < 0) { setError(`Line ${index + 1} needs a valid amount.`); return }
+      payload.push({ id: row.id, label, amountCents, basis: row.basis, mode: row.mode, taxable: row.taxable, enabled: row.enabled })
+    }
+    setSaving(true)
+    try {
+      const saved = await api('pricing-lines', { method: 'PUT', body: JSON.stringify({ lines: payload }) })
+      setLines(saved.lines)
+      onSaved(saved.lines)
+    } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return <section className="oi-refresh oi-lines" aria-label="Pricing lines">
+    <div>
+      <h2>Pricing lines</h2>
+      <p className="oi-muted">Every line a customer's quote can carry, in the order it prints. Automatic lines are on every quote; optional ones the customer chooses.</p>
+    </div>
+    <form className="oi-refresh-actions oi-lines-form" onSubmit={save}>
+      {lines.map((row, index) => (
+        <div className="oi-line-row" key={row.id ?? `new-${index}`}>
+          <label className="oi-kicker" htmlFor={`line-label-${index}`}>LABEL</label>
+          <input id={`line-label-${index}`} value={row.label} onChange={e => change(index, 'label', e.target.value)} maxLength={200} placeholder="What the customer sees" disabled={saving} />
+          {row.isPlaceholder && <p className="oi-muted oi-line-note">The starting value — nobody has confirmed this amount yet.</p>}
+
+          <label className="oi-kicker" htmlFor={`line-amount-${index}`}>AMOUNT ($)</label>
+          <input id={`line-amount-${index}`} value={row.amountCents / 100} onChange={e => change(index, 'amountCents', Number(e.target.value) * 100)} inputMode="decimal" disabled={saving} />
+
+          <label className="oi-kicker" htmlFor={`line-basis-${index}`}>CHARGED</label>
+          <select id={`line-basis-${index}`} value={row.basis} onChange={e => change(index, 'basis', e.target.value)} disabled={saving}>
+            <option value="perTire">Per tire</option>
+            <option value="perJob">Per visit</option>
+          </select>
+
+          <label className="oi-kicker" htmlFor={`line-mode-${index}`}>WHEN</label>
+          <select id={`line-mode-${index}`} value={row.mode} onChange={e => change(index, 'mode', e.target.value)} disabled={saving}>
+            <option value="automatic">Every quote</option>
+            <option value="optional">Customer chooses</option>
+          </select>
+
+          <label className="oi-check"><input type="checkbox" checked={row.taxable} onChange={e => change(index, 'taxable', e.target.checked)} disabled={saving} /> Taxable</label>
+          <label className="oi-check"><input type="checkbox" checked={row.enabled} onChange={e => change(index, 'enabled', e.target.checked)} disabled={saving} /> Enabled</label>
+
+          <button type="button" className="oi-button oi-inline" onClick={() => remove(index)} disabled={saving}>Remove</button>
+        </div>
+      ))}
+      <button type="button" className="oi-button" onClick={add} disabled={saving}>Add line</button>
+      <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save pricing lines'}</button>
       {error && <p role="alert" className="oi-error">{error}</p>}
     </form>
   </section>
@@ -479,7 +541,13 @@ export default function OwnerInventory({ navigate }) {
 
   function pricingSaved(pricing) {
     setData(previous => ({ ...previous, summary: { ...previous.summary, pricing } }))
-    setNotice('Pricing settings saved.')
+    setNotice('Tax settings saved.')
+  }
+
+  function pricingLinesSaved(pricingLines) {
+    invalidate()
+    setData(previous => ({ ...previous, summary: { ...previous.summary, pricingLines } }))
+    setNotice('Pricing lines saved.')
   }
 
   function saved(id, offer) {
@@ -546,6 +614,7 @@ export default function OwnerInventory({ navigate }) {
       </section>
       <BrowserImport sizes={summary?.sizes} />
       {summary?.markup && <MarkupRule markup={summary.markup} onSaved={markupSaved} />}
+      {summary?.pricingLines && <PricingLines lines={summary.pricingLines} onSaved={pricingLinesSaved} />}
       {summary?.pricing && <PricingSettings pricing={summary.pricing} onSaved={pricingSaved} />}
       {summary?.brands?.length > 0 && <BrandOffers brands={summary.brands} onChanged={load} />}
         </div>
