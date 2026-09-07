@@ -35,12 +35,27 @@ clearance is exactly the moment nobody is.**
 this repository cannot verify, *and* put a hold that must survive a batch on
 the pull request's state rather than in its comments.
 
-**So the constant needs a check that compares against reality rather than
-against this file:** the deployed-site check should assert the expected id
-appears in the served bundle. **That converts "wrong id" from a class nobody
-notices into a red gate** — and it also catches a moved constant, a config that
-goes missing, or minification changing shape, none of which anything else in
-the gate looks at.
+### The assertion worth having, and what it does not prove
+
+**Two different guarantees, and conflating them builds a check that feels like
+verification and is not.**
+
+**Worth having: the deployed-site check should assert the expected id appears
+in the served bundle.** That catches **the deployed artefact not carrying what
+the source says it should** — a deploy that never shipped, a run evicted from
+the concurrency group, a stale bundle. **That is a live failure mode in this
+repository**, and an assertion against the served artefact is the only check
+here that looks at what is actually running rather than at what was merged.
+
+**It cannot catch what happened tonight.** If the check reads its expected
+value from the same constant the code uses, **the spec, the code and the check
+all agree and all three are wrong together.** A check derived from the thing it
+checks is not an independent measurement.
+
+**So: nothing in this repository can establish that the id is Ken's. Only the
+user can.** That is not a gap to close with a better assertion — **it is a fact
+to mark, which is what the section above does.** The unverifiable half stays
+unverifiable and says so.
 
 **The general form, which applies past analytics.** Several values in this
 project are supplied by the user and unverifiable from here: DNS records, the
