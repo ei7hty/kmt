@@ -3,9 +3,10 @@
 Automated draft quotes for Ken's Mobile Tire (KMT), a mobile tire service in
 Malden, MA and Greater Boston. A customer picks a tire size and a tire,
 describes the vehicle and where it is parked, and gets a draft quote on the
-spot. The owner reviews the draft, approves or rejects it, and the customer
-pays. Behind that, a separate owner workspace lets the owner build KMT's tire
-offering from a supplier's live listings and set his own prices.
+spot. The owner reviews the draft, sends or declines it, the customer pays,
+and the owner marks the job fitted. Behind that, a separate owner workspace
+lets the owner build KMT's tire offering from a supplier's live listings and
+set his own prices.
 
 Live at **https://kensmobiletire.com** (Ken's own domain, on Fly.io; `kmt.fly.dev`
 and the older Vercel URL still answer and will redirect there).
@@ -19,7 +20,7 @@ and the older Vercel URL still answer and will redirect there).
 | Area | Today |
 | --- | --- |
 | Customer flow (`/`, `/status`, `/confirmation`) | Real. Requests and draft quotes are stored by the backend and drafted server-side by the pricing rules. `/status` lists this device's requests by its per-browser key, or opens one by id from a link. Payment is still a fake step that always succeeds, recorded by the backend. |
-| Quote review (`/owner/quotes`) | Real. Reads the same requests from the API; Approve & Send and Reject write back. Needs the owner sign-in when hosted. |
+| Quote review (`/owner/quotes`) | Real. Reads the same requests from the API, grouped into Open, Needs you, With customer, To fit and Closed views; approving, declining, cancelling and marking done write back. Needs the owner sign-in when hosted. |
 | Owner inventory (`/owner`) | Real. SQLite database, supplier refresh from giga-tires.com, per-tire owner prices, a default markup rule. Password-protected when hosted. |
 | Tire catalog the customer sees | Real when the backend answers: the owner's enabled tires at his price or the markup price, composed into the static catalog (seed tires, the scraped snapshot, generated coverage for every other plausible size). The static catalog alone when it does not. The markup rate is still a placeholder, not the owner's number. |
 | Hosting | Real. One container on Fly.io serving the built frontend and the owner API from a single origin, deployed from CI. |
@@ -60,10 +61,10 @@ offers. The same file holds every request, draft quote and payment.
 | Route | Who | What |
 | --- | --- | --- |
 | `/` | Customer | Landing page and a three-step order wizard: pick a tire size (width, ratio, diameter), pick a tire and describe the vehicle, then give the service location and preferred date. Submitting sends the request to the backend, which drafts the quote and answers with it. |
-| `/status` | Customer | The requests made from this device, found by its per-browser key, each with its position in Requested, Owner review, Pay & confirm. `?request=<id>` opens that one request from any device. An approved quote has a Pay button. |
+| `/status` | Customer | The requests made from this device, found by its per-browser key, each with its position in Requested, Owner review, Pay & confirm, Fitted. `?request=<id>` opens that one request from any device. Sent or approved quotes have a Pay button; unpaid live requests can be cancelled. |
 | `/confirmation?request=…` | Customer | The paid end state. |
 | `/owner` | Owner | The inventory workspace: supplier tires by size, refresh from the supplier, choose what KMT offers, set a price per tire, set the default markup. Requires the owner backend. |
-| `/owner/quotes` | Owner | The drafted quotes, each with Approve & Send and Reject. Quotes needing attention are flagged as exceptions in amber. Reads the API; needs the owner sign-in when hosted. |
+| `/owner/quotes` | Owner | Submitted quotes grouped by `?view=`: Open, Needs you, With customer, To fit and Closed. Drafts can be adjusted, sent, declined or cancelled; paid requests can be marked done. Quotes needing attention are flagged as exceptions in amber. Reads the API; needs the owner sign-in when hosted. |
 
 Routing is a `pathname` switch in `src/App.jsx` over the screens in
 `src/routes/`; there is no router library.
@@ -112,8 +113,8 @@ supplier prices.
 | `POST /api/owner/refresh` | Start a background supplier refresh for `{sizes}`. One job at a time. |
 | `POST /api/owner/refresh/cancel` | Stop after the current page. Incomplete sizes are not applied. |
 | `POST /api/owner/import-snapshot` | Apply a scraped snapshot `{snapshot, complete, dryRun}` to the live database. What `scripts/import-tires.mjs` calls. Refused while a refresh is running. |
-| `GET /api/owner/requests` | Every request with its draft quote, newest first. |
-| `POST /api/owner/quotes/:id/approve`, `.../reject` | The owner's decision, with `{version}`; a stale version gets 409. |
+| `GET /api/owner/requests?view=` | One owner quote view plus counts for every view. Views are `open` (default), `attention`, `awaiting`, `paid` and `closed`. |
+| `POST /api/owner/quotes/:id/approve`, `.../reject`, `.../done`, `.../cancel` | The owner's quote transition, with `{version}` and optional `{reason}` where the action asks for one; a stale version gets 409. |
 | `POST /api/owner/login`, `POST /api/owner/logout`, `GET /api/owner/session` | Hosted server only. |
 
 Four routes are public, because a customer never signs in; they are named in
@@ -125,7 +126,7 @@ refused without a session:
 | `GET /api/catalog` | What a customer may be shown: offered tires at KMT's price, never the supplier's. |
 | `POST /api/requests` | Submit a request with this browser's customer key; the server drafts the quote and answers with it. |
 | `GET /api/requests?customer=<key>`, `GET /api/requests/:id` | This device's requests, or one request by its unguessable id. |
-| `POST /api/requests/:id/pay` | The fake payment, recorded server-side. |
+| `POST /api/requests/:id/pay`, `.../cancel` | The customer's public quote actions: fake payment for a sent quote, or cancellation before any money has moved. |
 
 A refresh drives a **visible** Chromium window through Playwright, reads every
 listing page for a size with a pause between pages, and applies a complete size
