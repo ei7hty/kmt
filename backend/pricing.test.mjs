@@ -129,6 +129,25 @@ test('appliesTo: services leaves the tire untaxed; catalogue lines seeded as ser
   assert.deepEqual(quote.tax, { rate: 0.1, appliesTo: 'services', amount: roundToCents((49.99 + 10) * 0.1) })
 })
 
+test('the screen-verified scenario, taxed: an edited fee plus a new owner line still balances', () => {
+  // Same shape as the PR's own end-to-end walkthrough -- four tires, the
+  // seeded fee edited to $65, a new "Tire installation" line added at $15
+  // through the real screen -- but with tax on, against production's actual
+  // rate and appliesTo (per the OWNER AGENT's live read: 0.0625 / 'goods').
+  // The walkthrough itself ran with tax off, where subtotal equals total
+  // trivially; this is the same numbers with tax on, so the invariant is
+  // checked directly rather than inferred from a tax-off walkthrough and a
+  // tax-on unit test that never combine.
+  const settings = normalizePricingSettings({ tax: { rate: 0.0625, appliesTo: 'goods' } })
+  const editedMobileFee = { id: 'mobile-service', label: 'Mobile installation service', amountCents: 6500, basis: 'perJob', mode: 'automatic', taxable: false, enabled: true }
+  const installation = { id: 'install', label: 'Tire installation', amountCents: 1500, basis: 'perJob', mode: 'automatic', taxable: true, enabled: true }
+  const quote = calculateDraftQuote(request({ quantity: 4 }), [tire({ price: 48.28 })], settings, [editedMobileFee, installation], [])
+  assert.equal(quote.subtotal, 273.12) // 4 x 48.28 + 65 + 15, the PR body's own total
+  assert.deepEqual(quote.tax, { rate: 0.0625, appliesTo: 'goods', amount: 13.01 }) // 6.25% of the taxable 193.12 + 15
+  assert.equal(quote.total, 286.13)
+  assert.equal(quote.total, roundToCents(quote.subtotal + quote.tax.amount), 'subtotal + tax = total')
+})
+
 test('a customer-facing quote never carries an internal taxable key on any line', () => {
   const settings = normalizePricingSettings({ tax: { rate: 0.1, appliesTo: 'all' } })
   const quote = calculateDraftQuote(request(), [tire()], settings, [seededMobileFee(true), seededDisposal(true)], ['disposal'])
