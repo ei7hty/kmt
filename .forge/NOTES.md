@@ -2485,14 +2485,42 @@ than the confidence they produce, with a twist worth keeping: **here the
 instrument was not even wrong. It was measuring the return value, and the
 defect was in the process.**
 
-## What I could not verify, said plainly
+## What I could not verify, and the correction to how I first said it
 
-**The SIGTERM/SIGINT handler itself has never executed.** Windows has no real
-POSIX signals — Git Bash's `kill` cannot even see the native PID (`No such
-process` against a server that was plainly listening), and `taskkill`
-terminates without running handlers. So the ordering inside `shutdown()` is
-covered only by tests of its parts; the sequence runs for the first time on
-Linux. Whoever has a Linux box or wants to add it to the gate: send a real
-SIGTERM to `backend/server.mjs` with mail in flight and confirm the row reaches
-`sent` and the process exits well inside five seconds. I would rather say this
-than let a passing suite imply it was checked.
+**I wrote that the SIGTERM handler "has never executed". That was wrong, and the
+PROJECT MANAGER caught it before this merged.**
+
+The true half: **I cannot exercise it on this machine.** Windows has no real
+POSIX signals -- Git Bash's `kill` cannot even see the native PID (`No such
+process` against a server plainly listening), and `taskkill` terminates without
+running handlers.
+
+**The false conclusion I drew from it: that therefore nothing had.**
+`fly-deploy.yml` runs on `ubuntu-latest`, its check job starts
+`node backend/server.mjs &`, and its teardown is `trap 'kill $server ...' EXIT`
+-- **`kill` with no signal is SIGTERM**, and `server.mjs` carries
+`process.on('SIGTERM', shutdown)`. So the handler has been invoked on Linux on
+**every run of that job**, since before this change.
+
+**Two things follow, and the second is the one I would have missed.**
+
+**Nothing observes the result.** The shell exits immediately after the kill, so
+whether the handler completes is unknown. *Exercised on every run with no
+instrument pointed at it* is a different statement from *never run* -- and the
+difference is the whole cost of fixing it. A "Linux pair of eyes" needs a
+person, a machine and a scheduler, and became a queue item that reached nobody
+twice in one night. **Asserting on a signal CI already delivers is a workflow
+edit.**
+
+**And what it exercises is the trivial case.** That job sets no `KMT_MAIL_*`
+variables, so the adapter is `NullAdapter` and nothing is ever in flight at
+teardown: `idle()` resolves immediately and the drain has nothing to drain.
+**The ordering runs; the drain does not.** So an assertion added there has to
+arrange a send that is genuinely in flight, and cannot assert on `provider_id`
+at all under the null adapter, which never sets one.
+
+**The generalisable part:** *I cannot run it here* and *it has never run* are
+different claims, and the first does not imply the second. I had the evidence
+for the first and published the second. Same family as this file's entries on a
+tool that answers nothing being read as an answer -- pointed, this time, at my
+own inability rather than at a tool's.
