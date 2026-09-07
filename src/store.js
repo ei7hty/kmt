@@ -145,6 +145,21 @@ export async function payRequest(id) {
 
 /* ---------------------------------------------------------------- owner */
 
+export async function ownerInquiries() {
+  const data = await call('/api/owner/inquiries')
+  return { counts: data.counts ?? {}, inquiries: data.inquiries ?? [] }
+}
+
+export async function ownerInquiry(id) {
+  return call(`/api/owner/inquiries/${encodeURIComponent(id)}`)
+}
+
+export async function moveInquiry(id, status) {
+  return call(`/api/owner/inquiries/${encodeURIComponent(id)}/status`, {
+    method: 'POST', body: JSON.stringify({ status }),
+  })
+}
+
 /**
  * One view of the owner's list, with the size of every view.
  *

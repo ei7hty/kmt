@@ -1610,6 +1610,14 @@
 .inquiry-form input, .inquiry-form textarea { width: 100%; box-sizing: border-box; min-height: 44px; padding: 10px; border: 1px solid var(--border); border-radius: 3px; background: #fff; color: #171717; font: inherit; }
 .inquiry-form textarea { min-height: 120px; resize: vertical; }
 .inquiry-received { display: grid; gap: 14px; }
+.owner-inquiries { max-width: 900px; }
+.inquiry-card { display: grid; gap: 14px; }
+.inquiry-card[data-status="new"] { border-color: rgba(245, 158, 11, .55); }
+.inquiry-card-head { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.inquiry-card-head h2 { margin: 0; color: var(--text-h); }
+.inquiry-card-head time { color: var(--text-muted); white-space: nowrap; }
+.inquiry-contact { color: var(--brand-red-bright); font-weight: 700; overflow-wrap: anywhere; }
+.inquiry-message { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   .hero-section { background: radial-gradient(ellipse at 82% 44%, #30303300 0, #303033 0, #121212 30%, #080808 66%); }
   .hero-visual { background: #080808; }

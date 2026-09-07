@@ -18,16 +18,11 @@ import { newId } from './quotes.mjs'
  * table_info` and one migration test can prove present, the way a JSON key
  * cannot be.
  *
- * No status, no category, no CHECK constraint on anything here -- the same
- * question asked and answered the same way for outbox's `type` in #157:
- * what is actually settled today, and what is a taxonomy someone else's
- * route or screen has not written yet. A workflow (new/contacted/closed?) or
- * a category (which kind of "more than tires" work?) is exactly that kind of
- * guess, and a CHECK constraint written before the vocabulary exists is a
- * migration someone else will have to run to fix a guess of mine. If
- * `POST /api/inquiries` or the owner screen need either, that is a schema
- * change to make when the vocabulary is real, the same way `quotes.status`
- * only widens when a status is actually added (`.forge/owner-backend.md`).
+ * Status is the owner screen's small, settled workflow: new, replied, closed,
+ * with replied -> new and closed -> replied corrections for a mistaken click.
+ * It deliberately has no CHECK constraint, so another useful word can be
+ * added without rebuilding a live table (the migration trap quotes.status
+ * already demonstrated). There is still no category: Ken has not needed one.
  *
  * Personal data: `name` and `contact` identify a specific person the way
  * `requests`' name/email/phone/location do, and docs/data-policy.md
@@ -45,6 +40,7 @@ import { newId } from './quotes.mjs'
  * read the list from rather than re-deciding it.
  */
 export const INQUIRY_PERSONAL_FIELDS = ['name', 'contact']
+export const INQUIRY_STATUSES = ['new', 'replied', 'closed']
 
 const now = () => new Date().toISOString()
 
@@ -148,13 +144,31 @@ export class Inquiries {
   }
 
   /**
-   * Oldest first, matching the owner screen's brief. `rowid` breaks a tie
+   * Newest first, so the owner sees the message that just arrived. `rowid` breaks a tie
    * between two inquiries left in the same millisecond -- outbox.test.mjs
    * caught the same gap the hard way (a passing suite until two inserts
    * landed close enough together to sort arbitrarily), so it is here from
    * the start rather than added after the same test fails once more.
    */
   list() {
-    return this.db.prepare('SELECT * FROM inquiries ORDER BY created_at ASC, rowid ASC').all().map(shapeRow)
+    return this.db.prepare('SELECT * FROM inquiries ORDER BY created_at DESC, rowid DESC').all().map(shapeRow)
+  }
+
+  counts() {
+    const counts = Object.fromEntries(INQUIRY_STATUSES.map(status => [status, 0]))
+    for (const row of this.db.prepare('SELECT status, count(*) AS count FROM inquiries GROUP BY status').all()) {
+      counts[row.status] = Number(row.count)
+    }
+    return counts
+  }
+
+  move(id, nextStatus) {
+    if (!INQUIRY_STATUSES.includes(nextStatus)) throw new InputError('Unknown inquiry status.')
+    const current = this.get(id)
+    if (!current) throw new InputError('No such inquiry.', 404)
+    const allowed = current.status === 'new' ? ['replied', 'closed'] : current.status === 'replied' ? ['new', 'closed'] : ['replied']
+    if (!allowed.includes(nextStatus)) throw new InputError(`A ${current.status} inquiry cannot move to ${nextStatus}.`, 409)
+    this.db.prepare('UPDATE inquiries SET status=?, updated_at=? WHERE id=?').run(nextStatus, now(), id)
+    return this.get(id)
   }
 }

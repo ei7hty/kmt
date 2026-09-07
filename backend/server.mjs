@@ -141,7 +141,8 @@ const mailer = createMailer({
   origin: (process.env.KMT_PUBLIC_ORIGIN || '').trim() ||
     (canonicalHost ? `https://${canonicalHost}` : `http://localhost:${process.env.PORT || 8080}`),
 })
-const api = createApi(inventory, refresher, importer, quotes, { mailer })
+const inquiries = new Inquiries(inventory.db)
+const api = createApi(inventory, refresher, importer, quotes, { mailer, inquiries })
 const catalogApi = createCatalogApi(inventory)
 const siteCopyStore = new SiteCopy(inventory)
 const siteCopyApi = createSiteCopyApi(inventory)
@@ -175,7 +176,7 @@ mailer.probeSmtp()
 // public writes are limited per address, per browser key and per email (#63).
 const publicLimiter = new RateLimiter()
 const requestsApi = createRequestsApi(quotes, { limiter: publicLimiter, mailer })
-const inquiriesApi = createInquiriesApi(new Inquiries(inventory.db), { limiter: publicLimiter })
+const inquiriesApi = createInquiriesApi(inquiries, { limiter: publicLimiter })
 
 const port = Number(process.env.PORT || 8080)
 const bind = process.env.KMT_BIND || '0.0.0.0'
