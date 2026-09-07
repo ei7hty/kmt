@@ -66,6 +66,16 @@ function SocialProofScreen({ navigate }) {
     finally { setSaving(false) }
   }
 
+  async function setProfileEnabled(platform, enabled) {
+    setSaving(true); setError(''); setNotice('')
+    try {
+      const data = await saveSocialProfiles(profiles.map(item => item.platform === platform ? { ...item, enabled } : item))
+      setProfiles(data.profiles || [])
+      setNotice(enabled ? 'Profile enabled. It is now live on marketing pages.' : 'Profile disabled. It is saved here but hidden from marketing pages.')
+    } catch (err) { if (err instanceof NeedsSignIn) setNeedsSignIn(true); else setError(err.message) }
+    finally { setSaving(false) }
+  }
+
   async function saveReview(event) {
     event.preventDefault()
     setSaving(true); setError(''); setNotice('')
@@ -116,7 +126,7 @@ function SocialProofScreen({ navigate }) {
       {notice && <p className="status-note status-note-ok" role="status">{notice}</p>}
       {!loading && <>
         <section className="panel social-proof-section"><h2>Verified profiles</h2><p className="text-secondary">Use the complete HTTPS profile URL copied from the profile page. Handles, search links, and shortened URLs are not accepted.</p>
-          {profiles.length > 0 && <ul className="social-proof-list">{profiles.map(item => <li key={item.platform}><span><strong>{SOCIAL_PLATFORMS[item.platform]?.label || item.platform}</strong><small>{item.url}</small></span><button type="button" className="btn btn-neutral" onClick={() => removeProfile(item.platform)} disabled={saving}>Remove</button></li>)}</ul>}
+          {profiles.length > 0 && <ul className="social-proof-list">{profiles.map(item => <li key={item.platform}><span><strong>{SOCIAL_PLATFORMS[item.platform]?.label || item.platform}</strong><small className={item.enabled ? 'social-proof-live' : 'social-proof-disabled'}>{item.enabled ? 'Live on marketing pages' : 'Saved, not live — enable to publish'}</small><small>{item.url}</small></span><div className="social-proof-actions"><button type="button" className="btn btn-neutral" onClick={() => setProfileEnabled(item.platform, !item.enabled)} disabled={saving}>{item.enabled ? 'Disable on marketing pages' : 'Enable on marketing pages'}</button><button type="button" className="btn btn-neutral" onClick={() => removeProfile(item.platform)} disabled={saving}>Remove</button></div></li>)}</ul>}
           <form className="social-proof-form" onSubmit={saveProfile}><label>Platform<select value={profile.platform} onChange={event => setProfile({ ...profile, platform: event.target.value })}>{Object.entries(SOCIAL_PLATFORMS).map(([key, value]) => <option value={key} key={key}>{value.label}</option>)}</select></label><label>Verified profile URL<input type="url" required value={profile.url} onChange={event => setProfile({ ...profile, url: event.target.value })} placeholder="https://www.example.com/your-profile/" /></label><button className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add profile'}</button></form>
         </section>
         <section className="panel social-proof-section"><h2>{editing ? 'Edit review' : 'Add a testimonial or external review'}</h2><p className="text-secondary">A testimonial is wording the owner entered with permission. An external review must link back to its source. Do not add ratings or endorsements that have not been supplied and verified.</p>

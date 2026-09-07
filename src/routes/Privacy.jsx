@@ -17,6 +17,7 @@ function Privacy({ navigate }) {
         <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png?v=2" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
         <div className="internal-nav-links"><a href="/" onClick={go('/')} className="btn btn-neutral">← Order tires</a></div>
       </nav>
+      <SocialProof variant="compact" />
       <div className="owner-content">
         <p className="eyebrow">PRIVACY</p>
         <h1 className="owner-heading">How KMT handles your details</h1>
@@ -44,7 +45,7 @@ function Privacy({ navigate }) {
 
 /** The one link every screen carries at its foot. */
 export function PrivacyFooter({ navigate }) {
-  return <footer className="page-footer"><a href="/privacy" onClick={(event) => { event.preventDefault(); navigate('/privacy') }}>Privacy</a></footer>
+  return <footer className="page-footer"><SocialProof variant="footer" /><a href="/privacy" onClick={(event) => { event.preventDefault(); navigate('/privacy') }}>Privacy</a></footer>
 }
 
 export default Privacy
