@@ -185,10 +185,24 @@ a11y-85-measure.mjs   dead-end-audit.mjs   owner-inventory-audit.mjs
 request-flow-check.mjs   responsive-check.mjs
 ```
 
-**I have twice said three.** That number came from the first two importers
-anyone happened to notice; **the architect swept every importer and the
-PROJECT MANAGER re-measured it.** The precondition argument rests on the size
-of what breaks, so the number matters more than most.
+**The number was wrong at source, corrected once, and propagated anyway.**
+
+The PROJECT MANAGER's original grep swept for `openOwnerQuotes` importers and
+missed the two files that import `signInIfAsked` directly. **The architect swept
+every importer, found five, and corrected them. That correction reached one
+holder and stopped** — so *three* survived into `.forge/owner-auth-cutover.md`,
+into this document, and through two rewrites, until it was re-measured by
+accident during a review.
+
+**That is the record-then-grep rule (`NOTES.md`) failing in the direction nobody
+watches**: not a record going stale, but **a correction that was delivered
+accurately to one person while every other holder kept the old value.** Nothing
+in this repository makes a stale number announce itself.
+
+**The precondition argument rests entirely on the size of what breaks.** *Three
+audits* invites someone to reroute them; **five, spanning the responsive and
+owner-inventory checks as well, makes it plain that password auth is
+load-bearing across the whole gate.**
 
 **`AGENTS.md` says the gate exists to prove that a customer submits, the owner
 approves and the customer pays.** Removing password auth deletes the only way it
