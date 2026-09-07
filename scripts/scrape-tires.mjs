@@ -21,7 +21,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createBrowserFetcher, RateLimitedError } from './browser-fetch.mjs'
-import { canonicalSize, fetchSizePage, parseListingPage, parseSize } from './giga-tires.mjs'
+import { canonicalSize, fetchProductPage, fetchSizePage, parseListingPage, parseProductPage, parseSize, productUrl } from './giga-tires.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DEFAULT_OUT = path.join(ROOT, 'src', 'data', 'scraped-tires.json')
@@ -46,6 +46,12 @@ Options:
                      Use 0 to keep everything found.
   --pages N          Listing pages to read per size, 10 tires each (default 1).
   --delay MS         Pause between pages within one size (default 1500).
+  --enrich-products  Read product pages for rows found by the size scrape.
+  --product-url URL  Read one product URL directly; repeat for a small batch.
+  --enrich-limit N   Maximum product pages to read in this run (default 8,
+                     maximum 50). Required bounding applies across all URLs.
+  --concurrency N    Product-page workers (default 1, maximum 4).
+  --product-delay MS Minimum delay between product-page starts (default 1500).
   --min-interval MS  Minimum time between one size's request and the next,
                      regardless of outcome -- empty, full or error alike
                      (default 10000). See docs/supplier-refresh.md for why
@@ -75,6 +81,11 @@ function parseArgs(argv) {
     limit: 8,
     pages: 1,
     delay: 1500,
+    enrichProducts: false,
+    productUrls: [],
+    enrichLimit: 8,
+    concurrency: 1,
+    productDelay: 1500,
     minInterval: 10000,
     out: DEFAULT_OUT,
     dryRun: false,
@@ -94,6 +105,11 @@ function parseArgs(argv) {
     else if (arg === '--replace') options.replace = true
     else if (arg === '--plain-fetch') options.plainFetch = true
     else if (arg === '--headless') options.headless = true
+    else if (arg === '--enrich-products') options.enrichProducts = true
+    else if (arg === '--product-url') options.productUrls.push(value())
+    else if (arg === '--enrich-limit') options.enrichLimit = Number(value())
+    else if (arg === '--concurrency') options.concurrency = Number(value())
+    else if (arg === '--product-delay') options.productDelay = Number(value())
     else if (arg === '--limit') options.limit = Number(value())
     else if (arg === '--pages') options.pages = Number(value())
     else if (arg === '--delay') options.delay = Number(value())
@@ -104,6 +120,16 @@ function parseArgs(argv) {
   }
 
   return options
+}
+
+function validateEnrichmentOptions(options) {
+  if (!Number.isInteger(options.enrichLimit) || options.enrichLimit < 1 || options.enrichLimit > 50) {
+    throw new Error('--enrich-limit must be an integer from 1 to 50')
+  }
+  if (!Number.isInteger(options.concurrency) || options.concurrency < 1 || options.concurrency > 4) {
+    throw new Error('--concurrency must be an integer from 1 to 4')
+  }
+  if (!Number.isFinite(options.productDelay) || options.productDelay < 0) throw new Error('--product-delay must be zero or greater')
 }
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
@@ -313,6 +339,44 @@ export async function scrapeAll(sizes, options, fetcher) {
   return { tires, failures, coverage, totalSkipped, scrapedAt, stoppedOnRateLimit }
 }
 
+/** Bounded product-page work queue, exported so fixtures can prove pacing and preservation. */
+export async function enrichRows(rows, urls, options, fetcher) {
+  validateEnrichmentOptions(options)
+  const fallbacks = new Map(rows.filter(row => row.source?.url).map(row => [productUrl(row.source.url), row]))
+  const targets = [...new Set(urls.map(productUrl))].slice(0, options.enrichLimit)
+  const enriched = new Map(rows.map(row => [row.id, row]))
+  const failures = []
+  let cursor = 0
+  let lastStart = 0
+  let pace = Promise.resolve()
+
+  const nextTarget = () => cursor < targets.length ? targets[cursor++] : null
+  const waitForTurn = () => {
+    const turn = pace.then(async () => {
+      const wait = options.productDelay - (Date.now() - lastStart)
+      if (lastStart && wait > 0) await sleep(wait)
+      lastStart = Date.now()
+    })
+    pace = turn.catch(() => {})
+    return turn
+  }
+  const worker = async () => {
+    for (let url; (url = nextTarget());) {
+      await waitForTurn()
+      try {
+        const fetched = await fetcher(url)
+        const row = parseProductPage(fetched.html, { url: fetched.url || url, fallback: fallbacks.get(url) })
+        if (!row.id || !row.size || !Number.isFinite(row.price)) throw new Error('Product page did not contain an importable SKU, size, and price')
+        enriched.set(row.id, row)
+      } catch (error) {
+        failures.push({ url, message: error.message })
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(options.concurrency, targets.length) }, worker))
+  return { rows: [...enriched.values()], failures, attempted: targets.length }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
 
@@ -321,9 +385,11 @@ async function main() {
     return
   }
 
+  validateEnrichmentOptions(options)
+  options.productUrls = options.productUrls.map(productUrl)
   let sizes = options.fromCatalog ? await sizesFromCatalog() : options.sizes
-  if (!sizes.length) {
-    console.error('Give at least one tire size, or --from-catalog. See --help.')
+  if (!sizes.length && !options.productUrls.length) {
+    console.error('Give at least one tire size, --from-catalog, or --product-url. See --help.')
     process.exitCode = 1
     return
   }
@@ -336,11 +402,13 @@ async function main() {
   }
   sizes = [...new Set(sizes.map(canonicalSize))]
 
-  console.log(`Reading ${sizes.length} size${sizes.length === 1 ? '' : 's'} from giga-tires.com`)
-  console.log(
-    `${options.pages} page(s) each, keeping ${options.limit || 'all'} per size, ` +
-    `${options.delay}ms between pages, ${options.minInterval}ms between sizes`
-  )
+  if (sizes.length) {
+    console.log(`Reading ${sizes.length} size${sizes.length === 1 ? '' : 's'} from giga-tires.com`)
+    console.log(`${options.pages} page(s) each, keeping ${options.limit || 'all'} per size, ${options.delay}ms between pages, ${options.minInterval}ms between sizes`)
+  }
+  if (options.enrichProducts || options.productUrls.length) {
+    console.log(`Product enrichment: limit ${options.enrichLimit}, concurrency ${options.concurrency}, ${options.productDelay}ms between starts`)
+  }
   console.log(options.plainFetch ? 'Using plain HTTP.\n' : 'Opening a browser window.\n')
 
   const browser = options.plainFetch
@@ -349,14 +417,30 @@ async function main() {
   const fetcher = browser
     ? (size, page) => browser.fetchSizePage(size, page)
     : (size, page) => fetchSizePage(size, page, { userAgent: USER_AGENT })
+  const productFetcher = browser
+    ? url => browser.fetchProductPage(url)
+    : url => fetchProductPage(url, { userAgent: USER_AGENT })
 
   let result
   try {
-    result = await scrapeAll(sizes, options, fetcher)
+    result = sizes.length
+      ? await scrapeAll(sizes, options, fetcher)
+      : { tires: [], failures: [], coverage: {}, totalSkipped: 0, scrapedAt: new Date().toISOString(), stoppedOnRateLimit: null }
+    const requestedUrls = [
+      ...options.productUrls,
+      ...(options.enrichProducts ? result.tires.map(tire => tire.source?.url).filter(Boolean) : []),
+    ]
+    if (requestedUrls.length) {
+      const productResult = await enrichRows(result.tires, requestedUrls, options, productFetcher)
+      result.tires = productResult.rows
+      result.failures.push(...productResult.failures.map(failure => ({ size: failure.url, message: failure.message })))
+      console.log(`  Product pages: ${productResult.attempted - productResult.failures.length} enriched, ${productResult.failures.length} failed.`)
+    }
   } finally {
     if (browser) await browser.close()
   }
-  const { tires, failures, coverage, totalSkipped, scrapedAt, stoppedOnRateLimit } = result
+  let { tires, coverage } = result
+  const { failures, totalSkipped, scrapedAt, stoppedOnRateLimit } = result
 
   if (stoppedOnRateLimit) {
     const { size, retryAfter } = stoppedOnRateLimit
@@ -382,6 +466,18 @@ async function main() {
   const previous = hadPrevious
     ? JSON.parse(await readFile(options.out, 'utf8'))
     : null
+
+  // A direct product URL is a surgical update, not a claim that the rest of
+  // that size disappeared. Replace matching IDs and carry every other row.
+  if (!sizes.length && options.productUrls.length) {
+    const updated = new Map((previous?.tires || []).map(tire => [tire.id, tire]))
+    for (const tire of tires) updated.set(tire.id, tire)
+    tires = [...updated.values()]
+    coverage = { ...(previous?.coverage || {}) }
+    for (const tire of result.tires) coverage[tire.size] ??= {
+      limit: options.enrichLimit, pagesRead: 0, totalPages: null, complete: false, scrapedAt,
+    }
+  }
 
   const { snapshot, carried } = buildSnapshot({ previous, tires, coverage, replace: options.replace, scrapedAt })
 

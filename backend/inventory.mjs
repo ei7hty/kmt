@@ -33,6 +33,15 @@ export function validateTire(tire, size) {
       (!Number.isInteger(tire.source.stock) || tire.source.stock < 0)) {
     throw new InputError(`Invalid stock count for ${tire.id}`)
   }
+  const optionalStrings = ['brand', 'model', 'season', 'loadIndex', 'speedRating', 'sidewall', 'treadwear', 'utqg', 'warranty']
+  if (optionalStrings.some(key => tire[key] !== undefined && (typeof tire[key] !== 'string' || !tire[key].trim())) ||
+      (tire.runFlat !== undefined && typeof tire.runFlat !== 'boolean') ||
+      (tire.imageUrls !== undefined && (!Array.isArray(tire.imageUrls) || tire.imageUrls.some(value => typeof value !== 'string' || !/^https?:\/\//.test(value)))) ||
+      (tire.source.fetchedAt !== undefined && !Number.isFinite(Date.parse(tire.source.fetchedAt))) ||
+      (tire.source.productId !== undefined && (typeof tire.source.productId !== 'string' || !tire.source.productId.trim())) ||
+      (tire.source.raw !== undefined && (!tire.source.raw || typeof tire.source.raw !== 'object' || Array.isArray(tire.source.raw)))) {
+    throw new InputError(`Invalid product enrichment for ${tire.id}`)
+  }
   return tire
 }
 

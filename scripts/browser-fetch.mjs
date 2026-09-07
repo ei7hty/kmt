@@ -17,7 +17,7 @@
  * watches; a scraper you cannot see is a scraper you cannot tell has gone wrong.
  */
 
-import { sizeUrl } from './giga-tires.mjs'
+import { productUrl, sizeUrl } from './giga-tires.mjs'
 
 const READY_SELECTOR = '.plp-list__item-container'
 
@@ -109,6 +109,29 @@ export async function createBrowserFetcher(options = {}) {
         throw new Error(`Blocked or unexpected page (title: ${title || 'none'})`)
       }
       return { html, url }
+    },
+
+    async fetchProductPage(input) {
+      const url = productUrl(input)
+      // A separate page per product makes explicitly bounded concurrency safe;
+      // the listing page above stays dedicated to its sequential pagination.
+      const productPage = await context.newPage()
+      try {
+        const response = await productPage.goto(url, { waitUntil: 'domcontentloaded', timeout })
+        if (response?.status() === 429) {
+          throw new RateLimitedError(`429 from ${url}`, response.headers()['retry-after'] ?? null)
+        }
+        if (!response || response.status() >= 400) throw new Error(`GET ${url} -> ${response?.status() || 'no response'}`)
+        await productPage.locator('script[type="application/ld+json"]').first().waitFor({ timeout: 20000 }).catch(() => {})
+        const html = await productPage.content()
+        if (!html.includes('application/ld+json') && !html.includes('tirecode')) {
+          const title = await productPage.title()
+          throw new Error(`Blocked or unexpected product page (title: ${title || 'none'})`)
+        }
+        return { html, url }
+      } finally {
+        await productPage.close()
+      }
     },
 
     async close() {
