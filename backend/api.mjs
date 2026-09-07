@@ -35,6 +35,8 @@ const QUOTE_ACTION = /^\/api\/owner\/quotes\/([^/]+)\/(approve|reject|done|cance
 const QUOTE_EDIT = /^\/api\/owner\/quotes\/([^/]+)$/
 const OUTBOX_RESOLVE = /^\/api\/owner\/outbox\/([^/]+)\/resolve$/
 const OUTBOX_RESEND = /^\/api\/owner\/outbox\/([^/]+)\/resend$/
+const OWNER_INQUIRY = /^\/api\/owner\/inquiries\/([^/]+)$/
+const OWNER_INQUIRY_STATUS = /^\/api\/owner\/inquiries\/([^/]+)\/status$/
 
 /** The only origins allowed to post pages back. Nothing else gets CORS at all. */
 const IMPORT_ORIGINS = new Set(['https://www.giga-tires.com', 'https://giga-tires.com'])
@@ -452,7 +454,7 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
   }
 }
 
-export function createApi(inventory, refresher, importer = null, quotes = null, { mailer = null } = {}) {
+export function createApi(inventory, refresher, importer = null, quotes = null, { mailer = null, inquiries = null } = {}) {
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
     if (!url.pathname.startsWith('/api/owner/')) return false
@@ -507,7 +509,21 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
       // The owner's side of the requests customers submit. Inside createApi
       // rather than beside it, because these are exactly what that handler is
       // for: routes that require the owner session.
-      if (request.method === 'GET' && url.pathname === '/api/owner/requests') {
+      if (request.method === 'GET' && url.pathname === '/api/owner/inquiries') {
+        if (!inquiries) throw new InputError('Owner endpoint not found', 404)
+        send(200, { counts: inquiries.counts(), inquiries: inquiries.list() })
+      } else if (request.method === 'GET' && OWNER_INQUIRY.test(url.pathname)) {
+        if (!inquiries) throw new InputError('Owner endpoint not found', 404)
+        const [, raw] = url.pathname.match(OWNER_INQUIRY)
+        const inquiry = inquiries.get(decodeURIComponent(raw))
+        if (!inquiry) throw new InputError('No such inquiry.', 404)
+        send(200, { inquiry })
+      } else if (request.method === 'POST' && OWNER_INQUIRY_STATUS.test(url.pathname)) {
+        if (!inquiries) throw new InputError('Owner endpoint not found', 404)
+        const [, raw] = url.pathname.match(OWNER_INQUIRY_STATUS)
+        const body = await readJsonBody(request)
+        send(200, { inquiry: inquiries.move(decodeURIComponent(raw), body?.status) })
+      } else if (request.method === 'GET' && url.pathname === '/api/owner/requests') {
         if (!quotes) throw new InputError('Owner endpoint not found', 404)
         send(200, quotes.viewForOwner(url.searchParams.get('view')))
       } else if (request.method === 'PUT' && QUOTE_EDIT.test(url.pathname)) {

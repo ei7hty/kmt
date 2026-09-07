@@ -4,10 +4,13 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
+import { createServer } from 'node:http'
 
 import { InputError } from './inventory.mjs'
-import { Inquiries, INQUIRY_PERSONAL_FIELDS } from './inquiries.mjs'
+import { Inquiries, INQUIRY_PERSONAL_FIELDS, INQUIRY_STATUSES } from './inquiries.mjs'
 import { cleanInquiry } from './inquiries-api.mjs'
+import { createApi, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
+import { createAuth, readAuthConfig } from './auth.mjs'
 
 function withTmpDir(fn) {
   const dir = mkdtempSync(path.join(tmpdir(), 'kmt-inquiries-'))
@@ -146,7 +149,7 @@ test('the public inquiry shape normalizes the contact before it becomes a limite
   assert.throws(() => cleanInquiry({ name: 'Ana', contact: 'not contact', message: 'Help' }), InputError)
 })
 
-test('list() answers oldest first and breaks a same-millisecond tie by rowid, the outbox.test.mjs lesson applied here from the start', () => withTmpDir(dir => {
+test('list() answers newest first and breaks a same-millisecond tie by rowid', () => withTmpDir(dir => {
   const db = new DatabaseSync(deployedDatabase(dir))
   const inquiries = new Inquiries(db)
   // Two inserts sharing whatever millisecond Date.now() returns for both --
@@ -157,9 +160,64 @@ test('list() answers oldest first and breaks a same-millisecond tie by rowid, th
   db.exec(`UPDATE inquiries SET created_at='2026-09-06T00:00:00.000Z' WHERE id IN ('${first.id}', '${second.id}')`)
 
   const rows = inquiries.list()
-  assert.deepEqual(rows.map(r => r.id), [first.id, second.id])
+  assert.deepEqual(rows.map(r => r.id), [second.id, first.id])
   db.close()
 }))
+
+test('the growable workflow moves forward through new, replied and closed without a database CHECK', () => withTmpDir(dir => {
+  const db = new DatabaseSync(deployedDatabase(dir))
+  const inquiries = new Inquiries(db)
+  const first = inquiries.create({ name: 'A', contact: 'a@example.com', message: 'Alignment' })
+  const second = inquiries.create({ name: 'B', contact: 'b@example.com', message: 'Brakes' })
+  assert.deepEqual(INQUIRY_STATUSES, ['new', 'replied', 'closed'])
+  assert.equal(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='inquiries'").get().sql.includes('CHECK'), false)
+  assert.deepEqual(inquiries.counts(), { new: 2, replied: 0, closed: 0 })
+  assert.equal(inquiries.move(first.id, 'replied').status, 'replied')
+  assert.equal(inquiries.move(first.id, 'closed').status, 'closed')
+  assert.equal(inquiries.move(second.id, 'closed').status, 'closed', 'a message that needs no reply may close directly')
+  assert.deepEqual(inquiries.counts(), { new: 0, replied: 0, closed: 2 })
+  assert.throws(() => inquiries.move(first.id, 'new'), { status: 409 })
+  assert.throws(() => inquiries.move(first.id, 'contacted'), /Unknown inquiry status/)
+  assert.throws(() => inquiries.move('missing', 'closed'), { status: 404 })
+  db.close()
+}))
+
+test('owner inquiry list, read and status routes require a valid owner session', async t => {
+  const db = new DatabaseSync(':memory:')
+  t.after(() => db.close())
+  const inquiries = new Inquiries(db)
+  const created = inquiries.create({ name: 'Owner only', contact: 'owner@example.com', message: 'Private message' })
+  const auth = createAuth(readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password' }))
+  const api = createApi({}, null, null, null, { inquiries })
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (await auth.handle(request, response, url, readJsonBody)) return
+    if (!isKnownApiPath(url.pathname)) { response.writeHead(404).end(); return }
+    if (!isPublicApiCall(request.method, url.pathname) && !auth.isAuthenticated(request)) {
+      response.writeHead(401, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' })); return
+    }
+    if (await api(request, response)) return
+    response.writeHead(404).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+
+  for (const path of ['/api/owner/inquiries', `/api/owner/inquiries/${created.id}`]) {
+    assert.equal((await fetch(base + path)).status, 401)
+  }
+  assert.equal((await fetch(`${base}/api/owner/inquiries/${created.id}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"status":"replied"}' })).status, 401)
+
+  const login = await fetch(base + '/api/owner/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"password":"a-long-enough-password"}' })
+  assert.equal(login.status, 200)
+  const headers = { Cookie: login.headers.get('set-cookie').split(';')[0] }
+  const listed = await (await fetch(base + '/api/owner/inquiries', { headers })).json()
+  assert.equal(listed.inquiries[0].message, 'Private message')
+  assert.equal((await (await fetch(`${base}/api/owner/inquiries/${created.id}`, { headers })).json()).inquiry.contact, 'owner@example.com')
+  const moved = await (await fetch(`${base}/api/owner/inquiries/${created.id}/status`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: '{"status":"replied"}' })).json()
+  assert.equal(moved.inquiry.status, 'replied')
+})
 
 test('INQUIRY_PERSONAL_FIELDS names exactly the two columns a future redaction rewrites, per docs/data-policy.md', () => {
   assert.deepEqual(INQUIRY_PERSONAL_FIELDS, ['name', 'contact'])

@@ -6,6 +6,7 @@ import { signOut } from '../owner/session.js'
 import { exactTime, timeAgo } from '../owner/timeAgo.js'
 import { PrivacyFooter } from './Privacy.jsx'
 import MailAlert from '../components/MailAlert.jsx'
+import { InquiryNavButton } from '../owner/Inquiries.jsx'
 
 /** A stored US number, +16174108319, as a person reads it: (617) 410-8319. Anything else as stored. */
 const formatPhone = (phone) => {
@@ -249,7 +250,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
     <div className="app-shell owner-shell">
       <nav className="internal-nav">
         <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png?v=2" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
-        <div className="internal-nav-links"><MailAlert navigate={navigate} /><button className="btn btn-neutral" data-testid="nav-inventory" onClick={() => navigate('/owner')}>← Inventory</button><button className="btn btn-neutral" onClick={() => navigate('/owner/outbox')}>Outbox</button><button className="btn btn-neutral" onClick={() => navigate('/')}>Back to Customer Flow</button><button className="btn btn-neutral" onClick={leave}>Sign out</button></div>
+        <div className="internal-nav-links"><MailAlert navigate={navigate} /><InquiryNavButton navigate={navigate} /><button className="btn btn-neutral" data-testid="nav-inventory" onClick={() => navigate('/owner')}>← Inventory</button><button className="btn btn-neutral" onClick={() => navigate('/owner/outbox')}>Outbox</button><button className="btn btn-neutral" onClick={() => navigate('/')}>Back to Customer Flow</button><button className="btn btn-neutral" onClick={leave}>Sign out</button></div>
       </nav>
       <div className="owner-content">
         <p className="eyebrow">OWNER</p>

@@ -30,7 +30,8 @@ const serviceArea = readServiceAreaConfig({ ...process.env, KMT_SERVICE_RADIUS_M
 const quotes = new Quotes(inventory, { serviceArea })
 const outbox = new Outbox(inventory.db)
 const mailer = createMailer({ outbox, quotes, origin: `http://127.0.0.1:${process.env.KMT_OWNER_PORT || 4180}` })
-const api = createApi(inventory, refresher, new PageImporter(inventory), quotes, { mailer })
+const inquiries = new Inquiries(inventory.db)
+const api = createApi(inventory, refresher, new PageImporter(inventory), quotes, { mailer, inquiries })
 // The customer catalog, served here too so the local flow matches the hosted one.
 const catalogApi = createCatalogApi(inventory)
 const siteCopyApi = createSiteCopyApi(inventory)
@@ -48,7 +49,7 @@ const smtpProbeTimer = mailer.startSmtpProbe()
 // limits as the hosted server, so a local run trips over them before a deploy does.
 const publicLimiter = new RateLimiter()
 const requestsApi = createRequestsApi(quotes, { limiter: publicLimiter, mailer })
-const inquiriesApi = createInquiriesApi(new Inquiries(inventory.db), { limiter: publicLimiter })
+const inquiriesApi = createInquiriesApi(inquiries, { limiter: publicLimiter })
 const port = Number(process.env.KMT_OWNER_PORT || 4180)
 const vite = await createViteServer({ root, server: {
   middlewareMode: true,
