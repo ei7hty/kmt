@@ -379,7 +379,25 @@ async function main() {
       fail('/status: no visible Pay action for the approved quote.');
     }
 
-    await page.click('button:has-text("Pay $")');
+    // Guarded, and the guard is the point. The two checks above read the note
+    // and the Pay button with `.catch(() => false)`, so a missing button records
+    // a clean failure and the run carries on. This click did not, so the same
+    // missing button threw here instead, main()'s catch fired, and every check
+    // after this line never ran -- #392 reported `48 of 78` on a docs-only PR
+    // for exactly that reason, on a `TimeoutError` printed in the log that
+    // nobody read past the FAIL lines to find.
+    //
+    // This does not paper the failure over and must not: `onConfirmation` below
+    // still reports it, because payment genuinely did not happen. What changes
+    // is that the run says so in one legible line instead of deleting the
+    // evidence of thirty checks. Two checks failing for one reason is a finding;
+    // thirty vanishing is a mystery, and a mystery is what gets re-run.
+    //
+    // Keyed off payButtonVisible rather than a bare .catch so a failing run does
+    // not also pay 30s of locator timeout it has already learned the answer to.
+    if (payButtonVisible) {
+      await page.click('button:has-text("Pay $")').catch(() => {});
+    }
     // Paying navigates straight to /confirmation (handlePayment calls navigate() itself) --
     // that IS the visible next action; no intermediate click is required.
     await page.waitForURL('**/confirmation**', { timeout: 3000 }).catch(() => {});
@@ -405,10 +423,27 @@ async function main() {
       fail('/confirmation: no visible next action -- dead end.');
     }
 
+    // The same defect as the guarded click above, in its quietest form: an `if`
+    // with no `else`. When the link is absent this check did not fail, it simply
+    // did not execute -- and a run that is two checks short with nothing saying
+    // which two is the shortfall hiding what caused it. EXPECTED_CHECKS notices
+    // the count; only a branch here says what went missing.
+    //
+    // waitForURL is caught for the reason the click above is: inside this branch
+    // the link exists, so a navigation that never arrives is a real dead end and
+    // belongs in the report rather than in main()'s catch, taking the rest of the
+    // run with it. Guarding the click and leaving its own next line unguarded
+    // would be the same bug with a shorter blast radius.
     if (startNewVisible) {
-      await page.click('a:has-text("Start a New Request")');
-      await page.waitForURL(BASE + '/');
-      ok('/confirmation -> /: loop back to start confirmed via click (no URL typed, no back button used).');
+      await page.click('a:has-text("Start a New Request")').catch(() => {});
+      await page.waitForURL(BASE + '/', { timeout: 5000 }).catch(() => {});
+      if (page.url().replace(/\/$/, '') === BASE.replace(/\/$/, '')) {
+        ok('/confirmation -> /: loop back to start confirmed via click (no URL typed, no back button used).');
+      } else {
+        fail(`/confirmation -> /: clicking "Start a New Request" did not return to the start. Landed on: ${page.url()}`);
+      }
+    } else {
+      fail('/confirmation -> /: could not test the loop back to start -- there was no "Start a New Request" action to click.');
     }
 
     // 4. Reload /status directly (simulating a tester returning to a bookmarked/previous tab) to
