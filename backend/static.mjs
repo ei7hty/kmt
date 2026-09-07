@@ -134,6 +134,16 @@ export function createStaticHandler(dist, { readCopy = null } = {}) {
     const file = isFile ? resolved : path.join(distRoot, 'index.html')
     const stat = statSync(file)
     const type = TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream'
+    // Still the file's mtime, including for the injected shell, where this
+    // server deliberately will not honour it (see the 304 condition below).
+    // So the shell advertises a validator the origin has opted out of keeping.
+    //
+    // That is safe only because nothing caches between Fly and the customer:
+    // `no-cache` obliges any shared cache to revalidate with the origin, where
+    // the `!shell` logic runs and answers correctly. Put a CDN or proxy in
+    // front that implements `If-Modified-Since` itself and it would serve
+    // stale copy from this header without ever consulting the logic that knows
+    // better. Drop it for the shell on the day anything caches in front.
     const lastModified = stat.mtime.toUTCString()
 
     // The app shell, with the owner's copy in it. Only the shell: every other
