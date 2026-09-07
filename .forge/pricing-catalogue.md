@@ -212,3 +212,96 @@ amount.**
 **The seed condition is *has this migration run*, not *has Ken set a price*.**
 The first is answered by the catalogue being empty. **Seed unconditionally, and
 carry the flag** — one rule covers both halves.
+
+
+---
+
+## AMENDMENT 2026-09-07 — the scope axis, and the four rulings it needs
+
+The user answered the question this document left open, and **the answer is
+wider than the question.** Verbatim:
+
+> **"tire installation should be modular set per tire or per visit either
+> either site wide, per size, or per invidividual tire sku"**
+
+**Two axes, not one.** *Per tire or per visit* is `basis`, and it is already
+built — `CATALOGUE_LINE_BASES = ['perTire', 'perJob']`. **What is new is
+`scope`: site-wide, per size, or per SKU.** No catalogue line carries a
+targeting field of any kind today.
+
+**The concepts exist elsewhere and should be reused rather than invented.**
+`offers` is already per-SKU with `price_cents`, and `inventory.mjs` already
+groups `bySize`. **The catalogue simply has no hook into either.**
+
+### Ruling 1 — most-specific wins. SKU, then size, then site-wide.
+
+**Never last-defined-wins**, and the reason is not taste.
+
+**The catalogue list is owner-ordered, and that ordering is the invoice's
+ordering.** If precedence followed list order, **reordering lines for display
+would silently change what a customer is charged.** Two things that must never
+couple would be coupled by a drag handle.
+
+**Most-specific-wins is also the only rule a person can predict without reading
+the whole list.** Ken sets installation at $15 and 20-inch at $25; he does not
+have to know where either sits in the list.
+
+### Ruling 2 — an override sets the amount and nothing else
+
+**A per-size or per-SKU entry overrides `amountCents`. `basis`, `taxable`,
+`mode` and `enabled` always come from the parent line.**
+
+**Because the alternative is incoherent as a business rule.** *Installation is
+per-tire normally but per-visit for one size* is not a thing anyone means.
+Neither is *installation is taxable except on 18-inch* — **tax treatment follows
+what the work is, not what it is performed on**, and that remains the
+accountant's question rather than a per-row toggle.
+
+**And it keeps the override a number**, which is the only thing Ken is actually
+varying. **One line, one set of rules, a different price in named cases.**
+
+### Ruling 3 — no orphans, and this follows from ruling 2
+
+**A scoped amount cannot exist without a parent line**, because it has nothing
+to inherit `basis` and `taxable` from.
+
+**That fixes the data shape, and the shape is the point:** the catalogue stays
+**a list of lines, each with optional per-scope amounts** — not a list of rules
+that happen to match tires. **The first is explainable on a screen; the second
+becomes a rules engine nobody can audit.**
+
+### Ruling 4 — per-size is the affordance; per-SKU is the exception
+
+**The user's own earlier complaint decides this**: they asked for by-brand bulk
+enabling because per-SKU was *"having to manually press every single tire model
+and size."*
+
+**Per-SKU installation pricing reintroduces exactly that tedium**, so **the
+screen must make the general case one action and the exception deliberate.**
+Site-wide by default; size overrides offered from the sizes that actually have
+offers; **per-SKU reachable only from a specific tire's own row, never as a list
+to fill in.**
+
+**What per-SKU is genuinely for is worth stating, because it shapes the
+screen:** installation labour does not vary by model, it varies by difficulty —
+**run-flats and low-profiles are harder to fit.** So per-SKU is a handful of
+exceptions on an otherwise size-driven schedule. **A design that invites Ken to
+price hundreds of SKUs has misread the feature.**
+
+### What this does not decide
+
+**The amounts.** Ken's prices, and he has not given them beyond the mobile fee
+and disposal.
+
+**Whether per-size means the tire's size or the vehicle's fitment.** They are
+the same today; **if they ever diverge, this needs revisiting.**
+
+**And whether `scope` belongs on the line or beside it in storage.** That is a
+build decision for whoever holds the screen — **the rulings above constrain the
+behaviour, not the JSON.**
+
+### Not urgent, and Stage 2 is unaffected
+
+**The catalogue works today at site-wide scope, which is where every existing
+fee sits.** `basis` was already in Stage 2 (#388). **This is the next
+increment, not a defect, and nothing should wait on it.**
