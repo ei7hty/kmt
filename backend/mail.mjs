@@ -23,11 +23,70 @@
 // limits.mjs, the same construction the rate limiter uses, because a log that
 // once wrote customer emails into Fly's output is why that rule exists.
 
+import { setTimeout as delay } from 'node:timers/promises'
+
 import { InputError } from './inventory.mjs'
 import { logLabel } from './limits.mjs'
 import { MAIL_TYPES, TEMPLATES } from './mail-templates.mjs'
 
 const PRIVATE = { private: true }
+
+/**
+ * The message types a stranded-mail recovery may send again without asking.
+ *
+ * An explicit list, deliberately not derived from each template's `audience`.
+ * Deriving it would mean that adding an owner-audience template silently opts
+ * that message into automatic re-sending, and every default in this file is
+ * meant to be the quiet one. A new type joins this list on purpose or not at
+ * all. `mail.test.mjs` asserts every entry here is in fact owner-audience, so
+ * the list cannot drift the other way and pick up a customer's mail.
+ */
+export const AUTO_RETRY_TYPES = ['request-arrived']
+
+/**
+ * How long shutdown waits for in-flight mail before giving up on it.
+ *
+ * Derived, not picked: 16 sends recorded `sent` in production on 2026-09-06/07
+ * took 374-1165 ms (`updated_at - created_at`), and failures 209-488 ms, an
+ * auth rejection returning before any body moves. 2000 ms is about 1.7x the
+ * observed maximum and leaves ~3 s of Fly's 5 s `kill_timeout` for the
+ * refresher and the close. Caveat for whoever revisits it: n=16, one night,
+ * one provider, one machine.
+ *
+ * The bound is comfortable rather than tight, and it is not a latency budget
+ * to shave. Every one of those measurements is a *healthy* send; a hung one
+ * sits on `SmtpAdapter`'s 15 s `connectionTimeout`, which no bound under the
+ * grace period can wait out. This number is here to stop a hung send eating
+ * the shutdown, not to make a slow one fit -- so trimming it buys nothing and
+ * costs the fast case it exists to save.
+ */
+export const MAIL_DRAIN_MS = 2000
+
+/**
+ * Wait for in-flight mail, but never longer than the bound.
+ *
+ * A helper rather than two inline `Promise.race`s because of what a plain one
+ * does: the losing timer is still a *ref'd* timer, so it holds the event loop
+ * open for the whole bound after the race has already resolved. Measured --
+ * `Promise.race([Promise.resolve(), delay(2000)])` resolves in 0 ms and the
+ * process then exits at 2002 ms. That would have added two seconds to every
+ * shutdown, out of a five-second grace, on a repository that deploys dozens of
+ * times a day, and no test would have shown it: the race resolves correctly
+ * and only the process's exit is late.
+ *
+ * So the timer is abortable and is aborted on the way out, and its rejection
+ * is swallowed because a cancelled loser in a settled race is expected, not an
+ * error. Same measurement with the abort: exits in 4 ms.
+ */
+export async function drainMail(mailer, ms = MAIL_DRAIN_MS) {
+  const stop = new AbortController()
+  const bound = delay(ms, undefined, { signal: stop.signal }).catch(() => {})
+  try {
+    await Promise.race([mailer.idle(), bound])
+  } finally {
+    stop.abort()
+  }
+}
 
 /** A correlation label for an address that never reveals it. */
 export const addressLabel = address => logLabel(PRIVATE, String(address || '').trim().toLowerCase())
@@ -256,20 +315,116 @@ export class Mailer {
     const row = this.outbox.record({ requestId: request.id, type, templateVersion: template.version, data, to, toName })
     this.log(`mail: queued ${row.id} ${type} to=${addressLabel(to)}`)
 
-    const rendered = template.render(data)
+    await this.deliver(row, template.render(data))
+    return this.outbox.get(row.id)
+  }
+
+  /**
+   * Hand one recorded row to the provider and record what came back. The
+   * shared half of `notify()` (a first send) and `resend()` (a replay).
+   *
+   * The stamp goes on before the await, and that ordering is the fix #285
+   * asked for: the process can die inside `send()`, so the row has to
+   * already say an attempt began. Written after, it would tell us nothing
+   * about the case it exists for.
+   *
+   * Not stamped under the null adapter, and this is not a detail. `attempted_at`
+   * means "handed to something that could actually deliver it", which is what
+   * Ken's resend decision turns on. `NullAdapter` sends nothing by design, so
+   * stamping there would mark every outbox-only row -- the gate's, and every
+   * pre-SMTP deploy's -- as *may have arrived*, which is precisely backwards.
+   */
+  async deliver(row, rendered) {
+    if (this.adapter.name !== 'none') this.outbox.markAttempted(row.id)
     try {
       const { providerId, sent } = await this.adapter.send({
-        from: this.config.from, to, toName, replyTo: this.config.ownerEmail || undefined, ...rendered,
+        from: this.config.from, to: row.to, toName: row.toName,
+        replyTo: this.config.ownerEmail || undefined, ...rendered,
       })
       if (sent) {
         this.outbox.updateStatus(row.id, { status: 'sent', providerId })
-        this.log(`mail: sent ${row.id} ${type} provider=${providerId ?? '-'}`)
+        this.log(`mail: sent ${row.id} ${row.type} provider=${providerId ?? '-'}`)
       }
     } catch (error) {
       this.outbox.updateStatus(row.id, { status: 'failed', error: String(error?.message || error).slice(0, 500) })
-      this.log(`mail: failed ${row.id} ${type}`)
+      this.log(`mail: failed ${row.id} ${row.type}`)
     }
     return this.outbox.get(row.id)
+  }
+
+  /**
+   * Send a recorded row again, replaying what was composed rather than
+   * composing it afresh.
+   *
+   * `template.render(row.data)` against the stored row, not `notify()`.
+   * `notify()` would re-read the request and `record()` a second row, and
+   * both halves of that are wrong here. The second row would make the outbox
+   * stop meaning what it says -- one message, one record. And re-reading the
+   * request would compose a *different document*: if the owner adjusted the
+   * price between the first attempt and this one, the customer would receive
+   * two quotes with different totals, each claiming to be the quote. A
+   * duplicate of the same document is a nuisance; two different documents are
+   * a dispute.
+   *
+   * A row whose stored `template_version` is not the template's current
+   * version is refused rather than rendered. The stored `data` was composed
+   * for the older template, and rendering it through a newer one is exactly
+   * the shape of mistake that shipped an empty invoice in every quote email
+   * (a fixture whose keys the template did not read). There is no version 2
+   * of anything today; this is the guard for the day there is.
+   */
+  async resend(id) {
+    const row = this.outbox.get(id)
+    if (!row) throw new InputError(`No outbox message ${id}.`, 404)
+    const template = this.templates[row.type]
+    if (!template) throw new InputError(`No mail template for ${row.type}.`)
+    if (row.templateVersion !== template.version) {
+      throw new InputError(`Outbox message ${id} was composed for ${row.type} v${row.templateVersion}; the template is now v${template.version}.`)
+    }
+    return this.deliver(row, template.render(row.data))
+  }
+
+  /**
+   * Send the owner alerts a previous shutdown stranded. Runs once at boot.
+   *
+   * Only `request-arrived`, and only ever the owner's own mail (see
+   * `AUTO_RETRY_TYPES`). A duplicate alert costs Ken a second line in his
+   * inbox; a missed one means he does not know a customer is waiting, which
+   * is the harm the 2026-09-06 outage actually did. Customer-facing mail is
+   * never retried here at any cost -- it is surfaced on the owner screen for
+   * him to resend by hand, because a manual resend makes the duplicate risk
+   * his judgement instead of this function's guess, and that is the right
+   * allocation for anything carrying money.
+   *
+   * Gated on the probe rather than attempted blindly: with a dead credential
+   * this repository would otherwise fire a retry storm against it, since it
+   * deploys on every non-docs push to `main`. `unknown` is not `ok` -- a probe
+   * that could not run says nothing about whether sending would work, and the
+   * safe reading of "I don't know" is "don't send".
+   *
+   * A row that fails here becomes `failed`, which is the honest record and
+   * puts it in front of `unresolvedFailures()`. It is not retried again: it
+   * now carries `attempted_at`, so it has left the retryable set for good.
+   * At-least-once with escalation, not an infinite loop.
+   */
+  async recoverStrandedOwnerAlerts({ limit = 25 } = {}) {
+    const skip = reason => ({ found: 0, sent: 0, failed: 0, skipped: reason })
+    if (this.adapter.name === 'none') return skip('no provider configured')
+    if (this.smtpStatus.status !== 'ok') return skip(`smtp status is ${this.smtpStatus.status}`)
+
+    let sent = 0
+    let failed = 0
+    const rows = AUTO_RETRY_TYPES.flatMap(type => this.outbox.retryable({ type, limit }))
+    for (const row of rows) {
+      const after = await this.resend(row.id).catch(error => {
+        this.log(`mail: recovery of ${row.id} threw: ${error.message}`)
+        return null
+      })
+      if (after?.status === 'sent') sent += 1
+      else failed += 1
+    }
+    if (rows.length) this.log(`mail: recovered ${sent} stranded owner alert(s), ${failed} still failing`)
+    return { found: rows.length, sent, failed, skipped: null }
   }
 
   /**
@@ -284,7 +439,23 @@ export class Mailer {
     return task
   }
 
-  async idle() { await Promise.allSettled([...this.inFlight]) }
+  /**
+   * Wait for every in-flight send, including ones started while waiting.
+   *
+   * The loop is not decoration. A single `Promise.allSettled([...inFlight])`
+   * takes one snapshot, and shutdown calls `server.close()` first -- which
+   * stops new connections but lets in-flight requests finish, and those
+   * requests call `after()`. Measured on the snapshot form: a message
+   * enqueued one tick into the drain was still undelivered when `idle()`
+   * resolved, with `inFlight.size === 1`. The loop delivered both.
+   *
+   * It terminates because `after()` registers its `finally` synchronously, so
+   * the set is already empty by the time `allSettled` resolves -- checked,
+   * because a `while` over a set someone else empties is worth checking.
+   */
+  async idle() {
+    while (this.inFlight.size) await Promise.allSettled([...this.inFlight])
+  }
 }
 
 /** The mailer for a server: adapter picked by configuration, nothing else. */

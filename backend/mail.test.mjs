@@ -1,10 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { tmpdir } from 'node:os'
 import { Inventory } from './inventory.mjs'
 import { Quotes } from './quotes.mjs'
 import { Outbox, OUTBOX_PERSONAL_DATA_KEYS } from './outbox.mjs'
-import { Mailer, NullAdapter, SmtpAdapter, addressLabel, describeMail, readMailConfig } from './mail.mjs'
+import { AUTO_RETRY_TYPES, Mailer, drainMail, NullAdapter, SmtpAdapter, addressLabel, describeMail, readMailConfig } from './mail.mjs'
 import { MAIL_TYPES, TEMPLATES } from './mail-templates.mjs'
 import { createApi, createMailStatusApi, createRequestsApi } from './api.mjs'
 import { isMonitorAuthorized, readMonitorConfig } from './auth.mjs'
@@ -657,4 +662,275 @@ test('POST /api/owner/outbox/:id/resolve answers 400, not 500, on a note that is
   assert.equal(object.status, 400)
 
   assert.equal(outbox.get(message.id).resolvedAt, null, 'neither refused call left the row half-resolved')
+})
+
+// ---------------------------------------------------------------------------
+// #285: an interrupted send used to be indistinguishable from one that never
+// happened. These are the measurements that justified the column, written as
+// tests so they keep being true.
+
+/** A world on disk rather than in memory, so it can be reopened after a close. */
+function durableWorld(t, adapter) {
+  const dir = mkdtempSync(join(tmpdir(), 'kmt-mail-285-'))
+  const dbPath = join(dir, 'owner.sqlite')
+  const opened = []
+  const open = () => {
+    const inventory = new Inventory(dbPath, [SIZE])
+    opened.push(inventory)
+    return { inventory, quotes: new Quotes(inventory), outbox: new Outbox(inventory.db) }
+  }
+  // Close every handle before removing the directory. On Windows an open
+  // SQLite file makes rmSync fail EPERM, and t.after hooks run in
+  // registration order -- so this hook does both rather than trusting a
+  // per-test close registered later to have already run.
+  t.after(() => {
+    for (const inventory of opened) { try { inventory.close() } catch { /* already closed */ } }
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+  })
+  const first = open()
+  first.inventory.importSnapshot(snapshot([tire()]))
+  const mailer = new Mailer({
+    outbox: first.outbox, quotes: first.quotes, adapter, config: CONFIG,
+    origin: 'https://kensmobiletire.com', log: () => {},
+  })
+  return { ...first, mailer, open }
+}
+
+/** An adapter that blocks mid-send until released -- SIGTERM during SMTP. */
+function blockingAdapter() {
+  let release
+  const blocked = new Promise(resolve => { release = resolve })
+  return { release: () => release(), adapter: { name: 'smtp', async send() { await blocked; return { providerId: '<delivered@x>', sent: true } } } }
+}
+
+/** The rendering context a template stores, built the way notify() builds it. */
+function dataFor(world, requestId, type, to, toName) {
+  const found = world.quotes.get(requestId, 'owner')
+  return TEMPLATES[type].data({ request: found.request, quote: found.quote, tire: null, origin: 'https://x', to, toName })
+}
+
+test('#285: a send interrupted by shutdown leaves queued -- but now says an attempt was made', async t => {
+  const { release, adapter } = blockingAdapter()
+  const world = durableWorld(t, adapter)
+  const submitted = world.quotes.submit(form())
+  const task = world.mailer.after('request-arrived', submitted.request.id)
+  await new Promise(resolve => setImmediate(resolve))
+
+  // Shutdown without draining: the database closes under the in-flight send.
+  world.inventory.close()
+  release()
+  await task
+
+  const reopened = world.open()
+  const row = reopened.outbox.forRequest(submitted.request.id)[0]
+
+  assert.equal(row.status, 'queued', 'the status update never landed -- that is the bug, and it is unchanged')
+  assert.equal(row.providerId, null)
+  assert.notEqual(row.attemptedAt, null,
+    'but the row now records that an attempt began, which is the point: the message may have been delivered')
+  assert.deepEqual(reopened.outbox.retryable({ type: 'request-arrived' }), [],
+    'so it is not eligible for an automatic resend -- no duplicate to anyone')
+})
+
+test('#285: the same message is NOT stranded when shutdown drains first', async t => {
+  const { release, adapter } = blockingAdapter()
+  const world = durableWorld(t, adapter)
+  const submitted = world.quotes.submit(form())
+  world.mailer.after('request-arrived', submitted.request.id)
+  await new Promise(resolve => setImmediate(resolve))
+
+  setTimeout(release, 5)
+  await world.mailer.idle()          // what shutdown() now awaits, bounded
+  world.inventory.close()
+
+  const reopened = world.open()
+  const row = reopened.outbox.forRequest(submitted.request.id)[0]
+  assert.equal(row.status, 'sent', 'drained before the close, the outcome is recorded')
+  assert.equal(row.providerId, '<delivered@x>')
+})
+
+test('#285: idle() waits for mail enqueued after the drain started, not just a snapshot', async t => {
+  // server.close() lets in-flight requests finish, and those call after().
+  // A single Promise.allSettled snapshot misses whatever they enqueue next.
+  const delivered = []
+  const adapter = {
+    name: 'smtp',
+    async send(message) { await new Promise(r => setTimeout(r, 5)); delivered.push(message.to); return { providerId: 'x', sent: true } },
+  }
+  const world = durableWorld(t, adapter)
+  const a = world.quotes.submit(form())
+  const b = world.quotes.submit(form())
+
+  world.mailer.after('request-arrived', a.request.id)
+  const draining = world.mailer.idle()
+  setTimeout(() => world.mailer.after('request-arrived', b.request.id), 1)
+  await draining
+
+  assert.equal(delivered.length, 2, 'both messages were delivered before idle() resolved')
+  assert.equal(world.mailer.inFlight.size, 0, 'and the loop terminated rather than spinning')
+})
+
+test('#285: a stranded owner alert is recovered at boot, and only ever an owner alert', async t => {
+  const sent = []
+  const adapter = { name: 'smtp', async send(message) { sent.push(message.to); return { providerId: '<r@x>', sent: true } } }
+  const world = durableWorld(t, adapter)
+  const request = world.quotes.submit(form()).request
+
+  // Two rows a crash could have left behind: the owner's alert and the
+  // customer's acknowledgement, both queued, neither attempted.
+  const owner = world.outbox.record({
+    requestId: request.id, type: 'request-arrived', templateVersion: 1,
+    data: dataFor(world, request.id, 'request-arrived', CONFIG.ownerEmail, CONFIG.ownerName),
+    to: CONFIG.ownerEmail, toName: CONFIG.ownerName,
+  })
+  const customer = world.outbox.record({
+    requestId: request.id, type: 'request-received', templateVersion: 1,
+    data: dataFor(world, request.id, 'request-received', 'jamie@example.com', 'Jamie Rivera'),
+    to: 'jamie@example.com', toName: 'Jamie Rivera',
+  })
+
+  world.mailer.smtpStatus = { status: 'ok', checkedAt: new Date().toISOString(), error: null }
+  const result = await world.mailer.recoverStrandedOwnerAlerts()
+
+  assert.deepEqual(result, { found: 1, sent: 1, failed: 0, skipped: null })
+  assert.deepEqual(sent, [CONFIG.ownerEmail], 'the owner alert went again; the customer acknowledgement did not')
+  assert.equal(world.outbox.get(owner.id).status, 'sent')
+  assert.equal(world.outbox.get(customer.id).status, 'queued',
+    'a customer message is Ken to resend by hand, never this pass')
+
+  const second = await world.mailer.recoverStrandedOwnerAlerts()
+  assert.equal(second.found, 0, 'and a recovered row is not recovered twice -- attempted_at took it out of the set')
+})
+
+test('#285: recovery refuses to send unless the probe says the seam is good', async t => {
+  const sent = []
+  const adapter = { name: 'smtp', async send(message) { sent.push(message.to); return { providerId: 'x', sent: true } } }
+  const world = durableWorld(t, adapter)
+  const request = world.quotes.submit(form()).request
+  world.outbox.record({
+    requestId: request.id, type: 'request-arrived',
+    data: dataFor(world, request.id, 'request-arrived', CONFIG.ownerEmail, CONFIG.ownerName),
+    to: CONFIG.ownerEmail, toName: CONFIG.ownerName,
+  })
+
+  // The absent case, not a wrong one: at boot the probe has not answered yet.
+  assert.equal(world.mailer.smtpStatus.status, 'unknown')
+  assert.deepEqual(await world.mailer.recoverStrandedOwnerAlerts(),
+    { found: 0, sent: 0, failed: 0, skipped: 'smtp status is unknown' })
+
+  world.mailer.smtpStatus = { status: 'failing', checkedAt: 'now', error: '535 5.7.8 BadCredentials' }
+  assert.equal((await world.mailer.recoverStrandedOwnerAlerts()).skipped, 'smtp status is failing',
+    'a known-dead credential is not worth a retry storm across dozens of deploys a day')
+  assert.deepEqual(sent, [], 'nothing was sent in either case')
+
+  const nullWorld = durableWorld(t, new NullAdapter())
+  assert.equal((await nullWorld.mailer.recoverStrandedOwnerAlerts()).skipped, 'no provider configured')
+})
+
+test('#285: the null adapter never stamps an attempt -- outbox-only rows did not "maybe arrive"', async t => {
+  const world = durableWorld(t, new NullAdapter())
+  const submitted = world.quotes.submit(form())
+  await world.mailer.after('request-received', submitted.request.id)
+
+  const row = world.outbox.forRequest(submitted.request.id)[0]
+  assert.equal(row.status, 'queued')
+  assert.equal(row.attemptedAt, null,
+    'NullAdapter sends nothing, so stamping here would mark every gate and pre-SMTP row as possibly-delivered -- backwards')
+})
+
+test('#285: a resend replays the stored row and never re-derives the message', async t => {
+  const sent = []
+  const adapter = { name: 'smtp', async send(message) { sent.push(message); return { providerId: '<again@x>', sent: true } } }
+  const world = durableWorld(t, adapter)
+  const request = world.quotes.submit(form()).request
+  const row = world.outbox.record({
+    requestId: request.id, type: 'request-arrived', templateVersion: 1,
+    data: dataFor(world, request.id, 'request-arrived', CONFIG.ownerEmail, CONFIG.ownerName),
+    to: CONFIG.ownerEmail, toName: CONFIG.ownerName,
+  })
+
+  const before = world.outbox.list({ limit: 50 }).length
+  await world.mailer.resend(row.id)
+  assert.equal(world.outbox.list({ limit: 50 }).length, before, 'the same row is updated; no second record for one message')
+  assert.equal(world.outbox.get(row.id).status, 'sent')
+  assert.equal(sent.length, 1)
+
+  // The guard for the day a template gains a version 2: the stored data was
+  // composed for v1 and must not be poured through a different template.
+  const stale = world.outbox.record({
+    requestId: request.id, type: 'request-arrived', templateVersion: 2,
+    data: { any: 'thing' }, to: CONFIG.ownerEmail, toName: CONFIG.ownerName,
+  })
+  await assert.rejects(() => world.mailer.resend(stale.id), /composed for request-arrived v2/)
+  await assert.rejects(() => world.mailer.resend('nope'), /No outbox message/)
+})
+
+test('#285: AUTO_RETRY_TYPES cannot drift into a customer-facing message', () => {
+  assert.deepEqual(AUTO_RETRY_TYPES, ['request-arrived'])
+  for (const type of AUTO_RETRY_TYPES) {
+    assert.ok(TEMPLATES[type], type + ' is a real template')
+    assert.equal(TEMPLATES[type].audience, 'owner',
+      type + ' must be owner-audience: a duplicate costs Ken an inbox line, a duplicate quote costs a dispute')
+  }
+})
+
+test('#285: drainMail returns as soon as the mail is done, and does not hold the process open', async () => {
+  // Two claims, and only the second one needed a subprocess to see.
+  const idle = { inFlight: new Set(), async idle() {} }
+  const started = Date.now()
+  await drainMail(idle, 5000)
+  assert.ok(Date.now() - started < 250, 'it returns on the mail, not on the bound')
+
+  // The bound still applies when the mail never finishes.
+  const stuck = { inFlight: new Set(), idle: () => new Promise(() => {}) }
+  const t0 = Date.now()
+  await drainMail(stuck, 120)
+  const waited = Date.now() - t0
+  assert.ok(waited >= 100 && waited < 2000, `gave up at the bound, waited ${waited}ms`)
+
+  // And the part no in-process assertion can see: a plain
+  // Promise.race([idle(), delay(ms)]) resolves immediately and STILL keeps a
+  // ref'd timer alive, so the process lingers for the whole bound. Measured at
+  // 2002 ms before drainMail aborted the loser. Only a real exit shows it.
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import { drainMail } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, 'mail.mjs')).href)}
+    const t0 = Date.now()
+    await drainMail({ inFlight: new Set(), async idle() {} }, 4000)
+    process.on('exit', () => process.stdout.write(String(Date.now() - t0)))
+  `], { encoding: 'utf8' })
+  assert.equal(child.status, 0, child.stderr)
+  const exitedAfter = Number(child.stdout)
+  assert.ok(exitedAfter < 1000,
+    `the process exited ${exitedAfter}ms after draining -- a ref'd loser would hold it for the full 4000ms bound`)
+})
+
+test('#285: a failed resend stays honestly failed and carries the NEW reason', async t => {
+  // Ken is looking at this row precisely because the first attempt did not
+  // work, so "failed again, same 535" and "failed again, different error"
+  // have to lead him somewhere different. A resend that silently re-queued,
+  // or that left the first attempt's error in place, would collapse them.
+  let failWith = new Error('535 5.7.8 BadCredentials')
+  const adapter = { name: 'smtp', async send() { throw failWith } }
+  const world = durableWorld(t, adapter)
+  const request = world.quotes.submit(form()).request
+  const row = world.outbox.record({
+    requestId: request.id, type: 'request-arrived', templateVersion: 1,
+    data: dataFor(world, request.id, 'request-arrived', CONFIG.ownerEmail, CONFIG.ownerName),
+    to: CONFIG.ownerEmail, toName: CONFIG.ownerName,
+  })
+
+  await world.mailer.resend(row.id)
+  const first = world.outbox.get(row.id)
+  assert.equal(first.status, 'failed')
+  assert.match(first.error, /535 5\.7\.8/)
+
+  failWith = new Error('421 4.7.0 Try again later')
+  await world.mailer.resend(row.id)
+  const second = world.outbox.get(row.id)
+
+  assert.equal(second.status, 'failed', 'still failed -- never silently back to queued, which would read as "owed and untried"')
+  assert.match(second.error, /421 4\.7\.0/, 'and carries the second attempt\'s reason')
+  assert.doesNotMatch(second.error, /535/, 'not the first attempt\'s, which is no longer what is wrong')
+  assert.ok(second.attemptedAt >= first.attemptedAt,
+    'and the attempt stamp moves to the resend: after Ken retries, "may this have arrived" is about the retry')
 })

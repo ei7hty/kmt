@@ -398,3 +398,133 @@ test('unresolvedFailures is not a recency window: a failure stays visible past 2
   assert.equal(unresolved.length, 1)
   assert.equal(unresolved[0].id, failure.id, 'but the failure-filtered query still sees it -- no scan window to scroll past')
 })
+
+// ---------------------------------------------------------------------------
+// #285: attempt tracking. `queued` did not mean "not sent" -- a crash between
+// a successful send and updateStatus left `queued` on a delivered message,
+// byte-identical to an ordinary null-adapter row. These cover the column that
+// separates them and the watermark that keeps it honest about history.
+
+test('markAttempted stamps the latest attempt and leaves updated_at alone', t => {
+  const { outbox, requestId, db } = setup(t)
+  const message = outbox.record({ requestId, type: 'request-arrived', data: renderData(), to: 'o@example.com', toName: 'Ken' })
+  assert.equal(message.attemptedAt, null, 'a recorded message has not been attempted yet')
+
+  // Pinned to a value no clock in this run can produce. Comparing two
+  // now() calls that land in one millisecond passes whether or not the
+  // code is right -- which is how an earlier version of this test sat
+  // green with the safeguard deleted.
+  const ANCIENT = '2020-01-01T00:00:00.000Z'
+  db.prepare('UPDATE outbox SET updated_at=? WHERE id=?').run(ANCIENT, message.id)
+
+  const attempted = outbox.markAttempted(message.id)
+  assert.match(attempted.attemptedAt, /^\d{4}-\d\d-\d\dT/, 'the attempt is stamped')
+  assert.equal(attempted.status, 'queued', 'and the status is untouched: nothing has come back yet')
+  assert.equal(message.deliveryRisk, 'none', 'before the attempt, resending it risks nothing')
+  assert.equal(attempted.deliveryRisk, 'possible-duplicate', 'after it, the outcome is unrecorded -- it may already have arrived')
+  assert.equal(attempted.updatedAt, ANCIENT,
+    'updated_at is NOT moved -- updated_at minus created_at is how long a send took, and the drain bound is derived from it')
+
+  // NOT idempotent, and deliberately so: this column says when the message
+  // was LAST handed to a provider, so a resend moves it. Keeping the first
+  // stamp would answer a question nobody asks -- after Ken resends, "may this
+  // have arrived" is about the resend, not the attempt he knows failed.
+  db.prepare('UPDATE outbox SET attempted_at=? WHERE id=?').run(ANCIENT, message.id)
+  const again = outbox.markAttempted(message.id)
+  assert.notEqual(again.attemptedAt, ANCIENT, 'a second attempt moves the stamp to the second attempt')
+  assert.ok(again.attemptedAt > ANCIENT)
+  assert.throws(() => outbox.markAttempted('nope'), /No such outbox message/)
+})
+
+test('retryable refuses to run without a type, rather than defaulting to every type', t => {
+  const { outbox } = setup(t)
+  // The absent case, not the wrong one. A default of "all types" would be the
+  // customer-facing double-send this whole change exists to prevent, and it
+  // would look exactly like a working call.
+  assert.throws(() => outbox.retryable(), /needs the message type/)
+  assert.throws(() => outbox.retryable({}), /needs the message type/)
+  assert.throws(() => outbox.retryable({ type: '' }), /needs the message type/)
+  assert.throws(() => outbox.retryable({ type: '  ' }), /needs the message type/)
+})
+
+test('retryable returns only rows that are owed, unattempted, unresolved and of the asked-for type', t => {
+  const { outbox, requestId } = setup(t)
+  const make = (type, to) => outbox.record({ requestId, type, data: renderData(), to, toName: 'X' })
+
+  make('request-arrived', 'owed@example.com')
+  const attempted = make('request-arrived', 'attempted@example.com')
+  const resolved = make('request-arrived', 'resolved@example.com')
+  const failed = make('request-arrived', 'failed@example.com')
+  const customer = make('quote-sent', 'customer@example.com')
+
+  outbox.markAttempted(attempted.id)
+  outbox.resolve(resolved.id, 'settled')
+  outbox.updateStatus(failed.id, { status: 'failed', error: '535 5.7.8' })
+
+  const rows = outbox.retryable({ type: 'request-arrived' })
+  assert.deepEqual(rows.map(row => row.to), ['owed@example.com'])
+  assert.equal(rows.some(row => row.id === attempted.id), false, 'an attempted row may already have arrived -- never automatically again')
+  assert.equal(rows.some(row => row.id === resolved.id), false, 'a settled row is not owed')
+  assert.equal(rows.some(row => row.id === failed.id), false, 'a failure is Ken\'s decision through the owner screen, not this query\'s')
+  assert.equal(rows.some(row => row.id === customer.id), false, 'and a customer-audience row is never returned for an owner type')
+
+  assert.equal(outbox.retryable({ type: 'request-arrived', limit: 0 }).length, 0)
+})
+
+test('the watermark is write-once: a later boot never moves it forward', t => {
+  const { outbox, db } = setup(t)
+  const first = outbox.attemptTrackingFrom()
+  assert.match(first, /^\d{4}-\d\d-\d\dT/, 'the migration recorded when attempt tracking began')
+
+  // Pinned to a value no clock in this run can produce. Comparing two
+  // now() calls that land in one millisecond passes whether or not the
+  // code is right -- which is how an earlier version of this test sat
+  // green with the safeguard deleted.
+  const ANCIENT = '2020-01-01T00:00:00.000Z'
+  db.prepare('UPDATE metadata SET value=? WHERE key=?').run(JSON.stringify(ANCIENT), 'outboxAttemptTrackingFrom')
+
+  const second = new Outbox(db).attemptTrackingFrom()   // a later "boot"
+  const third = new Outbox(db).attemptTrackingFrom()
+  assert.equal(second, ANCIENT)
+  assert.equal(third, ANCIENT,
+    'INSERT OR IGNORE, never REPLACE: a watermark that advanced each boot would exclude exactly the rows that boot stranded')
+})
+
+test('rows written before attempt tracking began are never retryable, however they look', t => {
+  const { outbox, requestId, db } = setup(t)
+  // Exactly the shape of DB ADMIN's eight pre-SMTP rows (#367): queued, never
+  // attempted, unresolved -- and written before the column existed, so
+  // attempted_at tells us nothing about them.
+  const legacy = outbox.record({ requestId, type: 'request-arrived', data: renderData(), to: 'legacy@example.com', toName: 'Ken' })
+  db.prepare('UPDATE outbox SET created_at=? WHERE id=?').run('2026-09-06T19:30:00.000Z', legacy.id)
+
+  assert.equal(outbox.get(legacy.id).status, 'queued')
+  assert.equal(outbox.get(legacy.id).attemptedAt, null)
+  assert.equal(outbox.get(legacy.id).resolvedAt, null)
+  assert.deepEqual(outbox.retryable({ type: 'request-arrived' }), [],
+    'queued + unattempted + unresolved and STILL not retryable -- the watermark is the only thing that knows')
+})
+
+test('the watermark boundary is >=, decided rather than fallen into', t => {
+  const { outbox, requestId, db } = setup(t)
+  const watermark = outbox.attemptTrackingFrom()
+  const onIt = outbox.record({ requestId, type: 'request-arrived', data: renderData(), to: 'same-ms@example.com', toName: 'Ken' })
+  const before = outbox.record({ requestId, type: 'request-arrived', data: renderData(), to: 'one-ms-earlier@example.com', toName: 'Ken' })
+  db.prepare('UPDATE outbox SET created_at=? WHERE id=?').run(watermark, onIt.id)
+  db.prepare('UPDATE outbox SET created_at=? WHERE id=?')
+    .run(new Date(Date.parse(watermark) - 1).toISOString(), before.id)
+
+  const rows = outbox.retryable({ type: 'request-arrived' }).map(row => row.to)
+  assert.ok(rows.includes('same-ms@example.com'),
+    'a row sharing the watermark\'s millisecond was written after tracking existed: in scope')
+  assert.equal(rows.includes('one-ms-earlier@example.com'), false, 'one millisecond earlier is out')
+})
+
+test('retryable answers nothing when there is no watermark to compare against', t => {
+  const { outbox, db } = setup(t)
+  // Fail safe, not open: no watermark means the column cannot be trusted as a
+  // discriminator, so nothing is eligible rather than everything.
+  db.prepare('DELETE FROM metadata WHERE key=?').run('outboxAttemptTrackingFrom')
+  assert.equal(outbox.attemptTrackingFrom(), null)
+  assert.deepEqual(outbox.retryable({ type: 'request-arrived' }), [])
+})
