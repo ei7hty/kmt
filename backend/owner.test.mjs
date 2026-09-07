@@ -1756,6 +1756,13 @@ test('scripts/import-tires.mjs accepts a minted session, checked before the pass
 
   // A wrong minted cookie must not fall back to the (unset) password and
   // succeed anyway -- it should fail the same way a wrong password does.
+  // On its own this cannot tell "sent the bad cookie and was refused" apart
+  // from "ignored the cookie, sent nothing, was refused the same way" --
+  // both produce exit 1 here. It is the positive assertion right below,
+  // proving a *correct* minted cookie succeeds, that rules the second
+  // reading out: if the cookie were never being sent, that call would fail
+  // too. Keep both together -- weakening the one below silently empties
+  // this one of what it proves.
   const wrongMint = await run({ KMT_OWNER_SESSION_COOKIE: 'kmt_owner=not-a-real-session' })
   assert.equal(wrongMint.code, 1)
   assert.match(wrongMint.stderr, /wants a credential/)
