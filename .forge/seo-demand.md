@@ -322,3 +322,104 @@ a town on the "covered" list is not a promise every address in it clears 25 mi.
 This is a truthful-copy constraint for MARKETING, not an error in the list. The
 sample above is ~65 towns chosen to bracket the 25-mile line; it is
 representative of the band, not the exhaustive set of ZIPs within it.
+
+
+---
+
+## RESOLVED 2026-09-07 — the copy defect this document describes no longer exists
+
+Appended by the PRODUCT MANAGER / OWNER AGENT (`local_44d1e1f9`), the seat the
+three positioning questions above were routed to. **The author of this document
+is archived, so nobody else was positioned to close the loop.**
+
+**Read this section before acting on anything above it.** The findings were
+acted on within hours of being written; **the sections describing them were
+not updated, and their line numbers now point at different text.** That is the
+failure `NOTES.md` records — *after you make a thing true, grep for the
+sentences that still say it is not* — and this time it applies to me, because
+I made the ruling that got executed.
+
+### What was fixed
+
+**The two-speed defect is gone from the page.** All three lines I ruled were
+carrying the load together have been removed:
+
+| the document says | the page now says |
+| --- | --- |
+| `:436` lede "Fast, reliable & always on the move." | "You deal with me, start to finish." |
+| `:437` strip "FAST & RELIABLE / Quick response you can count on." | "I COME TO YOU / Home, work or roadside" |
+| `<title>` = brand only, no job term, no place | "Mobile Tire Installation in Malden, MA | Ken's Mobile Tire" (#356) |
+
+**No speed claim remains on the marketing surface.** The strip's other two
+panels — "PRICE UP FRONT / See the whole quote before I turn up" and "QUALITY
+SERVICE / Professional care every time" — make claims the product actually
+keeps.
+
+**And the `/inquiry` recommendation landed too**: the button reads "More than
+tires? Tell me", which states the channel instead of implying dispatch.
+
+### The "installation is absent everywhere" finding is closed, deliberately
+
+**It was this document's most actionable line, and #356 acted on exactly it.**
+"Installation" now leads the `<title>` and `og:title`.
+
+**It is still absent from the meta description, the JSON-LD and the H1 — and
+that is a decision, not a gap.** The reasoning is recorded in `index.html`
+beside the tag: the title carries *installation*, the description and H1 carry
+*service*, so between them they cover both words rather than repeating one.
+**Do not "fix" this.**
+
+### "Roadside assistance" stays, and that is not an oversight
+
+The hero lede still reads "Tires. Repairs. Roadside assistance." **Correct.**
+Ken does come out for roadside, off-platform — so the service is real. **What
+was wrong was never the word; it was the speed claim sitting beside it**,
+spanning two services with opposite timescales. Removing the speed claim
+resolves it. **The word is honest and it stays.**
+
+### ANSWERED by the owner, 2026-09-07 — do not chase emergency intent
+
+**This was the last open question in this document. Ken answered it directly:**
+
+> **"DO NOT CHASE — MAIN PURPOSE OF WEBSITE IS FUNNEL FOR TIRE SALES &
+> SCHEDULABLE WORK."**
+
+**So finding #1 above resolves, and it resolves harder than the analysis
+reached.** The document argued the emergency curve was unservable *by
+construction* (`MIN_LEAD_DAYS = 7`) and therefore a bad target. **The owner's
+answer is stronger and different in kind: it is not that we cannot serve it, it
+is that it is not what this website is for.** Roadside is real, off-platform,
+and stays that way.
+
+**This settles the positioning question the whole document was written to
+support.** The target is the reachable slice it identified — **planned
+replacement, booked ahead, fitted at the customer's location** — and the
+vocabulary that goes with it (*install / installation / fitted / buy*).
+#356 already moved the `<title>` to exactly that intent, before this ruling
+existed; **the ruling confirms it was right.**
+
+#### What the ruling governs
+
+**The acquisition surface**: `<title>`, meta description, OG tags, the
+`AutoRepair` JSON-LD, `sitemap.xml`, and any future content written to rank.
+**No emergency or same-day vocabulary is to be added to any of them** — not
+"24/7", not "emergency", not "flat tire help", not "same day".
+
+**This is now a settled ruling, not a live question.** Anyone reopening it needs
+the owner, not a fresh SEO analysis.
+
+#### What it does not govern, and this distinction matters
+
+**It does not remove roadside from the site.** "Tires. Repairs. Roadside
+assistance." stays in the hero lede, and `/inquiry` stays as its channel.
+
+**Not chasing an intent in search and denying the service exists are different
+acts.** Ken does roadside and is paid for it; a visitor already on the page who
+needs it should still find the way to reach him. **The ruling is about what the
+site goes looking for, not about what it admits to.**
+
+**The ranking, however, is now explicit**: tyres and schedulable work lead;
+roadside is subordinate and stays subordinate. **If anyone proposes elevating
+it — into the title, the H1, the CTA, or the strip — the answer is already no.**
+
+Everything else above is closed.
