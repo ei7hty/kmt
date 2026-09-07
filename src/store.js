@@ -191,6 +191,13 @@ export async function resolveOutboxMessage(id, note) {
   })
 }
 
+/** Retry the exact message already stored in the outbox; the server returns its updated row. */
+export async function resendOutboxMessage(id) {
+  return call(`/api/owner/outbox/${encodeURIComponent(id)}/resend`, {
+    method: 'POST',
+  })
+}
+
 /**
  * Failed sends nobody has looked at yet -- the count MailAlert.jsx puts in
  * front of Ken on a screen he actually visits, since Outbox itself is not
