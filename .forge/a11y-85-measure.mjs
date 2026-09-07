@@ -19,6 +19,8 @@ import { dedupe, hex, lum, measure, ratio } from './contrast-measure.mjs'
 const BASE = process.env.AUDIT_BASE
 if (!BASE) { console.error('Set AUDIT_BASE explicitly; the audits default to different ports and this one refuses to guess.'); process.exit(2) }
 const VIEWPORT = { width: 375, height: 812 }
+/** One address per script, not shared across the gate -- see audit-ui.mjs's submitRequest. */
+const AUDIT_EMAIL = 'jamie+a11y-85-measure@example.com'
 
 /**
  * A preferred date well clear of today: the server refuses anything inside
@@ -104,7 +106,7 @@ try {
     await page.fill('#location', '12 Example St, Everett, MA 02149')
     await page.fill('#date', SOON)
     await page.fill('#customerName', 'Jamie Rivera')
-    await page.fill('#customerEmail', 'jamie@example.com')
+    await page.fill('#customerEmail', AUDIT_EMAIL)
     await page.click('button[type="submit"]', { timeout: 15000 })
     await page.waitForSelector('.success-message', { timeout: 15000 })
     results.push(await measure(page, 'acknowledgement (submitted)'))
@@ -117,7 +119,7 @@ try {
   // Owner: sign-in, inventory, quotes with a draft and an exception; approve one.
   {
     const { context, page } = await freshPage(browser, VIEWPORT)
-    await submitRequest(page, { base: BASE, ...EXCEPTION_TIRE, vehicle: '2020 Ford F-150 Pickup Truck', location: '12 Example St, Everett, MA 02149', date: SOON, notes: 'Behind the building' })
+    await submitRequest(page, { base: BASE, customerEmail: AUDIT_EMAIL, ...EXCEPTION_TIRE, vehicle: '2020 Ford F-150 Pickup Truck', location: '12 Example St, Everett, MA 02149', date: SOON, notes: 'Behind the building' })
     // R4 retires the customer-facing "Owner review" link; direct navigation
     // replaces the click, the same fix openOwnerQuotes() got in audit-ui.mjs.
     await page.goto(`${new URL(page.url()).origin}/owner`)
@@ -144,7 +146,7 @@ try {
   // Customer: /status with a sent quote (Pay), then /confirmation.
   {
     const { context, page } = await freshPage(browser, VIEWPORT)
-    await submitRequest(page, { base: BASE, ...clean2, vehicle: '2019 Honda Civic', location: '12 Example St, Everett, MA 02149', date: SOON })
+    await submitRequest(page, { base: BASE, customerEmail: AUDIT_EMAIL, ...clean2, vehicle: '2019 Honda Civic', location: '12 Example St, Everett, MA 02149', date: SOON })
     await openOwnerQuotes(page)
     const approve = page.locator('.owner-request:has-text("Honda Civic") button:has-text("Approve"), button:has-text("Approve")')
     if (await approve.count()) { await approve.first().click(); await page.waitForTimeout(800) }
