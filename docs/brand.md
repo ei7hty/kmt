@@ -28,11 +28,12 @@ they are ever replaced, follow the cache rule below.
 
 **A faint mark is present in the source art and is not visible.** Those are two
 claims and only the first was being made, which is how it came to be read as
-both. Measured on 2026-09-06 against the flat ground of each file that actually
-ships, the tiled diagonal mark peaks at **2 levels out of 255 in
-`og-1200x630.jpg` (1.02:1), 3 levels in `kens-dark-1200.webp` (1.03:1), and
-nothing detectable in `kens-dark-600.webp`** -- against the 3:1 at which WCAG
-1.4.11 treats a graphical object as perceptible at all. The method was proved
+both. Measured on 2026-09-06 **against the three navy-ground files, which are
+the only lockups that ship**, the tiled diagonal mark peaks at **2 levels out
+of 255 in `og-1200x630.jpg` (1.02:1), 3 levels in `kens-dark-1200.webp`
+(1.03:1), and nothing detectable in `kens-dark-600.webp`** -- against the 3:1
+at which WCAG 1.4.11 treats a graphical object as perceptible at all. The
+method was proved
 in both directions before the numbers were trusted: the same measurement was
 run against copies of `og-1200x630.jpg` with a diagonal watermark stamped on
 at known strengths, where it rises monotonically and crosses 3:1 between grey
@@ -45,6 +46,70 @@ So: nobody sharing a link, loading the hero or looking at the favicon sees a
 mark, and **no work is owed on visual grounds.** The earlier version of this
 paragraph went on to say the swap was owed on licensing grounds instead. It is
 not; see the correction above.
+
+> **Scope correction, 2026-09-06.** The paragraph above measured three files
+> and, until this revision, stated its conclusion for all fourteen. **On the
+> white-ground variants it is false by this document's own yardstick.**
+> Re-measured over the outer 7% margin band, where the lockup does not reach:
+> `kens-light-600.webp` **1.35:1**, `kens-light-1200.webp` **1.38:1**,
+> `kens-badge-light-800.webp` **1.92:1**, `kmt-light-800.webp` **1.98:1** --
+> against the **1.61:1** stamp this same document calls *plainly visible in a
+> 600px link preview*. Cropping `kmt-light-800.webp`'s margin at 4× with **no
+> contrast enhancement at all** renders the designer's mark as legible
+> letterforms. The worst pixels are near-neutral greys (219, 222, 182-186), so
+> it is the mark and not the logo's red-and-black art bleeding into the band.
+>
+> **The physics is obvious afterwards and invisible in advance:** the same grey
+> mark has far more luminance to work with on white than on near-black navy.
+> Every elevated reading in the original sweep came from a light file or an
+> artwork edge, and the sweep dismissed the whole set after spot-checking one
+> that turned out to be artwork. **One spot-check does not clear a category.**
+>
+> **What does not change: no white variant is referenced by `src/`,
+> `index.html` or the manifest.** Only the three navy lockups and the five
+> icons ship, so the conclusion above still holds everywhere a customer can
+> reach. The document was claiming more than it had measured, not describing a
+> live exposure.
+
+> **Measured 2026-09-06, before the regeneration.** Everything in this section
+> describes the asset set as it stood that day. **Regenerating the files on
+> black takes the mark off every flat surface** -- `kens-light-1200.webp` went
+> from 1.38:1 at 96.5% flat ground to **1.00:1 at 100%** -- leaving only faint
+> residue where it crosses the artwork, which the product owner has ruled is
+> not to be chased. **So treat every figure below as dated, and re-measure
+> before repeating one.** The method is in this file; the numbers are a
+> snapshot.
+
+**The icons were never measured by either sweep**, which is worth saying
+because they are the most-displayed brand assets in the product -- `icon-64.png`
+renders on seven screens and `icon-32.png` is the favicon. Measured on flat
+interiors: `icon-32` and `icon-64` have **no flat region at all** to measure,
+`icon-180` **1.033:1**, `icon-192` **1.035:1**, `icon-512` **1.160:1**. Worst
+reading anywhere is 1.16:1, far under the 3:1 floor. **Two caveats from the
+measurer, kept because a number without them invites over-reading:** the
+sources are JPEG, so part of 1.12-1.16 is codec noise that cannot be separated
+from a mark; and that instrument has a ceiling -- its control climbs 1.020 to
+1.148 across +1 to +12 levels and then reads **1.000** at +30, because a strong
+mark falls outside its tolerance and is excluded rather than measured. Safe at
+~3 levels on navy, blind above ~24.
+
+**All four white variants are publicly fetchable at guessable URLs**, and
+`.forge/deployed-site-check.mjs` asserts they are -- it lists them among the
+assets that must answer 200 with the right content type. So a check holds them
+in place on the public site while nothing in the application references them.
+**Publicly fetchable and pinned by a test is not the same as shown to a
+customer, and the two want different fixes**; the regeneration above closes it
+either way.
+
+**Every file on disk carried the mark** on the date measured, the navy ones
+included -- invisibly
+there, legibly on white. That is true of the master lockup added later the same
+day as well, whose aspect ratio matches the shipped `kens-dark-*` files closely
+enough to be the source they were cut from. **There is no unmarked art in this
+repository.** The product owner has asked the user for a clean delivery; until
+it arrives the reissue below is worth doing, on the plain ground that the files
+we have are marked. That is a quality matter and **not** a licensing one -- see
+the correction at the top of this file, which stands.
 
 **If the files are ever reissued**, from newer source art or for any other
 reason, one condition applies: `/brand/*` is served with `Cache-Control:
