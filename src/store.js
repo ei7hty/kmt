@@ -181,6 +181,19 @@ export async function resolveOutboxMessage(id, note) {
   })
 }
 
+/**
+ * Failed sends nobody has looked at yet -- the count MailAlert.jsx puts in
+ * front of Ken on a screen he actually visits, since Outbox itself is not
+ * one of them. A filtered query (backend/outbox.mjs's `unresolvedFailures`),
+ * not the general list scrolled through client-side: bounded by how many
+ * unresolved failures actually exist, not by how much other mail was sent
+ * since.
+ */
+export async function unresolvedOutboxFailures() {
+  const data = await call('/api/owner/outbox/unresolved-failures')
+  return data.messages ?? []
+}
+
 /** Save editable draft lines and the customer-facing note before sending. */
 export async function adjustQuote(requestId, lineItems, note, version) {
   return call(`/api/owner/quotes/${encodeURIComponent(requestId)}`, {

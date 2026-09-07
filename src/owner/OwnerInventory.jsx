@@ -4,6 +4,7 @@ import SignIn from './SignIn.jsx'
 import { useNoIndex } from '../noindex.js'
 import { signOut } from './session.js'
 import { PrivacyFooter } from '../routes/Privacy.jsx'
+import MailAlert from '../components/MailAlert.jsx'
 
 const dollars = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const dateLabel = value => value ? new Date(value).toLocaleString() : 'Never refreshed'
@@ -524,7 +525,7 @@ export default function OwnerInventory({ navigate }) {
     setPage(1)
   }
   return <div className="oi-shell">
-    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button><span>OWNER WORKSPACE</span><button className="oi-button" data-testid="nav-quote-requests" onClick={() => navigate('/owner/quotes')}>Quote requests →</button><button className="oi-button" onClick={leave}>Sign out</button></nav>
+    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button><span>OWNER WORKSPACE</span><MailAlert navigate={navigate} /><button className="oi-button" data-testid="nav-quote-requests" onClick={() => navigate('/owner/quotes')}>Quote requests →</button><button className="oi-button" onClick={leave}>Sign out</button></nav>
     <main className="oi-content">
       <header className="oi-heading"><div><p className="oi-kicker">YOUR INVENTORY. YOUR PRICES.</p><h1>Build your tire offering</h1><p>Explore Giga Tires, choose what you want to offer, and set your price.</p></div><span className="oi-owner-badge">Owner only</span></header>
       <div className="oi-metrics">
