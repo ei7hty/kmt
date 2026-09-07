@@ -6,6 +6,7 @@ import OwnerInventory from './owner/OwnerInventory.jsx'
 import CustomerRequest from './routes/CustomerRequest.jsx'
 import QuoteRequests from './routes/QuoteRequests.jsx'
 import Outbox from './routes/Outbox.jsx'
+import SiteCopyScreen from './owner/SiteCopy.jsx'
 import Status from './routes/Status.jsx'
 import Confirmation from './routes/Confirmation.jsx'
 import NotFound from './routes/NotFound.jsx'
@@ -90,6 +91,8 @@ function App() {
   }
 
   if (route === '/owner/outbox') return <Outbox navigate={navigate} />
+
+  if (route === '/owner/site-copy') return <SiteCopyScreen navigate={navigate} />
 
   if (route === '/confirmation') {
     return <Confirmation navigate={navigate} />

@@ -74,7 +74,17 @@ async function call(path, options = {}) {
   if (response.status >= 500) {
     throw new Error('Something went wrong at the shop. Please try again in a moment.')
   }
-  if (!response.ok) throw new Error(data?.error || 'That did not go through. Please try again.')
+  if (!response.ok) {
+    const failure = new Error(data?.error || 'That did not go through. Please try again.')
+    // The parsed body, kept on the error rather than discarded with it. Most
+    // 4xx responses here carry nothing but `error`, and every existing caller
+    // reads only `.message`, so this changes nothing for them. The site-copy
+    // save is the first route whose refusal carries *data* the screen has to
+    // show -- which term conflicts with which constraint -- and a message
+    // alone cannot say that.
+    failure.data = data
+    throw failure
+  }
   return data
 }
 
@@ -202,3 +212,44 @@ export async function adjustQuote(requestId, lineItems, note, version) {
   })
 }
 
+
+/* ---------------------------------------------------------- site copy */
+
+/**
+ * The copy editor's whole state: Ken's overrides, the wording that ships, and
+ * the field list with its limits.
+ *
+ * The screen never hard-codes the fields. Adding one to `src/site-copy.js`
+ * makes it appear here without a second edit, and never the other way round --
+ * which is how a screen comes to offer a field the server will refuse.
+ */
+export async function ownerSiteCopy() {
+  const data = await call('/api/owner/site-copy')
+  return {
+    values: data.values ?? {},
+    previous: data.previous ?? null,
+    updatedAt: data.updatedAt ?? null,
+    defaults: data.defaults ?? {},
+    fields: data.fields ?? [],
+  }
+}
+
+/**
+ * Save, carrying the conflict terms Ken was shown and accepted.
+ *
+ * A refusal is not a failure to show as a message: it carries which term
+ * conflicts with which constraint, and the screen has to render that so he can
+ * decide he means it. So the conflict payload is re-thrown intact rather than
+ * flattened into `.message`.
+ */
+export async function saveSiteCopy(values, acknowledged = []) {
+  return call('/api/owner/site-copy', {
+    method: 'PUT',
+    body: JSON.stringify({ values, acknowledged }),
+  })
+}
+
+/** Undo the last save. One step, not a history. */
+export async function undoSiteCopy() {
+  return call('/api/owner/site-copy/undo', { method: 'POST', body: JSON.stringify({}) })
+}

@@ -1,0 +1,106 @@
+/*
+ * The copy editor's own styles.
+ *
+ * Its own file rather than rules added to App.css or OwnerInventory.css: both
+ * are held by other lanes tonight, and a screen's layout is not worth a
+ * collision in a file three people are editing. Everything structural here --
+ * `.panel`, `.owner-content`, `.status-note-*`, `.btn` -- comes from App.css
+ * already; this file only adds what is specific to a form of many short text
+ * fields.
+ *
+ * Scoped to `.site-copy-*` classes rather than to elements. The specificity
+ * trap at the top of NOTES.md is this codebase's oldest: a broad
+ * `.owner-shell input` rule would outrank the component classes meant to sit
+ * inside it, whatever the source order.
+ */
+
+.site-copy-section h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.25rem;
+}
+
+.site-copy-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 1rem;
+}
+
+.site-copy-field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.site-copy-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.7rem;
+  font: inherit;
+  font-size: 1rem;
+  border-radius: 6px;
+}
+
+.site-copy-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+/*
+ * The reset control carries the wording it would restore, so it is often long.
+ * Allowed to wrap and to take the full width on a phone rather than pushing
+ * the character count off the edge -- the responsive check measures overflow
+ * at 375px and this is exactly the shape that trips it.
+ *
+ * And it is muted rather than `.link-action`'s red. AGENTS.md reserves brand
+ * red for the single primary action on a screen; this screen's is Save, and
+ * up to twenty-four reset links in the same red would outnumber it. Underlined
+ * so that dropping the colour does not leave it reading as disabled text --
+ * `--muted` is the same value `.text-secondary` already uses on this ground.
+ */
+.site-copy-meta .link-action {
+  text-align: left;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  text-decoration: underline;
+}
+
+.site-copy-conflicts h2 {
+  font-size: 1rem;
+  margin: 0 0 0.4rem;
+}
+
+.site-copy-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+/*
+ * A 16px checkbox is under the 44px tap target the a11y check holds the rest
+ * of the app to, and it is the control that decides whether a promise the
+ * booking form cannot keep goes live. Padding on the label gives the whole
+ * row the target rather than the box alone.
+ */
+.site-copy-ack input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  margin: 0.75rem 0 0.75rem 0.25rem;
+  flex: 0 0 auto;
+}
+
+.site-copy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}

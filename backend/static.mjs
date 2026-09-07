@@ -6,8 +6,10 @@
 // because Vite's middleware serves the source there. That is why a header
 // added here is only ever seen against server.mjs or the deployed site.
 
-import { createReadStream, existsSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
+import { SITE_COPY_ELEMENT_ID } from '../src/site-copy.js'
 
 /** Content types by extension. Anything not listed is served as bytes. */
 export const TYPES = {
@@ -57,13 +59,51 @@ export function etagFor(stat) {
 }
 
 /**
+ * The app shell with the owner's copy in it, and a validator that moves with it.
+ *
+ * A `type="application/json"` data block, never an executable inline script.
+ * The policy in `site.mjs` is `script-src 'self'` with no `'unsafe-inline'`,
+ * and `site.test.mjs` asserts it stays that way -- an executable block would
+ * be refused at runtime and would break that test. A JSON block is never
+ * executed, so `script-src` does not apply to it, which is why `index.html`'s
+ * `application/ld+json` has always coexisted with this policy.
+ *
+ * `<` is escaped. Ken may legitimately type one, and a literal `</script>`
+ * inside the JSON would end the block early and spill the rest into the page
+ * as markup. This is the standard escape and it survives `JSON.parse`
+ * unchanged, because `<` is just how JSON spells `<`.
+ *
+ * Injected rather than fetched because the landing page makes no network
+ * request before the hero paints. A fetch-and-swap would repaint the headline
+ * seconds in on a slow connection, on exactly the strings Ken cared enough to
+ * edit.
+ */
+export function injectCopy(file, copy) {
+  const html = readFileSync(file, 'utf8')
+  const payload = JSON.stringify(copy ?? {}).replace(/</g, '\\u003c')
+  const block = `<script type="application/json" id="${SITE_COPY_ELEMENT_ID}">${payload}</script>`
+  // Before </head> where there is one, then </body>, then appended.
+  //
+  // The last branch is not defensive padding: `String.replace` with a missing
+  // needle returns the string unchanged, so a shell with neither marker would
+  // have dropped the copy silently and rendered the shipped defaults with no
+  // error anywhere. Found by reading static.test.mjs's fixture, which is
+  // exactly such a shell (`<!doctype html><div id="root"></div>`).
+  const body = html.includes('</head>') ? html.replace('</head>', `${block}</head>`)
+    : html.includes('</body>') ? html.replace('</body>', `${block}</body>`)
+      : html + block
+  const etag = `W/"${createHash('sha256').update(body).digest('hex').slice(0, 16)}"`
+  return { body, etag }
+}
+
+/**
  * A handler that serves one file out of `dist`, falling back to index.html.
  *
  * The SPA fallback is what makes a hard navigation to /owner/quotes work. It is
  * the same job vercel.json's rewrite did, and forgetting it is how this project
  * once shipped a build that passed every local check and 404'd in production.
  */
-export function createStaticHandler(dist) {
+export function createStaticHandler(dist, { readCopy = null } = {}) {
   const distRoot = path.resolve(dist)
 
   return function serveStatic(request, response, pathname) {
@@ -94,24 +134,64 @@ export function createStaticHandler(dist) {
     const file = isFile ? resolved : path.join(distRoot, 'index.html')
     const stat = statSync(file)
     const type = TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream'
-    const etag = etagFor(stat)
     const lastModified = stat.mtime.toUTCString()
+
+    // The app shell, with the owner's copy in it. Only the shell: every other
+    // file is bytes on disk and is streamed untouched.
+    const shell = readCopy && path.resolve(file) === path.join(distRoot, 'index.html')
+      ? injectCopy(file, readCopy())
+      : null
+
+    // The shell's validator has to move when the copy moves, and the file's
+    // does not: `etagFor` is size and mtime, and injecting changes neither.
+    // Left as it was, a returning browser would revalidate, match the old
+    // ETag, take a 304 and keep the wording Ken had just replaced -- edits
+    // reaching nobody who had ever loaded the page before, until a deploy
+    // rewrote index.html. So the shell's ETag covers the bytes actually sent.
+    const etag = shell ? shell.etag : etagFor(stat)
 
     const headers = {
       'Content-Type': type,
       'Cache-Control': cachePolicy(relative, isFile),
       'ETag': etag,
-      'Last-Modified': lastModified,
     }
+    // `Last-Modified` is the file's mtime, and the injected shell is not the
+    // file: its bytes change when the copy does and the mtime does not. So the
+    // shell does not send one at all, rather than sending a validator this
+    // server then refuses to honour.
+    //
+    // Not merely tidy. The 304 condition below is an OR, so a client holding
+    // both validators sends both -- and a correct ETag alone would not have
+    // closed this: the ETag branch says changed, the mtime branch says
+    // unchanged because the file's mtime genuinely has not moved, and the OR
+    // hands back a stale 304 anyway. That branch is disabled for the shell,
+    // which fixes this server; omitting the header is what fixes every other
+    // cache in the path, because a proxy implementing `If-Modified-Since`
+    // itself never reaches this code, and cannot read a comment explaining
+    // that the header it was given is void.
+    if (!shell) headers['Last-Modified'] = lastModified
 
     // A browser holding a copy asks with one of these; when the copy is still
     // good, the answer is the headers and nothing else.
+    //
+    // `If-Modified-Since` is deliberately not honoured for the injected shell,
+    // for the reason above: mtime is the file's, and the file does not change
+    // when the copy does. For the shell the ETag is the only validator that
+    // tells the truth.
     const since = request.headers['if-modified-since']
     const unchanged = request.headers['if-none-match'] === etag ||
-      (since && !Number.isNaN(Date.parse(since)) && Math.floor(stat.mtimeMs / 1000) <= Math.floor(Date.parse(since) / 1000))
+      (!shell && since && !Number.isNaN(Date.parse(since)) && Math.floor(stat.mtimeMs / 1000) <= Math.floor(Date.parse(since) / 1000))
     if (unchanged) {
       response.writeHead(304, headers)
       response.end()
+      return
+    }
+
+    if (shell) {
+      // Byte length, not `stat.size`: the body is longer than the file now,
+      // and a short Content-Length truncates it.
+      response.writeHead(200, { ...headers, 'Content-Length': Buffer.byteLength(shell.body) })
+      response.end(request.method === 'HEAD' ? undefined : shell.body)
       return
     }
 
