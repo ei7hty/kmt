@@ -1136,3 +1136,27 @@ that exactly.** So the check is not *is my tool honest* -- it usually is -- but
 **what would this reading look like if my hypothesis were false**: the
 positive-and-negative-control discipline this file already demands of
 instruments, turned on the question instead.
+
+**And why knowing this does not stop it.** Adding the entry above, I ran
+`git rebase origin/main | tail -1 && cat >> NOTES.md`. The rebase hit a
+conflict and failed; the pipeline reported `tail`'s success; the `&&` fired;
+the text landed in a file that was mid-conflict. **I had written the
+`$?`-after-a-pipe warning in this file four hours earlier and quoted it to two
+other agents that same evening.** Nothing was lost -- `git rebase --abort`,
+redo capturing git's own status, resolve the tail, verify every entry survived
+-- but the knowledge plainly did not help.
+
+The reason, and it is the useful part: **the wrong form and the right form are
+visually indistinguishable at the moment of writing.** `cmd | tail -1 && next`
+looks like `cmd && next`. A refusal to claim an unsupportable number looks like
+a completed measurement. **Nobody chooses the wrong one; they fail to notice
+there was a choice** -- and knowledge cannot fix a thing you never see yourself
+doing.
+
+So prefer the fixes that change the default shape over the ones that ask you to
+remember. For this trap: `set -o pipefail` before the chain, or capture the
+status explicitly (`git rebase ...; rc=$?`), or **do not pipe the command whose
+status you need** -- the last is the only one that cannot be forgotten, because
+it removes the shape instead of guarding it. That is the same move as
+date-stamping a claim so a later merge cannot falsify it, rather than leaving a
+note for whoever merges second.
