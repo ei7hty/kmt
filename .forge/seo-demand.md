@@ -105,11 +105,57 @@ These are demand observations, not copy. The call on each is the OWNER AGENT's.
    found: position at planned replacement, booked ahead, at your location, with
    a quick quote — the quick thing is the answer, never the visit.
 
+## The reachable slice — who is actually servable, and what they type
+
+Finding #1 establishes that the top of the demand curve is unservable by
+construction (the seven-day floor). This answers the question that finding
+raises: **then what *is* reachable, and does the surface contain its words?**
+
+**These are two different people, not one searcher at two urgencies.** Someone
+with a flat on the hard shoulder and someone who has noticed their tread is low
+and would rather not lose a Saturday in a waiting room are not the same person
+dialled up or down. The seven-day floor is what makes this a **hard boundary,
+not a spectrum** — the urgent person is refused by the product, the planned
+person is exactly who it is for. So the reachable slice is not "the low-urgency
+end of flat-tyre demand"; it is a distinct intent with its own vocabulary.
+
+**The reachable-slice vocabulary** (the planned buyer: knows they need ~4 new
+tyres, wants them fitted at home or work, will book ahead):
+
+| sub-intent | representative queries |
+| --- | --- |
+| at-home installation | "new tires installed at home", "mobile tire installation [town]", "someone to come put tires on my car", "tires installed at my house" |
+| buy + fit together | "buy tires and have them installed", "tires delivered and installed", "mobile tire mounting" |
+| avoid the shop | "tire shop that comes to you", "new tires without going to a shop", "tire fitting at home" |
+| seasonal / planned swap | "winter tire changeover at home", "seasonal tire swap mobile", "mobile tire change [town]" |
+| considered / spec-led | "[size] tires installed near me", "buy [brand] tires mobile install" |
+
+Note the verb split that separates the two people: the urgent curve types
+**repair / change / help / flat / emergency / same-day**; the planned slice
+types **install / installed / installation / buy / fitted / delivered**. The
+word "installed" is close to a clean discriminator between servable and
+unservable intent.
+
+**Presence/absence against the current surface:**
+
+- `<title>` = brand only — **none** of the reachable-slice vocabulary.
+- Meta description / OG / JSON-LD = "New tires fitted at your home, work or
+  roadside." This is the **one place the surface already speaks to the planned
+  slice** — "new tires fitted at your home/work" is squarely this intent. But
+  it omits the actual verbs people type: **"install/installation" appears
+  nowhere**, nor "buy tires", nor any seasonal or spec-led term.
+
+So the reachable slice is barely addressed and the highest-intent word for it
+("installed"/"installation") is absent from every surface. **What to write with
+this vocabulary is MARKETING's; that it is absent is the finding.**
+
 ## Where each finding routes
 
 - **To MARKETING (the words):** the title carries no job/place/speed term; the
-  description and JSON-LD content omit every speed term and the word "flat".
-  These are facts about their surface; the wording is theirs.
+  description and JSON-LD content omit every speed term and the word "flat", and
+  omit the reachable-slice verbs ("install/installed/installation", "buy tires",
+  seasonal/spec-led terms) that separate servable from unservable intent. These
+  are facts about their surface; the wording is theirs.
 - **To SEO ANALYST (the machinery):** the sitemap/robots/canonical scope is
   correct for the current one-indexable-page shape; no machinery gap found in
   this pass. If the OWNER AGENT decides `/` should carry more indexable content,
