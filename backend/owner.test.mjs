@@ -861,15 +861,24 @@ test('a minted session respects its own ttl and the store it was minted into', a
   const defaultTtl = mintSession(config, sessions)
   assert.ok(defaultTtl.expiresAt > before + config.ttlMs - 1000)
 
-  // An explicit ttl overrides the default -- the CLI's --hours flag. Checked
-  // with a ttl comfortably longer than any test-runner overhead: a second,
-  // independent race turned up empirically while fixing the first one above
-  // -- a 1ms ttl checked immediately for "still valid" can itself have
-  // expired by the time the assertion runs, on exactly the same loaded-suite
-  // timing that caused the flake up top. Nothing about a longer ttl weakens
-  // what this line is proving (that an explicit ttl overrides the default).
-  const valid = mintSession(config, sessions, 60_000)
-  assert.equal(isAuthenticatedWith(config, sessions, valid), true)
+  // An explicit ttl overrides the default -- the CLI's --hours flag. A
+  // second, independent race turned up empirically while fixing the one
+  // above: `mintSession(config, sessions, 1)` immediately followed by
+  // `isAuthenticatedWith(...) === true` shares its whole 1ms budget with
+  // real call overhead (HMAC signing, a Map write), so "still valid" could
+  // itself already be false by the time the assertion runs -- the same
+  // underlying defect, one order of margin smaller. A wider ttl would only
+  // make that less likely, which is the wrong shape (an intermittent red
+  // trains people to dismiss it, including the time it is real); the fix is
+  // to stop asking a live clock at all for a fact that mintSession already
+  // computed. Checked the same arithmetic way the default-ttl case above
+  // is, not through a real-time isAuthenticatedWith call.
+  const beforeOverride = Date.now()
+  const overridden = mintSession(config, sessions, 60_000)
+  assert.ok(
+    overridden.expiresAt >= beforeOverride + 60_000 && overridden.expiresAt < beforeOverride + 60_000 + 1000,
+    'the explicit ttl reaches expiresAt untouched, not the config default, within a generous allowance for the mint call itself',
+  )
 
   // Expiry itself needs a genuinely short ttl, minted separately so it
   // cannot be confused with the override check above.
