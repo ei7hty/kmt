@@ -52,6 +52,26 @@ const SIGNIN_STATE_TTL_MS = 10 * 60_000
 const DEFAULT_TTL_HOURS = 12
 
 /**
+ * The password-login idiom for "no person behind this", in the same shape as
+ * `backend/quotes.mjs`'s `SHARED_PASSWORD_ACTOR` -- kept as a separate literal
+ * here rather than imported, since that constant's long-term home is this
+ * file (auth decides who you are, quotes only records who decided) but
+ * moving it now would fight #349 over one export. Whoever wires a real
+ * identity into `moveTo`'s `actor` seam should do that move and delete this
+ * duplicate.
+ */
+export const PASSWORD_SESSION_ACTOR = 'owner:shared-password'
+
+/**
+ * The minted-session idiom (#354... #362's follow-up): a session `create()`d
+ * by `scripts/mint-session.mjs` rather than a sign-in, so that `decided_by`
+ * (`backend/quotes.mjs`) can record "authenticated, but not a person" instead
+ * of either a false identity or silently falling back to the shared-password
+ * marker once Google sign-in starts passing real identities through that seam.
+ */
+export const MINTED_SESSION_ACTOR = 'owner:minted-session'
+
+/**
  * Where live sessions are kept, so that logging out means something.
  *
  * A session cookie used to be a signed timestamp and nothing else: logging out
@@ -62,25 +82,46 @@ const DEFAULT_TTL_HOURS = 12
  * than process memory, because a deploy restarts the process and the owner
  * should not be signed out by every merge. Import tokens stay stateless: two
  * hours, one purpose, and nothing to log out of.
+ *
+ * Each row also carries who -- or what -- created it: `actor`, a nullable
+ * string in the `owner:*` idiom (`PASSWORD_SESSION_ACTOR`,
+ * `MINTED_SESSION_ACTOR`, and eventually a verified email once Google
+ * sign-in records one -- naming the work rather than an issue number, since
+ * #290 itself is the closed spec, not this implementation).
+ * A plain `ALTER TABLE`, not a `migrate()` entry: this table has no CHECK to
+ * rebuild around, and unlike `quotes.decided_by` a null here is never
+ * permanent -- a row with no actor is one created before this column existed,
+ * and it is gone on its own within `KMT_SESSION_HOURS` (12 by default). Read
+ * through `actorFor`, not `has`: `has` runs on every authenticated request,
+ * `actorFor` only when a decision is being attributed, and the read has no
+ * business on the hot path it doesn't need.
  */
 export function createSessionStore(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS owner_sessions (
     id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL
   )`)
-  const insert = db.prepare('INSERT INTO owner_sessions (id, expires_at) VALUES (?, ?)')
+  const columns = db.prepare("SELECT name FROM pragma_table_info('owner_sessions')").all().map(row => row.name)
+  if (!columns.includes('actor')) db.exec('ALTER TABLE owner_sessions ADD COLUMN actor TEXT')
+
+  const insert = db.prepare('INSERT INTO owner_sessions (id, expires_at, actor) VALUES (?, ?, ?)')
   const select = db.prepare('SELECT expires_at FROM owner_sessions WHERE id=?')
+  const selectActor = db.prepare('SELECT actor FROM owner_sessions WHERE id=?')
   const remove = db.prepare('DELETE FROM owner_sessions WHERE id=?')
   const sweep = db.prepare('DELETE FROM owner_sessions WHERE expires_at <= ?')
   return {
-    create(expiresAt) {
+    create(expiresAt, actor = null) {
       sweep.run(Date.now())
       const id = randomBytes(16).toString('hex')
-      insert.run(id, expiresAt)
+      insert.run(id, expiresAt, actor)
       return id
     },
     has(id) {
       const row = select.get(id)
       return Boolean(row) && row.expires_at > Date.now()
+    },
+    /** Who created this session, or null if it predates the column, or the id is unknown. */
+    actorFor(id) {
+      return selectActor.get(id)?.actor ?? null
     },
     delete(id) { remove.run(id) },
   }
@@ -90,14 +131,17 @@ export function createSessionStore(db) {
 export function memorySessionStore() {
   const live = new Map()
   return {
-    create(expiresAt) {
+    create(expiresAt, actor = null) {
       const id = randomBytes(16).toString('hex')
-      live.set(id, expiresAt)
+      live.set(id, { expiresAt, actor })
       return id
     },
     has(id) {
-      const expiresAt = live.get(id)
-      return expiresAt !== undefined && expiresAt > Date.now()
+      const entry = live.get(id)
+      return entry !== undefined && entry.expiresAt > Date.now()
+    },
+    actorFor(id) {
+      return live.get(id)?.actor ?? null
     },
     delete(id) { live.delete(id) },
   }
@@ -326,7 +370,7 @@ export const verifyImportToken = (config, token) => verify(config, token, 'impor
  */
 export function mintSession(config, sessions, ttlMs = config.ttlMs) {
   const expiresAt = Date.now() + ttlMs
-  const id = sessions.create(expiresAt)
+  const id = sessions.create(expiresAt, MINTED_SESSION_ACTOR)
   return { name: COOKIE, value: issue(config, 'session', ttlMs, id), expiresAt }
 }
 
@@ -456,7 +500,7 @@ export function createAuth(config, {
         }
         throttle?.succeed(ip)
         const expiresAt = Date.now() + config.ttlMs
-        const id = sessions.create(expiresAt)
+        const id = sessions.create(expiresAt, PASSWORD_SESSION_ACTOR)
         return json(200, { authenticated: true }, {
           'Set-Cookie': setCookie(request, issue(config, 'session', config.ttlMs, id), Math.floor(config.ttlMs / 1000)),
         })

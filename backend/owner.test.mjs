@@ -7,8 +7,9 @@ import { createServer, request as httpRequest } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { createApi, createCatalogApi, isPublicApiCall, readJsonBody } from './api.mjs'
-import { createAuth, createImportToken, createSessionStore, isMonitorAuthorized, memorySessionStore, mintSession, readAuthConfig, readMonitorConfig, readSessionSigningConfig, SESSION_COOKIE_NAME, verifyImportToken } from './auth.mjs'
+import { createAuth, createImportToken, createSessionStore, isMonitorAuthorized, memorySessionStore, MINTED_SESSION_ACTOR, mintSession, PASSWORD_SESSION_ACTOR, readAuthConfig, readMonitorConfig, readSessionSigningConfig, SESSION_COOKIE_NAME, verifyImportToken } from './auth.mjs'
 import { LoginThrottle } from './limits.mjs'
+import { SHARED_PASSWORD_ACTOR } from './quotes.mjs'
 import { PageImporter } from './import.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 
@@ -1060,6 +1061,105 @@ test('minting refuses rather than mint a dead cookie when KMT_SESSION_SECRET is 
   // recovery tool, so this refuses instead of silently generating one.
   assert.throws(() => readSessionSigningConfig({}), /KMT_SESSION_SECRET is not set/)
 })
+
+// #362 follow-up: a session records who -- or what -- created it, so a
+// decision made under it (backend/quotes.mjs's decided_by, once #290 wires a
+// real identity into moveTo's actor) never falsely records a minted session
+// as a person, and never silently collapses it into the shared-password
+// marker either.
+
+test('mintSession never produces a session with no actor -- the one case that would defeat the marker', () => {
+  const config = readSessionSigningConfig({ KMT_SESSION_SECRET: 'actor-secret-1' })
+  const sessions = memorySessionStore()
+  const minted = mintSession(config, sessions)
+  const id = extractSessionId(minted.value)
+  assert.equal(sessions.actorFor(id), MINTED_SESSION_ACTOR)
+})
+
+test('a password-issued session records the shared-password actor, not a minted one', async t => {
+  const config = readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'actor-secret-2' })
+  const sessions = memorySessionStore()
+  const auth = createAuth(config, { sessions })
+  const server = createServer(async (request, response) => { await auth.handle(request, response, new URL(request.url, 'http://localhost'), readJsonBody) })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+
+  const login = await fetch(`${base}/api/owner/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'a-long-enough-password' }),
+  })
+  const cookie = login.headers.get('set-cookie').split(';')[0]
+  const id = extractSessionId(cookie.split('=')[1])
+  assert.equal(sessions.actorFor(id), 'owner:shared-password')
+})
+
+test('memorySessionStore and the SQLite store agree on the actor contract -- one parallel implementation, not two', t => {
+  const inventory = new Inventory(':memory:', [SIZE])
+  t.after(() => inventory.close())
+  const dbSessions = createSessionStore(inventory.db)
+  const memSessions = memorySessionStore()
+
+  for (const sessions of [dbSessions, memSessions]) {
+    const withActor = sessions.create(Date.now() + 60_000, MINTED_SESSION_ACTOR)
+    assert.equal(sessions.actorFor(withActor), MINTED_SESSION_ACTOR)
+
+    const withoutActor = sessions.create(Date.now() + 60_000)
+    assert.equal(sessions.actorFor(withoutActor), null, 'no actor argument reads back as null, not undefined or a default')
+    assert.notEqual(
+      sessions.actorFor(withActor), sessions.actorFor(withoutActor),
+      'a minted session and a no-actor session must read as distinct -- if mintSession ever passed no actor, ' +
+      'a minted session would read null and collapse straight into the shared-password marker downstream',
+    )
+
+    assert.equal(sessions.actorFor('no-such-session-id'), null, 'an unknown id reads as null too, not a thrown error')
+  }
+})
+
+test('a database whose owner_sessions predates the actor column still signs sessions in, and the old row reads no actor', t => {
+  // The state every already-deployed database is in today: a table with no
+  // actor column at all, not merely one full of nulls. createSessionStore
+  // must ALTER it in place rather than assume the column exists.
+  const inventory = new Inventory(':memory:', [SIZE])
+  t.after(() => inventory.close())
+  inventory.db.exec('DROP TABLE IF EXISTS owner_sessions')
+  inventory.db.exec('CREATE TABLE owner_sessions (id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)')
+  inventory.db.prepare('INSERT INTO owner_sessions (id, expires_at) VALUES (?, ?)').run('pre-column-session', Date.now() + 60_000)
+
+  const columnsBefore = inventory.db.prepare("PRAGMA table_info(owner_sessions)").all().map(c => c.name)
+  assert.ok(!columnsBefore.includes('actor'), 'the fixture must predate the column, or this test proves nothing')
+
+  const sessions = createSessionStore(inventory.db)
+  assert.equal(sessions.has('pre-column-session'), true, 'a session from before the column existed still authenticates')
+  assert.equal(sessions.actorFor('pre-column-session'), null, 'and honestly reports that nothing was recorded, rather than guessing')
+
+  const columnsAfter = inventory.db.prepare("PRAGMA table_info(owner_sessions)").all().map(c => c.name)
+  assert.ok(columnsAfter.includes('actor'), 'opening the store adds the column')
+
+  // Reopening a second time must not fail on "duplicate column".
+  assert.doesNotThrow(() => createSessionStore(inventory.db))
+})
+
+test('auth.mjs and quotes.mjs agree on the password-era actor string -- pinned, not assumed', () => {
+  // Two independent literals for the same fact (TECHNICAL ARCHITECT's read of
+  // #374): auth.mjs writes PASSWORD_SESSION_ACTOR onto a login session,
+  // quotes.mjs's moveTo falls back to SHARED_PASSWORD_ACTOR when no actor was
+  // recorded. They are not the same export -- reconciling that is left for
+  // whoever lands #290's identity resolution, since moving the constant now
+  // would fight #349 over one export -- so nothing stops them drifting apart
+  // silently. If they ever do, a password-era decision resolves to one value
+  // through actorFor and defaults to the other through moveTo, and the three
+  // eras quietly become four with no test failing except this one.
+  assert.equal(
+    PASSWORD_SESSION_ACTOR, SHARED_PASSWORD_ACTOR,
+    'the password era has one name; auth writes it on the session and quotes falls back to it',
+  )
+})
+
+function extractSessionId(tokenValue) {
+  const [payload] = tokenValue.split('.')
+  const [, , id] = Buffer.from(payload, 'base64url').toString().split(':')
+  return id
+}
 
 test('wrong passwords from one address are slowed, per address, and never lock the owner out', async t => {
   let now = 5_000_000
