@@ -1486,19 +1486,33 @@ test('the Host guard refuses a strange host, and never the health check', async 
 
 /* ------------------------------------------------ who decided (#290, schema) --- */
 
-test('an owner decision records who made it; today that is the shared credential', t => {
+test('an owner decision records no actor until a caller establishes one', t => {
   const { quotes } = setup(t)
   const { request } = quotes.submit(form())
 
   const sent = quotes.decide(request.id, 'sent', 1)
-  assert.equal(sent.quote.decidedBy, SHARED_PASSWORD_ACTOR,
-    "one shared password means the system can say a decision was authorised, not by whom")
+  // `decide()` takes no actor yet -- threading `actorFor` in is #290's
+  // follow-up. Until it does, the honest record is that we did not capture
+  // who acted, NOT that the shared password did: that fallback was true
+  // while the password was the only way in and would go silently false the
+  // moment Google sign-in was configured.
+  assert.equal(sent.quote.decidedBy, null,
+    'null means "not recorded"; the sentinel would assert something no caller established')
+  assert.notEqual(sent.quote.decidedBy, SHARED_PASSWORD_ACTOR,
+    're-adding `?? SHARED_PASSWORD_ACTOR` in moveTo puts this back: it records a credential no caller established, and goes silently false once Google sign-in exists')
 })
 
 test('a customer paying does not overwrite who sent the quote', t => {
   const { quotes } = setup(t)
   const { request } = quotes.submit(form())
-  quotes.decide(request.id, 'sent', 1)
+  // Sent through `moveTo` with an explicit actor rather than `decide()`,
+  // because `decide()` establishes none and there would be nothing for the
+  // payment to preserve -- the test would pass on null either way and prove
+  // nothing. Assert on a write, not on a survival of an absence.
+  quotes.moveTo(request.id, 1, {
+    to: 'sent', from: ['draft'], refused: () => 'no', audience: 'owner',
+    actor: 'owner:ken@kensmobiletire.com',
+  })
 
   quotes.pay(request.id)
 
@@ -1508,8 +1522,8 @@ test('a customer paying does not overwrite who sent the quote', t => {
   // record.
   const owned = quotes.get(request.id, 'owner')
   assert.equal(owned.quote.status, 'paid')
-  assert.equal(owned.quote.decidedBy, SHARED_PASSWORD_ACTOR,
-    "the approval survives the payment that followed it")
+  assert.equal(owned.quote.decidedBy, 'owner:ken@kensmobiletire.com',
+    'the approval survives the payment that followed it')
 })
 
 test('a customer cancelling their own request does not write an owner actor', t => {
@@ -1524,7 +1538,7 @@ test('a customer cancelling their own request does not write an owner actor', t 
     "the customer closed this, and recording them as the deciding owner would be false")
 })
 
-test('marking a paid job done records the owner again', t => {
+test('marking a paid job done records no actor either, for the same reason decide does not', t => {
   const { quotes } = setup(t)
   const { request } = quotes.submit(form())
   quotes.decide(request.id, 'sent', 1)
@@ -1532,7 +1546,7 @@ test('marking a paid job done records the owner again', t => {
 
   const done = quotes.finish(request.id, quotes.get(request.id, 'owner').quote.version)
   assert.equal(done.quote.status, 'done')
-  assert.equal(done.quote.decidedBy, SHARED_PASSWORD_ACTOR)
+  assert.equal(done.quote.decidedBy, null, 'finish() establishes no actor either, so it records none')
 })
 
 /**
@@ -1567,5 +1581,5 @@ test('who operates the owner screen never reaches the customer shape', t => {
   // needs its own check, and this asserts it has one.
   const customer = quotes.get(request.id)
   assert.equal('decidedBy' in customer.quote, false, 'not merely null -- absent')
-  assert.equal(quotes.get(request.id, 'owner').quote.decidedBy, SHARED_PASSWORD_ACTOR)
+  assert.equal('decidedBy' in quotes.get(request.id, 'owner').quote, true, 'the owner shape carries the field')
 })
