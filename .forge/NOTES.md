@@ -2560,3 +2560,305 @@ careless resolution. Linters have opinions about some of it and this
 repository's has none about this. **The cheapest guard is the one that costs a
 minute: read the diff you are about to push, and treat a hunk whose line count
 you cannot explain as the finding rather than as noise.**
+
+**2026-09-07 — JUNIOR REPO AGENT (session `local_b2ab10bb`), collecting the daylight pass the OWNER
+AGENT asked this session to hold, so many senders did not race this file's tail in one night**
+Eleven findings and two rulings, from tonight, filed together rather than as eleven separate PRs
+fighting over one append point.
+
+**2026-09-07 — JUNIOR REPO AGENT, on a port number that is safe in one context and a trap in another**
+Three sessions collided on port 4173 in one night: GATE ENGINEER got a stale `dist/` served from a
+leftover listener, presented as a false "real" failure; OWNER OPERATIONS ENGINEER hit it twice, both
+presenting as "wrong password" against another session's server; SITE COPY ENGINEER pre-empted it by
+signing in with their own password first to confirm whose server it was.
+
+**The hazard is not the port number. It is concurrency.** `AGENTS.md` documents 4173 as the audit
+default, and CI is correct to use it -- CI runs the audits alone, sequentially, on a fresh runner every
+time, so the default is safe in the context it was written for. It becomes a trap only when the same
+default is carried into *manual* verification, where "alone" is never guaranteed at ten concurrent
+sessions. Keep the documented default for the audit scripts; use a distinctive port for any manual run
+where solo use is not guaranteed.
+
+This session used 4173 three times solo that same night (reproducing a phantom regression, verifying a
+CI change) and did not collide -- checked, not assumed: always sequential, the prior server killed
+before the next started, and every result matched an exact check-count that only the current tree could
+produce. A stale leftover from unrelated code could not have produced those specific numbers, so the
+non-collision is structural, not luck.
+
+**Worth its own line, not a footnote:** `EXPECTED_CHECKS` (the both-directions count guard, built to
+prove every check ran and none more) incidentally also proves *which tree is being served* -- a
+stale or wrong server mismatches the count or is missing checks entirely, so a matching count is
+evidence of the right server, not just a complete run. Nobody designed it for that. It is the inverse of
+this file's usual finding: not an instrument failing at the job it was built for, but one succeeding at
+a job it was never built for. Pair it with GATE ENGINEER's stale-`dist/` collision as the concrete case
+it would have caught -- it turns "confirm the server is yours" into a specific method, not vague advice.
+
+**2026-09-07 — the PROJECT MANAGER (filed by KMT-F REPO AGENT LEAD, session `local_881ff3b5`)**
+A comment that explains a guard is also defining it. A change that satisfies the comment's words while
+defeating the thing the guard exists for passes every review that reads the diff rather than the
+guarantee. Instance: `backend/auth.mjs`'s error text was the requirement, not documentation of a
+requirement that existed independently of it.
+
+**2026-09-07 — OWNER AUTH ENGINEER (session `local_907f8d1f`), beside the entry above, not inside it**
+The reader's half of the same defect: a comment answers the question you bring to it. *What does this
+require* and *what is this for* are different questions with different answers, and only one reading was
+safe to act on here.
+
+**2026-09-07 — SITE COPY ENGINEER (session `local_6e40cc27`), on a validator that describes the file
+after the file stopped being the answer**
+`no-cache` sounds like "always fresh". It means "always ask". Nothing makes the answer to the asking
+correct.
+
+`backend/static.mjs` serves the app shell with `Cache-Control: no-cache` and an ETag from
+`etagFor(stat)` -- size and mtime of `index.html` on disk. That was exactly right for as long as the
+file was the answer. Building the owner-editable-copy feature I made the served HTML depend on
+**state** as well: the server injects the owner's copy into the shell on the way out.
+
+**The file does not change when the copy does.** So the sequence would have been: Ken edits, the
+browser revalidates, `If-None-Match` matches the unchanged ETag, **304, and the old wording stays** --
+not for five minutes, but until a deploy rewrote `index.html`. Every returning visitor, and Ken himself
+the moment he had loaded the page once.
+
+**A fresh `curl` looked perfect throughout**, which is why no test would have caught it: a first request
+has no `If-None-Match` to send. The feature would have worked for everyone testing it and failed for
+everyone using it.
+
+Three failure modes, and the two-word description of the change ("inject the copy") hides all three:
+
+- **the ETag** does not move, so a conditional request wins a stale 304;
+- **`Content-Length: stat.size`** is now shorter than the body, which truncates it;
+- **`Last-Modified` / `If-Modified-Since` carries the same defect, and the 304 condition is an `OR`**
+  -- so fixing only the ETag leaves the hole open. A browser holding both validators sends both: the
+  ETag branch correctly says *changed*, the mtime branch still says *unchanged* because the file's
+  mtime genuinely has not moved, and the `OR` hands back a 304 anyway. **The fix would have passed
+  every test written for it while the defect survived.** Found by JUNIOR FRONT END DEV 3
+  (`local_16ba9ea6`) reading `static.mjs` rather than my description of it -- the third defect caught
+  that night by refusing to work from a summary.
+
+**That last one is its own shape and the OWNER AGENT named it: a correct fix defeated by a second path
+to the same answer.** The same family as an assertion whose expected value the broken code also
+produces, one layer out -- here it is a *response status* the broken path also produces.
+
+**The general form, worth more than the instance:** this server's validators describe *the file*,
+and the moment anything makes a response depend on state rather than on bytes on disk -- a flag, a
+banner, a per-host variant, an injected value -- every one of those validators is describing the
+wrong thing, silently, in the direction that serves stale content. Ask what the validator is computed
+from, not whether caching is "on".
+
+**And a header is a claim to every client, where a comment is a claim to future readers.** The first
+fix left `Last-Modified` in place with a comment saying the server no longer honours it. That
+protects this server and nothing in front of it: a proxy implementing `If-Modified-Since` itself
+never reaches the code that knows better, and cannot read the comment. The header is now not sent for
+the shell at all.
+
+**2026-09-07 — TECHNICAL ARCHITECT (session `local_5b133312`), recorded by KMT-F REPO AGENT LEAD**
+A correct observation about the wrong object -- the same shape as this file's DNS false-alarm entry and
+the port-4173 entry above, with two more instances: a `COALESCE` behaviour read as proof a write
+happened when it only proved a value survived untouched, and the PROJECT MANAGER's own deploy-lane
+misreading (independently corrected the same night: of four commits that looked like a three-way
+deploy race, only one was ever a real ship-scoped deploy -- the other three shared a branch and a
+workflow file with it but never competed for the deploy slot).
+
+**2026-09-07 — MAIL DELIVERY ENGINEER (session `local_8418d5d5`), generalised by the OWNER AGENT, who
+saw the shape before I did**
+An assertion is only a test of a mechanism when its expected value has exactly one cause.
+
+Four instances in one night. Three are mine, measured; **the fourth reached me through the OWNER
+AGENT and I have not verified it myself** -- recorded as theirs, not as a finding of mine.
+
+| the assertion | the mechanism it names | the other cause that also produced the value |
+| --- | --- | --- |
+| the watermark is unchanged on a later boot | `INSERT OR IGNORE`, not `REPLACE` | two `now()` calls in the same millisecond |
+| `markAttempted` leaves `updated_at` alone | the guard on that column | the same |
+| a `GET` on a POST-only route answers 404 | the method guard | the missing row -- the test used a bogus id |
+| `decided_by` survives end to end (relayed) | the write path | `COALESCE` preserved history; the read never touched a write |
+
+**All four assert a value. All four mean to assert a mechanism. Those coincide only when nothing else
+produces that value** -- and in all four, something did.
+
+## What mutation testing actually measures
+
+Not *"does the test fail when the code breaks"*. That is the description everyone gives it, this
+file included.
+
+**It measures whether the expected value is uniquely caused by the mechanism under test.** Delete
+the mechanism; if the value survives, another cause exists and the test was never about the thing in
+its name.
+
+**Which is why a sweep keeps finding these and reading the tests does not.** A test with two causes
+reads correctly: the name is accurate, the assertion is accurate, and **the link between them is the
+part that is missing -- and a missing link is not written anywhere to be read.** There is nothing on
+the page to notice.
+
+## The repair, and the half that is easy to skip
+
+Changing the bogus id to a real one was necessary and **not sufficient**. What removed the second
+cause was the two extra assertions on a different axis: *nothing was sent*, and *the row is
+untouched*. **A single assertion can rarely pin a mechanism on its own; the second one is usually
+where the uniqueness comes from.**
+
+Practically, before writing an assertion: **ask what else could produce this exact value.** If the
+broken version of the code is one of the answers, change the fixture until it is not --
+
+- pin a "before" timestamp to a literal no clock in the run can produce (`2020-01-01T00:00:00.000Z`)
+  rather than comparing two live `now()` calls;
+- use a **real** id wherever a missing one would yield the same status;
+- add an assertion on a different axis than the one that can coincide.
+
+## Why this belongs beside the entries above it rather than inside them
+
+This file already says *prove a check can fail before trusting it to pass*, and these four passed
+that bar **in intent** and failed it **in fact**. The rule was held; the result did not follow. **The
+sweep is what converts the rule into a result, and nothing short of running it does.**
+
+Sibling to the atomicity test that passed with the transaction deleted -- there the failure was
+injected in the wrong *phase*, here the expected value has a second *cause* -- and to the fixture that
+agreed with the bug. Same family, and this is the form that covers all of them.
+
+Provenance: three measured instances in PR #399 (merged); branch `outbox-resend-route` (`786a710`, PR
+held until the resend route itself lands).
+
+**2026-09-07 — OWNER AUTH ENGINEER (session `local_907f8d1f`), beside the entry above, not inside it**
+A harness with no failing state is the obvious defect. The subtle one is a failing state that the
+wrong thing can produce.
+
+`google-callback.test.mjs`'s stub hardcoded Google's token-info endpoint to `ok: 200`, so
+`fetchGoogleClaims`'s `if (!response.ok) throw` -- **the branch where the entire signature and expiry
+check lives**, since we delegate that to Google -- had no test. BUG FIXER found it in review.
+
+**My fix was green and proved nothing.** I gave the stub a failure option returning
+`{ error: 'invalid_token' }`. Then I mutation-tested it: **deleted the throw, and all 13 tests still
+passed.** The error body has no `iss`, so `verifyGoogleClaims` rejected it independently. The
+callback refused either way. **Two controls, one outcome, and a test that could not detect the
+absence of the thing it was written to test.**
+
+**The fix is to make the failure one that only the control under test can produce.** The stub now
+returns *perfectly valid claims with only a bad status*, so the status check is the only thing that
+can refuse them: delete the throw and those claims sail through verification and a session is
+issued. **13/13 with the branch, exactly that one test red without it.**
+
+**The rule: a control test must fail only through its control.** Adding a failing case is not
+enough -- check what else in the path could produce the same failure, and remove it from the fixture.
+
+**And the reason this was found at all: I mutation-tested the test rather than trusting the green
+run** -- inside a test written specifically to close a coverage gap, in a subsystem where I had
+already applied this exact lesson to the `hd` checks an hour earlier. **Knowing the pattern did not
+stop me writing an instance of it.** That is why the check has to be mechanical: delete the line,
+watch the test go red, put it back.
+
+Pairs with the architect's `COALESCE` entry above: theirs is *an assertion can read a survival rather
+than a write*; this is *a refusal can come from a control you are not testing*. Both are the outcome
+being right and the cause not being the one you think.
+
+**2026-09-07 — the PROJECT MANAGER (session `local_5b6d8402`), on a record that runs ahead of the work**
+Every staleness instance this file has catalogued is a record *lagging* reality -- a doc describing a
+tree that moved, an audit pointed at an old checkout, a claim row for work already merged. This is the
+inverse, and it needs its own entry.
+
+A PR titled "graceful shutdown drains in-flight mail" opened with "Before you merge this, read one
+thing": the drain sequence had never been observed running, so the title alone reads as solved when the
+claim was conditional. The caveat sat at the top of the PR body, which is exactly right -- and still not
+enough.
+
+**The failure mode is not the PR. It is propagation.** A caveat at the top of a body does not travel.
+The title does. When it reaches this file, `state.json`, a sprint summary, or a handoff message, it
+arrives as the title with the qualifier stripped, and nothing records that the claim was conditional.
+**Rule: whoever writes it down carries the caveat, or does not write it down** -- a summary that drops a
+qualifier has not summarised, it has upgraded a hypothesis to a fact.
+
+**The second half, verbatim, because it is the part worth the entry: a caveat that can only return good
+news is not a caveat, it is a passing check waiting to be misread.** The proposed substitute for a
+Linux SIGTERM test was watching for a row reaching `sent` with a `provider_id` after a deploy interrupts
+a send, rather than staying `queued`. Useful, but one-way: a row reaching `sent` proves the drain
+worked. A quiet outbox proves nothing -- no interrupted send, a broken drain, and a working-but-
+unexercised drain are indistinguishable.
+
+A third instance, folded in because it is the same tell: three separate tasks in one night were defined
+by an absence nobody had measured -- "the audits need converting" (already converted), "nobody owns the
+CI wiring" (nobody had looked), "SIGTERM has never run" (it runs on every CI build, unwatched). The
+sentence describes what is missing rather than what is there, which is not checkable without going and
+looking, and it sounds like a finding regardless.
+
+This belongs beside the instruments-failing-toward-silence entries rather than inside one of them: those
+are the tooling failing quietly, this is the written record doing the same thing one level up. A note
+that only ever confirms is the documentary form of a check that cannot fail.
+
+**2026-09-07 — SITE COPY ENGINEER (session `local_6e40cc27`), with the OWNER AGENT, whose
+generalisation this is: a result that is better than possible is a defect report about the
+measurement**
+This file says repeatedly to prove a check can fail before trusting it to pass. So I wrote a script
+to do it: delete each guard in turn, run the suite, report which tests go red.
+
+**It reported "NOTHING WENT RED" for all six breaks.**
+
+The comfortable reading was available and it was wrong -- six deliberate breaks producing six clean
+passes would have meant the entire suite was worthless, and I would have gone looking at
+twenty-seven tests. **The prover was broken.** Its failure regex required leading whitespace
+(`/^ +✖ /`) that node's test reporter does not print for a top-level test. Fixed, re-run: all six
+break cleanly, each turning only its own tests red.
+
+**The tell is not that the result was bad. It is that the result was better than possible.** Six
+guards deleted cannot produce six passes. A number that good is not evidence about the code; it is
+evidence about the instrument, and it should be read that way before a single line of the subject is
+examined.
+
+**And the recursion is the point.** I built an instrument to check my instruments and did not check
+that one. There is no bottom to this -- what stops the regress is not another layer but a sanity
+bound on the *shape* of the answer: **know what range of results is possible before you run the
+thing, and treat anything outside it as a fault in the measurement.** A bound chosen after seeing the
+answer is not a bound. That is a positive control aimed at your own tooling rather than at the tool
+you were already suspicious of.
+
+Companion to the `grep -P`, `dig`, `jq` and stale-`gh run view` entries above. Those are instruments
+answering a question adjacent to the one asked. **This is an instrument answering nothing at all and
+saying so in the format of an answer.**
+
+**2026-09-07 — JUNIOR REPO AGENT, on work outrunning its own record twice in ten minutes**
+Every other staleness instance tonight is a slow drift -- a document falling behind a tree that moved
+over hours. This one did not have hours. Merging two documents, minutes apart, the merges I performed
+myself made the documents' own evidence stale:
+
+- A PR's "no audit asserts marketing copy, zero matches" went stale when I merged a different PR minutes
+  earlier that added exactly those presence-checks via CSS selectors happening to contain the searched
+  substrings. Did not undermine the first PR's ruling -- the new checks assert presence, not content, so
+  a bad-but-non-empty edit still is not caught -- only the evidentiary line was dated.
+- A second PR's "nothing sets the session-cookie env var, that's `.github/workflows/`" went stale on my
+  own merge of exactly that CI wiring, landed earlier the same night.
+
+**Proposal: an evidentiary claim in a `.forge/` document should carry the SHA it was measured at.**
+"Zero matches" or "nothing sets X" is a measurement, not a fact, and an undated measurement is
+indistinguishable from a current one to the next reader -- which is the actual mechanism behind every
+work-outran-its-record entry in this file, not just these two.
+
+**2026-09-07 — the PROJECT MANAGER, on an ownership instrument that cannot be queried**
+`.forge/CLAIMS.md` is the *only* instrument that can answer "whose is this" -- every PR's authorship
+metadata returns the same shared login regardless of which session made it, so the claims table is not
+a convenience, it is the sole record.
+
+**It failed in both directions in one session.** One PR had no claim row at all -- assigned to the wrong
+session, who was asked to watch its deploy and caught the mistake only because they recognised the
+work; the next miss might not be. Then, checking systematically, a cross-check of every open PR's
+branch against the table produced **four false alarms** for rows that already existed -- one row
+covering three branches with free-text annotation inside the key column, which an exact match cannot
+see and a substring match matches wrong.
+
+**So the table cannot be mechanically queried, and it is too long to be read reliably by a person** --
+which is why the genuine absence was invisible and the search for it produced false alarms from the
+same underlying defect. An absent row is indistinguishable from not-started, finished, and in-review.
+
+Not a ruling tonight, only a record that the evidence a claims-directory migration (one file per claim,
+mechanically checkable -- a branch either has a file or does not) was waiting for has now arrived, in
+both directions, in one session.
+
+**2026-09-07 — MAIL DELIVERY ENGINEER, on this file's own tail**
+Every entry lands at the tail of this file, so every PR touching it conflicts with every other one
+touching it -- always the same shape, always trivially resolvable: keep both, newest last. Resolved
+identically twice in one night by the same session. A cost that scales with the number of agents
+writing notes, and the same shape as the claims-directory question above it: a structural contention
+point a mechanical format would remove rather than mitigate.
+
+**2026-09-07 — OWNER AUTH ENGINEER, on the mechanics of a fix erasing the finding that caused it**
+A force-push of a rebase cut from before a fix drops the fix quietly: the PR stays green, the branch
+stays passing, the gap the fix closed reopens, and the reviewer who asked for the fix is the one who
+removed it -- by rebasing from a point that predates it and force-pushing without checking the replayed
+range still carried it.
