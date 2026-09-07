@@ -260,7 +260,7 @@ function productJsonLd(html) {
 }
 
 const labelValue = (html, labels) => {
-  const plain = decode(html.replace(/<script\b[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]*>/g, '\n'))
+  const plain = decode(html.replace(/<script\b[\s\S]*?<\/script\s*>/gi, ' ').replace(/<style\b[\s\S]*?<\/style\s*>/gi, ' ').replace(/<[^>]*>/g, '\n'))
   for (const label of labels) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const found = plain.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*[:\\n]\\s*([^\\n]+)`, 'i'))
