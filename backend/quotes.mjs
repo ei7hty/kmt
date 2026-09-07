@@ -369,8 +369,16 @@ function cleanRequest(input, today) {
  * was authorised, and telling them apart later is the whole reason the column
  * exists now rather than after months of decisions nobody can attribute.
  *
- * `moveTo` takes an `actor` so the sign-in work has a seam to fill; until then
- * every owner decision falls back to this.
+ * `moveTo` takes an `actor` so the sign-in work has a seam to fill. **It does
+ * not default to this constant**, and the distinction is the point: until a
+ * caller can establish how the owner authenticated, a decision records `null`
+ * -- "not recorded" -- rather than asserting the shared credential. This
+ * constant is for the caller that *can* say so, once `actorFor` is threaded
+ * into the decide handler (#290's follow-up).
+ *
+ * It defaulted here originally, which was true while the password was the only
+ * way in and would have become false the moment the user configured Google
+ * sign-in -- silently, on a column whose entire purpose is being trustworthy.
  *
  * ## One column keeps the latest decision, not a history -- and when that stops
  * ## being good enough
@@ -885,7 +893,20 @@ export class Quotes {
       // an owner decision writes it, and only when it has an actor to write.
       // `audience` already tells us which this is: `decide`, `finish` and
       // `cancel` pass 'owner', while the customer's own cancel does not.
-      const decidedBy = audience === 'owner' ? (actor ?? SHARED_PASSWORD_ACTOR) : null
+      //
+      // **No default.** An owner decision records an actor only when a caller
+      // actually established one. It used to fall back to
+      // `SHARED_PASSWORD_ACTOR`, which was true while the shared password was
+      // the only way in and became false the moment a second way existed --
+      // `decide()` takes no `actor`, so *every* decision recorded the shared
+      // credential regardless of how the owner had authenticated. That
+      // contradicted `migrate()`'s own rule 360 lines above, which refuses to
+      // back-fill this sentinel precisely because writing it where it is not
+      // known to be true "would invent a record rather than admit its
+      // absence". Null means we did not record it; the constant means we
+      // recorded that it *was* the shared credential, and only a caller that
+      // can establish the session's identity may say so.
+      const decidedBy = audience === 'owner' ? (actor ?? null) : null
       this.db.prepare(`UPDATE quotes
           SET status=?, reason=COALESCE(?, reason), decided_by=COALESCE(?, decided_by),
               version=version+1, updated_at=?
