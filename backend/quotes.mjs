@@ -655,13 +655,20 @@ export class Quotes {
             // reason. Every screen that shows a closed request reads it here
             // rather than each one inventing a place to keep it.
             reason: quote.reason ?? null,
-            // Who decided, owner-side only. Deliberately spread in rather than
-            // listed unconditionally: the quote half of this shape is not
-            // audience-partitioned the way the request half is (see the
-            // comment above `shapeRow`, and .forge/personal-data-removal.md
-            // finding 1), so a field added plainly here reaches the shareable
-            // customer link. Nothing about who operates the owner screen is a
-            // customer's business.
+            // Who decided, owner-side only, and spread in rather than listed
+            // unconditionally for a reason worth stating precisely.
+            //
+            // The quote *payload* is audience-partitioned: `quoteFields` above
+            // filters it through CUSTOMER_QUOTE_FIELDS (#246, closing the quote
+            // half of #65's seam). **The columns spread beside it here are
+            // not.** `reason` above is unconditional -- deliberately, because
+            // /status renders a decline reason to the customer -- and anything
+            // added in this block follows it out to the shareable link unless
+            // it says otherwise. So the partition that protects a payload key
+            // does not protect a column, and this is a column.
+            //
+            // Nothing about who operates the owner screen is a customer's
+            // business, hence the audience check.
             ...(audience === 'owner' ? { decidedBy: quote.decided_by ?? null } : {}),
             createdAt: quote.created_at, updatedAt: quote.updated_at,
           }
