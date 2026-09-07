@@ -1,9 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createServer } from 'node:http'
 import {
   cleanSocialProfiles, cleanTestimonials, normalizeSocialProfile, resolveSocialProof,
 } from '../src/social-proof.js'
 import { SocialProof } from './social-proof.mjs'
+import { createApi, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
+import { createAuth, readAuthConfig } from './auth.mjs'
 
 function fakeInventory(initial = null) {
   let value = initial
@@ -79,4 +82,44 @@ test('owner store provides CRUD and one-step undo from the metadata table', () =
   const removed = store.remove(id)
   assert.equal(removed.testimonials.length, 0)
   assert.equal(store.undo().testimonials.length, 1)
+})
+
+test('authenticated testimonial API rejects malformed writes with 400 and preserves metadata', async t => {
+  let stored = null
+  const inventory = { getMeta: () => stored, setMeta: (key, value) => { assert.equal(key, 'socialProof'); stored = value } }
+  const auth = createAuth(readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'social-proof-test' }))
+  const api = createApi(inventory, null)
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (await auth.handle(request, response, url, readJsonBody)) return
+    if (!isKnownApiPath(url.pathname)) { response.writeHead(404); response.end(); return }
+    if (!isPublicApiCall(request.method, url.pathname) && !auth.isAuthenticated(request)) {
+      response.writeHead(401, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' }))
+      return
+    }
+    if (await api(request, response)) return
+    response.writeHead(404); response.end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+  const login = await fetch(`${base}/api/owner/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'a-long-enough-password' }) })
+  const headers = { Cookie: login.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' }
+  const get = () => fetch(`${base}/api/owner/social-proof`, { headers }).then(async response => ({ status: response.status, body: await response.json() }))
+  assert.deepEqual((await get()).body.testimonials, [])
+
+  const missingSource = await fetch(`${base}/api/owner/testimonials`, { method: 'POST', headers, body: JSON.stringify({ kind: 'external-review', text: 'External', attribution: 'Customer', source: 'Google' }) })
+  assert.equal(missingSource.status, 400)
+  assert.match((await missingSource.json()).error, /source URL/)
+  assert.deepEqual((await get()).body.testimonials, [], 'rejected POST leaves metadata unchanged')
+
+  const created = await fetch(`${base}/api/owner/testimonials`, { method: 'POST', headers, body: JSON.stringify({ kind: 'testimonial', text: 'Approved', attribution: 'Customer', source: 'Direct' }) })
+  assert.equal(created.status, 201)
+  const id = (await created.json()).testimonials[0].id
+  const badUpdate = await fetch(`${base}/api/owner/testimonials/${id}`, { method: 'PUT', headers, body: JSON.stringify({ kind: 'testimonial', text: 'Changed', attribution: 'Customer', date: '2026-02-31' }) })
+  assert.equal(badUpdate.status, 400)
+  assert.match((await badUpdate.json()).error, /YYYY-MM-DD/)
+  const after = await get()
+  assert.equal(after.body.testimonials[0].text, 'Approved', 'rejected PUT leaves the saved review unchanged')
 })

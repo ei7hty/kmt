@@ -47,14 +47,18 @@ export class SocialProof {
 
   create(input) {
     const current = this.stored()
-    const review = normalizeTestimonial({ ...input, id: `review-${randomUUID()}` })
+    let review
+    try { review = normalizeTestimonial({ ...input, id: `review-${randomUUID()}` }) }
+    catch (error) { throw new InputError(error.message) }
     return this.save(current.profiles, [...current.testimonials, review])
   }
 
   update(id, input) {
     const current = this.stored()
     if (!current.testimonials.some(review => review.id === id)) throw new InputError('No such review.', 404)
-    const review = normalizeTestimonial({ ...input, id })
+    let review
+    try { review = normalizeTestimonial({ ...input, id }) }
+    catch (error) { throw new InputError(error.message) }
     return this.save(current.profiles, current.testimonials.map(item => item.id === id ? review : item))
   }
 
