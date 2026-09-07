@@ -280,6 +280,19 @@ export class Outbox {
    * sent since. `limit` is a safety cap for that set, not a recency window:
    * hitting it means there are that many live unresolved failures at once,
    * which is its own incident, not a windowing artifact.
+   *
+   * Deliberately `status='failed'`, not "any unresolved row" -- do not
+   * widen this to include `queued`. `resolved_at` on a `queued` row means
+   * something different (a request whose emails will never send because
+   * six requests reached terminal states before this one could, not a
+   * failure), and `queued` under the null adapter is `mail.mjs`'s ordinary
+   * resting state whether or not it is ever resolved. Generalising this
+   * query would make the watcher fire on rows that were never a problem in
+   * the first place, exactly the false-alarm shape the DNS check and
+   * #348 were both caught for tonight. `failed` never has that ambiguity,
+   * which is the whole reason it needs no age threshold and this query
+   * needs no case-by-case reading of `resolution_note` to tell the two
+   * apart.
    */
   unresolvedFailures({ limit = 200 } = {}) {
     return this.db.prepare(

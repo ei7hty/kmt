@@ -32,6 +32,7 @@ const SNAPSHOT_BODY_LIMIT = 8 * 1024 * 1024
 /** The owner's four actions on one quote, as one pattern the route reads twice. */
 const QUOTE_ACTION = /^\/api\/owner\/quotes\/([^/]+)\/(approve|reject|done|cancel)$/
 const QUOTE_EDIT = /^\/api\/owner\/quotes\/([^/]+)$/
+const OUTBOX_RESOLVE = /^\/api\/owner\/outbox\/([^/]+)\/resolve$/
 
 /** The only origins allowed to post pages back. Nothing else gets CORS at all. */
 const IMPORT_ORIGINS = new Set(['https://www.giga-tires.com', 'https://giga-tires.com'])
@@ -515,6 +516,18 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
         if (!mailer) throw new InputError('Owner endpoint not found', 404)
         const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 50))
         send(200, { messages: mailer.outbox.unresolvedFailures({ limit }) })
+      } else if (request.method === 'POST' && OUTBOX_RESOLVE.test(url.pathname)) {
+        // Ken's action, from the owner screen: he judged a failure (or an
+        // abandoned queued row) accounted for and typed why. Session-gated
+        // like everything here -- resolving is a decision, not a read, and
+        // this is deliberately the only write path onto `resolved_at`/
+        // `resolution_note`: a one-time historical correction (tonight's
+        // rows) is its own script with direct database access, not a route
+        // this endpoint needs to serve.
+        if (!mailer) throw new InputError('Owner endpoint not found', 404)
+        const [, raw] = url.pathname.match(OUTBOX_RESOLVE)
+        const body = await readJsonBody(request)
+        send(200, mailer.outbox.resolve(decodeURIComponent(raw), body?.note ?? null))
       } else if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
         send(200, { ...inventory.list(Object.fromEntries(url.searchParams)), summary: inventory.summary() })
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/by-brand/')) {

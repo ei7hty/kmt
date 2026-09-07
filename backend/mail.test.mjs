@@ -585,3 +585,52 @@ test('GET /api/owner/outbox/unresolved-failures is a real query, not the general
   assert.equal(unresolved.messages.length, 1)
   assert.equal(unresolved.messages[0].id, failure.id, 'the failure-filtered route still sees it')
 })
+
+/* -------------------------------------------------------------- resolve route */
+
+test('POST /api/owner/outbox/:id/resolve settles a row and takes it out of unresolved-failures', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+  const { request } = quotes.submit(form())
+  const failure = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'x' }, to: 'a@b.c', toName: 'A' })
+  outbox.updateStatus(failure.id, { status: 'failed', error: '535 5.7.8 credential dead' })
+
+  const resolved = await (await fetch(`${base}/api/owner/outbox/${failure.id}/resolve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note: 'credential rotated' }),
+  })).json()
+  assert.equal(resolved.status, 'failed', 'status is untouched -- the attempt really was rejected')
+  assert.ok(resolved.resolvedAt)
+  assert.equal(resolved.resolutionNote, 'credential rotated')
+  assert.equal(resolved.error, '535 5.7.8 credential dead', 'the diagnostic survives, in its own column')
+
+  const unresolved = await (await fetch(base + '/api/owner/outbox/unresolved-failures?limit=200')).json()
+  assert.equal(unresolved.messages.length, 0, 'the resolved row no longer appears')
+})
+
+test('POST /api/owner/outbox/:id/resolve on a message that does not exist answers 404', async t => {
+  const { quotes, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+
+  const response = await fetch(`${base}/api/owner/outbox/${'0'.repeat(32)}/resolve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+  })
+  assert.equal(response.status, 404)
+})
+
+test('POST /api/owner/outbox/:id/resolve works on a queued row too, and never fills error', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+  const { request } = quotes.submit(form())
+  const stranded = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'x' }, to: 'a@b.c', toName: 'A' })
+
+  const resolved = await (await fetch(`${base}/api/owner/outbox/${stranded.id}/resolve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note: 'never attempted; no adapter was configured when this was recorded' }),
+  })).json()
+  assert.equal(resolved.status, 'queued', 'still queued -- it was never attempted, resolving does not invent an attempt')
+  assert.ok(resolved.resolvedAt)
+  assert.equal(resolved.resolutionNote, 'never attempted; no adapter was configured when this was recorded')
+  assert.equal(resolved.error, null, 'error stays null, not the resolution note')
+})
