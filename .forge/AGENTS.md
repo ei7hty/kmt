@@ -71,19 +71,30 @@ the whole mechanism — the same discipline as any other commit here (explicit
 paths, no `-A`, check the branch first), just without a PR wrapped around it.
 
 **Make that commit from a disposable worktree off `origin/main`, not the shared
-checkout.** A claim commit is unpushed for the seconds between commit and push,
-and `CLAIMS.md` is the busiest file here — so in that window a `git reset` (even
-`--soft`), a rebase, or an amend run in the shared checkout by any session can
-unmake another session's unpushed claim. The recovery is the reflog, and the
-loss leaves no artifact: no conflict, no error, nothing in `CLAIMS.md` to say a
-row was ever there, until someone asks where their claim went. That is the worst
-failure shape this repo has — it looks correct from every angle a reader has.
-A worktree gives you your own `HEAD` to commit and push from, so no session's
-history op can reach another's unpushed work; `node scripts/worktree.mjs add`
-and `remove` handle it, and the worktree is disposable once the push lands. The
-same holds for any direct-to-`main` commit, claims and releases alike: the
-shared checkout's `HEAD` is shared state, and rewriting it is not yours alone to
-do.
+checkout.** `CLAIMS.md` is the busiest file here, and the shared checkout cannot
+safely hold its edits at this concurrency — in either direction, both seen in
+one night:
+
+- A `git reset` (even `--soft`), rebase, or amend run in the shared checkout by
+  any session unmakes another session's *committed but unpushed* claim. The
+  reflog is the recovery, and it worked the once — but the loss leaves nothing
+  in `CLAIMS.md` itself, so it is found only when someone asks where their row
+  went.
+- Worse: every session stages the same one path, so `git add .forge/CLAIMS.md`
+  — the explicit-path staging the rules above *require* — sweeps up another
+  session's *uncommitted* edit to that file from the shared working tree. Ride
+  it along and it is at least committed (caught once tonight, by attention not
+  process); a `git checkout -- .forge/CLAIMS.md` or `reset --hard` instead
+  discards it with no commit and no reflog entry, nothing anywhere to recover.
+  "Stage explicit paths, never `-A`" protects *across* files and has no force
+  *inside* the one file every session writes.
+
+A fresh worktree's `CLAIMS.md` holds your row and nothing else: no other
+session's edit to sweep up, discard, or reset over. That makes the collision
+structurally impossible rather than a matter of who notices —
+`node scripts/worktree.mjs add` / `remove` handle it, disposable once the push
+lands. The same holds for any direct-to-`main` commit: the shared `HEAD` and
+working tree are shared state, not yours alone to rewrite.
 
 **A subagent has no row of its own.** Work you spawn as a subagent — not a new
 session — has no session id, cannot be messaged, and cannot hold a `CLAIMS.md`
