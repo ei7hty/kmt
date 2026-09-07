@@ -37,13 +37,33 @@ const get = (pathname, { search = '', cookie = '' } = {}) => ({
 })
 
 /** A Google that hands back whatever claims the test names. */
-const stubGoogle = (claims, { exchangeFails = false } = {}) => async (target) => {
+const stubGoogle = (claims, { exchangeFails = false, claimsFail = false } = {}) => async (target) => {
   const href = typeof target === 'string' ? target : target.toString()
   // `/tokeninfo` is matched first and deliberately: it contains `/token`, so
   // the looser test order silently answered the claims request with the
   // exchange's response and turned a valid sign-in into a refusal. Caught
   // because the happy-path test exists; every refusal test stayed green.
-  if (href.includes('/tokeninfo')) return { ok: true, status: 200, json: async () => claims }
+  if (href.includes('/tokeninfo')) {
+    // Google's token-info endpoint is what performs the signature and expiry
+    // verification, and it answers non-200 for a forged or expired token. So
+    // this is the branch that rejects one, and it needs to be failable or it
+    // is never exercised.
+    // When failing, the body is still PERFECTLY VALID claims. That is
+    // deliberate and it is what makes the test discriminating: the only thing
+    // wrong with this response is its status. If the `!response.ok` throw is
+    // ever removed, these claims sail through verification and a session is
+    // issued -- so the test goes red for the right reason.
+    //
+    // The first version of this stub returned `{ error: 'invalid_token' }`,
+    // which was green with the throw removed: the claims verifier rejected the
+    // error body for having no `iss`, so the callback refused either way and
+    // the test proved nothing about the branch it was written for. Two
+    // independent controls producing one outcome -- the same defect the `hd`
+    // tests are shaped to avoid, found by mutation-testing this very test.
+    return claimsFail
+      ? { ok: false, status: 400, json: async () => claims }
+      : { ok: true, status: 200, json: async () => claims }
+  }
   if (href.includes('/token')) {
     return exchangeFails
       ? { ok: false, status: 400, json: async () => ({}) }
@@ -190,6 +210,21 @@ test('an unverified address is refused', async () => {
 test('Google refusing the code exchange is refused, not crashed', async () => {
   await refused('exchange failed', () => signIn(validClaims(), {
     options: { googleFetch: stubGoogle(validClaims(), { exchangeFails: true }) },
+  }))
+})
+
+test('a forged or expired token -- tokeninfo refusing it -- is refused, with no session', async () => {
+  // BUG FIXER's review finding on #387, and it was right: this branch was
+  // unreachable in the tests. It is the one that matters most of the fetch
+  // failures, because it is where a token that is not really Google's gets
+  // rejected -- we do not verify the signature ourselves, we ask Google to,
+  // and a non-200 from tokeninfo IS that rejection.
+  //
+  // The code was correct by inspection: the throw propagates to the catch
+  // around the two fetches and routes through refuseSignIn. "Correct by
+  // inspection" is what every untested branch is until it is not.
+  await refused('tokeninfo rejected the token', () => signIn(validClaims(), {
+    options: { googleFetch: stubGoogle(validClaims(), { claimsFail: true }) },
   }))
 })
 
