@@ -70,6 +70,65 @@ nothing regardless of how it lands. One small commit, straight to `main`, is
 the whole mechanism — the same discipline as any other commit here (explicit
 paths, no `-A`, check the branch first), just without a PR wrapped around it.
 
+**Make that commit from a disposable worktree off `origin/main`, not the shared
+checkout.** `CLAIMS.md` is the busiest file here, and the shared checkout cannot
+safely hold its edits at this concurrency — in either direction, both seen in
+one night:
+
+- A `git reset` (even `--soft`), rebase, or amend run in the shared checkout by
+  any session unmakes another session's *committed but unpushed* claim. The
+  reflog is the recovery, and it worked the once — but the loss leaves nothing
+  in `CLAIMS.md` itself, so it is found only when someone asks where their row
+  went.
+- Worse: every session stages the same one path, so `git add .forge/CLAIMS.md`
+  — the explicit-path staging the rules above *require* — sweeps up another
+  session's *uncommitted* edit to that file from the shared working tree. Ride
+  it along and it is at least committed (caught once tonight, by attention not
+  process); a `git checkout -- .forge/CLAIMS.md` or `reset --hard` instead
+  discards it with no commit and no reflog entry, nothing anywhere to recover.
+  "Stage explicit paths, never `-A`" protects *across* files and has no force
+  *inside* the one file every session writes.
+
+A fresh worktree's `CLAIMS.md` holds your row and nothing else: no other
+session's edit to sweep up, discard, or reset over. That makes the collision
+structurally impossible rather than a matter of who notices. The recipe, every
+line earning its place because an earlier form of this rule failed at each:
+
+```bash
+git worktree add .worktrees/claim-tmp origin/main   # plain add, NOT scripts/worktree.mjs
+#   edit .forge/CLAIMS.md in that tree
+git -C .worktrees/claim-tmp add .forge/CLAIMS.md
+git -C .worktrees/claim-tmp commit -m "Claim <branch> (.forge/CLAIMS.md)"
+git -C .worktrees/claim-tmp fetch origin
+git -C .worktrees/claim-tmp rebase origin/main      # origin moves; re-sync first
+git -C .worktrees/claim-tmp push origin HEAD:main    # explicit refspec: HEAD is detached
+git worktree remove .worktrees/claim-tmp
+```
+
+- **Plain `git worktree add`, never `scripts/worktree.mjs`.** The script links
+  the shared `node_modules` junction; a claims tree needs no dependencies and a
+  plain tree has none — which is what makes `remove` safe without `--force`
+  (`--force` through that junction is what once deleted into the shared install).
+- **`origin/main` gives a detached `HEAD`, so a bare `git push` fails** ("not
+  currently on a branch"). Push the explicit refspec `HEAD:main`.
+- **Expect a `! [rejected]` when the board is busy — that is the rule working,
+  not failing.** `origin/main` can move in the seconds between commit and push,
+  so the race now surfaces as a loud push rejection instead of a silent sweep.
+  On rejection, `fetch`, `rebase origin/main`, and push again — **re-read the
+  table and re-apply your row to the new tip; do not replay your edit** (the same
+  stale-branch trap the rebase note records). Read a rejection as "someone
+  claimed in parallel," never as "I did this wrong" — the second reading is what
+  sends people back to the shared checkout this rule exists to empty.
+- **On Windows, `git worktree remove` can fail `Permission denied` if that
+  directory was recently your shell's cwd;** `rm -rf` it then `git worktree
+  prune` — safe only because a plain tree has no junction to follow.
+
+Use `.worktrees/` (`.gitignore` covers it), never a sibling that never gets
+cleaned up. The same holds for any direct-to-`main` commit: the shared `HEAD`
+and working tree are shared state, not yours alone to rewrite. A recipe that
+does not run is worse than none — it fails at the moment of use and the fallback
+is the unsafe path; this one is verified, not assumed.
+
 **A subagent has no row of its own.** Work you spawn as a subagent — not a new
 session — has no session id, cannot be messaged, and cannot hold a `CLAIMS.md`
 row in its own name. So the session that spawns it owns the subagent's claim
