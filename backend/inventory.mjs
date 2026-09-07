@@ -61,6 +61,7 @@ export class Inventory {
       );
       CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `)
+    this.seedCatalogueLines()
   }
 
   transaction(fn) {
@@ -187,16 +188,29 @@ export class Inventory {
   }
 
   savePricingSettings(input) {
-    if (!input || !Number.isFinite(input.mobileServiceFee) || input.mobileServiceFee <= 0 || input.mobileServiceFee > 1000) {
+    if (!input) throw new InputError('Send the pricing settings to save.')
+    const previous = this.getMeta('pricing')
+
+    // Both fees are optional now that catalogue entries are the fee's actual
+    // source of truth (#354 stage 2 -- calculateDraftQuote no longer reads
+    // either one directly). Omitted means "not changing this", the same
+    // shape saveMarkup already uses for shippingPerTire: the owner screen's
+    // pricing form now asks only about tax, and must not be forced to
+    // re-supply fees it no longer shows a field for.
+    const feeProvided = input.mobileServiceFee !== undefined
+    const mobileServiceFee = feeProvided ? input.mobileServiceFee : (previous ? previous.mobileServiceFeeCents / 100 : DEFAULT_PRICING_SETTINGS.mobileServiceFee)
+    if (!Number.isFinite(mobileServiceFee) || mobileServiceFee <= 0 || mobileServiceFee > 1000) {
       throw new InputError('Enter a mobile service fee between $0 and $1000.')
     }
+    const disposalProvided = input.disposalFee !== undefined
     // null is "not offered"; anything else has to be a real amount, not a guess.
-    if (input.disposalFee !== null && (!Number.isFinite(input.disposalFee) || input.disposalFee < 0 || input.disposalFee > 200)) {
+    const disposalFee = disposalProvided ? input.disposalFee : (previous && previous.disposalFeeCents !== null ? previous.disposalFeeCents / 100 : null)
+    if (disposalFee !== null && (!Number.isFinite(disposalFee) || disposalFee < 0 || disposalFee > 200)) {
       throw new InputError('Enter a disposal fee between $0 and $200, or leave it off.')
     }
     // A stored fee's own placeholder flag, read before this save overwrites
     // it -- see the note on disposalFeeIsPlaceholder below.
-    const previousDisposalIsPlaceholder = this.getMeta('pricing')?.disposalFeeIsPlaceholder ?? true
+    const previousDisposalIsPlaceholder = previous?.disposalFeeIsPlaceholder ?? true
     let tax = null
     if (input.tax !== null && input.tax !== undefined) {
       // A rate is a fraction of the price, not a percentage typed as one: 6.25% is 0.0625.
@@ -210,21 +224,21 @@ export class Inventory {
       tax = { rate: input.tax.rate, appliesTo: input.tax.appliesTo }
     }
     const pricing = {
-      mobileServiceFeeCents: Math.round(input.mobileServiceFee * 100),
-      // mobileServiceFee has no fallback path -- it is required and freshly
-      // validated on every call -- so a successful save always decides it.
-      mobileServiceFeeIsPlaceholder: false,
-      disposalFeeCents: input.disposalFee === null ? null : Math.round(input.disposalFee * 100),
+      mobileServiceFeeCents: Math.round(mobileServiceFee * 100),
+      // A save that actually names the fee always decides it; a save that
+      // omits it (the tax-only form, post-stage-2) leaves whatever
+      // placeholder status it already had -- same "omitted is not a guess"
+      // rule stage 2 gives disposal below, now shared by both fees.
+      mobileServiceFeeIsPlaceholder: feeProvided ? false : (previous?.mobileServiceFeeIsPlaceholder ?? true),
+      disposalFeeCents: disposalFee === null ? null : Math.round(disposalFee * 100),
       // null is the disposal toggle's own default (off), not evidence Ken
       // looked at it: the very first pricing save he ever makes, to set only
       // the mobile fee, sends disposalFee: null because that is what the
       // untouched form still holds, and that used to permanently record "no
       // disposal" as a decision he never made (#finding-3). The flag only
-      // clears on a save that actually names a real fee; a null keeps
-      // whatever the field's placeholder status already was. Harmless while
-      // disposalFee stays null either way -- nothing reads this flag until a
-      // real fee exists to show a customer.
-      disposalFeeIsPlaceholder: input.disposalFee === null ? previousDisposalIsPlaceholder : false,
+      // clears on a save that actually names a real fee; null (typed or
+      // omitted) keeps whatever the field's placeholder status already was.
+      disposalFeeIsPlaceholder: disposalProvided && disposalFee !== null ? false : previousDisposalIsPlaceholder,
       tax,
       updatedAt: now(),
     }
@@ -256,15 +270,23 @@ export class Inventory {
    * the id and only changing the label must not turn that reference into a
    * new, different line.
    *
-   * `isPlaceholder` does not exist on a catalogue line and that is
-   * deliberate (#354): the flag exists to mark a number this codebase
-   * invented, and a line Ken authored is his by construction. There is
-   * nothing to disclaim.
+   * `isPlaceholder` does not exist on a line Ken authors himself (#354): the
+   * flag exists to mark a number this codebase invented, and his own entry
+   * has nothing to disclaim. It does exist, carried across from the setting
+   * it came from, on a line `seedCatalogueLines` wrote on his behalf --
+   * that number is ours wearing his name until he actually edits it
+   * (pricing-catalogue.md's amendment to #354, stage 2). This method computes
+   * the flag itself from whether the amount actually changed; it is never
+   * trusted from the caller, the same rule `savePricingSettings` already
+   * applies to `disposalFeeIsPlaceholder` -- otherwise saving the whole list
+   * (this replaces it wholesale) without touching a seeded line's amount
+   * would silently clear its flag just by echoing it back unchanged.
    */
   saveCatalogueLines(input) {
     if (!Array.isArray(input)) throw new InputError('Send the catalogue as a list of lines.')
     if (input.length > CATALOGUE_LINE_LIMIT) throw new InputError(`A catalogue may hold at most ${CATALOGUE_LINE_LIMIT} lines.`)
 
+    const previous = new Map(this.getCatalogueLines().map(line => [line.id, line]))
     const seenIds = new Set()
     const lines = input.map((line, index) => {
       if (!line || typeof line !== 'object') throw new InputError(`Line ${index + 1} is not valid.`)
@@ -288,11 +310,67 @@ export class Inventory {
       if (seenIds.has(id)) throw new InputError(`Line ${index + 1} repeats an id already used by another line in this save.`)
       seenIds.add(id)
 
-      return { id, label, amountCents: line.amountCents, basis: line.basis, mode: line.mode, taxable: line.taxable, enabled: line.enabled }
+      const shaped = { id, label, amountCents: line.amountCents, basis: line.basis, mode: line.mode, taxable: line.taxable, enabled: line.enabled }
+
+      const existing = previous.get(id)
+      if (existing && 'isPlaceholder' in existing) {
+        // Untouched amount: the flag survives. Changed amount: Ken just set
+        // it, so the flag is gone for good -- omitted, not set to false, the
+        // same "absent, not a placeholder" shape the rest of pricing uses.
+        if (existing.amountCents === line.amountCents) shaped.isPlaceholder = existing.isPlaceholder
+      } else if (!existing && line.isPlaceholder === true) {
+        // No previous line to compare against: this is seedCatalogueLines's
+        // own first write, the one caller allowed to assert the flag
+        // directly rather than have it computed.
+        shaped.isPlaceholder = true
+      }
+
+      return shaped
     })
 
     this.setMeta('pricingLines', lines)
     return lines
+  }
+
+  /**
+   * One-time, at construction: fold the two settings-based fees into
+   * catalogue entries so `calculateDraftQuote` can drop its own hardcoded
+   * versions of them without a customer ever seeing a quote missing a line
+   * (#354 stage 2). Runs only while the catalogue is empty -- idempotent by
+   * construction, asking the database what it actually has rather than
+   * counting on a version flag, the same idiom `Quotes.migrate()` uses.
+   *
+   * Mobile service seeds unconditionally. `calculateDraftQuote`'s own line
+   * for it was unconditional too -- `isPlaceholder` marks the number, never
+   * whether the fee applies -- so a fresh database with no pricing ever
+   * saved still needs a mobile-service line, or a draft comes out light by
+   * exactly that fee the moment the hardcoded line is gone. Disposal seeds
+   * only when a fee is actually set: an unset disposal fee is not a
+   * placeholder number, it is an absent optional line, exactly as it reads
+   * today.
+   *
+   * Both carry the tax classification those two lines have always had
+   * (`'services'`, from the original hardcoded `taxClass`) rather than a
+   * guess, and both carry whichever setting's own `isPlaceholder` state --
+   * a seeded line is our number wearing Ken's name until he edits it.
+   */
+  seedCatalogueLines() {
+    if (this.getCatalogueLines().length > 0) return
+    const pricing = this.getPricingSettings()
+    const taxableAsServices = Boolean(pricing.tax) && (pricing.tax.appliesTo === 'all' || pricing.tax.appliesTo === 'services')
+    const seeds = [
+      {
+        id: 'mobile-service', label: 'Mobile installation service', amountCents: Math.round(pricing.mobileServiceFee * 100),
+        basis: 'perJob', mode: 'automatic', taxable: taxableAsServices, enabled: true,
+        isPlaceholder: pricing.mobileServiceFeeIsPlaceholder,
+      },
+      ...(pricing.disposalFee !== null ? [{
+        id: 'disposal', label: 'Old tire disposal', amountCents: Math.round(pricing.disposalFee * 100),
+        basis: 'perTire', mode: 'optional', taxable: taxableAsServices, enabled: true,
+        isPlaceholder: pricing.disposalFeeIsPlaceholder,
+      }] : []),
+    ]
+    this.saveCatalogueLines(seeds)
   }
 
   /**
@@ -649,6 +727,10 @@ export class Inventory {
       // Same reasoning: the mobile fee, disposal and tax settings ride along
       // rather than needing their own request.
       pricing: this.getPricingSettings(),
+      // Same reasoning: the owner's own quote lines (#354, stage 2) ride
+      // along too, seeded by construction so this is never empty on a real
+      // deploy.
+      pricingLines: this.getCatalogueLines(),
       // Same reasoning: the brand picker's counts ride along rather than
       // needing their own request.
       brands: this.brandSummary(),

@@ -53,7 +53,7 @@ const form = (overrides = {}) => ({
 })
 
 test('a submit stores the request and its quote, priced exactly as the frontend prices it', async t => {
-  const { quotes } = setup(t)
+  const { inventory, quotes } = setup(t)
 
   const { request, quote } = quotes.submit(form())
 
@@ -61,9 +61,10 @@ test('a submit stores the request and its quote, priced exactly as the frontend 
   assert.equal(request.vehicleInfo, '2021 Honda Civic')
   assert.equal(quote.status, 'draft')
 
-  // The comparison that matters: the server drafts with the same function over
-  // the same catalog, so a customer is never quoted one number and shown another.
-  const expected = calculateDraftQuote({ ...form(), id: request.id }, quotes.catalog())
+  // The comparison that matters: the server drafts with the same function,
+  // the same catalog and the same catalogue lines, so a customer is never
+  // quoted one number and shown another.
+  const expected = calculateDraftQuote({ ...form(), id: request.id }, quotes.catalog(), inventory.getPricingSettings(), inventory.getCatalogueLines(), [])
   assert.equal(quote.total, expected.total)
   assert.deepEqual(quote.lineItems, expected.lineItems)
   assert.equal(quote.exception, expected.exception)
@@ -74,9 +75,18 @@ test('a submit stores the request and its quote, priced exactly as the frontend 
   assert.equal(found.quote.total, quote.total)
 })
 
-test('submit reads the owner\'s pricing settings, not the constant, and the customer sees subtotal but not the raw tax gate', async t => {
+test('submit reads the owner\'s catalogue, not a constant, and the customer sees subtotal but not the raw tax gate', async t => {
   const { inventory, quotes } = setup(t)
-  inventory.savePricingSettings({ mobileServiceFee: 75, disposalFee: 6, tax: { rate: 0.1, appliesTo: 'all' } })
+  // Post-stage-2, the fee's source of truth is the catalogue, seeded once at
+  // construction -- savePricingSettings's mobileServiceFee/disposalFee are
+  // vestigial once that has happened, so changing what's charged means
+  // editing the catalogue entries directly, the same as Ken's screen would.
+  inventory.savePricingSettings({ tax: { rate: 0.1, appliesTo: 'all' } })
+  const [seededFee] = inventory.getCatalogueLines()
+  inventory.saveCatalogueLines([
+    { ...seededFee, amountCents: 7500, taxable: true },
+    { id: 'disposal', label: 'Old tire disposal', amountCents: 600, basis: 'perTire', mode: 'optional', taxable: true, enabled: true },
+  ])
 
   const { request, quote } = quotes.submit(form({ disposeOldTires: true }))
   assert.ok(quote.lineItems.some(line => line.description === 'Mobile installation service' && line.unitPrice === 75))
@@ -244,9 +254,14 @@ test('the original draft is an owner-only figure: a customer read never carries 
   assert.equal('draftTotal' in customerRead.quote, false, 'draftTotal must not reach the customer shape')
 })
 
+// A stand-in for the seeded mobile-service catalogue entry (#354 stage 2) --
+// calculateDraftQuote no longer generates this line itself, so a unit test
+// exercising it supplies one explicitly, perJob so it never multiplies.
+const mobileFeeLine = { id: 'mobile-service', label: 'Mobile installation service', amountCents: 4999, basis: 'perJob', mode: 'automatic', taxable: false, enabled: true }
+
 test('calculateDraftQuote multiplies the tire line by quantity and leaves the fee alone', () => {
   const catalog = [tire()]
-  const quoteOfFour = calculateDraftQuote({ tireSelection: 'giga-a', quantity: 4 }, catalog)
+  const quoteOfFour = calculateDraftQuote({ tireSelection: 'giga-a', quantity: 4 }, catalog, undefined, [mobileFeeLine])
   const tireLine = quoteOfFour.lineItems.find(item => item.description !== 'Mobile installation service')
   const feeLine = quoteOfFour.lineItems.find(item => item.description === 'Mobile installation service')
   assert.equal(tireLine.quantity, 4)
@@ -255,26 +270,26 @@ test('calculateDraftQuote multiplies the tire line by quantity and leaves the fe
   assert.equal(feeLine.unitPrice, 49.99)
   assert.equal(quoteOfFour.total, Math.round((50 * 4 + 49.99) * 100) / 100)
 
-  const quoteOfOne = calculateDraftQuote({ tireSelection: 'giga-a' }, catalog)
+  const quoteOfOne = calculateDraftQuote({ tireSelection: 'giga-a' }, catalog, undefined, [mobileFeeLine])
   assert.equal(quoteOfOne.lineItems[0].quantity, 1, 'no quantity at all still means one tire, not zero and not a full set')
 })
 
 test('quantity defaults to 4, an explicit choice is honoured, and the fee never multiplies', async t => {
-  const { quotes } = setup(t)
+  const { inventory, quotes } = setup(t)
 
   const defaulted = quotes.submit(form({ quantity: undefined }))
   const tireLine = defaulted.quote.lineItems.find(item => item.description !== 'Mobile installation service')
   const feeLine = defaulted.quote.lineItems.find(item => item.description === 'Mobile installation service')
   assert.equal(tireLine.quantity, 4, 'a request that says nothing about quantity means a full set')
   assert.equal(feeLine.quantity, 1, 'the mobile-service fee is one line regardless of how many tires')
-  const expectedDefault = calculateDraftQuote({ ...form({ quantity: 4 }), id: defaulted.request.id }, quotes.catalog())
+  const expectedDefault = calculateDraftQuote({ ...form({ quantity: 4 }), id: defaulted.request.id }, quotes.catalog(), inventory.getPricingSettings(), inventory.getCatalogueLines(), [])
   assert.equal(defaulted.quote.total, expectedDefault.total)
   assert.deepEqual(defaulted.quote.lineItems, expectedDefault.lineItems)
 
   const explicit = quotes.submit(form({ quantity: 2 }))
   const explicitTireLine = explicit.quote.lineItems.find(item => item.description !== 'Mobile installation service')
   assert.equal(explicitTireLine.quantity, 2)
-  const expectedExplicit = calculateDraftQuote({ ...form({ quantity: 2 }), id: explicit.request.id }, quotes.catalog())
+  const expectedExplicit = calculateDraftQuote({ ...form({ quantity: 2 }), id: explicit.request.id }, quotes.catalog(), inventory.getPricingSettings(), inventory.getCatalogueLines(), [])
   assert.equal(explicit.quote.total, expectedExplicit.total)
 })
 

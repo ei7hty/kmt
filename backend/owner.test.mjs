@@ -528,14 +528,21 @@ const catalogueLine = (overrides = {}) => ({
   ...overrides,
 })
 
-test('the catalogue starts empty, and saving assigns each new line a stable id', t => {
+test('the catalogue starts seeded with the mobile-service fee, not empty, and saving assigns each new line a stable id', t => {
   const db = setup(t)
-  assert.deepEqual(db.getCatalogueLines(), [])
+  const seeded = db.getCatalogueLines()
+  assert.equal(seeded.length, 1, 'seedCatalogueLines() ran at construction (#354 stage 2)')
+  assert.equal(seeded[0].id, 'mobile-service')
+  assert.equal(seeded[0].isPlaceholder, true, 'the default fee is still a placeholder until Ken sets one')
 
-  const saved = db.saveCatalogueLines([catalogueLine()])
-  assert.equal(saved.length, 1)
-  assert.ok(saved[0].id, 'a line with no id is assigned one')
-  assert.equal(saved[0].label, 'Installation')
+  // saveCatalogueLines replaces the whole list, so keeping the seed while
+  // adding a line means sending both back -- the screen's job, not this
+  // method's.
+  const saved = db.saveCatalogueLines([...seeded, catalogueLine()])
+  assert.equal(saved.length, 2)
+  const added = saved.find(line => line.id !== 'mobile-service')
+  assert.ok(added.id, 'a line with no id is assigned one')
+  assert.equal(added.label, 'Installation')
   assert.deepEqual(db.getCatalogueLines(), saved, 'survives a fresh read')
 })
 
@@ -551,6 +558,47 @@ test('saveCatalogueLines has no isPlaceholder field, unlike every other pricing 
   const db = setup(t)
   const [saved] = db.saveCatalogueLines([catalogueLine()])
   assert.equal('isPlaceholder' in saved, false)
+})
+
+test('disposal seeds only when a fee is actually set; an unset disposal is an absent line, not a placeholder number', t => {
+  const db = setup(t)
+  assert.equal(db.getCatalogueLines().length, 1, 'mobile-service only, since no disposal fee is set yet')
+
+  db.savePricingSettings({ mobileServiceFee: 49.99, disposalFee: 8 })
+  // The constructor's own seed already ran (before this save existed to see),
+  // so this reproduces what the seed does when it runs against a database
+  // that already has a real disposal fee -- the shape a restore from a
+  // backup taken after Ken set one would actually have -- via the same
+  // public entry point the constructor itself calls.
+  db.setMeta('pricingLines', [])
+  db.seedCatalogueLines()
+
+  const lines = db.getCatalogueLines()
+  assert.equal(lines.length, 2)
+  const disposal = lines.find(line => line.id === 'disposal')
+  assert.ok(disposal, 'disposal seeds alongside mobile-service once a fee exists')
+  assert.equal(disposal.amountCents, 800)
+  assert.equal(disposal.basis, 'perTire')
+  assert.equal(disposal.mode, 'optional')
+})
+
+test('a seeded line\'s isPlaceholder clears only when its own amount actually changes, not on an unrelated save (#354 amendment)', t => {
+  const db = setup(t)
+  const [seeded] = db.getCatalogueLines()
+  assert.equal(seeded.isPlaceholder, true, 'the default fee, never confirmed by Ken')
+
+  // Saving the whole list back unchanged -- e.g. the owner screen loading and
+  // saving without touching this line -- must not launder the flag away.
+  const [untouched] = db.saveCatalogueLines([seeded])
+  assert.equal(untouched.isPlaceholder, true, 'echoing the same amount back keeps the flag')
+
+  // Ken actually types a new amount: now it is his number.
+  const [edited] = db.saveCatalogueLines([{ ...seeded, amountCents: 6000 }])
+  assert.equal('isPlaceholder' in edited, false, 'a real edit clears the flag for good')
+
+  // And it stays cleared on a later save that leaves the (now his) amount alone.
+  const [resaved] = db.saveCatalogueLines([edited])
+  assert.equal('isPlaceholder' in resaved, false)
 })
 
 test('saveCatalogueLines validates every field, and a rejected save leaves the stored catalogue alone', t => {
@@ -572,6 +620,30 @@ test('saveCatalogueLines validates every field, and a rejected save leaves the s
   assert.equal(db.getCatalogueLines()[0].label, 'Installation')
 })
 
+test('the seed runs once at construction and never re-runs against an already-populated database', () => {
+  const folder = mkdtempSync(path.join(tmpdir(), 'kmt-catalogue-seed-test-'))
+  const filename = path.join(folder, 'test.sqlite')
+  let db
+  try {
+    db = new Inventory(filename, [SIZE])
+    const firstOpen = db.getCatalogueLines()
+    assert.equal(firstOpen.length, 1, 'seeded on first construction against a fresh file')
+    // Ken edits the seeded fee -- exactly the action that would be silently
+    // undone if construction re-seeded on every open rather than checking
+    // whether the catalogue already holds something.
+    db.saveCatalogueLines([{ ...firstOpen[0], amountCents: 6000 }])
+    db.close()
+
+    db = new Inventory(filename, [SIZE])
+    const secondOpen = db.getCatalogueLines()
+    assert.equal(secondOpen.length, 1, 'still one line -- a re-seed would have duplicated Ken\'s fee onto every quote')
+    assert.equal(secondOpen[0].amountCents, 6000, 'his edit survived the reopen; a re-seed would have overwritten it back to the default')
+  } finally {
+    db?.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+})
+
 test('disabling a line rather than removing it from the list is a normal save', t => {
   const db = setup(t)
   const [saved] = db.saveCatalogueLines([catalogueLine()])
@@ -591,19 +663,20 @@ test('the owner pricing-lines endpoint saves and validates over HTTP, session-ga
     method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body),
   })
 
-  const empty = await call('GET')
-  assert.equal(empty.status, 200)
-  assert.deepEqual((await empty.json()).lines, [])
+  const seeded = await call('GET')
+  assert.equal(seeded.status, 200)
+  const seededLines = (await seeded.json()).lines
+  assert.equal(seededLines.length, 1, 'seeded with mobile-service at construction')
 
-  const ok = await call('PUT', { lines: [catalogueLine()] })
+  const ok = await call('PUT', { lines: [...seededLines, catalogueLine()] })
   assert.equal(ok.status, 200)
   const saved = (await ok.json()).lines
-  assert.equal(saved.length, 1)
-  assert.equal(saved[0].label, 'Installation')
+  assert.equal(saved.length, 2)
+  assert.ok(saved.some(line => line.label === 'Installation'))
 
   const bad = await call('PUT', { lines: [{ ...catalogueLine(), basis: 'nowhere' }] })
   assert.equal(bad.status, 400)
-  assert.equal(db.getCatalogueLines().length, 1, 'the rejected save left the stored catalogue alone')
+  assert.equal(db.getCatalogueLines().length, 2, 'the rejected save left the stored catalogue alone')
 })
 
 test('owner pricing endpoint saves and validates over HTTP', async t => {
