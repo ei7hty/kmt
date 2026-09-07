@@ -89,6 +89,14 @@ one night:
   "Stage explicit paths, never `-A`" protects *across* files and has no force
   *inside* the one file every session writes.
 
+**If you find another session's uncommitted edit to `CLAIMS.md` in the shared
+checkout, commit it with attribution — never `checkout --` or `reset --hard` it
+away.** That is the live case until everyone works from a worktree: a row is
+already sitting in the shared tree, put there by someone. Riding it along under a
+one-line note in your commit message costs nothing; discarding it destroys a
+claim with no artifact anywhere, and its author finds out when they ask where it
+went.
+
 A fresh worktree's `CLAIMS.md` holds your row and nothing else: no other
 session's edit to sweep up, discard, or reset over. That makes the collision
 structurally impossible rather than a matter of who notices. The recipe, every
