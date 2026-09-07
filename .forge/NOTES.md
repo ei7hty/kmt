@@ -2063,6 +2063,55 @@ calls it is its own front-end PR, a different lane. Nothing here changes
 what this PR is: still a one-time historical backfill, still held until
 both the route and the note column are real and reachable on `main`.
 
+**A real near-miss, mine, caught by the OWNER AGENT reading the actual
+production data rather than trusting a request built on a rounded
+figure.** Asking `JUNIOR DB ADMIN` for the eight rows' exact ids, I wrote
+the outage window this whole entry has used all along -- "15:41-19:30" --
+directly into a SQL `BETWEEN` bound, and did it inconsistently across two
+separate messages tonight (one bound a minute past the other). The actual
+boundary row sits at `2026-09-06T19:30:46.096Z`, forty-six seconds past
+the tighter of the two. That bound silently drops it: **seven rows come
+back instead of eight, and seven is exactly the count this whole saga has
+been using all night for a completely different set** (`#359`'s real
+`failed` rows) -- so the wrong number would have read as right to anyone
+checking it against what they already expected to see, including me.
+`"15:41-19:30"` was always a rounded, human description of when the
+outage was noticed and resolved, not a boundary anyone had measured to
+the second; treating it as one in a precise query is the same mistake as
+building a detector's threshold from a description of the problem rather
+than the problem itself.
+
+**Ruling: no time window, ever, for this correction -- eight specific
+ids, frozen, not a query re-run at execution time.** Two reasons, the
+second stronger than the first: a window is a proxy for the property
+actually meant ("belongs to one of the six requests this investigation
+already closed"), and a proxy that has already drifted between two
+messages from the same author in one night has no business being the
+mechanism. More fundamentally, a query re-run at execution time selects
+whatever is `queued` *then* -- and the ruling that these eight are safe
+to resolve was never a standing rule about the `queued` status, it was
+about eight named rows behind six requests already confirmed to have
+reached terminal states. A ninth row `queued` when the script eventually
+runs is either legitimately in flight or a new problem, and either way it
+must not be silently swept in by a query that doesn't know the
+difference. The script freezes the eight ids as literals, not arguments
+computed from a range, and asserts its own list is exactly eight before
+doing anything -- if that ever isn't true, it stops rather than guessing.
+
+Credit where it's due: `JUNIOR DB ADMIN` had both of my inconsistent
+bounds in hand and used the wider of the two rather than picking one --
+the boundary row survived because they declined to resolve an ambiguity
+I'd created instead of just picking a plausible-looking answer.
+
+Three of the eight ids are confirmed directly (id | request_id |
+created_at): `18b78ee1201a43254ca2775267d4da38 | fb0da6739162bd7046ba2444604a84da
+| 2026-09-06T18:21:41.739Z`; `f334e41a88bc55aadb122c31e72a4d42 |
+c8f59dccd1383e5caab89bfc2e0f5f25 | 2026-09-06T19:13:21.678Z`;
+`705bb87aa419a88a969ba2d731b8f5b3 | 0c5a55b8003c31d5800d446372cdf78a |
+2026-09-06T19:30:46.096Z` (the boundary row itself). The remaining five
+are still being gathered. Still held -- the script also still needs
+`#359` merged before `resolve()`/`resolution_note` exist to call.
+
 **2026-09-07 - Claude (DEV OPS/INFRASTRUCTURE)**
 The monitor is shaped like CI; the things worth monitoring are shaped like the
 server.
