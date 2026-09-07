@@ -144,6 +144,50 @@ test('finding 1 (scrutiny pass 3): adjusting a taxed quote recomputes subtotal a
   )
 })
 
+test('#354, per review: a draft carrying catalogue lines still holds the invariant after being adjusted', async t => {
+  // The gap the pure-function test in pricing.test.mjs could not reach: that
+  // test drives calculateDraftQuote directly, so it only exercises the draft
+  // path. #335's bug lived in adjust() -> computeQuoteTotals, and the
+  // catalogue makes adjusting routine -- so the untested combination was
+  // exactly the one about to become common: a quote carrying catalogue
+  // lines, then adjusted. This drives the real Quotes object end to end
+  // (submit, then adjust, then read back), the way a customer and an owner
+  // actually would, rather than calling either function in isolation.
+  const { inventory, quotes } = setup(t)
+  inventory.savePricingSettings({ mobileServiceFee: 75, disposalFee: null, tax: { rate: 0.1, appliesTo: 'all' } })
+  const [automatic, optional] = inventory.saveCatalogueLines([
+    { label: 'Tire installation', amountCents: 1500, basis: 'perTire', mode: 'automatic', taxable: true, enabled: true },
+    { label: 'Nitrogen fill', amountCents: 500, basis: 'perJob', mode: 'optional', taxable: false, enabled: true },
+  ])
+  assert.ok(automatic && optional)
+
+  // The draft itself carries the automatic line (optional lines need a
+  // wizard control that does not exist until stage 3, so only automatic
+  // ones can appear on a submitted request today).
+  const original = quotes.submit(form())
+  assert.ok(original.quote.lineItems.some(item => item.description === 'Tire installation'), 'the catalogue line reached the draft')
+  const draftInvariant = Math.round((original.quote.subtotal + (original.quote.tax?.amount ?? 0)) * 100) / 100
+  assert.equal(draftInvariant, original.quote.total, 'the draft itself holds the invariant before any adjustment')
+
+  // The owner adjusts it -- a hand-typed replacement, the only shape
+  // adjust() accepts today; it does not re-read the catalogue by id.
+  const adjusted = quotes.adjust(original.request.id, {
+    lineItems: [
+      { description: 'Four tires, mounted and balanced', quantity: 1, unitPrice: 300 },
+      { description: 'Nitrogen fill', quantity: 1, unitPrice: 5 },
+    ],
+    version: original.quote.version,
+  })
+
+  const adjustedInvariant = Math.round((adjusted.quote.subtotal + (adjusted.quote.tax?.amount ?? 0)) * 100) / 100
+  assert.equal(adjustedInvariant, adjusted.quote.total, 'the stored row still holds the invariant after adjusting a quote that started with catalogue lines')
+
+  // Read back independently of the return value, the way a reload would --
+  // confirms this is what is actually on the row, not just what adjust() happened to return.
+  const reread = quotes.get(original.request.id, 'owner')
+  assert.equal(Math.round((reread.quote.subtotal + (reread.quote.tax?.amount ?? 0)) * 100) / 100, reread.quote.total)
+})
+
 test('finding 1: an adjustment undertaxes rather than misclassifies when tax applies to only one class of line', async t => {
   const { inventory, quotes } = setup(t)
   // 'goods'/'services' is calculateDraftQuote's own bookkeeping over the
