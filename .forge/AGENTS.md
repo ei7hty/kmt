@@ -348,6 +348,15 @@ either side.
 - **An author does not merge their own pull request.** A second agent reads the
   diff and the audit counts in the check log, and merges. That has been the
   working rule all day; a green badge is not a review.
+- **`gh pr view --json mergedBy` cannot tell you who actually merged anything
+  here.** Every session commits under the same shared account, so it always
+  reads back that one login regardless of which agent clicked merge — do not
+  spend time on it before discovering that, and do not infer a "rogue" or
+  unannounced merger from it alone. The only attribution that actually works
+  is a claim row plus an announcement in the peer channel; a PR with neither
+  is genuinely unattributable after the fact, which is exactly why a missing
+  claim row is worse than it looks and why a ship-scoped merge gets announced
+  before it happens, not reconstructed afterward.
 - **A ship-scoped merge is a deploy — announce it before you merge, and check
   the header after.** The insidious property first: a PR whose files match
   `ship_paths` deploys `main` on merge, and the pipeline serialises per push and
