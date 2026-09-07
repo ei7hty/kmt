@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import './RequestFlow.css'
+import { useAnalytics } from './analytics.js'
 import OwnerInventory from './owner/OwnerInventory.jsx'
 import CustomerRequest from './routes/CustomerRequest.jsx'
 import QuoteRequests from './routes/QuoteRequests.jsx'
@@ -74,6 +75,8 @@ function App() {
     }
     link.href = `${CANONICAL_HOST}${route}`
   }, [route])
+
+  useAnalytics(route)
 
   const navigate = (path) => {
     window.history.pushState({}, '', path)

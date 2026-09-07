@@ -171,7 +171,7 @@ const server = createServer(async (request, response) => {
     // as the catalog and then matched no handler.
     request.url = url.pathname + url.search
     const hostname = (request.headers.host || '').split(':')[0]
-    applySecurityHeaders(request, response, { release, serviceAreaOn })
+    applySecurityHeaders(request, response, { release, serviceAreaOn, pathname: url.pathname })
 
     // The health check is exempt, and isHostAllowed says why. The canonical
     // redirect below exempts it for the same reason.

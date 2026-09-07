@@ -85,6 +85,20 @@ export function assertCanonicalIsAllowed({ canonicalHost, allowedHosts }) {
 }
 
 /**
+ * The two routes GA4 is allowed to touch (.forge/analytics.md): the whole
+ * marketing surface, and nothing that carries a customer's own request. It
+ * is the boundary public/sitemap.xml already drew for a different reason --
+ * these are the only two pages meant for a search index too. `/status`,
+ * `/confirmation` and `/owner` stay off this list because their URL itself
+ * is the credential: GA sends the full URL, query string included, with
+ * every page view, so a tag there would hand Google a working key to a
+ * customer's own record. index.html is one static shell for every route, so
+ * this has to be decided per-request, from the path, not baked into the
+ * page.
+ */
+export const ANALYTICS_PATHS = new Set(['/', '/privacy'])
+
+/**
  * The browser-facing security headers, on every response (#67).
  *
  * The policy is written against what the built page actually does: one
@@ -102,16 +116,24 @@ export function assertCanonicalIsAllowed({ canonicalHost, allowedHosts }) {
  * HSTS only when the request is secure: sending it over plain http is
  * meaningless, and a local run should not teach a browser to insist on TLS
  * for localhost.
+ *
+ * The one exception is GA4, and only on `ANALYTICS_PATHS`: `script-src`
+ * gains `googletagmanager.com` and `connect-src` gains `google-analytics.com`
+ * there, and nowhere else. Widening the policy is a real security cost --
+ * a compromise at Google's CDN could then run script on that page -- so it
+ * is paid on the two pages that need it and never on the ones holding a
+ * customer's own data.
  */
-export function securityHeaders({ secure, release = '', serviceAreaOn }) {
+export function securityHeaders({ secure, release = '', serviceAreaOn, pathname = '' }) {
+  const analytics = ANALYTICS_PATHS.has(pathname)
   const headers = {
     'Content-Security-Policy': [
       "default-src 'self'",
-      "script-src 'self'",
+      analytics ? "script-src 'self' https://www.googletagmanager.com" : "script-src 'self'",
       "style-src 'self'",
       "img-src 'self' data:",
       "font-src 'self'",
-      "connect-src 'self'",
+      analytics ? "connect-src 'self' https://*.google-analytics.com" : "connect-src 'self'",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -157,8 +179,8 @@ export function readRelease(env = process.env) {
 }
 
 /** Put the headers on a response before anything writes it; writeHead keeps them. */
-export function applySecurityHeaders(request, response, { release = '', serviceAreaOn } = {}) {
-  for (const [name, value] of Object.entries(securityHeaders({ secure: isSecureRequest(request), release, serviceAreaOn }))) {
+export function applySecurityHeaders(request, response, { release = '', serviceAreaOn, pathname = '' } = {}) {
+  for (const [name, value] of Object.entries(securityHeaders({ secure: isSecureRequest(request), release, serviceAreaOn, pathname }))) {
     response.setHeader(name, value)
   }
 }
