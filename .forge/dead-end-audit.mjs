@@ -13,7 +13,7 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 83;
+const EXPECTED_CHECKS = 88;
 
 /**
  * Preferred dates, always ahead of today. The server refuses anything inside
@@ -213,6 +213,55 @@ async function main() {
   {
     const { context, page } = await freshPage(browser, { name: 'phone', width: 375, height: 812 });
     await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+
+    // Prove the editable-copy chain as five separately diagnosed links. A
+    // presence check cannot cover this: #397 once had a correct store, route,
+    // injector and screen while the customer component still rendered its
+    // literal. Use one marked field, through the authenticated owner API, and
+    // undo it before this context closes so the audit leaves its database as
+    // it found it.
+    const copyTarget = page.getByTestId('copy-hero-heading-top');
+    const shippedCopy = (await copyTarget.textContent().catch(() => null))?.trim() ?? '';
+    const copyMarker = `AUDIT COPY ${Date.now()}`;
+    if (shippedCopy && shippedCopy !== copyMarker) {
+      ok('Editable copy precondition: the landing page starts with shipped wording and not the audit marker.');
+    } else {
+      fail(`Editable copy precondition failed: expected non-empty shipped wording before the write, got ${JSON.stringify(shippedCopy)}.`);
+    }
+
+    await openOwnerQuotes(page);
+    const copyWrite = await context.request.put(BASE + '/api/owner/site-copy', {
+      data: { values: { 'hero.headingTop': copyMarker }, acknowledged: [] },
+    });
+    if (copyWrite.status() === 200) {
+      ok('Editable copy write: the authenticated owner API accepted the marked override.');
+    } else {
+      fail(`Editable copy write failed: the owner API refused the override with HTTP ${copyWrite.status()}.`);
+    }
+
+    const injectedHtml = await (await context.request.get(BASE + '/')).text();
+    if (injectedHtml.includes(copyMarker)) {
+      ok('Editable copy injection: served HTML contains the override accepted by the owner API.');
+    } else {
+      fail('Editable copy injection failed: the write was attempted but the served HTML does not contain its marker.');
+    }
+
+    await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+    const renderedMarker = (await copyTarget.textContent().catch(() => null))?.trim() ?? '';
+    if (renderedMarker === copyMarker) {
+      ok('Editable copy render: the marked customer element renders the injected override.');
+    } else {
+      fail(`Editable copy render failed: HTML injection was checked separately, but the customer component rendered ${JSON.stringify(renderedMarker)}.`);
+    }
+
+    const copyUndo = await context.request.post(BASE + '/api/owner/site-copy/undo', { data: {} });
+    await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+    const restoredCopy = (await copyTarget.textContent().catch(() => null))?.trim() ?? '';
+    if (copyUndo.status() === 200 && restoredCopy === shippedCopy && restoredCopy !== copyMarker) {
+      ok('Editable copy undo: the API restored the shipped wording and the customer page renders it again.');
+    } else {
+      fail(`Editable copy undo failed: HTTP ${copyUndo.status()}, expected restored ${JSON.stringify(shippedCopy)}, rendered ${JSON.stringify(restoredCopy)}.`);
+    }
 
     const text = async (selector) => (await page.locator(selector).first().textContent().catch(() => null))?.trim() ?? '';
 
