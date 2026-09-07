@@ -177,8 +177,10 @@ https://kensmobiletire.com/api/owner/session/google/callback
 ### The precondition, which is not optional
 
 **Removing the password breaks the pre-merge gate's ability to prove the owner
-half of the flow.** `signInIfAsked` is imported by **five audit scripts**,
-measured rather than recalled:
+half of the flow.** **Five audit scripts reach the owner screen** and every
+one of them breaks. Measured rather than recalled — **and note the verb, which
+is where this went wrong the first time: three of the five import
+`signInIfAsked` directly; the other two reach it through `openOwnerQuotes`:
 
 ```
 a11y-85-measure.mjs   dead-end-audit.mjs   owner-inventory-audit.mjs
@@ -201,8 +203,18 @@ in this repository makes a stale number announce itself.
 
 **The precondition argument rests entirely on the size of what breaks.** *Three
 audits* invites someone to reroute them; **five, spanning the responsive and
-owner-inventory checks as well, makes it plain that password auth is
-load-bearing across the whole gate.**
+owner-inventory checks as well, makes it plain how widely password auth is
+depended on.**
+
+**But be exact about which of them are the gate: only three run in CI** —
+`dead-end-audit`, `request-flow-check` and `responsive-check`.
+`owner-inventory-audit` and `a11y-85-measure` are by-hand instruments.
+
+**That correction runs the opposite way from "less important."** A gate audit
+that breaks **fails loudly on the next pull request**. A by-hand instrument that
+breaks **fails silently, months later, the first time someone reaches for it** —
+and by then nobody remembers what changed. **The two outside CI are the ones
+with nobody watching.**
 
 **`AGENTS.md` says the gate exists to prove that a customer submits, the owner
 approves and the customer pays.** Removing password auth deletes the only way it
@@ -260,3 +272,61 @@ catalogue supports either; **he chooses.**
 
 **Whether the taxable default is on or off.** That is the accountant's question,
 and it does not become ours by being asked in a new place.
+
+
+---
+
+## CORRECTIONS 2026-09-07 — two of my own sentences, and the precondition is largely already built
+
+Appended by the PRODUCT MANAGER / OWNER AGENT (`local_44d1e1f9`). **Found by
+the OWNER AUTH ENGINEER (`local_907f8d1f`) in their first hour, re-measured by
+me. Both wrong sentences are corrected in place above; this records why.**
+
+### The verb, which is the one that matters
+
+**This document said `signInIfAsked` is "imported by five audit scripts."**
+Measured: **three import it** — `a11y-85-measure`, `owner-inventory-audit`,
+`responsive-check`. The other two reach it through `openOwnerQuotes`.
+
+**The set of five affected audits was right. The verb was wrong — and the verb
+is what caused the original error**, because *"imported by"* is exactly what
+makes the narrow grep look sufficient.
+
+**The section above this correction explains that distinction.** It says the
+original grep swept `openOwnerQuotes` importers and missed the direct ones —
+**two paragraphs below a sentence that fails to make the same distinction.**
+
+**So: correcting a number does not correct the concept that produced it.** The
+count was fixed and the trap stayed armed for the next person running the same
+grep. **That is a different failure from a stale document, and nothing here
+catches it — the sentence was internally coherent and simply wrong.**
+
+### The gate is three, not five
+
+**CI runs `bundle-leak-check`, `dead-end-audit`, `deployed-site-check`,
+`request-flow-check` and `responsive-check`.** No `a11y` reference exists
+anywhere in `.github/`.
+
+**"Load-bearing across the whole gate" claimed more than the measurement
+supports.** Corrected above, with the reason the split matters in the direction
+opposite to the obvious one.
+
+### The precondition is largely closed, and no document said so
+
+**`.forge/audit-ui.mjs` already carries the complete minted-session path:**
+`:34` reads `KMT_OWNER_SESSION_COOKIE`; `:56-64` validates the
+`name=value` shape, adds the cookie, reloads and waits for `.oi-signin` to
+detach; `:59` logs *"the password sign-in path is not exercised"*; `:69-73`
+errors with instructions to mint one.
+
+**All five audits inherit it through `signInIfAsked`. There is no audit
+conversion left to do.**
+
+**What actually remains is CI wiring** — `fly-deploy.yml:152` and `:298`
+still authenticate with `KMT_OWNER_PASSWORD`, and nothing sets
+`KMT_OWNER_SESSION_COOKIE`. **That is `.github/workflows/`, the repo agent's
+lane.**
+
+**A task was about to be placed to convert audits that were already converted.**
+Third time in one night that *"nobody owns X"* resolved to *"X is done and no
+document says so."*
