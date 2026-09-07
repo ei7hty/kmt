@@ -344,6 +344,41 @@ session.actor || SHARED_PASSWORD_ACTOR   // WRONG: a minted session with a null 
 means "not recorded", which for a session created before the column is honest
 and short-lived. **Test the absent case, not only the wrong one.**
 
+### The requirement is the chain, not the column
+
+**DEVSCOPS/AUDITOR's addition, and it closes a gap in the paragraphs above:
+storing the actor is necessary and not sufficient.** The path is
+
+> `session.actor` written at `create()` → surfaced when the auth layer resolves
+> the session → **threaded by the decide handler into `moveTo`'s `actor`**
+
+and **the realistic under-build is not "forgot the column", it is "stored the
+actor and never wired it to the seam".** A session row carrying
+`owner:minted-session` that no handler reads leaves `decided_by` null, which
+collapses to exactly the pre-identity era the requirement exists to keep
+distinct. Every intermediate step can be individually correct while the
+requirement is unmet — which is the defence-in-depth testing problem from the
+section above, wearing different clothes.
+
+**So the requirement is satisfied by an end-to-end assertion, not by unit
+tests of the parts:** mint a session, make a decision under it, read
+`decided_by`, and assert it is **neither a person nor `SHARED_PASSWORD_ACTOR`**.
+That test fails if any link is missing, and no test of a single link does.
+
+### The migration follows `decided_by`'s precedent exactly
+
+**Additive, through a guarded ALTER, with a migration test.** The precedent is
+`backend/quotes.mjs`'s `if (!columns.has('decided_by')) ALTER TABLE quotes ADD
+COLUMN decided_by TEXT`. **A column added outside that path only fails in
+production**, on the one machine holding a database that was not built fresh —
+which is this file's own documented history.
+
+One thing to settle rather than assume: **`owner_sessions` has no `migrate()`
+at all**, so the guard has no existing home. It belongs in `createSessionStore`
+immediately after its `CREATE TABLE IF NOT EXISTS`, reading `PRAGMA
+table_info(owner_sessions)` the same way `migrate()` does — the store is
+constructed on every boot, so that is the equivalent moment.
+
 ### Timing: do not borrow #349's cost argument
 
 `decided_by` had to be early because unattributable decisions accumulate
@@ -351,6 +386,14 @@ permanently. **Nothing accumulates here** — sessions expire, so a late column
 costs only a few hours of unlabelled sessions that are already gone. Landing it
 before #290 is sensible because it keeps #290 smaller, not because delay is
 expensive.
+
+**But "less urgent" is not "optional", and the distinction is worth pinning in
+both directions** (DEVSCOPS/AUDITOR's correction to my own framing). A
+mis-attributed break-glass decision is still wrong for as long as that quote
+exists — **the row it writes is permanent even though the session that wrote it
+is not.** What sessions expiring buys is that no *backlog* accumulates, not
+that any individual decision is less wrong. The requirement stands on its own;
+only the urgency argument for its timing is corrected.
 
 **Whether this is a #290 precondition or a #362 merge gate is the OWNER
 AGENT's and the PROJECT MANAGER's call and is deliberately not decided here.**
