@@ -211,12 +211,59 @@ and does not inherit that relaxation. It should be built the way `decide`,
 `finish` and `cancel` are: through `moveTo`, with `audience: 'owner'`,
 gated by the same owner session every other `/api/owner/*` route requires.
 
-**A reason should probably be mandatory, not optional**, still unruled and
-worth a decision alongside implementation rather than left to whoever
-builds it. `cancel()`'s reason is optional because most cancellations are
-mundane. A reversal is unusual enough on a system where `pay()` "always
-succeeds" that a paper trail is worth requiring rather than inviting
-silence.
+**Ruled: the reason is mandatory on this transition, and only this one.**
+`cleanReason`'s own comment says *"optional means optional: nothing is a
+valid reason"* -- a real precedent, addressed rather than overridden
+silently. The distinguishing principle: **a reason is optional when the
+action is self-explanatory, and mandatory when the action is itself the
+anomaly.** Rejecting a quote needs no reason to be a complete account --
+the status already says what happened, "Ken said no." **Reversing a
+payment is an admission that a previous record was wrong**, and "the
+record was wrong" with no "because" is not a correction, it is a second
+unexplained event on the same row. Reversals are rare by construction, so
+the field is filled by someone who has just done something unusual and
+already knows why -- the usual objection to mandatory fields (they
+accumulate junk on routine actions) does not apply to an action that is
+never routine.
+
+**Use the seam that exists (`moveTo`'s `reason`) rather than adding a
+column** -- the same field `decide()`'s rejection already writes. `moveTo`
+already `COALESCE`s it (`reason=COALESCE(?, reason)`), so this needs no
+schema change either: only the caller-side rule that a reversal's `reason`
+may not be null or empty, the same shape `cleanReason` already validates,
+enforced specifically for this transition rather than loosened generally.
+
+**And the reason is owner-facing bookkeeping, not customer-facing copy --
+say so explicitly, because the precedent points the other way.** Decline's
+`reason` is written to be read by the customer: it renders verbatim on
+`/status` (`"I can't take this one on: {reason}"`) and in the decline
+email. A reversal's reason is different in kind, not just content -- Ken
+might reasonably write *"customer paid twice"* or *"clicked pay by
+mistake,"* true and useful to him, and not a sentence to render at the
+person it describes. **Confirmed today's code does not leak it**: grepped
+`Status.jsx` for every reference to `quote.reason` -- exactly two, gated to
+`quote.status === 'rejected'` and `quote.status === 'cancelled'`, nothing
+for `sent`. So a reversed quote's reason is invisible to the customer as
+the code stands. The risk is not a current leak; it is a future one --
+whoever eventually adds a "why is this awaiting payment again" note to the
+customer's `sent` view, reasonably reaching for the same `reason` field
+the decline view already uses, would surface Ken's private note by
+following the established pattern exactly. Naming that here is the whole
+point: the field doing double duty for two audiences depending on status
+is the trap, not the code today.
+
+**Name the loop this creates rather than let it be found by whoever hits
+it, the same treatment #316 gave pay-to-block-cancel.** Reversing to
+`sent` makes the quote payable again -- so whoever is holding the shared
+link, including the same person who induced the original payment, can pay
+it again. Bounded the same way the original induced payment is: no real
+money moves either time, and Ken reverses it again if it happens. A
+griefer with the link can force Ken to repeat this transition indefinitely,
+which costs Ken attention, not money or data. Accepted as a known trade,
+not solved here -- the alternative (blocking re-payment after a reversal)
+would need its own state to track "this quote was reversed once" separate
+from the status itself, which is exactly the schema complexity choosing
+`sent` was meant to avoid.
 
 **It carries `decided_by` for free, and this is no longer conditional on
 anything landing.** TECHNICAL ARCHITECT's `quote-decided-by` (#290's schema
