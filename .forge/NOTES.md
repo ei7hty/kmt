@@ -2418,3 +2418,81 @@ pipe** — so the defence has to be structural, not vigilance:
 from new directions: a green result is exactly when nobody goes looking.** So
 the question to ask of any check is not "did it pass" but "what would this have
 printed if it had failed, and am I certain I would have seen it".
+
+**2026-09-07 — MAIL DELIVERY ENGINEER (session `local_8418d5d5`), on #285**
+`queued` did not mean "not sent", and no amount of reading the query would
+have told you.
+
+The outbox writes a row `queued` *before* the provider is called and updates it
+after. So a crash between a successful send and `updateStatus` leaves `queued`
+on a message that **was delivered** — and that row is byte-identical to an
+ordinary null-adapter row: `status queued, error null, provider_id null`. I
+reproduced both and compared the objects rather than reasoning about them.
+
+**`WHERE status='queued'` was not a broken query. It was a question the schema
+could not answer** — and the retry everyone assumed was a small feature would
+have re-sent quotes that had already arrived. The fix is a column, not a
+cleverer predicate: `attempted_at`, written before the send, so the record of
+the attempt precedes the thing that can be interrupted.
+
+## The half that is easy to miss, and it is the whole feature
+
+**A nullable column added by migration reads NULL for all of history**, so
+`queued AND attempted_at IS NULL` marks every pre-existing row as
+never-attempted and therefore safe to resend. The discriminator is only valid
+for rows written *after* it exists, and nothing in the column says where that
+line falls. That needs a watermark — written **`INSERT OR IGNORE`, never
+`INSERT OR REPLACE`**, because REPLACE would advance it on every boot and
+exclude exactly the rows that boot had just stranded. **A feature that passes
+every test and does nothing in production.**
+
+Generalisable: **when you add a column to answer a question, ask what it
+answers for the rows that predate it.** Usually the honest answer is "nothing",
+and that has to be represented somewhere.
+
+## Two things the mutation sweep caught that review would not have
+
+I deleted each safeguard in turn and checked the intended test went red — this
+file's own rule. Twelve mutations. **Two stayed green**, and both for the same
+reason: the assertions compared two `now()` calls that landed in **the same
+millisecond**, so `INSERT OR REPLACE` was indistinguishable from `IGNORE`, and
+a `markAttempted` that clobbered `updated_at` was indistinguishable from one
+that did not.
+
+**Both tests were about the right subject and passed for a reason unrelated to
+it.** Sibling of the atomicity test that passed with the transaction deleted —
+there the failure was injected in the wrong *phase*; here the two values being
+compared were equal by clock resolution rather than by the code being right.
+**Pin the "before" value to something no clock in the run can produce** — a
+literal `2020-01-01T00:00:00.000Z` — instead of comparing two live timestamps.
+
+## And the defect no test could see, found only by watching a process exit
+
+`shutdown()` bounds the drain with `Promise.race([mailer.idle(), delay(2000)])`.
+That resolves correctly and instantly. **The losing timer is still ref'd, so
+the process then sits for the full two seconds before exiting** — out of Fly's
+five-second `kill_timeout`, on a repository that deploys dozens of times a day.
+Measured: race resolves at 0 ms, process exits at 2002 ms. With the loser
+aborted, 4 ms.
+
+**Every in-process assertion I could write was green in both cases**, because
+the bug is not in what the race returns — it is in what the event loop is still
+holding afterwards. The only instrument that sees it is a real child process
+and its exit time, and there is now a test that spawns one.
+
+Same family as this file's entries on green signals whose scope is narrower
+than the confidence they produce, with a twist worth keeping: **here the
+instrument was not even wrong. It was measuring the return value, and the
+defect was in the process.**
+
+## What I could not verify, said plainly
+
+**The SIGTERM/SIGINT handler itself has never executed.** Windows has no real
+POSIX signals — Git Bash's `kill` cannot even see the native PID (`No such
+process` against a server that was plainly listening), and `taskkill`
+terminates without running handlers. So the ordering inside `shutdown()` is
+covered only by tests of its parts; the sequence runs for the first time on
+Linux. Whoever has a Linux box or wants to add it to the gate: send a real
+SIGTERM to `backend/server.mjs` with mail in flight and confirm the row reaches
+`sent` and the process exits well inside five seconds. I would rather say this
+than let a passing suite imply it was checked.

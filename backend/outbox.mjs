@@ -119,6 +119,13 @@ const OUTBOX_COLUMNS = `
 const now = () => new Date().toISOString()
 
 /**
+ * The `metadata` key holding the instant this database started recording send
+ * attempts. See the watermark note in the constructor for why it exists and
+ * why it is written `INSERT OR IGNORE`.
+ */
+export const ATTEMPT_TRACKING_KEY = 'outboxAttemptTrackingFrom'
+
+/**
  * The optional sentence Ken types when he resolves a row -- the same
  * contract `quotes.mjs`'s `cleanReason` already holds a cancellation
  * reason to (nothing is a valid note; a non-string is refused, not
@@ -166,9 +173,64 @@ export class Outbox {
     // resolve() bury the forensic record under an explanation, and would
     // subject an operational note to a redaction path built for something
     // else entirely.
+    // `attempted_at` (#285) is the third column of this shape, and it exists
+    // because the two before it could not answer the question a retry has to
+    // ask. A row is written `queued` *before* the provider is called and
+    // updated after, so there is no record that an attempt began: a crash
+    // between a successful send and `updateStatus` leaves `queued` on a
+    // message that was actually delivered, and that row is byte-identical to
+    // an ordinary null-adapter row (`status queued, error null, provider_id
+    // null`). Measured, not reasoned about. So `WHERE status='queued'` is not
+    // a broken query -- it is a question the schema could not answer, and a
+    // retry built on it re-sends quotes that already arrived.
+    //
+    // Written immediately before `adapter.send()` in mail.mjs, which is what
+    // makes it crash-safe by construction: the write that records the attempt
+    // precedes the thing that can be interrupted, and nothing about it depends
+    // on shutdown running. It also does double duty as the once-only guard --
+    // an auto-retried row has it set, so it leaves the retryable set for good
+    // and there is no attempt counter or backoff state to keep.
     const columns = new Set(this.db.prepare('PRAGMA table_info(outbox)').all().map(column => column.name))
     if (!columns.has('resolved_at')) this.db.exec('ALTER TABLE outbox ADD COLUMN resolved_at TEXT')
     if (!columns.has('resolution_note')) this.db.exec('ALTER TABLE outbox ADD COLUMN resolution_note TEXT')
+    if (!columns.has('attempted_at')) this.db.exec('ALTER TABLE outbox ADD COLUMN attempted_at TEXT')
+
+    // And the watermark, which is the half that is easy to leave out.
+    //
+    // Every row written before that ALTER gets `attempted_at = NULL`, because
+    // the column did not exist when it was recorded -- so `queued AND
+    // attempted_at IS NULL` reads the whole of history as never-attempted and
+    // therefore safe to resend. The column is only a discriminator for rows
+    // written after it exists, and nothing in the column says where that line
+    // falls. This records it: the instant attempt tracking began, once.
+    //
+    // `INSERT OR IGNORE`, never `INSERT OR REPLACE`, and the difference is the
+    // whole mechanism. REPLACE would advance the watermark on every boot, so
+    // each restart would exclude exactly the rows that restart had just
+    // stranded -- a feature that passes every test and does nothing in
+    // production. Write-once belongs in the SQL, not in a rule someone has to
+    // remember. (Verified across three simulated boots before this shipped.)
+    //
+    // `metadata` is inventory.mjs's table but a shared key/value store by
+    // construction -- `markup`, `pricing`, `pricingLines`, `seeded` and `job`
+    // already sit there from unrelated concerns, so one more key from this
+    // migration is the pattern rather than an exception. Guarded because
+    // `Outbox` is constructed with a bare `db` in some tests: no metadata
+    // table means no watermark, and `retryable()` then returns nothing, which
+    // is the safe direction to fail.
+    this.db.exec('CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+    this.db.prepare('INSERT OR IGNORE INTO metadata VALUES (?, ?)')
+      .run(ATTEMPT_TRACKING_KEY, JSON.stringify(now()))
+  }
+
+  /**
+   * The instant this database began recording send attempts. Rows older than
+   * it carry no information in `attempted_at` and are permanently out of
+   * scope for any automatic retry.
+   */
+  attemptTrackingFrom() {
+    const row = this.db.prepare('SELECT value FROM metadata WHERE key=?').get(ATTEMPT_TRACKING_KEY)
+    return row ? JSON.parse(row.value) : null
   }
 
   /**
@@ -227,6 +289,7 @@ export class Outbox {
       status: row.status, providerId: row.provider_id ?? null, error: row.error ?? null,
       createdAt: row.created_at, updatedAt: row.updated_at,
       resolvedAt: row.resolved_at ?? null, resolutionNote: row.resolution_note ?? null,
+      attemptedAt: row.attempted_at ?? null,
     }
   }
 
@@ -290,6 +353,79 @@ export class Outbox {
     this.db.prepare('UPDATE outbox SET resolved_at=?, resolution_note=?, updated_at=? WHERE id=?')
       .run(now(), cleaned, now(), id)
     return this.get(id)
+  }
+
+  /**
+   * Stamp that an attempt is about to be made. Called immediately before the
+   * provider is asked, never after -- the ordering is the whole point, since
+   * the process can die inside the send and the row has to already say that
+   * something was tried.
+   *
+   * Deliberately does not touch `updated_at`: that column is how long a send
+   * took (`updated_at - created_at` across `sent` rows is what the drain
+   * bound was derived from, and what DEV OPS's stranded-row threshold reads),
+   * and moving it here would make every duration read as zero.
+   *
+   * Idempotent in the same shape as `resolve()`: a row that already carries
+   * an attempt keeps its original stamp, so a resend never rewrites the
+   * record of the first try.
+   */
+  markAttempted(id) {
+    const found = this.get(id)
+    if (!found) throw new InputError('No such outbox message.', 404)
+    if (found.attemptedAt) return found
+
+    this.db.prepare('UPDATE outbox SET attempted_at=? WHERE id=?').run(now(), id)
+    return this.get(id)
+  }
+
+  /**
+   * Messages that are owed a send and are provably safe to send again.
+   *
+   * Four conditions, and every one of them is load-bearing -- this is the
+   * query that decides whether a customer gets a second copy of a quote, so
+   * each clause is a required equality on a value that is present rather than
+   * a filter whose absent case passes:
+   *
+   * - `status='queued'` -- still owed. A `failed` row was attempted and
+   *   rejected; re-sending it is Ken's decision through the owner screen, not
+   *   this query's.
+   * - `attempted_at IS NULL` -- never handed to a provider. The one clause
+   *   that separates *never sent* from *may have arrived*, and the reason
+   *   this column exists.
+   * - `resolved_at IS NULL` -- nobody has settled it. Covers DB ADMIN's eight
+   *   frozen pre-SMTP rows once their backfill runs (#367).
+   * - `created_at >= :watermark` -- written after attempt tracking began.
+   *   Covers those same eight independently, since they predate it. Two
+   *   guards on that set on purpose: they do not fail together, one being a
+   *   timestamp comparison and the other a column set by another mechanism.
+   *
+   * `>=` rather than `>`, decided rather than fallen into: the watermark is
+   * written in this constructor, before the server accepts a connection, so
+   * no row can predate it within the same process. A row sharing its
+   * millisecond was written after tracking existed and is in scope. There is
+   * a test on exactly that boundary.
+   *
+   * `type` is required, not optional, because the audience split is the
+   * ruling this query serves: only `request-arrived` (the sole owner-audience
+   * template) is ever retried automatically. Passing no type would quietly
+   * mean "every type", which is the customer-facing double-send this whole
+   * change exists to prevent -- so the absent case is a refusal, not a
+   * default.
+   *
+   * `limit` is a safety cap on the returned set, not a recency window, the
+   * same distinction `unresolvedFailures()` draws: hitting it means that many
+   * messages were stranded at once, which is its own incident.
+   */
+  retryable({ type, limit = 25 } = {}) {
+    if (typeof type !== 'string' || !type.trim()) throw new InputError('retryable() needs the message type to retry.')
+    const watermark = this.attemptTrackingFrom()
+    if (!watermark) return []
+    return this.db.prepare(`SELECT *, rowid FROM outbox
+        WHERE status='queued' AND attempted_at IS NULL AND resolved_at IS NULL
+          AND created_at >= ? AND type = ?
+        ORDER BY created_at ASC, rowid ASC LIMIT ?`)
+      .all(watermark, type.trim(), limit).map(row => this.shapeRow(row))
   }
 
   /**

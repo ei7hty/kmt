@@ -11,7 +11,7 @@ import { createApi, createCatalogApi, createHealthApi, createMailStatusApi, crea
 import { isMonitorAuthorized, readMonitorConfig } from './auth.mjs'
 import { Quotes } from './quotes.mjs'
 import { Outbox } from './outbox.mjs'
-import { createMailer, describeMail } from './mail.mjs'
+import { createMailer, describeMail, drainMail } from './mail.mjs'
 import { RateLimiter } from './limits.mjs'
 import { describeServiceArea, readServiceAreaConfig } from './service-area.mjs'
 import { Inquiries } from './inquiries.mjs'
@@ -80,9 +80,15 @@ let stopping = false
 async function shutdown() {
   if (stopping) return
   stopping = true
-  if (refresher.active) { refresher.cancel(); await refresher.done }
   clearInterval(smtpProbeTimer)
+  // Same ordering as backend/server.mjs's shutdown, and for the same reasons
+  // (#285): stop accepting work, drain in-flight mail under a bound, then let
+  // the refresher stop at a page boundary, then close the database. No Fly
+  // grace period applies locally, but a local server that drains differently
+  // from the hosted one is a difference nobody would think to look for.
   server.close()
+  await drainMail(mailer)
+  if (refresher.active) { refresher.cancel(); await refresher.done }
   await vite.close()
   inventory.close()
 }

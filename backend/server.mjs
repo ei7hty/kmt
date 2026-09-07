@@ -46,7 +46,7 @@ import { LoginThrottle, RateLimiter } from './limits.mjs'
 import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl, readRelease } from './site.mjs'
 import { createStaticHandler } from './static.mjs'
 import { Outbox } from './outbox.mjs'
-import { createMailer, describeMail, readMailConfig } from './mail.mjs'
+import { createMailer, describeMail, drainMail, readMailConfig } from './mail.mjs'
 import { Inquiries } from './inquiries.mjs'
 import { createInquiriesApi } from './inquiries-api.mjs'
 
@@ -156,6 +156,18 @@ const mailStatusApi = createMailStatusApi(mailer, monitorConfig, {
 // probe, not trigger one and wait on an outside server. Cleared in
 // shutdown() so the interval does not keep the process alive past close().
 const smtpProbeTimer = mailer.startSmtpProbe()
+// Then, once that first probe has answered, send the owner alerts a previous
+// shutdown stranded (#285). Chained off the probe rather than run beside it
+// because the pass refuses unless the seam is known good, and at boot the
+// status is `unknown` until the probe returns -- started in parallel it would
+// always decline and the recovery would silently never happen.
+//
+// Not awaited: the server listens regardless. A recovery that cannot run is a
+// logged non-event, never a boot failure -- nothing about stranded mail should
+// keep the site down.
+mailer.probeSmtp()
+  .then(() => mailer.recoverStrandedOwnerAlerts())
+  .catch(error => console.log(`mail: stranded-alert recovery failed to run: ${error.message}`))
 // Requests and their quotes live in the same database as inventory. The three
 // public writes are limited per address, per browser key and per email (#63).
 const publicLimiter = new RateLimiter()
@@ -274,11 +286,27 @@ let stopping = false
 async function shutdown() {
   if (stopping) return
   stopping = true
+  clearInterval(smtpProbeTimer)
+  // Stop accepting new work first (#285's first acceptance criterion). This
+  // moved ahead of the refresher deliberately: in-flight requests still
+  // finish, and those are what call mailer.after(), so closing late means a
+  // request can enqueue mail after the drain below has already run.
+  server.close()
+  // Mail before the refresher, and the order is load-bearing. Fly's
+  // kill_timeout defaults to 5 s and nothing here overrides it, while the
+  // refresher's cancel is cooperative -- it breaks at page boundaries, ~5.4 s
+  // a page -- so a drain placed behind it would simply never run on a machine
+  // that happened to be mid-refresh.
+  //
+  // Bounded because it has to be: a hung send sits on SmtpAdapter's 15 s
+  // connectionTimeout, well past the whole grace period, so this can only
+  // ever save the fast case. That is why the drain is the smaller half of
+  // #285 -- the recovery pass at boot is what makes delivery at-least-once,
+  // and it is deliberately independent of whether any of this runs at all.
+  await drainMail(mailer)
   // Let an in-flight refresh stop cleanly rather than leaving a job row that
   // claims to be running forever.
   if (refresher.active) { refresher.cancel(); await refresher.done }
-  clearInterval(smtpProbeTimer)
-  server.close()
   inventory.close()
 }
 process.on('SIGINT', shutdown)
