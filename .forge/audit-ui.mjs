@@ -90,7 +90,7 @@ export async function openOwnerQuotes(page, { from = 'customer' } = {}) {
     await page.goto(`${origin}/owner`)
   }
   await signInIfAsked(page)
-  await page.getByRole('button', { name: 'Quote requests' }).click()
+  await page.getByTestId('nav-quote-requests').click()
   await page.waitForURL('**/owner/quotes')
   await signInIfAsked(page)
   // The list arrives from the server on a backend build and from this browser
@@ -144,23 +144,23 @@ export async function expandTireList(page) {
  * field; two scripts leaning on it would recreate the exact collision this
  * convention exists to avoid.
  */
-export async function submitRequest(page, { base, size, tireName, vehicle, location, date, notes, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
+export async function submitRequest(page, { base, size, tireId, vehicle, location, date, notes, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
   const [width, rest] = size.split('/')
   const [ratio, diameter] = rest.split('R')
   const step = { timeout: 15000 }
 
   await page.goto(base + '/')
   for (const value of [width, ratio, diameter]) {
-    await page.click(`.fitment-option:has-text("${value}")`, step)
+    await page.getByTestId(`fitment-option-${value}`).click(step)
   }
   await page.fill('#fitmentZip', '02149').catch(() => {})
-  await page.click('button:has-text("Continue to tires")', step)
+  await page.getByTestId('continue-to-tires').click(step)
 
   await expandTireList(page)
-  await page.click(`.tire-option:has-text("${tireName}")`, step)
+  await page.getByTestId(`tire-option-${tireId}`).click(step)
   await page.locator('.manual-vehicle summary').click()
   await page.fill('#vehicleInfo', vehicle, step)
-  await page.click('button:has-text("Continue to mobile service")', step)
+  await page.getByTestId('continue-to-mobile-service').click(step)
 
   await page.fill('#location', location, step)
   if (notes) await page.fill('#locationNotes', notes, step)
@@ -181,7 +181,7 @@ export async function freshPage(browser, viewport) {
 }
 
 /** A size whose tires include the off-road option, which forces owner review. */
-export const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain' }
+export const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain', tireId: 'tire-5' }
 /** The size every gate database has real supplier rows in, via the local scraped-tires.json snapshot. */
 export const CLEAN_SIZE = '205/65R15'
 
@@ -224,5 +224,5 @@ export async function cleanTireFor(base) {
       'This is a gap in the gate database or the live catalog, not a UI regression.',
     )
   }
-  return { size: CLEAN_SIZE, tireName: supplierTire.name, price: supplierTire.price }
+  return { size: CLEAN_SIZE, tireName: supplierTire.name, tireId: supplierTire.id, price: supplierTire.price }
 }

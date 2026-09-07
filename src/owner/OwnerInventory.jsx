@@ -386,7 +386,7 @@ function TireOffer({ tire, markup, onSaved }) {
       </p>}
       <label htmlFor={`notes-${tire.id}`}>Owner notes</label>
       <textarea id={`notes-${tire.id}`} value={notes} onChange={e => setNotes(e.target.value)} maxLength={2000} rows={1} placeholder="Why this tire, pricing notes…" disabled={saving} />
-      <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save offer'}</button>
+      <button type="submit" className="oi-button oi-primary" data-testid="oi-save-offer" disabled={saving}>{saving ? 'Saving…' : 'Save offer'}</button>
       {error && <p role="alert" className="oi-error">{error}</p>}
       {tire.offer.enabled && !isAvailable && <p className="oi-attention">Selected by KMT, but supplier availability needs review.</p>}
     </form>
@@ -524,7 +524,7 @@ export default function OwnerInventory({ navigate }) {
     setPage(1)
   }
   return <div className="oi-shell">
-    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button><span>OWNER WORKSPACE</span><button className="oi-button" onClick={() => navigate('/owner/quotes')}>Quote requests →</button><button className="oi-button" onClick={leave}>Sign out</button></nav>
+    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button><span>OWNER WORKSPACE</span><button className="oi-button" data-testid="nav-quote-requests" onClick={() => navigate('/owner/quotes')}>Quote requests →</button><button className="oi-button" onClick={leave}>Sign out</button></nav>
     <main className="oi-content">
       <header className="oi-heading"><div><p className="oi-kicker">YOUR INVENTORY. YOUR PRICES.</p><h1>Build your tire offering</h1><p>Explore Giga Tires, choose what you want to offer, and set your price.</p></div><span className="oi-owner-badge">Owner only</span></header>
       <div className="oi-metrics">
@@ -565,11 +565,11 @@ export default function OwnerInventory({ navigate }) {
           </>}
       </div>}
       {error && <div className="oi-error oi-notice" role="alert">{error}</div>}
-      {notice && <div className="oi-notice" role="status">{notice}</div>}
+      {notice && <div className="oi-notice" role="status" data-testid="oi-save-notice">{notice}</div>}
       <div className="oi-results-heading"><p>{data ? `${data.total} matching tires · page ${data.page} of ${Math.max(1, Math.ceil(data.total / data.pageSize))}` : 'Loading inventory…'}</p><span>{loading ? 'Updating…' : 'Selections and prices are saved, and offered tires reach the customer catalog.'}</span></div>
       <div className="oi-results" aria-busy={loading}>
         {data?.items.map(tire => <TireOffer key={`${tire.id}:${tire.offer.version}`} tire={tire} markup={summary?.markup} onSaved={saved} />)}
-        {data && !data.items.length && <div className="oi-empty"><h2>No tires to show yet</h2><p>{size && !coverage ? 'Refresh this size to load supplier inventory.' : 'Try another search or filter, or refresh a size to add supplier inventory.'}</p></div>}
+        {data && !data.items.length && <div className="oi-empty" data-testid="oi-empty-state"><h2>No tires to show yet</h2><p>{size && !coverage ? 'Refresh this size to load supplier inventory.' : 'Try another search or filter, or refresh a size to add supplier inventory.'}</p></div>}
       </div>
       {data && data.total > data.pageSize && <nav className="oi-pagination" aria-label="Inventory pages"><button className="oi-button" disabled={data.page <= 1 || loading} onClick={() => setPage(data.page - 1)}>← Previous</button><span>Page {data.page} of {Math.ceil(data.total / data.pageSize)}</span><button className="oi-button" disabled={data.page * data.pageSize >= data.total || loading} onClick={() => setPage(data.page + 1)}>Next →</button></nav>}
     </main>
