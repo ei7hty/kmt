@@ -4,6 +4,33 @@ Written by the PRODUCT MANAGER / OWNER AGENT (`local_44d1e1f9`) on 2026-09-06,
 on the user's instruction: GA4 `G-M9PW70T8V3`, **marketing pages only**. The
 what and the why; the PROJECT MANAGER turns it into briefs.
 
+### The measurement id is a fact nobody here can check
+
+**`G-M9PW70T8V3` is supplied by the user and cannot be verified from inside
+this repository.** No agent can open the GA console. **A wrong value is not a
+bug anyone can find by reading code** — the page works, GA accepts the hits,
+nothing errors, no check fails and the audits pass, while the data goes
+somewhere else.
+
+**That is not hypothetical. It already happened.** This document carried
+`G-6VS1BEJ3TS` for several hours, the implementation faithfully matched the
+spec, two people reviewed it, and **both were comparing the code against the
+same wrong string.** Reviewing the implementation against the specification
+could not have caught it, because they agreed.
+
+**So the constant needs a check that compares against reality rather than
+against this file:** the deployed-site check should assert the expected id
+appears in the served bundle. **That converts "wrong id" from a class nobody
+notices into a red gate** — and it also catches a moved constant, a config that
+goes missing, or minification changing shape, none of which anything else in
+the gate looks at.
+
+**The general form, which applies past analytics.** Several values in this
+project are supplied by the user and unverifiable from here: DNS records, the
+OAuth client id, `KMT_OWNER_EMAIL`, the canonical host. **Where a document
+records one, it should say so**, so the next reader knows that agreement
+between the spec and the code proves nothing about whether either is right.
+
 ## This reverses a ruling I made today, and the user has overruled it
 
 Earlier today, on the funnel report, I ruled: **"no cookie, no third party,
