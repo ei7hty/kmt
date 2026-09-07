@@ -55,10 +55,17 @@ jobs:
           git init -q
           git config user.email canary@example.invalid
           git config user.name gitleaks-canary
-          # AWS-secret-key shaped: gitleaks' default ruleset has a dedicated
-          # rule for this exact format, so a miss here means the binary or
-          # ruleset is broken, not that this particular pattern is obscure.
-          echo 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' > fake.env
+          # AWS access-key-ID shaped (AKIA + 16 chars), matching gitleaks'
+          # aws-access-token rule's actual regex -- not the 40-char AWS
+          # *secret* key format an earlier version of this canary used, which
+          # that rule was never going to match regardless of any allowlist.
+          # The 16-char suffix is generated fresh each run, not hardcoded:
+          # gitleaks' default config allowlists AWS's own documented sample
+          # access key (AKIAIOSFODNN7EXAMPLE) by exact suffix, and a random
+          # value structurally cannot collide with a fixed example string,
+          # so this canary can't fail this same way twice.
+          suffix="$(head -c 200 /dev/urandom | tr -dc 'A-Z0-9' | head -c 16)"
+          echo "AWS_ACCESS_KEY_ID=AKIA${suffix}" > fake.env
           git add fake.env
           git commit -q -m "canary: never pushed, never merged, exists only for this job"
 

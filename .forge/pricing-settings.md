@@ -254,3 +254,84 @@ decision:
 marked as not his.** That is what `isPlaceholder` is for, it is why the
 markup rate has carried it since it shipped, and it is the reason this can be
 built now rather than waiting for four answers Ken does not have yet.
+
+
+## Per-tire shipping: Ken's number, and an override for the outliers
+
+**2026-09-07, on the user's instruction: `$25.75` per tire, adjustable in the
+owner portal for all tires and individually.**
+
+### The flat figure is Ken's now, and it closes a live loss
+
+**`$25.75` replaces the `0` default.** Until he sets it, `retailPrice` computes
+`(supplierPrice + 0) x rate` while he pays `supplierPrice + freight` -- **about
+$140-175 of margin per four-tire job.** Setting it is one save on the existing
+markup form, which has sent `shippingPerTire` since #299.
+
+**It sits inside the range the scraper lane measured** -- four tires to 02149
+came back between `$94.00` and `$119.56`, so `$23.50` to `$29.89` per tire.
+**That is a sanity check and nothing more: it is his number, from what he
+actually pays, and the measurement was one supplier's cart to one ZIP.**
+
+**`shippingPerTireIsPlaceholder` becomes false legitimately** for the first
+time, which is what #313 made possible.
+
+### Why a per-tire override is the right second half
+
+**The scraper lane established there is no per-tire shipping number to scrape**
+-- destination-gated, `$0.00` to `$119.56` across SKUs at the same quantity and
+ZIP, and non-linear in quantity. **A single flat rate is therefore permanently
+the shape**, and it is wrong in exactly the cases that measurement found:
+
+**One tire ships free. Another costs `$119.56`.** A flat `$25.75` adds Ken's
+freight to a tire that has none, and under-recovers on the expensive one.
+
+**So the override is for outliers Ken meets by hand**, which is the
+justification the seam has had since the scraper question was answered. It is
+not a step toward automation; **there is nothing to automate.**
+
+### The seam already exists and nothing writes to it
+
+`retailPrice(supplierPrice, tire = {}, settings)` **already reads
+`tire.shippingPerTire` and falls back to the flat setting.** Nothing in `src/`
+or `backend/` writes that field today.
+
+**So the pricing maths needs no change at all.** The work is storage, an API
+that carries it, and a control on the owner screen.
+
+### Storage, and the one decision inside it
+
+**`offers` has no shipping column** -- `id, price_cents, enabled, notes,
+version, updated_at`. **So this is a schema change**, and in this project that
+means **`migrate()` and a migration test**, without exception: a schema change
+that only fails in production is a failure mode this database has already had.
+
+**`shipping_cents INTEGER`, nullable.** Integer cents, matching
+`price_cents` beside it.
+
+**`NULL` means "use the flat rate". It does not mean zero, and zero does not
+mean unset.** `$0.00` is a real, meaningful value here -- **it is the
+free-shipping tire the scraper actually found** -- and conflating absence with
+zero is precisely the bug #313 fixed one level up. **The same distinction, at
+the row level, before it is written rather than after.**
+
+### The owner screen
+
+**A shipping field on each tire's row, beside the price**, empty by default,
+with the flat rate visible as the fallback it will use.
+
+**Clearing it returns the tire to the flat rate.** That is the only way back,
+and it must not be confusable with typing `0`.
+
+**And the flat rate keeps its own control**, unchanged, where it is today.
+
+### What must not change
+
+**The owner's own price still wins outright.** If Ken has priced a tire, that
+price is the price and shipping is not added to it. **Markup proposes, the
+owner disposes** -- unchanged, and the per-tire override lives entirely on the
+proposing side.
+
+**No number reaches a customer unless Ken put it there or it is visibly marked
+as not his.** A per-tire override is his by construction. **The flat rate
+becomes his the moment he saves `$25.75`.**

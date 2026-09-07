@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { DEFAULT_PRICING_SETTINGS, calculateDraftQuote, normalizePricingSettings } from '../src/pricing.js'
+import { DEFAULT_PRICING_SETTINGS, calculateDraftQuote, computeQuoteTotals, normalizePricingSettings } from '../src/pricing.js'
 
 const tire = (overrides = {}) => ({
   id: 'giga-a', name: 'Test Touring', size: '205/65R15', price: 50,
@@ -146,7 +146,7 @@ test('tax applied to services only taxes labour and disposal, not the tire', () 
   assert.deepEqual(quote.tax, { rate: 0.1, appliesTo: 'services', amount: roundToCents((49.99 + 10) * 0.1) })
 })
 
-test('a customer-facing quote never carries an internal taxClass key on any line', () => {
+test('a customer-facing quote never carries an internal taxable key on any line', () => {
   const settings = normalizePricingSettings({ disposalFee: 10, tax: { rate: 0.1, appliesTo: 'all' } })
   const quote = calculateDraftQuote(request({ disposeOldTires: true }), [tire()], settings)
   for (const line of quote.lineItems) {
@@ -155,3 +155,92 @@ test('a customer-facing quote never carries an internal taxClass key on any line
 })
 
 function roundToCents(amount) { return Math.round(amount * 100) / 100 }
+
+// #354: the owner's own catalogue lines, alongside the four built-in fees.
+
+const line = (overrides = {}) => ({
+  id: 'install', label: 'Installation', amountCents: 1500,
+  basis: 'perTire', mode: 'automatic', taxable: false, enabled: true,
+  ...overrides,
+})
+
+test('an enabled automatic catalogue line is on every draft, with no chosen ids needed', () => {
+  const quote = calculateDraftQuote(request(), [tire()], undefined, [line()])
+  assert.ok(quote.lineItems.some(item => item.description === 'Installation' && item.unitPrice === 15))
+})
+
+test('a disabled catalogue line never appears, automatic or not', () => {
+  const quote = calculateDraftQuote(request(), [tire()], undefined, [line({ enabled: false })])
+  assert.ok(!quote.lineItems.some(item => item.description === 'Installation'))
+})
+
+test('an optional catalogue line appears only when its id is chosen', () => {
+  const optional = line({ id: 'nitrogen', label: 'Nitrogen fill', mode: 'optional' })
+  const withoutChoice = calculateDraftQuote(request(), [tire()], undefined, [optional], [])
+  const withChoice = calculateDraftQuote(request(), [tire()], undefined, [optional], ['nitrogen'])
+  assert.ok(!withoutChoice.lineItems.some(item => item.description === 'Nitrogen fill'))
+  assert.ok(withChoice.lineItems.some(item => item.description === 'Nitrogen fill'))
+})
+
+test('a perTire catalogue line multiplies by quantity; a perJob line does not', () => {
+  const perTire = calculateDraftQuote(request({ quantity: 4 }), [tire()], undefined, [line({ basis: 'perTire' })])
+  const perJob = calculateDraftQuote(request({ quantity: 4 }), [tire()], undefined, [line({ basis: 'perJob' })])
+  const perTireLine = perTire.lineItems.find(item => item.description === 'Installation')
+  const perJobLine = perJob.lineItems.find(item => item.description === 'Installation')
+  assert.equal(perTireLine.quantity, 4)
+  assert.equal(perJobLine.quantity, 1)
+})
+
+test('a catalogue line\'s own taxable flag governs it, regardless of appliesTo -- #354\'s correction to #335', () => {
+  // taxable:true still taxes the line even though appliesTo is 'goods' and
+  // installation is neither a tire nor a service classification -- the
+  // catalogue line is not matched against appliesTo at all.
+  const taxedUnderGoods = calculateDraftQuote(
+    request(), [tire()], normalizePricingSettings({ tax: { rate: 0.1, appliesTo: 'goods' } }),
+    [line({ taxable: true })],
+  )
+  const installTaxed = taxedUnderGoods.lineItems.find(i => i.description === 'Installation')
+  assert.ok(taxedUnderGoods.tax.amount > roundToCents(50 * 0.1), 'the tire and the taxable install line are both taxed')
+
+  // taxable:false is never taxed even though appliesTo is 'all' -- the
+  // catalogue line's own flag overrides, it is not simply another 'all' line.
+  const untaxedUnderAll = calculateDraftQuote(
+    request(), [tire()], normalizePricingSettings({ tax: { rate: 0.1, appliesTo: 'all' } }),
+    [line({ taxable: false })],
+  )
+  const installUntaxed = untaxedUnderAll.lineItems.find(i => i.description === 'Installation')
+  const taxableSubtotal = untaxedUnderAll.subtotal - installUntaxed.unitPrice
+  assert.equal(untaxedUnderAll.tax.amount, roundToCents(taxableSubtotal * 0.1))
+  assert.ok(installTaxed) // line is present in both cases; only its tax treatment differs
+})
+
+test('a catalogue line is never taxed while tax is off entirely, whatever its own flag says', () => {
+  const quote = calculateDraftQuote(request(), [tire()], undefined, [line({ taxable: true })])
+  assert.equal('tax' in quote, false)
+})
+
+test('a malformed catalogue entry is skipped rather than crashing a customer\'s draft', () => {
+  const malformed = [{ id: 'bad', enabled: true, mode: 'automatic' }] // no label, no amountCents
+  const quote = calculateDraftQuote(request(), [tire()], undefined, malformed)
+  assert.equal(quote.exception, false)
+  assert.equal(quote.lineItems.length, 2) // tire + mobile service, nothing from the bad entry
+})
+
+test('computeQuoteTotals sums by the taxable flag the caller already resolved, and never guesses', () => {
+  const settings = normalizePricingSettings({ tax: { rate: 0.1, appliesTo: 'goods' } })
+  const lines = [
+    { quantity: 1, unitPrice: 100, taxable: true },
+    { quantity: 1, unitPrice: 50, taxable: false },
+  ]
+  const totals = computeQuoteTotals(lines, settings)
+  assert.equal(totals.subtotal, 150)
+  assert.deepEqual(totals.tax, { rate: 0.1, appliesTo: 'goods', amount: 10 })
+  assert.equal(totals.total, 160)
+})
+
+test('computeQuoteTotals still returns a tax object at $0 when every line is untaxed, not an absent tax key', () => {
+  const settings = normalizePricingSettings({ tax: { rate: 0.1, appliesTo: 'goods' } })
+  const totals = computeQuoteTotals([{ quantity: 1, unitPrice: 100, taxable: false }], settings)
+  assert.deepEqual(totals.tax, { rate: 0.1, appliesTo: 'goods', amount: 0 })
+  assert.equal(totals.total, 100)
+})

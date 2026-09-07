@@ -1760,3 +1760,169 @@ the resemblance was in the shape of the confusion -- a status field taken at
 face value -- not in the mechanism. Filed as its own lesson rather than
 folded into that one, so a future reader does not inherit the wrong
 generalisation along with the right instinct to check.
+
+
+**2026-09-07 — PRODUCT MANAGER / OWNER AGENT (session local_44d1e1f9), at TEMP
+REPO AGENT's suggestion, who agreed the second-order cost outranked the bug**
+A check that false-alarms does not stay neutral. It trains people to read
+around it.
+
+**The bug**: DNS address-family checks used `.catch(() => [])`, which makes *"I
+could not reach a resolver"* indistinguishable from *"no record exists"* — so a
+transient failure reports a false alarm on a host that is fine. **Never
+deployed; `.forge/` is not in `ship_paths`.**
+
+**The cost that outlives it**: a false alarm does not merely waste one
+investigation. **It teaches everyone that this check lies, and the workaround
+becomes reflex.**
+
+**That already happened, the same night, within hours.** Verifying a deploy,
+the repo agent read the **job-level** result rather than the overall run —
+because the run's audit step was false-failing on an unrelated IPv6 issue.
+**They were right to do it, and it is exactly the habit a false-alarming check
+produces.** One more and *"the overall status lies, check the job"* is the
+norm, at which point a real failure in that step reaches nobody.
+
+**So fix a false alarm with the urgency of a real failure.** The damage is not
+to the day's work; **it is to the instrument's standing, and that does not
+recover on its own.** A check nobody trusts has stopped existing while still
+occupying a slot in the gate.
+
+
+**2026-09-07 — PRODUCT MANAGER / OWNER AGENT (session local_44d1e1f9), the
+PROJECT MANAGER's wording, after the user overturned a ruling of mine** The
+code is authoritative about the product and says nothing about the business.
+
+**What happened.** `backend/quotes.mjs:25` sets `MIN_LEAD_DAYS = 7` and
+enforces it. Real, current, correctly read. **From it the conclusion was drawn
+that Ken cannot serve urgent work — so ranking for emergency intent would
+generate requests he refuses. I adopted that as a positioning ruling.**
+
+**The user: *"He does it, off-platform."***
+
+**The floor constrains the booking form. It does not describe Ken.** He does
+that work by phone, and no artifact in this repository could have said so.
+
+## Why this is not one of the failures already recorded here
+
+**Not a stale record** — the code was current and still is. **Not a broken
+instrument** — the reading was accurate. **A correct measurement of one domain,
+generalised into another where it has no authority.**
+
+**The tell is the shape of the conclusion, not the quality of the evidence.**
+It was a claim about *the business* — what Ken does, which customers he can
+serve — resting entirely on the repository. **A repository can testify about
+what the software does. It cannot testify about what the owner does when the
+software is not involved.**
+
+**Sibling to the relay entry above**: there, intent could only come from the
+person. **Here, operations could only come from the owner** — and the evidence
+looked stronger because it was real code, correctly read.
+
+
+**2026-09-07 — PRODUCT MANAGER / OWNER AGENT (session local_44d1e1f9), with the
+PROJECT MANAGER, who supplied the diagnostic** Two people arguing in good
+faith, each persuaded by the other, can converge on a swap rather than an
+answer.
+
+**We disagreed on whether *"Quick response you can count on"* reads as *fast
+reply* or *comes quickly*.** I ruled it safe. They read it as ambiguous.
+
+**Then I reversed to their position and they conceded to mine — both messages
+sent before the other arrived.** We had exchanged sides and settled nothing.
+
+**The diagnostic, theirs: a disagreement that survives two good-faith
+concessions is usually not about the thing being argued.** Both sides had
+evidence and neither could dislodge the other — **that is the shape of a
+question posed at the wrong level, not of a close call.**
+
+**And it was.** No single line was wrong; **the composite was.** *Roadside
+assistance*, *always on the move*, *I come to you*, *fast*, *quick response* —
+each defensible alone, stacked above a booking form with a seven-day floor,
+composing into immediacy for anyone reading at a glance. **No line-level ruling
+could have fixed it, which is why neither of ours held.**
+
+**When the argument will not settle, stop arguing the point and ask what
+question you are both answering.** And **neither of us could measure the thing
+it turned on** — how a customer actually reads it. **Ken can. That went to the
+user.**
+
+**2026-09-07 - Claude (DEV OPS/INFRASTRUCTURE)**
+A check that has never executed is not a check, whatever its test coverage.
+
+#342 added an address-family assertion to the deployed-site check, to catch the
+apex A record deletion that had just made the site unreachable to every
+IPv4-only customer. Its decision logic was covered thoroughly by synthetic
+fixtures -- both records present, apex-shaped gap, mirror gap, neither, both
+directions of the redirect trap. Every one passed.
+
+The call underneath could not run. `dns.resolve4` queries a nameserver directly
+over UDP/53 and returns ECONNREFUSED in at least two of the three environments
+anyone tried: QA's sandbox and this machine. And the implementation swallowed
+that error, so "the resolver refused to answer me" became "this host has no A
+records" -- measured, not inferred: resolve4 on a name that does not exist and
+resolve4 on a name with a healthy A record returned the identical error here.
+
+So the check would have announced "IPv4-only clients cannot resolve
+kensmobiletire.com. Restore the apex A record at the registrar" while the record
+was present and serving. A false alarm, phrased as an instruction, aimed at the
+registrar, hours after a real deletion at that registrar -- and somebody would
+have followed it.
+
+It never fired, and not because anyone caught it in review. It merged, and the
+run that merged it SKIPPED the verify job, because .forge/ is not ship-scoped
+and nothing deployed. The first execution would have been the next shipping
+deploy. #348 replaced it first.
+
+Same class as the bundle-leak guard above that passed 3 of 3 on a deliberately
+leaking build: sound tests, wrong layer. The tests proved what the code decided
+and never proved that the thing it decided on could be obtained. QA said it
+better than I can -- "I'd verified the logic thoroughly and still shipped the
+one thing I couldn't test myself."
+
+Two habits follow. Run a new check once against reality before it merges, even
+when its unit tests are exhaustive -- and if the environment will not let you,
+say so and ask someone whose will. And never let a lookup failure become a
+finding: distinguish "asked and answered: nothing" from "could not ask", and
+make the second an undetermined result rather than an assertion about
+production. #348 does exactly that, which is why its worst case is a SKIP.
+
+**2026-09-07 - Claude (DEV OPS/INFRASTRUCTURE)**
+The monitor is shaped like CI; the things worth monitoring are shaped like the
+server.
+
+Twice in one night a detection task was assigned as "the health monitor, that is
+your file", and twice it could not be built there -- not because the design was
+wrong but because the data lives somewhere the monitor cannot reach.
+
+The stranded-outbox detector needed rows behind the owner session. The SMTP
+probe needs `transporter.verify()`, which performs AUTH and therefore needs the
+mail credential. Both live on the server as Fly secrets. The health monitor is a
+GitHub Actions workflow whose entire environment is DEPLOY_URL. Neither task was
+five minutes from working; both were structurally impossible in that file.
+
+The assignment was reasonable each time. `.github/workflows/health-monitor.yml`
+IS the monitoring file, and "monitoring goes in the monitor" is the obvious
+placement. The mismatch is that our monitor runs OUTSIDE the application, with a
+credential-free environment, while almost everything worth watching -- outbox
+rows, mail auth, anything behind a session -- is INSIDE it.
+
+So before accepting a monitoring task, ask one question first: where does the
+data live, and what credential does reaching it require? If the answer is "on the
+server, behind a secret", the probe belongs in the server and the only question
+left is how its result gets out. That question is the actual design work, and it
+is worth separating from the probe, which is usually trivial.
+
+Getting the result out has three shapes and we ruled on them: an unauthenticated
+status path, a scoped read-only token in CI, or server log plus owner screen. The
+ruling was the token, and the deciding argument was not disclosure -- both leak
+the same one bit -- but REVERSIBILITY. A token can be revoked; a public endpoint
+cannot be taken back once a bookmark, a script or an uptime service depends on
+it, and its removal becomes a breaking change rather than a decision.
+
+I recommended the unauthenticated path and was overruled with a better argument.
+Worth recording that too: I flagged my own recommendation as an exception to a
+rule I had argued all night, and that flag is what let someone else check the
+reasoning rather than rubber-stamp it. When you notice you are arguing against
+your own principle, say so out loud -- the principle usually wins, and the person
+best placed to see that is not you.
