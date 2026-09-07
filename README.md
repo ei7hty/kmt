@@ -163,6 +163,27 @@ npm run scrape-tires -- 215/60R16 225/50R17 --limit 6
 npm run scrape-tires -- 215/60R16 --dry-run
 ```
 
+Product-page enrichment is opt-in and always bounded. It keeps image URLs and
+product metadata in the private supplier payload; the customer API continues
+to project only its existing allow-listed fields.
+
+```bash
+# One known product URL, without crawling its size
+npm run scrape-tires -- --product-url https://www.giga-tires.com/tires/.../tirecode/... --enrich-limit 1
+
+# Enrich the rows found for one size
+npm run scrape-tires -- 215/60R16 --enrich-products --enrich-limit 8
+
+# A deliberately small batch, with explicit pacing
+npm run scrape-tires -- 215/60R16 225/50R17 --enrich-products \
+  --enrich-limit 12 --concurrency 2 --product-delay 2000
+```
+
+`--enrich-limit` accepts 1–50 and `--concurrency` accepts 1–4. A direct product
+URL replaces that product in the snapshot while preserving every other tire,
+including other tires of the same size. No image is downloaded or hotlinked by
+this command.
+
 ```bash
 npm run scrape-tires -- --help
 ```
