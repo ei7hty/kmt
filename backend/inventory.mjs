@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 
 // The frontend's markup module owns the default rate and the shape of the
@@ -9,6 +10,10 @@ import { deriveBrand } from '../src/data/brand.js'
 
 const DEFAULT_MARKUP_RATE = DEFAULT_MARKUP_SETTINGS.rate
 const DEFAULT_SHIPPING_PER_TIRE = DEFAULT_MARKUP_SETTINGS.shippingPerTire
+
+const CATALOGUE_LINE_BASES = ['perTire', 'perJob']
+const CATALOGUE_LINE_MODES = ['automatic', 'optional']
+const CATALOGUE_LINE_LIMIT = 25
 
 export class InputError extends Error {
   constructor(message, status = 400) { super(message); this.status = status }
@@ -225,6 +230,69 @@ export class Inventory {
     }
     this.setMeta('pricing', pricing)
     return this.getPricingSettings()
+  }
+
+  /**
+   * The owner's own quote lines (#354): installation, and anything else Ken
+   * adds beyond the four built-in fees above. One ordered array under a
+   * metadata key, the same storage as `markup`/`pricing` -- array order
+   * *is* the invoice's order, Ken's to arrange, not an incidental artifact
+   * of how the list happens to be stored.
+   *
+   * Empty by default. This stage adds the capability; `calculateDraftQuote`
+   * folds these in alongside the four hard-coded fees, so a database that
+   * has never called `saveCatalogueLines` prices exactly as it does today.
+   */
+  getCatalogueLines() {
+    return this.getMeta('pricingLines') ?? []
+  }
+
+  /**
+   * Replace the whole ordered list -- the owner's screen (#354, stage 2)
+   * sends the list as it wants it to read, add/edit/reorder/disable all at
+   * once, the same shape `saveMarkup`/`savePricingSettings` already use for
+   * a single settings object. `id` is stable across a rename: a request
+   * that already chose an optional line references it by id, so keeping
+   * the id and only changing the label must not turn that reference into a
+   * new, different line.
+   *
+   * `isPlaceholder` does not exist on a catalogue line and that is
+   * deliberate (#354): the flag exists to mark a number this codebase
+   * invented, and a line Ken authored is his by construction. There is
+   * nothing to disclaim.
+   */
+  saveCatalogueLines(input) {
+    if (!Array.isArray(input)) throw new InputError('Send the catalogue as a list of lines.')
+    if (input.length > CATALOGUE_LINE_LIMIT) throw new InputError(`A catalogue may hold at most ${CATALOGUE_LINE_LIMIT} lines.`)
+
+    const seenIds = new Set()
+    const lines = input.map((line, index) => {
+      if (!line || typeof line !== 'object') throw new InputError(`Line ${index + 1} is not valid.`)
+      const label = typeof line.label === 'string' ? line.label.trim() : ''
+      if (!label || label.length > 200) throw new InputError(`Line ${index + 1} needs a label under 200 characters.`)
+      if (!Number.isInteger(line.amountCents) || line.amountCents < 0 || line.amountCents > 10_000_000) {
+        throw new InputError(`Line ${index + 1} needs a whole-cent amount between $0 and $100,000.`)
+      }
+      if (!CATALOGUE_LINE_BASES.includes(line.basis)) {
+        throw new InputError(`Line ${index + 1} needs a basis of ${CATALOGUE_LINE_BASES.join(' or ')}.`)
+      }
+      if (!CATALOGUE_LINE_MODES.includes(line.mode)) {
+        throw new InputError(`Line ${index + 1} needs a mode of ${CATALOGUE_LINE_MODES.join(' or ')}.`)
+      }
+      if (typeof line.taxable !== 'boolean') throw new InputError(`Line ${index + 1} needs taxable to be true or false.`)
+      if (typeof line.enabled !== 'boolean') throw new InputError(`Line ${index + 1} needs enabled to be true or false.`)
+
+      // A new line (from the owner screen's "add line") arrives with no id;
+      // an existing one keeps the id it was given here on its first save.
+      const id = typeof line.id === 'string' && line.id.trim() ? line.id.trim() : randomBytes(8).toString('hex')
+      if (seenIds.has(id)) throw new InputError(`Line ${index + 1} repeats an id already used by another line in this save.`)
+      seenIds.add(id)
+
+      return { id, label, amountCents: line.amountCents, basis: line.basis, mode: line.mode, taxable: line.taxable, enabled: line.enabled }
+    })
+
+    this.setMeta('pricingLines', lines)
+    return lines
   }
 
   /**
