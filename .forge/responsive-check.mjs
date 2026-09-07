@@ -4,6 +4,8 @@ import { EXCEPTION_TIRE, cleanTireFor, freshPage, openOwnerQuotes, signInIfAsked
 import { dedupe, measure } from './contrast-measure.mjs';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4173';
+/** One address per script, not shared across the gate -- see audit-ui.mjs's submitRequest. */
+const AUDIT_EMAIL = 'jamie+responsive-check@example.com';
 /**
  * A preferred date well clear of today: the server now refuses anything
  * inside a week of today (t48's date floor), and a value right at day 7 can
@@ -88,7 +90,7 @@ const screens = [
     path: '/owner',
     async reach(page) {
       await submitRequest(page, {
-        base: BASE, ...EXCEPTION_TIRE,
+        base: BASE, customerEmail: AUDIT_EMAIL, ...EXCEPTION_TIRE,
         vehicle: '2020 Ford F-150 Pickup Truck Long Bed XLT',
         location: '123 Very Long Street Address Name, Springfield, ST 00000',
         date: SOON,
@@ -109,7 +111,7 @@ const screens = [
     path: '/owner/quotes',
     async reach(page) {
       await submitRequest(page, {
-        base: BASE, ...EXCEPTION_TIRE,
+        base: BASE, customerEmail: AUDIT_EMAIL, ...EXCEPTION_TIRE,
         vehicle: '2020 Ford F-150 Pickup Truck Long Bed XLT',
         location: '123 Very Long Street Address Name, Springfield, ST 00000',
         date: SOON,
@@ -123,7 +125,7 @@ const screens = [
     path: '/status',
     async reach(page) {
       await submitRequest(page, {
-        base: BASE, ...(await cleanTireFor(BASE)),
+        base: BASE, customerEmail: AUDIT_EMAIL, ...(await cleanTireFor(BASE)),
         vehicle: '2020 Toyota Corolla',
         location: '456 Demo Ave, Everett, MA 02149',
         date: SOON,

@@ -38,6 +38,9 @@ const ZIP_IN_AREA = '02149';
 const ZIP_REVIEW = '01608';
 const ZIP_OUT_OF_AREA = '04401';
 
+/** One address per script, not shared across the gate -- see audit-ui.mjs's submitRequest. */
+const AUDIT_EMAIL = 'jamie+dead-end-audit@example.com';
+
 let passed = 0;
 let failed = 0;
 
@@ -79,7 +82,7 @@ function reportCount() {
  *
  * @param size  Tire size as it appears in the catalog, e.g. '265/70R16'.
  */
-async function submitRequest(page, { size, tireName, vehicle, location, date, zip = ZIP_IN_AREA, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
+async function submitRequest(page, { size, tireName, vehicle, location, date, zip = ZIP_IN_AREA, customerName = 'Jamie Rivera', customerEmail = AUDIT_EMAIL }) {
   const [width, rest] = size.split('/');
   const [ratio, diameter] = rest.split('R');
 
@@ -193,7 +196,7 @@ async function main() {
       fail('/owner: exception state did not render as expected for the truck + off-road submission.');
     }
 
-    const contactVisible = await page.locator(`a[href="mailto:jamie@example.com"]`).first().isVisible().catch(() => false);
+    const contactVisible = await page.locator(`a[href="mailto:${AUDIT_EMAIL}"]`).first().isVisible().catch(() => false);
     if (contactVisible) {
       ok('/owner: the request card shows the customer\'s contact email as a mailto link.');
     } else {
@@ -553,7 +556,7 @@ async function main() {
     await page.fill('#location', '789 Demo Blvd', { timeout: 5000 });
     await page.fill('#date', LATEST, { timeout: 5000 });
     await page.fill('#customerName', 'Jamie Rivera', { timeout: 5000 });
-    await page.fill('#customerEmail', 'jamie@example.com', { timeout: 5000 });
+    await page.fill('#customerEmail', AUDIT_EMAIL, { timeout: 5000 });
     await page.click('button[type="submit"]', { timeout: 5000 });
 
     const draftMsg = await page.locator('[role="status"]').first().textContent().catch(() => null);
