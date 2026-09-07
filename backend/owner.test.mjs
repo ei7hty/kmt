@@ -644,6 +644,62 @@ test('the seed runs once at construction and never re-runs against an already-po
   }
 })
 
+test('the seed reads a real, pre-existing production row correctly on the first open that ever sees it (#354 stage 2 migration)', () => {
+  // The sibling test above proves the seed does not re-run against a
+  // database it already seeded. This one proves the seed itself is correct
+  // the very first time it runs against a database that predates it -- a
+  // real close and reopen of a real file, written the way pre-#388 code
+  // would have left it: pricing settings exist, pricingLines never does,
+  // because the code that writes it did not exist yet. That combination --
+  // real file, genuine reopen, pre-existing non-default settings -- was
+  // reviewed by hand and not previously pinned by any test here.
+  const folder = mkdtempSync(path.join(tmpdir(), 'kmt-catalogue-migration-test-'))
+  const filename = path.join(folder, 'test.sqlite')
+  let db
+  try {
+    // Case 1: Ken already set real, decided fees before this code existed.
+    db = new Inventory(filename, [SIZE])
+    db.db.exec(`DELETE FROM metadata WHERE key='pricingLines'`) // the old code's shape: this key never existed
+    db.savePricingSettings({ mobileServiceFee: 65, disposalFee: 12 })
+    db.close()
+
+    db = new Inventory(filename, [SIZE]) // first-ever open with #388's code
+    const lines = db.getCatalogueLines()
+    const mobile = lines.find(line => line.id === 'mobile-service')
+    const disposal = lines.find(line => line.id === 'disposal')
+    assert.equal(mobile.amountCents, 6500, 'the real fee Ken set, not a default')
+    assert.equal('isPlaceholder' in mobile, false, 'a real, decided fee reads as not-a-placeholder -- absent, the same convention used everywhere else in pricing')
+    assert.equal(disposal.amountCents, 1200)
+    assert.equal('isPlaceholder' in disposal, false)
+  } finally {
+    db?.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
+
+  // Case 2: the other real production shape -- Ken never touched pricing at
+  // all, still the shared default, disposal never set. A separate file: the
+  // constructor's own seed already ran once in case 1 and must not be asked
+  // to run a second time against the same database.
+  const folder2 = mkdtempSync(path.join(tmpdir(), 'kmt-catalogue-migration-test-untouched-'))
+  const filename2 = path.join(folder2, 'test.sqlite')
+  let db2
+  try {
+    db2 = new Inventory(filename2, [SIZE])
+    db2.db.exec(`DELETE FROM metadata WHERE key='pricingLines'`)
+    db2.close()
+
+    db2 = new Inventory(filename2, [SIZE])
+    const lines = db2.getCatalogueLines()
+    assert.equal(lines.length, 1, 'mobile-service only -- disposal was never set, so it is an absent line, not a placeholder number')
+    assert.equal(lines[0].id, 'mobile-service')
+    assert.equal(lines[0].amountCents, 4999, 'the shared default fee')
+    assert.equal(lines[0].isPlaceholder, true, 'never confirmed by Ken, so it reads as a placeholder')
+  } finally {
+    db2?.close()
+    rmSync(folder2, { recursive: true, force: true })
+  }
+})
+
 test('disabling a line rather than removing it from the list is a normal save', t => {
   const db = setup(t)
   const [saved] = db.saveCatalogueLines([catalogueLine()])
