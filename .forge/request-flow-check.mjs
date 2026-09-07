@@ -27,7 +27,7 @@ const AUDIT_EMAIL = 'jamie+request-flow-check@example.com'
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 34
+const EXPECTED_CHECKS = 36
 
 const browser = await chromium.launch()
 let checks = 0
@@ -101,6 +101,70 @@ try {
     check(ownerText.includes('Jamie Rivera') && ownerText.includes(AUDIT_EMAIL) && phoneLinkVisible, 'owner sees the contact name, email and normalized phone the customer entered')
     check(errors.length === 0, 'no browser runtime errors')
     await page.close()
+  }
+  // The owner's door, asserted BEFORE the merge instead of only after it.
+  //
+  // Until now the only end-to-end evidence that /api/owner/* refuses without a
+  // session was deployed-site-check.mjs, which runs AFTER the deploy. So a
+  // change that opened that door merged green and shipped, and the first thing
+  // that noticed was a check running against production. That ordering is
+  // wrong for any control and it is worst for this one.
+  //
+  // The backend suite is not already covering this, which is the part worth
+  // knowing. quotes.test.mjs asserts the same 401s, but against its own serve()
+  // -- whose comment says "A server shaped like server.mjs: the same gate, the
+  // same handlers". It is a reconstruction, mounted by hand in the same order,
+  // and .forge/NOTES.md already records what that costs: it can pass while the
+  // real server.mjs is wrong, because nothing makes the two agree. The gate's
+  // audit step boots the real server.mjs. This asks THAT one.
+  //
+  // Cheap on purpose -- three fetches, no browser -- and outside the viewport
+  // loop because a 401 is not a property of a screen width.
+  {
+    const gate = (condition, message) => { assert.ok(condition, message); checks++; console.log(`OK: ${message}`) }
+
+    // Which shape is answering? backend/server.mjs mounts owner auth; 
+    // backend/dev.mjs does not import createAuth at all, so it has no session
+    // route and its owner API is open by design on loopback. Both are legitimate
+    // targets for this script, so each assertion below is written to be true of
+    // whichever one is running -- and the count stays the same either way, which
+    // is what keeps EXPECTED_CHECKS meaningful across both.
+    const session = await fetch(`${base}/api/owner/session`)
+    const hostedShape = session.status !== 404
+
+    const inventory = await fetch(`${base}/api/owner/inventory`)
+    const requests = await fetch(`${base}/api/owner/requests`)
+
+    gate(
+      hostedShape ? inventory.status === 401 : inventory.status === 200,
+      hostedShape
+        ? `GET /api/owner/inventory refuses without a session (401, got ${inventory.status})`
+        : `local passwordless server: /api/owner/inventory is open by design (200, got ${inventory.status})`,
+    )
+
+    // The customer-data route, named separately from the inventory one. They are
+    // gated by the same allow-list today, so this looks redundant -- and it is
+    // the one whose failure would matter most, because what leaks is every
+    // customer's name, email, phone and address rather than a tire list.
+    gate(
+      hostedShape ? requests.status === 401 : requests.status === 200,
+      hostedShape
+        ? `GET /api/owner/requests refuses without a session (401, got ${requests.status})`
+        : `local passwordless server: /api/owner/requests is open by design (200, got ${requests.status})`,
+    )
+
+    // No positive control here, deliberately, and this is the note explaining why
+    // rather than an omission. A negative result only means something when the
+    // same instrument can still produce a positive one -- so I wrote one
+    // (`/api/catalog` still answers 200) and then tested it by making the server
+    // refuse every route. It never ran: cleanTireFor(base) fetches the catalog
+    // before the first check in this file, so the run died at setup with
+    // `Cannot read properties of undefined (reading 'find')`, 0 of 37.
+    //
+    // Which means the control could not fail, because reaching it already proves
+    // what it asserted. This script cannot get here on a server that refuses
+    // everything. A check that cannot go red is the defect this seat was created
+    // to find, so it is a comment instead of an assertion.
   }
   console.log(`${checks}/${EXPECTED_CHECKS} request flow checks passed`)
   if (checks < EXPECTED_CHECKS) {
