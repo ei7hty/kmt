@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 
 // AUDIT_BASE like the other audits, so one server can serve the whole gate.
 // The fallback is the local dev server; a hosted-shape server on any port
-// works too, with KMT_OWNER_PASSWORD set to what it was started with.
+// works too, with KMT_OWNER_PASSWORD (or a session minted with
+// scripts/mint-session.mjs, passed as KMT_OWNER_SESSION_COOKIE) set to what
+// it was started with.
 const base = process.env.AUDIT_BASE || 'http://127.0.0.1:4180'
 
 /**
@@ -47,15 +49,30 @@ const base = process.env.AUDIT_BASE || 'http://127.0.0.1:4180'
  * and answers 404 to the attempt, the same distinction owner-inventory-
  * audit.mjs already draws -- against dev.mjs the owner API is open, so an
  * empty cookie is correct rather than a failure to sign in.
+ *
+ * Minted checked before the password -- the same order and the same reason
+ * owner-inventory-audit.mjs's own plain-fetch session block uses: once
+ * Google-only sign-in is live there is no password to send here at all, and
+ * scripts/mint-session.mjs is how this keeps working after that. Format-
+ * checked before ever asking the server anything, so a malformed
+ * KMT_OWNER_SESSION_COOKIE names itself rather than surfacing as a
+ * confusing 401 indistinguishable from no credential at all.
  */
 const cookie = await (async () => {
+  const minted = process.env.KMT_OWNER_SESSION_COOKIE || ''
+  if (minted) {
+    const separator = minted.indexOf('=')
+    if (separator < 1) throw new Error(`KMT_OWNER_SESSION_COOKIE must be "name=value"; got ${JSON.stringify(minted)}.`)
+    return minted
+  }
   const password = process.env.KMT_OWNER_PASSWORD || ''
   if (!password) return ''
   const login = await fetch(base + '/api/owner/login', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),
   })
   if (login.status === 404) return ''
-  assert.equal(login.status, 200, 'owner sign-in for the outbox read -- is KMT_OWNER_PASSWORD set to what the server was started with?')
+  assert.equal(login.status, 200,
+    'owner sign-in for the outbox read -- is KMT_OWNER_PASSWORD set to what the server was started with, or KMT_OWNER_SESSION_COOKIE to a session minted with scripts/mint-session.mjs?')
   return login.headers.get('set-cookie').split(';')[0]
 })()
 

@@ -170,7 +170,11 @@ of a band will take.
    KMT_OWNER_PASSWORD='...' npm run import-tires -- --to https://kensmobiletire.com --complete
    ```
    Set `KMT_OWNER_PASSWORD` in your own shell, in your own environment.
-   Nobody else needs to see it, and no PR should ever carry it.
+   Nobody else needs to see it, and no PR should ever carry it. If the
+   password has been retired for Google-only owner sign-in, mint a session
+   instead (`flyctl ssh console -a kmt -C "node /app/scripts/mint-session.mjs"`)
+   and pass it as `KMT_OWNER_SESSION_COOKIE` in place of `KMT_OWNER_PASSWORD`
+   above -- `import-tires.mjs` checks for it first.
 4. **Confirm on `/owner`.** Sign in, check that the batch's sizes show the
    tire counts you expect, and that a tire the batch retired (if any) reads
    as out of stock rather than vanishing. `--complete` marks unlisted tires
