@@ -1,6 +1,7 @@
 /* global document */ // used inside page.evaluate, which runs in the browser
 import { chromium } from 'playwright';
 import https from 'node:https';
+import { promises as dns } from 'node:dns';
 import { CATALOG_FIELDS } from './audit-ui.mjs';
 import { GA_MEASUREMENT_ID } from '../src/analytics.js';
 
@@ -51,7 +52,7 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 56;
+const EXPECTED_CHECKS = 67;
 
 let passed = 0;
 let failed = 0;
@@ -82,6 +83,50 @@ function describeFetchError(error) {
   const code = error.cause?.code || error.code;
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return `no DNS record for this host (${code})`;
   return `request failed: ${error.message.split('\n')[0]}`;
+}
+
+/**
+ * Whether a host's DNS resolution covers both address families, given
+ * pre-fetched A/AAAA record lists (DEV OPS's design, after tonight's
+ * apex-A-record outage). Pure, and taking the records rather than doing the
+ * lookup itself, so the two distinct failure messages -- no A record is a
+ * different fix and a different urgency than no AAAA record -- can be
+ * proven against synthetic data the same way checkOgImageTag above is
+ * proven against synthetic HTML, without a real DNS lookup this sandbox
+ * cannot always make.
+ */
+function describeAddressFamily(host, { a, aaaa }) {
+  return {
+    a: {
+      ok: a.length > 0,
+      reason: a.length ? '' : `no A record -- IPv4-only clients cannot resolve ${host}. Office networks and older routers are IPv4-only; they get "site can't be reached." Restore the apex A record at the registrar.`,
+    },
+    aaaa: {
+      ok: aaaa.length > 0,
+      reason: aaaa.length ? '' : `${host} has no IPv6 address. Lower severity today -- every IPv4 client still works -- but the same class of gap, worth naming rather than folding into a generic "DNS looks wrong."`,
+    },
+  };
+}
+
+/**
+ * Whether a redirecting host's target resolves in every family the host
+ * itself does. A host answering on a family its target lacks is a trap
+ * distinct from either host simply being down: a client reaches the
+ * redirecting host successfully (that family works fine for it) and is
+ * sent somewhere it cannot resolve at all -- worse than a plain outage,
+ * because the site looked reachable right up until the redirect.
+ */
+function checkRedirectFamilyCoverage(host, hostFamilies, canonicalHost, canonicalFamilies) {
+  const missingA = hostFamilies.a.length > 0 && canonicalFamilies.a.length === 0;
+  const missingAaaa = hostFamilies.aaaa.length > 0 && canonicalFamilies.aaaa.length === 0;
+  return {
+    ok: !missingA && !missingAaaa,
+    reason: missingA
+      ? `${host} has an A record but ${canonicalHost} does not -- an IPv4 client reaching ${host} would be redirected somewhere it cannot resolve`
+      : missingAaaa
+        ? `${host} has an AAAA record but ${canonicalHost} does not -- an IPv6 client reaching ${host} would be redirected somewhere it cannot resolve`
+        : '',
+  };
 }
 
 /**
@@ -504,6 +549,41 @@ async function main() {
     } else {
       fail(`${label} — got status ${status}${location ? `, location ${location}` : ', no location header'}, but another redirect host in this same run does show the flip live`);
     }
+  }
+
+  // DNS resolution, never connectivity (DEV OPS's spec, after tonight's
+  // apex-A-record outage). kensmobiletire.com lost its apex A record and
+  // resolved only over IPv6; every check in this file reaches the site over
+  // whichever family the runner's own resolver happens to pick, so a
+  // single-family outage was invisible to all of them -- the missing record
+  // was the incident, the blind checks are why it hid for hours.
+  //
+  // This does not assert connectivity over IPv6, or over any family: a
+  // GitHub runner has no IPv6 stack at all, so a `curl -6` assertion fails
+  // there always, and its message would say "unreachable over IPv6" when it
+  // means "this runner has neither" -- the same shape as flipConfigured
+  // reading the runner's own environment above it in this same file.
+  // Resolution needs no connectivity in the family being resolved; only
+  // production's own DNS records can answer whether a client in that family
+  // could ever reach it, which is the only question worth asking here.
+  const addressFamilyHosts = [CANONICAL_HOST, ...REDIRECT_HOSTS];
+  const addressFamilies = {};
+  for (const host of addressFamilyHosts) {
+    const a = await dns.resolve4(host).catch(() => []);
+    const aaaa = await dns.resolve6(host).catch(() => []);
+    addressFamilies[host] = { a, aaaa };
+    const described = describeAddressFamily(host, { a, aaaa });
+    check(described.a.ok, `${host} resolves over IPv4 (A record)`, described.a.reason);
+    check(described.aaaa.ok, `${host} resolves over IPv6 (AAAA record)`, described.aaaa.reason);
+  }
+
+  // www and order 301 to the canonical; this is where that would have made
+  // tonight worse, not just as bad -- a client for whom the redirecting
+  // host actually works, redirected into a dead end.
+  const canonicalFamilies = addressFamilies[CANONICAL_HOST];
+  for (const host of REDIRECT_HOSTS) {
+    const coverage = checkRedirectFamilyCoverage(host, addressFamilies[host], CANONICAL_HOST, canonicalFamilies);
+    check(coverage.ok, `${host}'s redirect target (${CANONICAL_HOST}) resolves in every family ${host} does`, coverage.reason);
   }
 
   // kmt.fly.dev specifically, not one of the DNS aliases: www and order are
