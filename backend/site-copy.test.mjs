@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { Inventory, InputError } from './inventory.mjs'
 import {
   SITE_COPY_FIELDS, SITE_COPY_KEY, SiteCopy,
@@ -237,4 +238,44 @@ test('saving needs no schema change: it is one metadata row', t => {
   const row = inventory.db.prepare('SELECT value FROM metadata WHERE key=?').get(SITE_COPY_KEY)
   assert.ok(row, 'stored in the existing key/JSON table')
   assert.equal(JSON.parse(row.value).values['hero.eyebrow'], 'I DRIVE TO YOU')
+})
+
+// --- Every declared key is actually rendered somewhere -----------------------
+
+test('every registry key is referenced by a customer-facing component', () => {
+  // The defect this exists for, found in review rather than by any test: the
+  // registry, the store, the routes, the injection and the owner screen were
+  // all correct and complete, every test passed, and no component read any of
+  // it. The screen told Ken his words were live while the page rendered
+  // hardcoded literals -- a tool lying to the one person using it.
+  //
+  // Nothing caught it because every part was tested against its own contract
+  // and no test spanned the seam. This is the cheapest assertion that does:
+  // a key nobody renders is a key that does nothing.
+  //
+  // It proves the wiring exists, not that it works at runtime -- that is a
+  // browser's job, and the flow audits own it. Two layers on purpose: this one
+  // fails the moment a key is added without being rendered, which is when the
+  // mistake is cheap to fix.
+  const sources = ['../src/routes/CustomerRequest.jsx', '../src/routes/Inquiry.jsx', '../src/routes/NotFound.jsx']
+    .map(file => readFileSync(new URL(file, import.meta.url), 'utf8'))
+    .join('\n')
+
+  const unrendered = SITE_COPY_FIELDS.filter(field => !sources.includes(`'${field.key}'`))
+  assert.deepEqual(unrendered.map(field => field.key), [],
+    'these keys are editable but nothing renders them, so saving one changes nothing a customer sees')
+})
+
+test('the positive control: this test can see a key that is rendered', () => {
+  // Guards the assertion above against the way it would fail silently -- a
+  // path typo makes `sources` empty, every key looks unrendered, and the test
+  // goes red for the wrong reason. This one goes red if the files are read but
+  // hold nothing, which is the other direction.
+  // Deliberately not keyed to any single field: an earlier version canaried on
+  // `hero.eyebrow`, so unwiring that one key turned BOTH tests red and the
+  // control could no longer isolate what had broken. A control that fails for
+  // the same reason as the thing it is controlling is not a control.
+  const sources = readFileSync(new URL('../src/routes/CustomerRequest.jsx', import.meta.url), 'utf8')
+  assert.ok(sources.length > 1000, 'the source was actually read, not silently empty from a bad path')
+  assert.ok(sources.includes('COPY['), 'and it genuinely reads the registry at all')
 })

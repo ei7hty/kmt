@@ -135,6 +135,22 @@ export function copyField(copy, key) {
  * matters most. That is the same standing decision as the catalog fallback:
  * the backend improves the page, it is never a hard dependency of it.
  */
+let parsed = null
+
+/**
+ * The copy this page render should use, parsed once.
+ *
+ * Memoised because the value cannot change while a page is open: the server
+ * puts it in the HTML, so a new value arrives with a new document. That is
+ * also why the owner screen says an edit is live *on the next page load* --
+ * the message has to match the mechanism, or the tool lies to the one person
+ * using it.
+ */
+export function siteCopy() {
+  if (!parsed) parsed = readInjectedCopy()
+  return parsed
+}
+
 export function readInjectedCopy() {
   try {
     const element = globalThis.document?.getElementById(SITE_COPY_ELEMENT_ID)
