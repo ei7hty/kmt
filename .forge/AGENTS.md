@@ -141,6 +141,15 @@ either side.
 
 - **Never `git add -A` or `git add .`.** Stage explicit paths. Another agent's
   work may already be staged and you will commit it under your message.
+- **Read what you staged before you commit it.** `git add <path>` stages the
+  file as it is on disk, including anything another session has already staged
+  into the shared index — so an explicit path is not by itself proof the change
+  is yours. Run `git diff --cached <path>` and confirm it holds only your edit.
+  This is not a rare collision on `CLAIMS.md`: that file is the one every agent
+  edits, so it is the expected case there. (On `CLAIMS.md` the surer fix is
+  committing from its own worktree off `origin/main`, which has no shared index
+  to inherit; `git diff --cached` is the guard for every other shared file, and
+  for `CLAIMS.md` until that habit lands.)
 - **Never commit a file you did not change**, even when it is staged.
 - **Check the branch before committing.** Do not assume `main`.
 - **Need another branch while someone is editing? Use `git worktree add`,** not
