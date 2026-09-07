@@ -13,6 +13,7 @@ import NotFound from './routes/NotFound.jsx'
 import Privacy from './routes/Privacy.jsx'
 import Inquiry from './routes/Inquiry.jsx'
 import OwnerInquiries from './owner/Inquiries.jsx'
+import SocialProofScreen from './owner/SocialProof.jsx'
 
 /** The apex domain, and the two routes the sitemap lists under it (t46). */
 const CANONICAL_HOST = 'https://kensmobiletire.com'
@@ -96,6 +97,8 @@ function App() {
   if (route === '/owner/inquiries') return <OwnerInquiries navigate={navigate} />
 
   if (route === '/owner/site-copy') return <SiteCopyScreen navigate={navigate} />
+
+  if (route === '/owner/social-proof') return <SocialProofScreen navigate={navigate} />
 
   if (route === '/confirmation') {
     return <Confirmation navigate={navigate} />

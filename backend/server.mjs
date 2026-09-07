@@ -50,6 +50,7 @@ import { LoginThrottle, RateLimiter } from './limits.mjs'
 import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl, readRelease } from './site.mjs'
 import { createStaticHandler } from './static.mjs'
 import { SiteCopy } from './site-copy.mjs'
+import { SocialProof } from './social-proof.mjs'
 import { Outbox } from './outbox.mjs'
 import { createMailer, describeMail, drainMail, readMailConfig } from './mail.mjs'
 import { Inquiries } from './inquiries.mjs'
@@ -150,6 +151,7 @@ const inquiries = new Inquiries(inventory.db)
 const api = createApi(inventory, refresher, importer, quotes, { mailer, inquiries, auth })
 const catalogApi = createCatalogApi(inventory)
 const siteCopyStore = new SiteCopy(inventory)
+const socialProofStore = new SocialProof(inventory)
 const siteCopyApi = createSiteCopyApi(inventory)
 // The platform's health check, mounted here too so the local server and the
 // hosted one answer the same routes.
@@ -191,7 +193,10 @@ const release = readRelease()
 
 // The built frontend, served the way backend/static.mjs describes: hashed
 // assets forever, brand files for a day, everything else revalidated.
-const serveStatic = createStaticHandler(dist, { readCopy: () => siteCopyStore.resolved() })
+const serveStatic = createStaticHandler(dist, {
+  readCopy: () => siteCopyStore.resolved(),
+  readSocialProof: () => socialProofStore.resolved(),
+})
 
 const server = createServer(async (request, response) => {
   try {

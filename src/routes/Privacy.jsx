@@ -1,3 +1,5 @@
+import SocialProof from '../components/SocialProof.jsx'
+
 /**
  * The privacy notice (t50): what KMT collects, why, who sees it, how long
  * it is kept, how to have it removed, and what the status link is.
@@ -34,7 +36,7 @@ function Privacy({ navigate }) {
           <h2>Analytics</h2>
           <p>This page and the homepage use Google Analytics to count visits. It is never used on the page that shows your own request or receipt, or on Ken&apos;s review screen, and it is never linked to your name, email or phone number.</p>
         </div>
-      </div>
+      </div><SocialProof />
       <PrivacyFooter navigate={navigate} />
     </div>
   )
