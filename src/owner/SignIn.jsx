@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './OwnerInventory.css'
 import { PrivacyFooter } from '../routes/Privacy.jsx'
 
@@ -23,6 +23,30 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace', 
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  // Whether this server has an OAuth client at all. The button appears only
+  // where pressing it would work: a local server and any deployment without
+  // the two Google variables set answer `google: false`, and offering a door
+  // that 404s is worse than not offering it.
+  const [googleOffered, setGoogleOffered] = useState(false)
+  useEffect(() => {
+    let live = true
+    fetch('/api/owner/session')
+      .then(response => (response.ok ? response.json() : {}))
+      .then(data => { if (live) setGoogleOffered(Boolean(data.google)) })
+      // A failure here means no Google button, which is the safe direction:
+      // the password path is unaffected and still signs the owner in.
+      .catch(() => {})
+    return () => { live = false }
+  }, [])
+
+  // The callback sends every refusal here with the same flag -- a wrong
+  // domain, an unverified address, a token minted for another application and
+  // a replayed callback are one answer to whoever is holding them. The reason
+  // is in the server log, where it can be acted on, and not in the browser,
+  // where it would only tell someone which door to try next.
+  const refused = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('signin') === 'refused'
 
   async function submit(event) {
     event.preventDefault()
@@ -59,10 +83,31 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace', 
         <p className="oi-kicker">OWNER ONLY</p>
         <h1>Sign in</h1>
         <p className="oi-muted">{what}</p>
+        {refused && <p role="alert" className="oi-error">That account cannot open this workspace. Ask Ken.</p>}
+        {googleOffered && <>
+          {/* Primary, on the user's instruction: "PUSH GOOGLE LOGIN RETIRE
+              BUILT IN PASSWORD IT IS INSECURE." A shared password proves only
+              that someone knew a string -- no per-person identity, no
+              revocation for one person, and no honest answer to "who approved
+              this quote", which quotes.decided_by is about to start recording.
+              So Google is the way in and the password is the fallback until
+              the secret is unset. */}
+          <a className="oi-button oi-primary oi-signin-google" href="/api/owner/session/google/start" data-testid="owner-signin-google">
+            Sign in with Google
+          </a>
+          <p className="oi-muted oi-signin-hint">Use your @kensmobiletire.com account.</p>
+          <p className="oi-signin-or">or use the password until it is switched off</p>
+        </>}
         <label htmlFor="owner-password">Password</label>
-        <input id="owner-password" type="password" autoComplete="current-password" value={password}
-          onChange={e => setPassword(e.target.value)} disabled={busy} />
-        <button type="submit" className="oi-button oi-primary" disabled={busy || !password}>
+        <input id="owner-password" data-testid="owner-password" type="password" autoComplete="current-password"
+          value={password} onChange={e => setPassword(e.target.value)} disabled={busy} />
+        {/* Red marks the one primary action on a screen. Where Google is
+            configured that is Google; where it is not -- every environment
+            today, and every gate run -- the password is the only way in and
+            stays primary. The conditional is what keeps this screen honest in
+            both states rather than demoting the only door on offer. */}
+        <button type="submit" data-testid="owner-signin-submit" disabled={busy || !password}
+          className={googleOffered ? 'oi-button' : 'oi-button oi-primary'}>
           {busy ? 'Checking…' : 'Sign in'}
         </button>
         {error && <p role="alert" className="oi-error">{error}</p>}
