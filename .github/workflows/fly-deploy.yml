@@ -145,11 +145,6 @@ jobs:
       - name: Audit the built frontend against the real server
         env:
           AUDIT_BASE: http://localhost:4173
-          # Must stay at least 12 characters: server.mjs refuses to boot on a
-          # shorter one, and the failure surfaces as the wait loop below timing
-          # out with "server did not start", which reads like a hang rather than
-          # a rejected password.
-          KMT_OWNER_PASSWORD: audit-only-password-not-a-secret
         run: |
           # node directly, not `npx`: npx spawns the server as a grandchild, so
           # $! would be the wrapper and killing it leaves the port held. That
@@ -160,9 +155,18 @@ jobs:
           # remove it. Inline, the path exists only in the backgrounded node's
           # environment and nothing left in this shell knows what to clean up.
           dbdir="$(mktemp -d)"
+          db="$dbdir/audit.sqlite"
+          secret=audit-only-session-secret
 
-          KMT_OWNER_DB="$dbdir/audit.sqlite" \
-          KMT_SESSION_SECRET=audit-only-session-secret \
+          # Must stay at least 12 characters: server.mjs refuses to boot on a
+          # shorter one, and the failure surfaces as the wait loop below timing
+          # out with "server did not start", which reads like a hang rather than
+          # a rejected password. The audits below sign in with a minted session,
+          # not this -- it exists only because readAuthConfig still requires a
+          # password to boot, ahead of the Google-only cutover.
+          KMT_OWNER_PASSWORD=audit-only-password-not-a-secret \
+          KMT_OWNER_DB="$db" \
+          KMT_SESSION_SECRET="$secret" \
           PORT=4173 \
           KMT_BIND=127.0.0.1 \
           node backend/server.mjs &
@@ -183,9 +187,18 @@ jobs:
             sleep 2
           done
 
-          node .forge/dead-end-audit.mjs
-          node .forge/request-flow-check.mjs
-          node .forge/responsive-check.mjs
+          # Minted against the same db and secret the server just booted with,
+          # so the audits sign in the way the gate will once the password is
+          # retired for Google-only owner sign-in, rather than the password
+          # form. KMT_OWNER_PASSWORD is deliberately not exported below: a
+          # minting failure must fail loud here, on this step, rather than
+          # fall through to a password path CI will not have once the cutover
+          # finishes.
+          cookie="$(KMT_OWNER_DB="$db" KMT_SESSION_SECRET="$secret" node scripts/mint-session.mjs --quiet)"
+
+          KMT_OWNER_SESSION_COOKIE="$cookie" node .forge/dead-end-audit.mjs
+          KMT_OWNER_SESSION_COOKIE="$cookie" node .forge/request-flow-check.mjs
+          KMT_OWNER_SESSION_COOKIE="$cookie" node .forge/responsive-check.mjs
 
   # Does the image build, boot, and reach its data?
   #
