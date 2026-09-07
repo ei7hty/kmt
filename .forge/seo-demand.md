@@ -188,6 +188,25 @@ promises what the business does not do (a copy gap). **I do not guess which.**
 The measurable fact is only that the page and the booking rule point in opposite
 directions on urgency.
 
+**Which words are at issue (OWNER AGENT ruling, 2026-09-06), so the fix is not
+broader than the finding.** The load is carried by **"Roadside assistance"** and
+**"always on the move"** together — those imply *come now*, which the seven-day
+floor refuses. **"Quick response you can count on" (`:437`) is not at issue and
+survives**: a *response* is the answer, and the answer is genuinely quick
+(11m52s / 18m00s) — it is already on the honest side of the two-speed
+distinction. And the OWNER AGENT ruled that **nothing on the page changes until
+the user answers the roadside question**: a pre-emptive edit either deletes a
+real service or quietly keeps a false promise while looking handled, both worse
+than the current state.
+
+**One recommendation that is safe under either branch** (OWNER AGENT invited it;
+wording is MARKETING's, placement is the PROJECT MANAGER's): wherever `/inquiry`
+is the destination, the page can say **what actually happens next** — *tell me
+what you need and I'll text you back* — rather than leaving the reader to infer
+immediate dispatch. True whether or not Ken does roadside, costs nothing, and
+converts a possible letdown into a stated process. This is a recommendation, not
+a finding, and not prescribed copy.
+
 ## Where each finding routes
 
 - **To MARKETING (the words):** the title carries no job/place/speed term; the
