@@ -28,6 +28,19 @@ directions. Your branch name is the claim: make it describe the work.
 **While you work.** Stay in your lane (below). If you must touch a file outside
 it, say so in your claim row first.
 
+**When a decision reaches you second-hand, the source wins and you ask.** A
+routing, a ruling, a claim row that describes someone's decision — these are
+relays, and relays gain and lose fidelity silently. The fix is not to read them
+more carefully: a relay that is internally coherent and simply wrong survives
+any careful read, because a closer look at a coherent-but-wrong statement only
+confirms it. So when a relayed decision conflicts with your own reading of the
+source — the PR diff, the file, the person's own words — trust the source and
+ask, rather than act on the relay. This happened four times in one night: a
+"can follow" tightened into "blocks merge" in transit; a claim row describing a
+ruling with a specificity nobody gave it; a relayed confirmation passed on as
+fact and then retracted; a held, contested PR routed as ready. Each was caught
+by going back to the source, never by a more careful reading of the relay.
+
 **A claim row names a region, not a lock on the whole path.** Two agents may
 hold the same file at once when their work sits in different parts of it --
 BUG FIXER held `backend/quotes.mjs`'s `cleanDate()` near the top while JUNIOR
@@ -55,7 +68,12 @@ edit, not a coherent screen. Two people building in one file still owe each
 other a look at what the other is building, which no claim row can do for them:
 the row is a collision guard, not a design review.
 
-**When you finish.** Remove your row from `CLAIMS.md`. If you learned something
+**When you finish — and finished means merged, not opened.** Remove your row
+from `CLAIMS.md` when your PR lands on `main`, not when you push it and open the
+PR. An open PR is still a claim on the file: it can sit an hour or more waiting
+on a second reader, and for that whole window a released row tells the busiest
+coordination file that nobody is touching a file you are — and the reader who
+needs it is the one who has *not* read your PR. Then, if you learned something
 the next agent would otherwise rediscover the hard way, append it to
 [`.forge/NOTES.md`](NOTES.md). Update `.forge/state.json` if you closed a task,
 and record architecture decisions in `.forge/decisions.md`.
@@ -88,6 +106,14 @@ one night:
   discards it with no commit and no reflog entry, nothing anywhere to recover.
   "Stage explicit paths, never `-A`" protects *across* files and has no force
   *inside* the one file every session writes.
+
+**If you find another session's uncommitted edit to `CLAIMS.md` in the shared
+checkout, commit it with attribution — never `checkout --` or `reset --hard` it
+away.** That is the live case until everyone works from a worktree: a row is
+already sitting in the shared tree, put there by someone. Riding it along under a
+one-line note in your commit message costs nothing; discarding it destroys a
+claim with no artifact anywhere, and its author finds out when they ask where it
+went.
 
 A fresh worktree's `CLAIMS.md` holds your row and nothing else: no other
 session's edit to sweep up, discard, or reset over. That makes the collision
