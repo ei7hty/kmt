@@ -184,9 +184,18 @@ one-button remedy as `paid → sent`: reversing completed work is a claim
 about whether the work actually happened, which a status transition cannot
 settle by itself the way "was this payment real" can. Agrees with the
 OWNER AGENT's lean, on a verified reason rather than the same intuition
-restated. Left out of this design's scope for that reason -- if a real
-`done`-reversal need ever surfaces, it is a separate question with a
-separate justification, not a variant of this one.
+restated.
+
+**So, for whoever finds this exclusion later and wonders if it was an
+oversight: it was not.** `done` is excluded because nothing external can
+reach it -- the only path to a wrong `done` is the owner's own attention,
+after his own authenticated decision, not a gap anyone else can exploit.
+An induced payment is an attacker exploiting access; a wrongly-completed
+job is Ken, later regretting a call he made himself. Different failure,
+different remedy, different urgency, and a `done` reversal (if it is ever
+needed) would be a correction for the owner's own mistake, not a defence
+against anyone -- a separate question with a separate justification, not a
+variant of this one.
 
 ## The "not yet," written down so it does not get reused by accident
 
