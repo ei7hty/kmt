@@ -201,8 +201,8 @@ test('catalogue amounts resolve by SKU, then size, then site-wide without changi
       skus: { a: 2750 },
     },
   })
-  const siteWide = calculateDraftQuote(request(), [tire({ id: 'giga-ordinary', size: '215/60R16' })], undefined, [scoped])
-  const bySize = calculateDraftQuote(request(), [tire({ id: 'giga-ordinary' })], undefined, [scoped])
+  const siteWide = calculateDraftQuote(request({ tireSelection: 'giga-ordinary' }), [tire({ id: 'giga-ordinary', size: '215/60R16' })], undefined, [scoped])
+  const bySize = calculateDraftQuote(request({ tireSelection: 'giga-ordinary' }), [tire({ id: 'giga-ordinary' })], undefined, [scoped])
   const bySku = calculateDraftQuote(request(), [tire()], undefined, [scoped])
 
   assert.equal(siteWide.lineItems[1].unitPrice, 15)
