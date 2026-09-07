@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import SignIn from '../owner/SignIn.jsx'
 import { useNoIndex } from '../noindex.js'
-import { NeedsSignIn, ownerOutbox, resolveOutboxMessage } from '../store'
+import { NeedsSignIn, ownerOutbox, resendOutboxMessage, resolveOutboxMessage } from '../store'
 import { signOut } from '../owner/session.js'
 import { exactTime, timeAgo } from '../owner/timeAgo.js'
 import { PrivacyFooter } from './Privacy.jsx'
@@ -53,6 +53,7 @@ function resolvedLabel(status) {
 
 /** The note field's own limit, kept beside the control that shows it rather than only in the backend that enforces it. */
 const NOTE_LIMIT = 500
+const RESENDABLE_STATUSES = new Set(['queued', 'failed', 'sent'])
 
 function Outbox({ navigate }) {
   useNoIndex()
@@ -67,6 +68,8 @@ function Outbox({ navigate }) {
   const [resolvingId, setResolvingId] = useState('')
   const [noteDraft, setNoteDraft] = useState('')
   const [resolveBusyId, setResolveBusyId] = useState('')
+  const [confirmingResendId, setConfirmingResendId] = useState('')
+  const [resendBusyId, setResendBusyId] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -98,6 +101,21 @@ function Outbox({ navigate }) {
     } finally {
       setResolveBusyId('')
       await load()
+    }
+  }
+
+  async function resend(id) {
+    if (resendBusyId) return
+    setResendBusyId(id)
+    setError('')
+    try {
+      const updated = await resendOutboxMessage(id)
+      setMessages(current => current.map(message => message.id === id ? updated : message))
+      setConfirmingResendId('')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setResendBusyId('')
     }
   }
 
@@ -136,6 +154,8 @@ function Outbox({ navigate }) {
           <div className="owner-list">
             {messages.map(message => {
               const status = statusOf(message.status)
+              const canResend = RESENDABLE_STATUSES.has(message.status)
+              const needsDuplicateConfirmation = message.deliveryRisk === 'possible-duplicate'
               return (
                 <div key={message.id} className="panel owner-request">
                   <div className="owner-request-head">
@@ -156,6 +176,11 @@ function Outbox({ navigate }) {
                     <p className="status-note status-note-ok">
                       <strong>{resolvedLabel(message.status)}</strong>
                       {message.resolutionNote ? `: ${message.resolutionNote}` : ''}
+                    </p>
+                  )}
+                  {needsDuplicateConfirmation && canResend && (
+                    <p className="status-note status-note-wait">
+                      <strong>Delivery uncertain:</strong> this message may already have arrived. Resending could send a duplicate.
                     </p>
                   )}
                   {message.status === 'failed' && !message.resolvedAt && (
@@ -185,6 +210,27 @@ function Outbox({ navigate }) {
                       </div>
                     ) : (
                       <button className="link-action" onClick={() => { setResolvingId(message.id); setNoteDraft('') }}>Mark resolved</button>
+                    )
+                  )}
+                  {canResend && (
+                    confirmingResendId === message.id ? (
+                      <div className="owner-cancel-draft">
+                        <p><strong>Send this exact message again?</strong></p>
+                        <p className="text-secondary">The earlier attempt may already have reached the recipient, so this can create a duplicate.</p>
+                        <div className="owner-cancel-draft-actions">
+                          <button type="button" className="btn btn-neutral" disabled={resendBusyId === message.id}
+                            onClick={() => setConfirmingResendId('')}>Back</button>
+                          <button type="button" className="btn btn-primary" disabled={Boolean(resendBusyId)}
+                            onClick={() => resend(message.id)}>
+                            {resendBusyId === message.id ? 'Resending…' : 'Resend anyway'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button type="button" className="link-action" disabled={Boolean(resendBusyId)}
+                        onClick={() => needsDuplicateConfirmation ? setConfirmingResendId(message.id) : resend(message.id)}>
+                        {resendBusyId === message.id ? 'Resending…' : 'Resend'}
+                      </button>
                     )
                   )}
                   <button className="btn btn-neutral" onClick={() => navigate(`/owner/quotes?request=${encodeURIComponent(message.requestId)}`)}>View request</button>
