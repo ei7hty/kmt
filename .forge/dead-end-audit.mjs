@@ -379,7 +379,25 @@ async function main() {
       fail('/status: no visible Pay action for the approved quote.');
     }
 
-    await page.click('button:has-text("Pay $")');
+    // Guarded, and the guard is the point. The two checks above read the note
+    // and the Pay button with `.catch(() => false)`, so a missing button records
+    // a clean failure and the run carries on. This click did not, so the same
+    // missing button threw here instead, main()'s catch fired, and every check
+    // after this line never ran -- #392 reported `48 of 78` on a docs-only PR
+    // for exactly that reason, on a `TimeoutError` printed in the log that
+    // nobody read past the FAIL lines to find.
+    //
+    // This does not paper the failure over and must not: `onConfirmation` below
+    // still reports it, because payment genuinely did not happen. What changes
+    // is that the run says so in one legible line instead of deleting the
+    // evidence of thirty checks. Two checks failing for one reason is a finding;
+    // thirty vanishing is a mystery, and a mystery is what gets re-run.
+    //
+    // Keyed off payButtonVisible rather than a bare .catch so a failing run does
+    // not also pay 30s of locator timeout it has already learned the answer to.
+    if (payButtonVisible) {
+      await page.click('button:has-text("Pay $")').catch(() => {});
+    }
     // Paying navigates straight to /confirmation (handlePayment calls navigate() itself) --
     // that IS the visible next action; no intermediate click is required.
     await page.waitForURL('**/confirmation**', { timeout: 3000 }).catch(() => {});
