@@ -154,6 +154,40 @@ actual sentence** (`t62-voice.md`: Ken's first person, no apology, the next
 move in the sentence, not a passive description of a state) -- the state
 this copy has to describe is settled here; the words are theirs.
 
+## Is `done` reversible too? No -- and the reason is a fact, not a lean
+
+**Production shows three quotes at `done`, though none currently sit at
+`paid`.** `done` is downstream of `paid`, so the question is real: can a
+`done` job be reached the same induced-payment way `paid` can, meaning it
+would need the same remedy?
+
+**No, and this is verified against the route table, not argued from
+principle.** `finish()` -- the only way to `done` -- is wired at
+`/api/owner/quotes/:id/done` (`backend/api.mjs:33,422`), and
+`PUBLIC_POST_PATHS` (`api.mjs:64-69`) lists exactly four public paths:
+submitting a request, `pay`, the customer's own `cancel`, and `/api/inquiries`.
+`done` is not among them, and every route under `/api/owner/` requires the
+owner's session cookie. **So reaching `done` is not something a link-holder
+can do at all, induced payment or not -- it requires Ken's own signed-in
+session, performing a separate, real action on that specific quote.**
+
+That is a structurally different risk from `paid`. An induced payment
+reaches `paid` with zero owner involvement -- that is the whole shape of
+the attack `cancelByCustomer`'s comment names. Reaching `done` from there
+needs Ken to look at the job and decide it is finished, using his own
+credentials, one quote at a time. **"Induced payment plus a completion" is
+mechanically possible, but the second half is not something an attacker
+triggers -- it is Ken's own mistake, made without realizing the payment
+underneath it was never real.** That is a different failure (attention,
+not access) and it argues for **not** giving `done → sent` the same
+one-button remedy as `paid → sent`: reversing completed work is a claim
+about whether the work actually happened, which a status transition cannot
+settle by itself the way "was this payment real" can. Agrees with the
+OWNER AGENT's lean, on a verified reason rather than the same intuition
+restated. Left out of this design's scope for that reason -- if a real
+`done`-reversal need ever surfaces, it is a separate question with a
+separate justification, not a variant of this one.
+
 ## The "not yet," written down so it does not get reused by accident
 
 **When real payments land (`roadmap.md`'s Later item), a genuine refund is
@@ -244,6 +278,29 @@ had gotten around to checking. The OWNER AGENT has offered to run both
 queries directly (read-only, no credential needed); their results, when
 they land, belong in `.forge/HANDOFF.md` or a follow-up note here, not a
 silent edit to this section.
+
+**Run, same night, by the OWNER AGENT:**
+
+```
+=== quotes by status ===
+cancelled | 9
+done      | 3
+draft     | 4
+rejected  | 1
+sent      | 1
+
+=== every quote carrying a reason ===
+cancelled | c6906f9e6b8856eb0b161dbe1b52c121 | Test Order Cancellation
+cancelled | 3506e83305389c6ebdbd3609a87189e2 | Fake
+```
+
+**Zero quotes are currently `paid`.** Of nine `cancelled` rows, only two
+carry a reason at all, and neither reads like a payment mistake. **So: no
+reversal has been needed, as far as anything can show** -- stated with the
+bound above still attached, since a raw edit would show up nowhere in
+either query. This sizes the gap; it does not close the question, and
+whoever ranks this against other work should read it as "hasn't bitten
+anyone yet," not "will never matter."
 
 ## What this document is not
 
