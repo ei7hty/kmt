@@ -2678,11 +2678,33 @@ the shell at all.
 
 **2026-09-07 — TECHNICAL ARCHITECT (session `local_5b133312`), recorded by KMT-F REPO AGENT LEAD**
 A correct observation about the wrong object -- the same shape as this file's DNS false-alarm entry and
-the port-4173 entry above, with two more instances: a `COALESCE` behaviour read as proof a write
-happened when it only proved a value survived untouched, and the PROJECT MANAGER's own deploy-lane
-misreading (independently corrected the same night: of four commits that looked like a three-way
-deploy race, only one was ever a real ship-scoped deploy -- the other three shared a branch and a
-workflow file with it but never competed for the deploy slot).
+the port-4173 entry above, with three more instances.
+
+**A `COALESCE` behaviour read as proof a write happened, when it only proved a value survived
+untouched.** `moveTo` writes `decided_by=COALESCE(?, decided_by)`, so a transition supplying no actor
+leaves the previous one in place. A test asserting a particular `decided_by` value on a quote with
+earlier history is asserting on whatever survived, not on what the code under test wrote, and passes
+identically either way. **The fix is the fixture, not the assertion: start from a state the transition
+under test must write into.** Joint finding with OWNER AUTH ENGINEER -- my warning, their narrowing, and
+my conclusion was right while my reason was wrong.
+
+**A grep for `SHARED_PASSWORD_ACTOR` finds both `quotes.mjs`'s export and `auth.mjs`'s
+`PASSWORD_SESSION_ACTOR`, and reads as consistent use of one shared constant.** True about the
+occurrences, wrong about the object: they are two separate literals that happen to hold the same string
+today, kept apart on purpose (`auth.mjs:56-61`'s own comment says so) because one decides who you are
+and the other only records who decided. A grep counts name-occurrences; the question that actually
+matters is whether every occurrence means the same thing.
+
+**And the PROJECT MANAGER's own deploy-lane misreading**, independently corrected the same night: of
+four commits that looked like a three-way deploy race, only one was ever a real ship-scoped deploy --
+the other three shared a branch and a workflow file with it but never competed for the deploy slot.
+
+**A rule that exists only as a comment has no enforcer, and comments cannot fail.** I wrote a rule in a
+comment and, further down the same file, wrote code that quietly contradicted it -- neither side noticed
+the other, because nothing was watching either of them. This repo already has the fix, used everywhere
+else: `REQUEST_PERSONAL_DATA_KEYS`, `OUTBOX_PERSONAL_DATA_KEYS` and `INQUIRY_PERSONAL_FIELDS` are all
+pinned by tests precisely so a rule has something that can go red. A comment has no vote; a pinned
+constant does.
 
 **2026-09-07 — MAIL DELIVERY ENGINEER (session `local_8418d5d5`), generalised by the OWNER AGENT, who
 saw the shape before I did**
@@ -2929,11 +2951,15 @@ argued a second, unrelated cause -- the audit submitting its own empty password 
 correctly-configured server -- and that argument stood for several exchanges before a control disproved
 it.
 
-**The mechanism was never possible.** `src/owner/SignIn.jsx`'s submit button is `disabled={busy ||
-!password}` -- React will not let the form submit while the password field is empty, so there was no
-path to the log line that did not go through another server. Confirmed with a matched pair on an
+**The mechanism was never possible for this audit's own sign-in.** `src/owner/SignIn.jsx`'s submit
+button is `disabled={busy || !password}` -- React will not let the form submit while the password field
+is empty, so there was no path from *this* audit's UI sign-in to the log line that did not go through
+another server. (Not a claim about every audit: `.forge/mail-failure-check.mjs` and
+`scripts/import-tires.mjs` both `POST /api/owner/login` directly, bypassing the disabled button
+entirely, and a misconfigured `KMT_OWNER_PASSWORD` on either produces the identical line with no second
+server involved -- GATE ENGINEER confirmed this by reproducing it.) Confirmed with a matched pair on an
 uncontended port: the same tree, the same command, with and without the proposed fix, both runs clean at
-`83 of 83`. Only the shared port had ever produced the failure.
+`83 of 83`. Only the shared port had ever produced the failure for *this* audit.
 
 **What actually happened: a foreign audit doesn't corrupt your count, but a foreign *sign-in* still
 reaches your log.** Another session's audit, aimed at the port you also picked, sends its own
