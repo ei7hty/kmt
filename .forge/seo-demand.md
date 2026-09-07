@@ -92,6 +92,19 @@ These are demand observations, not copy. The call on each is the OWNER AGENT's.
    every time is a product call — a soft, true framing may be safe where a hard
    number is a promise.
 
+   **The two-speed trap (copy-safety fact for MARKETING).** There are two
+   different speeds and they must not be collapsed. The **quote** is fast — Ken
+   answered the two real customers in 11m52s and 18m00s. The **appointment** is
+   slow by design — `MIN_LEAD_DAYS = 7` (`backend/quotes.mjs:25`), a hard floor.
+   So an unqualified "fast" in visible copy is actively dangerous: a buyer reads
+   "fast" as "soon", then hits the seven-day wall *after* deciding to buy — the
+   same refusal-generating mismatch as emergency intent, moved into the copy and
+   landing on a customer who is further down the funnel. The safe true statement
+   is about the **answer** ("a real quote back from Ken quickly"), never the
+   **appointment**. Ruling recorded by the OWNER AGENT 2026-09-06 after this was
+   found: position at planned replacement, booked ahead, at your location, with
+   a quick quote — the quick thing is the answer, never the visit.
+
 ## Where each finding routes
 
 - **To MARKETING (the words):** the title carries no job/place/speed term; the
