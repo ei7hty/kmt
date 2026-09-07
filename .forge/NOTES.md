@@ -2901,13 +2901,14 @@ found the same night, by a change that was itself correct.
 **Cross-reference, so this is not read as a fourth instance of the entries above rather than the one real
 bug among them:** this file's port-4173 entry and an earlier one both teach that `login: wrong password`
 means a port collision -- another session's server, answering on the port you picked. This finding
-produces the identical log line from an unrelated cause, on a session's own, correctly-configured
-server. **A matching `EXPECTED_CHECKS` count is the discriminator**, using the port-4173 entry's own
-point that the count proves which tree is served: an 83-of-83 run rules out a foreign or stale server by
-construction, which leaves the empty-password submission as the only remaining explanation for the
-identical symptom. `login: wrong password` has two causes here -- a foreign server on the port, and an
-audit submitting an empty field before its fill commits -- and a full expected-check count rules out the
-first.
+produces the identical log line from an unrelated cause. `login: wrong password` has two causes. A
+foreign server on your port is one -- see the entries above. The other is the audit's own submission to
+its own correctly-configured server, which is what a run showing `83 of 83` demonstrates, since a
+matching count rules out a foreign tree by construction -- the log itself only shows a password that did
+not match, not that the field was empty or that a fill had failed to commit. **The mechanism is
+unconfirmed** -- the fill/click race (the form submitting before `page.fill('#owner-password', ...)` has
+committed, plausibly a re-render clobbering it) is the hypothesis consistent with both observations, not
+a proven cause; other paths through `signInIfAsked` have not been enumerated or excluded.
 
 **2026-09-07 — GATE ENGINEER, with the OWNER AGENT, on a specification's scope against a measurement's**
 `a11y-85-measure.mjs` found one AA contrast failure: `/status (draft)`'s text-Ken button, 1.88:1 against
@@ -2916,10 +2917,11 @@ breaks the identical anchor at three of `QUOTE_STATUSES`' seven states -- draft,
 and the script visits only two of the seven. **The instrument found one because it visits one of the
 three actually-broken states. The ratio told us where to look and understated the damage by two thirds.**
 
-`src/contact.js`'s own header claimed this was true everywhere ("the number stays readable wherever it
-appears") -- a sentence quantified over every appearance, contradicted by a measurement that sampled
-only some of them. A second instance the same night: `backend/auth.mjs`'s "the owner workspace exposes
-supplier costs ... so this server refuses to start" -- also true of things nobody had measured.
+`src/contact.js`'s own header states the requirement -- "the number stays readable wherever it appears"
+-- quantified over every appearance. **The requirement was right; the code violated it in three places
+and the measurement reached one. The spec was never contradicted, only unenforced.** A second instance
+the same night: `backend/auth.mjs`'s "the owner workspace exposes supplier costs ... so this server
+refuses to start" -- also true of things nobody had measured.
 
 **The practical form: when a specification sentence and a measurement disagree about scope, the
 specification is the one quantified over every case. Treat the measurement as a lower bound, not the
@@ -2962,22 +2964,23 @@ Sibling to this file's entry on assertions with more than one cause: there it wa
 the wrong reason, here a guard that succeeded for the wrong reason. Same defect, and the guard is the
 more expensive one, because nothing downstream ever contradicts it.
 
-**2026-09-07 — MAIL DELIVERY ENGINEER, from the PROJECT MANAGER's separation of their own diff, generalised with the OWNER AGENT**
+**2026-09-07 — MAIL DELIVERY ENGINEER, from the PROJECT MANAGER's separation of this session's own diff, generalised with the OWNER AGENT**
 A diff cannot show its own kind. Whether a change is a bug fix or a policy is not in it, and is not
 recoverable from it.
 
-Review found `resend()` unguarded. Two things were fixed in one commit, called a review fix:
+This session's review found `resend()` unguarded. Two things were fixed in one commit, called a review
+fix:
 
 - **two concurrent resends both sending** -- one click, one decision, two customer emails. A defect. No
   design position covers it.
-- **resending an already-`sent` row -- which was blocked.** That was a product decision, and it was not
-  the reviewer's to make.
+- **resending an already-`sent` row -- which this session blocked.** That was a product decision, and
+  it was not this session's to make.
 
 **Both changes look identical in a diff.** Both are a guard added to a function that lacked one. Both
 are defensible on their face. Nothing in the patch says one closed a hole and the other chose a policy --
 and *"review fix"* as a PR framing hides the difference perfectly, because it is true of both.
 
-The policy half was separated out and sent to the OWNER AGENT, who overturned it on a fact the reviewer
+The policy half was separated out and sent to the OWNER AGENT, who overturned it on a fact this session
 had wrong: `sent` proves the provider accepted the message, not that the customer received it. So the
 block would have been strongest exactly where it is wrong -- the moment Ken reaches for that button is
 the moment `sent` is true and nothing arrived. Had it ridden along, the policy would have entered the
