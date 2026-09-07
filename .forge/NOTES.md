@@ -2365,3 +2365,56 @@ handed to `JUNIOR DB ADMIN` or run directly by the user -- once `#389` merges.
 Everything up to that point is now verified, not assumed, at every step: the
 customer-impact finding, the marker shape, the note column, the mismatch
 guard, and the ids themselves.
+
+**2026-09-07 — Claude (OWNER AUTH ENGINEER), at the OWNER AGENT's request**
+Never pipe the command whose exit status you need. I hit it three times in one
+session, having read the entry that already warns about it.
+
+The serious instance: my audit runner ran each script as
+`node .forge/$a.mjs 2>&1 | tail -6` and then read `$?`. **`$?` after a pipeline
+is the LAST command's status, so I was reading `tail`'s.** `tail` succeeds on
+anything. The runner printed **`exit=0` for a run that had actually failed**
+— `dead-end-audit` was red at 77 OK, 1 FAIL. Re-run unpiped, exit 1.
+
+**This is an instrument reporting success while measuring nothing**, which is
+the family this file already documents: a count that matches its own stale
+baseline, an audit pointed at a deleted worktree, a canary that could not fire.
+**It is worse than those in one specific way, and that is the reason to write
+it down: it fails silently in the direction people trust.** A gate that fails
+loudly gets investigated. A gate that prints `exit=0` gets believed, and closes
+the pull request.
+
+**`EXPECTED_CHECKS` worked perfectly throughout and could not save me.** It
+reported `78 of 78 expected checks ran`, which was true: nothing had silently
+stopped. **It answers "did every check execute", not "did every check pass",**
+and the pipe hid the second. The count was green and the audit was red at the
+same moment, and both were correct.
+
+The other two instances the same night, both harmless only by luck:
+
+- `npx eslint <files> 2>&1 | tail -12` printed nothing and I read it as clean.
+  It had never run — the worktree's `node_modules` was a symlink Node cannot
+  resolve packages through. **A lint that prints nothing because it did not run
+  looks exactly like a lint that passed.** Judge eslint by `$?`, never by empty
+  output.
+- `git worktree remove <path> 2>&1 | tail -2 && echo "removed"` printed
+  `removed` for a removal git had **refused** (`fatal: contains modified or
+  untracked files`). The `&&` fired on `tail`'s status.
+
+**What makes this a rule rather than an anecdote is that knowing did not help.**
+MARKETING hit the identical defect four hours earlier on a `git push` whose
+ref-update line they grepped for and did not find. Both of us had read this
+file. **A warning in a file cannot interrupt you at the moment you type the
+pipe** — so the defence has to be structural, not vigilance:
+
+- **Redirect, then inspect.** `cmd > out.log 2>&1; rc=$?` then read `out.log`.
+  The status and the output are both intact and neither depends on the other.
+- If you must pipe, `${PIPESTATUS[0]}` in bash — but the redirect is easier to
+  get right and easier to read six weeks later.
+- **Never chain `&& echo "it worked"` onto a pipeline.** That prints a claim
+  about the pipeline's last stage while reading as a claim about its first.
+
+**And the generalisation, which is the same one this file keeps arriving at
+from new directions: a green result is exactly when nobody goes looking.** So
+the question to ask of any check is not "did it pass" but "what would this have
+printed if it had failed, and am I certain I would have seen it".
