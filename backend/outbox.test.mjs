@@ -294,10 +294,11 @@ test('the deployed schema has an outbox table but no resolved_at, and opening it
 
   const row = outbox.get('m-old')
   assert.equal(row.resolvedAt, null, 'a row from before resolved_at existed reads it as null, not failing to load')
+  assert.equal(row.resolutionNote, null, 'resolution_note is added by the same guard and reads null too')
   assert.equal(row.error, '535 5.7.8 old failure', 'and the row is otherwise untouched')
 })
 
-test('resolve() marks a row settled without changing what status claims happened', t => {
+test('resolve() marks a row settled without changing what status claims happened, and the note goes to its own column', t => {
   const { outbox, requestId } = setup(t)
   const queued = outbox.record({ requestId, type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' })
   assert.equal(queued.resolvedAt, null)
@@ -305,10 +306,11 @@ test('resolve() marks a row settled without changing what status claims happened
   const resolved = outbox.resolve(queued.id, 'never attempted under the null adapter')
   assert.equal(resolved.status, 'queued', 'resolve() does not invent an attempt that never happened')
   assert.ok(resolved.resolvedAt, 'resolved_at is set')
-  assert.equal(resolved.error, 'never attempted under the null adapter', 'the note fills a blank error column')
+  assert.equal(resolved.resolutionNote, 'never attempted under the null adapter')
+  assert.equal(resolved.error, null, 'error stays null -- nothing was ever attempted, and resolve() must not write there')
 })
 
-test('resolve() does not overwrite a real error with a resolution note', t => {
+test('resolve() never touches error, in either direction: a real failure keeps its diagnostic untouched', t => {
   const { outbox, requestId } = setup(t)
   const message = outbox.record({ requestId, type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' })
   outbox.updateStatus(message.id, { status: 'failed', error: '535 5.7.8 credential dead' })
@@ -316,8 +318,9 @@ test('resolve() does not overwrite a real error with a resolution note', t => {
   const resolved = outbox.resolve(message.id, 'closed incident, credential rotated')
   assert.equal(resolved.status, 'failed', 'still failed -- the attempt really was rejected')
   assert.ok(resolved.resolvedAt)
+  assert.equal(resolved.resolutionNote, 'closed incident, credential rotated')
   assert.equal(resolved.error, '535 5.7.8 credential dead',
-    'the real provider error survives -- a resolution note must not erase the diagnostic a later reader needs')
+    'the real provider error survives in its own column -- a resolution note lives in resolution_note, never in error')
 })
 
 test('resolve() is idempotent: resolving an already-resolved row leaves it unchanged', t => {
@@ -326,7 +329,7 @@ test('resolve() is idempotent: resolving an already-resolved row leaves it uncha
   const first = outbox.resolve(message.id, 'first note')
   const second = outbox.resolve(message.id, 'a different note, should be ignored')
   assert.equal(second.resolvedAt, first.resolvedAt, 'resolved_at does not move on a second call')
-  assert.equal(second.error, 'first note', 'the first note is not replaced by a later one')
+  assert.equal(second.resolutionNote, 'first note', 'the first note is not replaced by a later one')
 })
 
 test('resolve() on a message that does not exist is refused, the same as updateStatus', t => {

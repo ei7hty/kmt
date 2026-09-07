@@ -138,8 +138,20 @@ export class Outbox {
     // are both "not a live problem" without either one stopping being
     // what it was). A plain ALTER, the same guard quotes.mjs uses for
     // draft_line_items/decided_by.
+    //
+    // `resolution_note` is its own column, not a write into `error`: that
+    // column holds `String(error?.message)` from the provider (a real
+    // `535 5.7.8 ...`, the exact reason the alert has to name), and it is
+    // in `OUTBOX_REDACTED_COLUMNS` because a bounce reply conventionally
+    // echoes the recipient's address back. A resolution note is
+    // operational text someone typed, not personal data and not a
+    // provider's diagnostic -- mixing it into `error` would let a later
+    // resolve() bury the forensic record under an explanation, and would
+    // subject an operational note to a redaction path built for something
+    // else entirely.
     const columns = new Set(this.db.prepare('PRAGMA table_info(outbox)').all().map(column => column.name))
     if (!columns.has('resolved_at')) this.db.exec('ALTER TABLE outbox ADD COLUMN resolved_at TEXT')
+    if (!columns.has('resolution_note')) this.db.exec('ALTER TABLE outbox ADD COLUMN resolution_note TEXT')
   }
 
   /**
@@ -196,7 +208,8 @@ export class Outbox {
       id: row.id, requestId: row.request_id, type: row.type, templateVersion: row.template_version,
       data: JSON.parse(row.data), to: row.to_address, toName: row.to_name,
       status: row.status, providerId: row.provider_id ?? null, error: row.error ?? null,
-      createdAt: row.created_at, updatedAt: row.updated_at, resolvedAt: row.resolved_at ?? null,
+      createdAt: row.created_at, updatedAt: row.updated_at,
+      resolvedAt: row.resolved_at ?? null, resolutionNote: row.resolution_note ?? null,
     }
   }
 
@@ -230,12 +243,13 @@ export class Outbox {
    * `resolved_at` says only "someone looked at this and it's accounted
    * for," orthogonal to what happened.
    *
-   * `note` fills `error` only when it is currently empty (`COALESCE`): a
-   * `queued` row typically has none, so the note becomes the record of why
-   * it's settled. A `failed` row already carries the provider's real
-   * rejection text, which this must not overwrite -- resolving a failure
-   * is not the same claim as explaining it away, and the original 535 (or
-   * whatever it was) stays exactly what a later reader needs.
+   * `note` goes to its own `resolution_note` column, never to `error`:
+   * `error` is the provider's diagnostic (or empty, for a `queued` row
+   * that was never attempted), and `resolve()` must not touch it in
+   * either direction -- not overwriting a real `535 5.7.8 ...` with an
+   * explanation, and not quietly filling a blank one either, since
+   * `error` staying `null` on a settled `queued` row is the accurate
+   * record that nothing was ever attempted.
    *
    * Idempotent: resolving an already-resolved row returns it unchanged
    * rather than erroring or overwriting `resolved_at`, so a correction
@@ -246,7 +260,7 @@ export class Outbox {
     if (!found) throw new InputError('No such outbox message.', 404)
     if (found.resolvedAt) return found
 
-    this.db.prepare('UPDATE outbox SET resolved_at=?, error=COALESCE(error, ?), updated_at=? WHERE id=?')
+    this.db.prepare('UPDATE outbox SET resolved_at=?, resolution_note=?, updated_at=? WHERE id=?')
       .run(now(), note, now(), id)
     return this.get(id)
   }
