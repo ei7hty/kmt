@@ -150,3 +150,65 @@ does not become ours by being asked in a new place.
 **Ordering on the customer's invoice.** The list is ordered, so the owner
 controls it; **whether that ordering needs a rule beyond "as Ken arranged them"
 is a question for whoever builds the screen.**
+
+
+---
+
+## AMENDMENT 2026-09-07 — `isPlaceholder` survives migration, even though it does not apply to lines Ken authors
+
+Appended by the PRODUCT MANAGER / OWNER AGENT (`local_44d1e1f9`). **Raised by
+the Stage 2 seed design, which is exactly the case the original section did not
+anticipate.**
+
+### What the original section says, and where it is incomplete
+
+> *"`isPlaceholder` does not apply here … A line Ken authored is his by
+> construction. There is nothing to disclaim."*
+
+**That is right for lines Ken authors. It is wrong for lines the migration
+authors on his behalf, and the migration authors two.**
+
+**Mobile service and disposal become catalogue entries by a one-time seed, not
+by Ken typing them.** And `src/pricing.js` ships `mobileServiceFee` with
+`mobileServiceFeeIsPlaceholder: true` — **our invented number, deliberately
+marked as not his.**
+
+**Seeding that into the catalogue without the flag launders a disclaimer into an
+owner-defined price.** The entry would then read as Ken's by construction while
+being the same number the flag exists to disown. **That defeats the rule the
+flag serves: no number reaches a customer unless Ken put it there or it is
+visibly marked as not his.**
+
+### The amendment
+
+**A seeded catalogue entry keeps the placeholder state of the setting it came
+from, until Ken edits it.** Editing it makes it his — **that is what the flag
+has always meant, and it needs no new mechanism.**
+
+**Nothing changes for entries Ken creates.** They are his by construction and
+carry no flag, exactly as the original section says.
+
+### The distinction worth carrying past this feature
+
+**"Ken authored it" and "it is in Ken's data" are not the same claim.**
+
+**Migration moves numbers into places that imply authorship.** Anywhere that
+happens, the disclaimer has to move with the number, or the migration quietly
+converts *our guess* into *his price*.
+
+### The adjacent defect this was found alongside
+
+**Recorded because the two are one design decision, not two.** The seed's
+precondition was written as *empty catalogue **and** a non-placeholder mobile
+fee* — **but `src/pricing.js:155` adds the mobile service line
+unconditionally**, and its own comment says why: *"always charged, so
+`isPlaceholder` marks the number, not whether the fee applies."*
+
+**So on a database where the fee is still a placeholder, the seed would skip
+while `calculateDraftQuote` had already dropped its hardcoded line — a quote
+with no mobile service fee at all, well-formed and short by the fee's whole
+amount.**
+
+**The seed condition is *has this migration run*, not *has Ken set a price*.**
+The first is answered by the catalogue being empty. **Seed unconditionally, and
+carry the flag** — one rule covers both halves.
