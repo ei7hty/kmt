@@ -153,6 +153,18 @@ either side.
 - **An author does not merge their own pull request.** A second agent reads the
   diff and the audit counts in the check log, and merges. That has been the
   working rule all day; a green badge is not a review.
+- **A ship-scoped merge is a deploy — announce it before you merge, not before
+  the deploy.** A PR whose files match `ship_paths` deploys `main` on merge, and
+  the pipeline serialises per push and supersedes pending runs. So two
+  ship-scoped PRs merged within seconds of each other collide: one deploy
+  cancels the other, and neither reaches production while both PRs read as
+  merged and green. Before merging a ship-scoped PR, say so to the other agent
+  working the queue and hold if they have a ship-scoped merge in flight or a
+  deploy not yet green — then watch yours to green one at a time. The
+  announcement point is the **merge**, because the merge is the irreversible act
+  and the deploy is only its consequence: serialising deploys does nothing if
+  two merges fire before the boundary is agreed. Docs and path-ignored merges
+  need no hold and run in parallel.
 
 ---
 
