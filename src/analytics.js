@@ -1,6 +1,17 @@
 import { useEffect } from 'react'
 
 /**
+ * This is not the standard Google snippet pasted into `<head>`, on purpose.
+ * `index.html` is one static shell for every route -- `App.jsx`'s pathname
+ * switch decides what renders -- so a tag in `<head>` would load on every
+ * route including `/status`, and no GA `config` call undoes a script that
+ * has already loaded and set its cookies by the time it runs. Loaded here
+ * instead, keyed to the route, so it never starts on a page it should not
+ * be on. `backend/site.mjs`'s CSP is the second, independent gate: it
+ * widens to allow GA's two domains only on the routes below, and stays
+ * `script-src 'self'` everywhere else, so a bug in this file's own gating
+ * would still be caught at the network layer rather than reaching Google.
+ *
  * GA4 on the marketing surface only (.forge/analytics.md). `/status` and
  * `/confirmation` carry a customer's own request behind an id that is the
  * only thing standing between a stranger and that record; GA sends the full
