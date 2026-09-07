@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import SignIn from '../owner/SignIn.jsx'
 import { useNoIndex } from '../noindex.js'
-import { NeedsSignIn, ownerOutbox } from '../store'
+import { NeedsSignIn, ownerOutbox, resolveOutboxMessage } from '../store'
 import { signOut } from '../owner/session.js'
 import { exactTime, timeAgo } from '../owner/timeAgo.js'
 import { PrivacyFooter } from './Privacy.jsx'
@@ -38,6 +38,22 @@ function statusOf(status) {
   return STATUS_LABELS[status] ?? { label: status || 'Unknown', note: 'status-note-wait' }
 }
 
+/**
+ * A resolved row reads differently depending on what it was resolved from.
+ * A `failed` row's resolution means the attempt really was rejected and Ken
+ * has since dealt with it -- rotated a credential, told a customer by hand.
+ * A `queued` row's means the opposite: nothing was ever attempted and
+ * nothing will be, and resolving it only records that the gap is accounted
+ * for. The two must never share one word (the OWNER AGENT's ruling); this
+ * is the one place that word gets chosen.
+ */
+function resolvedLabel(status) {
+  return status === 'failed' ? 'Resolved' : 'Abandoned'
+}
+
+/** The note field's own limit, kept beside the control that shows it rather than only in the backend that enforces it. */
+const NOTE_LIMIT = 500
+
 function Outbox({ navigate }) {
   useNoIndex()
   const [provider, setProvider] = useState('none')
@@ -45,6 +61,12 @@ function Outbox({ navigate }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [needsSignIn, setNeedsSignIn] = useState(false)
+  // Which failed row is mid-way through "mark resolved", and the note typed
+  // for it. One draft, not one per row: only one resolve control is ever
+  // open at a time, the same as Status.jsx's cancel-confirm.
+  const [resolvingId, setResolvingId] = useState('')
+  const [noteDraft, setNoteDraft] = useState('')
+  const [resolveBusyId, setResolveBusyId] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -64,6 +86,20 @@ function Outbox({ navigate }) {
     const timer = setTimeout(load, 0)
     return () => clearTimeout(timer)
   }, [load])
+
+  async function resolve(id) {
+    setResolveBusyId(id)
+    try {
+      await resolveOutboxMessage(id, noteDraft)
+      setResolvingId('')
+      setNoteDraft('')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setResolveBusyId('')
+      await load()
+    }
+  }
 
   if (needsSignIn) {
     return <SignIn onSignedIn={load} navigate={navigate} from="outbox"
@@ -109,7 +145,48 @@ function Outbox({ navigate }) {
                   <p className="owner-request-age" title={exactTime(message.createdAt)}>
                     To {message.toName} &lt;{message.to}&gt; · {timeAgo(message.createdAt)}
                   </p>
-                  {message.error && <p className="status-note status-note-bad" role="alert">{message.error}</p>}
+                  {/* error and resolutionNote are separate columns on the server for a
+                      reason (backend/outbox.mjs): error is the provider's own diagnostic --
+                      the thing that turns "mail is failing" into "the credential is dead" --
+                      and resolutionNote is what Ken typed about it later. Shown as two
+                      distinctly labelled lines, never merged into one, so neither can be
+                      mistaken for the other. */}
+                  {message.error && <p className="status-note status-note-bad" role="alert"><strong>Error:</strong> {message.error}</p>}
+                  {message.resolvedAt && (
+                    <p className="status-note status-note-ok">
+                      <strong>{resolvedLabel(message.status)}</strong>
+                      {message.resolutionNote ? `: ${message.resolutionNote}` : ''}
+                    </p>
+                  )}
+                  {message.status === 'failed' && !message.resolvedAt && (
+                    resolvingId === message.id ? (
+                      <div className="owner-cancel-draft">
+                        <label htmlFor={`resolve-note-${message.id}`}>What happened? <span className="optional">Optional -- read by whoever looks at this months from now.</span></label>
+                        <textarea id={`resolve-note-${message.id}`} rows={2} value={noteDraft}
+                          onChange={event => setNoteDraft(event.target.value)} />
+                        {/* No maxLength on the textarea: capping input length silently
+                            drops whatever was typed past it on paste, which is exactly the
+                            truncation the server refuses to do -- a truncated note looks
+                            complete, and half a note is a small lie with a timestamp. The
+                            wall is shown, never hidden: the count goes visibly bad past the
+                            limit and submitting is refused, but nothing typed is ever cut. */}
+                        <p className={noteDraft.length > NOTE_LIMIT ? 'text-secondary status-note-bad' : 'text-secondary'}>
+                          {noteDraft.length} / {NOTE_LIMIT}{noteDraft.length > NOTE_LIMIT ? ' -- too long, shorten it' : ''}
+                        </p>
+                        <div className="owner-cancel-draft-actions">
+                          <button type="button" className="btn btn-neutral" disabled={resolveBusyId === message.id}
+                            onClick={() => { setResolvingId(''); setNoteDraft('') }}>Back</button>
+                          <button type="button" className="btn btn-primary"
+                            disabled={resolveBusyId === message.id || noteDraft.length > NOTE_LIMIT}
+                            onClick={() => resolve(message.id)}>
+                            {resolveBusyId === message.id ? 'Resolving…' : 'Mark resolved'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button className="link-action" onClick={() => { setResolvingId(message.id); setNoteDraft('') }}>Mark resolved</button>
+                    )
+                  )}
                   <button className="btn btn-neutral" onClick={() => navigate(`/owner/quotes?request=${encodeURIComponent(message.requestId)}`)}>View request</button>
                 </div>
               )
