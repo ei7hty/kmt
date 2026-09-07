@@ -21,4 +21,15 @@ export const TEXT_OPENER = "Hi Ken, I'm looking for tires:"
  */
 export const TEXT_HREF = `sms:${SHOP_SMS_NUMBER}?body=${encodeURIComponent(TEXT_OPENER)}`
 
+/**
+ * The same number with no draft at all, for the places where the customer is
+ * not shopping for tires: roadside, a repair, anything urgent. `TEXT_OPENER`
+ * says "I'm looking for tires:", which is wrong in front of someone stood on
+ * a hard shoulder, and an empty draft is better than a wrong one -- they type
+ * what is actually wrong. An urgent opener in Ken's voice would be better
+ * than both; that is wording, and wording belongs to growth and marketing,
+ * so this stays empty until they write one rather than being guessed here.
+ */
+export const URGENT_TEXT_HREF = `sms:${SHOP_SMS_NUMBER}`
+
 export const TEXT_LABEL = `Text ${SHOP_NUMBER}`
