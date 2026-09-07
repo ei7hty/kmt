@@ -457,6 +457,11 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
         send(200, inventory.getPricingSettings())
       } else if (request.method === 'PUT' && url.pathname === '/api/owner/pricing') {
         send(200, inventory.savePricingSettings(await readJsonBody(request)))
+      } else if (request.method === 'GET' && url.pathname === '/api/owner/pricing-lines') {
+        send(200, { lines: inventory.getCatalogueLines() })
+      } else if (request.method === 'PUT' && url.pathname === '/api/owner/pricing-lines') {
+        const body = await readJsonBody(request)
+        send(200, { lines: inventory.saveCatalogueLines(body?.lines) })
       } else if (request.method === 'POST' && url.pathname === '/api/owner/refresh') {
         const input = await readJsonBody(request)
         send(202, refresher.start(input.sizes))

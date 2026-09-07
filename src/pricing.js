@@ -70,7 +70,44 @@ export function normalizePricingSettings(settings) {
  */
 const quantityFor = (request) => ALLOWED_QUANTITIES.includes(request?.quantity) ? request.quantity : 1
 
-export function calculateDraftQuote(request, catalog = null, pricingSettings = DEFAULT_PRICING_SETTINGS) {
+/**
+ * Whether a fee this function generates itself (never a catalogue entry --
+ * see below) is taxed, given the owner's `appliesTo` setting. `'all'` taxes
+ * everything; `'goods'`/`'services'` taxes only a line of that own category.
+ * Resolved to a plain boolean here, at the one place that knows what kind of
+ * line this is, rather than inside `computeQuoteTotals` -- which has no way
+ * to classify a tire and must not guess (#354's ruling on the correction to
+ * #335: a catalogue line's own `taxable` flag governs itself, but the tire
+ * and the built-in fees are not catalogue entries and need this instead).
+ */
+const taxableAs = (category, settings) =>
+  Boolean(settings.tax) && (settings.tax.appliesTo === 'all' || settings.tax.appliesTo === category)
+
+/**
+ * An owner-authored catalogue entry (#354), included in a draft:
+ * `mode: 'automatic'` always; `mode: 'optional'` only when its id is in
+ * `chosenLineIds` -- what the customer picked, the same shape
+ * `disposeOldTires` will generalize into once the wizard control exists.
+ * Skips anything that does not look like a real entry rather than throwing:
+ * `saveCatalogueLines` is what validates a write, and a draft must never
+ * fail a customer's checkout over a malformed row already sitting in the
+ * database from before this stage existed.
+ */
+function catalogueLineItems(catalogueLines, chosenLineIds, quantity, settings) {
+  return catalogueLines
+    .filter(entry => entry && typeof entry === 'object' && entry.enabled &&
+      (entry.mode === 'automatic' || (entry.mode === 'optional' && chosenLineIds.includes(entry.id))) &&
+      typeof entry.label === 'string' && Number.isInteger(entry.amountCents))
+    .map(entry => ({
+      description: entry.label,
+      quantity: entry.basis === 'perTire' ? quantity : 1,
+      unitPrice: entry.amountCents / 100,
+      // The owner's own flag, never inferred -- see computeQuoteTotals.
+      taxable: Boolean(settings.tax) && entry.taxable === true,
+    }))
+}
+
+export function calculateDraftQuote(request, catalog = null, pricingSettings = DEFAULT_PRICING_SETTINGS, catalogueLines = [], chosenLineIds = []) {
   const tires = catalog || [getTireById(request?.tireSelection)].filter(Boolean)
   const tire = tires.find(item => item.id === request?.tireSelection)
   const quantity = quantityFor(request)
@@ -106,24 +143,27 @@ export function calculateDraftQuote(request, catalog = null, pricingSettings = D
 
   const settings = normalizePricingSettings(pricingSettings)
 
-  // Each line remembers which of Ken's accountant's two buckets it falls
-  // into ('goods' for the tire, 'services' for labour and disposal) so tax,
-  // when it is ever turned on, can apply to the right subset without this
-  // function's caller having to know the taxonomy. Stripped before the line
-  // reaches storage or a screen -- see below -- so it changes nothing about
-  // what a quote looks like today.
+  // Each generated line resolves its own taxable status via taxableAs
+  // ('goods' for the tire, 'services' for labour and disposal) rather than
+  // carrying a category for computeQuoteTotals to match later -- see the
+  // comment on taxableAs. A catalogue line resolves its own the same way,
+  // from its own authored flag instead of a guessed category.
   const lineItems = [
     // The visit costs the same whether it fits one tire or four: only the
     // tire line multiplies, the mobile-service fee stays one line at one price.
-    ...(tire ? [{ description: tire.name, quantity, unitPrice: tire.price, taxClass: 'goods' }] : []),
-    { description: 'Mobile installation service', quantity: 1, unitPrice: settings.mobileServiceFee, taxClass: 'services' },
+    ...(tire ? [{ description: tire.name, quantity, unitPrice: tire.price, taxable: taxableAs('goods', settings) }] : []),
+    { description: 'Mobile installation service', quantity: 1, unitPrice: settings.mobileServiceFee, taxable: taxableAs('services', settings) },
     // Opt-in only (pricing-settings.md, "Disposal is opt-in"): the customer
     // chose this at the service step, and it only ever appears once Ken has
     // set a fee -- disposalFee is null until he does, and that is what "not
     // configured" looks like, not zero.
     ...(request?.disposeOldTires && settings.disposalFee !== null
-      ? [{ description: 'Old tire disposal', quantity, unitPrice: settings.disposalFee, taxClass: 'services' }]
+      ? [{ description: 'Old tire disposal', quantity, unitPrice: settings.disposalFee, taxable: taxableAs('services', settings) }]
       : []),
+    // The owner's own lines (#354). Empty by default -- a database that has
+    // never called saveCatalogueLines produces nothing here, so this is a
+    // no-op until Ken actually adds one.
+    ...catalogueLineItems(catalogueLines, chosenLineIds, quantity, settings),
   ]
 
   const totals = computeQuoteTotals(lineItems, settings)
@@ -157,17 +197,21 @@ export function calculateDraftQuote(request, catalog = null, pricingSettings = D
  * `calculateDraftQuote` does this once and passes the result on, rather than
  * every caller normalizing again.
  *
- * A line with no `taxClass` (every line an owner adjustment produces: the
- * goods/services split is `calculateDraftQuote`'s own bookkeeping and is
- * never stored, so an edited quote's lines have no class to recover) is
- * taxed under `appliesTo: 'all'` and excluded from the taxable subset under
- * `'goods'` or `'services'` -- it matches neither. The quote still carries a
- * `tax` object naming the configured rate and `appliesTo` (an amount of $0
- * if nothing on it matched), never a total that silently omits tax nobody
- * can tell is missing. That is the same "an absent number is correctable, a
- * wrong one is not" principle pricing-settings.md rules by: an adjusted
- * quote under a goods/services split undertaxes rather than risks charging
- * a customer for a class nobody assigned.
+ * Each line is expected to carry its own resolved `taxable: boolean` --
+ * this function only sums, it never classifies. Classification is the
+ * caller's job because it is the caller who knows what kind of line it has:
+ * `calculateDraftQuote` resolves `taxable` for the tire and its own fees
+ * against `appliesTo` via `taxableAs`, and for a catalogue line (#354) from
+ * that line's own authored `taxable` flag -- an owner-authored line belongs
+ * to none of `appliesTo`'s categories, so it must never be matched against
+ * them. An owner adjustment's hand-typed lines (`backend/quotes.mjs`'s
+ * `adjust()`) have no classification to give either, and that caller
+ * resolves them to `taxable: appliesTo === 'all'` -- taxed only when tax
+ * applies to everything, excluded otherwise rather than guessed at, per
+ * pricing-settings.md's "an absent number is correctable, a wrong one is
+ * not". The quote still carries a `tax` object naming the configured rate
+ * and `appliesTo` (an amount of $0 if nothing on it was taxable), never a
+ * total that silently omits tax nobody can tell is missing.
  */
 export function computeQuoteTotals(lineItems, settings) {
   const lineTotal = (line) => roundCurrency(line.quantity * line.unitPrice)
@@ -175,9 +219,7 @@ export function computeQuoteTotals(lineItems, settings) {
 
   if (!settings.tax) return { subtotal, total: subtotal }
 
-  const taxable = settings.tax.appliesTo === 'all'
-    ? subtotal
-    : roundCurrency(lineItems.filter(line => line.taxClass === settings.tax.appliesTo).reduce((sum, line) => sum + lineTotal(line), 0))
+  const taxable = roundCurrency(lineItems.filter(line => line.taxable).reduce((sum, line) => sum + lineTotal(line), 0))
   const amount = roundCurrency(taxable * settings.tax.rate)
   const total = roundCurrency(subtotal + amount)
   return { subtotal, tax: { rate: settings.tax.rate, appliesTo: settings.tax.appliesTo, amount }, total }
