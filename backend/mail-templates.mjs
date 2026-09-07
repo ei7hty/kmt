@@ -25,10 +25,21 @@ export const MAIL_TYPES = ['request-received', 'request-arrived', 'quote-sent', 
 
 const money = value => `$${Number(value).toFixed(2)}`
 
-/** The quote's lines and total, as the customer will read them. */
-function invoice(lines, total) {
+/**
+ * The quote's lines, subtotal, tax and total, as the customer will read them.
+ *
+ * Lines always sum to the subtotal; when tax is off, `total` equals it and
+ * this prints exactly what it always has. Once tax is on, `total` is larger
+ * than the visible line arithmetic -- a customer doing their own addition
+ * would land on the subtotal, not the total, and read the gap as an
+ * overcharge rather than tax, so the subtotal and tax get their own line
+ * (finding 2, the scrutiny agent's third pass: this used to print lines and
+ * a bare total with no explanation for the difference).
+ */
+function invoice(lines, subtotal, tax, total) {
   const rows = lines.map(line => `${line.description} × ${line.quantity} @ ${money(line.unitPrice)} = ${money(line.quantity * line.unitPrice)}`)
-  return `${rows.join('\n')}\nTotal: ${money(total)}`
+  const taxLines = tax ? `\nSubtotal: ${money(subtotal)}\nTax (${Math.round(tax.rate * 10000) / 100}%): ${money(tax.amount)}` : ''
+  return `${rows.join('\n')}${taxLines}\nTotal: ${money(total)}`
 }
 
 /**
@@ -86,6 +97,8 @@ function baseData({ request, quote, tire, origin, to, toName }) {
     // below rendered zero rows on every quote-sent and payment-recorded
     // email ever sent, and the two fallbacks above never once fired.
     lines: quote?.lineItems ?? [],
+    subtotal: quote?.subtotal ?? null,
+    tax: quote?.tax ?? null,
     total: quote?.total ?? null,
     note: quote?.note ?? null,
     statusUrl: `${origin}/status?request=${encodeURIComponent(request.id)}`,
@@ -120,7 +133,7 @@ export const TEMPLATES = {
     audience: 'customer',
     data: baseData,
     render: d => {
-      const text = `Hi ${d.to_name},\n\nYour quote is ready.\n\n${invoice(d.lines, d.total)}${d.note ? `\n\nA note from me:\n${d.note}` : ''}\n\nView it and pay here:\n${d.statusUrl}${signoff}`
+      const text = `Hi ${d.to_name},\n\nYour quote is ready.\n\n${invoice(d.lines, d.subtotal, d.tax, d.total)}${d.note ? `\n\nA note from me:\n${d.note}` : ''}\n\nView it and pay here:\n${d.statusUrl}${signoff}`
       return { subject: `Your quote from ${MOBILE}: ${money(d.total)}`, text, html: htmlOf(text) }
     },
   },
@@ -129,7 +142,7 @@ export const TEMPLATES = {
     audience: 'customer',
     data: baseData,
     render: d => {
-      const text = `Hi ${d.to_name},\n\nPayment received. Thank you.\n\n${invoice(d.lines, d.total)}\n\nYour receipt and the service details are here:\n${d.statusUrl}${signoff}`
+      const text = `Hi ${d.to_name},\n\nPayment received. Thank you.\n\n${invoice(d.lines, d.subtotal, d.tax, d.total)}\n\nYour receipt and the service details are here:\n${d.statusUrl}${signoff}`
       return { subject: `Receipt from ${MOBILE}: ${money(d.total)}`, text, html: htmlOf(text) }
     },
   },

@@ -145,6 +145,14 @@ function Status({ navigate }) {
                     <div className="owner-quote">
                       {(quote.status === 'sent' || quote.status === 'approved' || quote.status === 'paid' || quote.status === 'done') && <div className="quote-lines quote-lines-readonly">
                         {quote.lineItems?.map((item, index) => <div className="quote-line-readonly" key={`${index}-${item.description}`}><span>{item.quantity} × {item.description}</span><strong>${(item.quantity * item.unitPrice).toFixed(2)}</strong></div>)}
+                        {/* Lines sum to the subtotal; once tax is on, the total is
+                            larger than that visible arithmetic. Without this,
+                            adding up the lines above lands on the subtotal, not
+                            the total, and the difference reads as an overcharge
+                            rather than tax (finding 2, the scrutiny agent's third
+                            pass). */}
+                        {quote.tax && <div className="quote-line-readonly quote-line-subtotal"><span>Subtotal</span><strong>${quote.subtotal.toFixed(2)}</strong></div>}
+                        {quote.tax && <div className="quote-line-readonly quote-line-tax"><span>Tax ({Math.round(quote.tax.rate * 10000) / 100}%)</span><strong>${quote.tax.amount.toFixed(2)}</strong></div>}
                         {quote.note && <p className="quote-customer-note"><strong>Note from Ken:</strong> {quote.note}</p>}
                       </div>}
                       <div className="owner-quote-summary">

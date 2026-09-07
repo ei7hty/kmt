@@ -101,6 +101,43 @@ test('every template names its personal fields the way the outbox redacts them, 
   assert.doesNotMatch(rendered.html, /<script/)
 })
 
+test('a taxed quote-sent email names the tax, not just the final total (owner-agent scrutiny finding 2)', () => {
+  // baseData() used to pick lineItems/total off the quote and stop there;
+  // subtotal and tax are real fields on a taxed quote (calculateDraftQuote,
+  // src/pricing.js) but never reached the template, and invoice() only knew
+  // how to print lines plus one flat total. A customer paying tax should
+  // not have to do their own arithmetic against the line items to find out
+  // whether -- or how much -- tax was charged. (Adapted from QA ENGINEER's
+  // #317 regression test; the payload shape there predates the lines ->
+  // lineItems fix in #320.)
+  const data = TEMPLATES['quote-sent'].data({
+    request: { id: 'r1', customerPhone: '1', location: 'l', locationNotes: 'n', vehicleInfo: 'v', quantity: 4 },
+    quote: {
+      lineItems: [{ description: 'T', quantity: 4, unitPrice: 50 }],
+      subtotal: 200, tax: { rate: 0.1, appliesTo: 'all', amount: 20 }, total: 220,
+    },
+    tire: { name: 'T', size: SIZE },
+    origin: 'https://x', to: 'a@b.c', toName: 'A',
+  })
+  const rendered = TEMPLATES['quote-sent'].render(data)
+  assert.match(rendered.text, /Subtotal: \$200\.00/i, 'the email must name a subtotal separately from the total once tax is on')
+  assert.match(rendered.text, /Tax \(10%\): \$20\.00/i, 'and how much tax, and at what rate')
+  assert.match(rendered.text, /Total: \$220\.00/)
+})
+
+test('a quote with no tax renders exactly as it always has -- no subtotal line, no empty tax line', () => {
+  const data = TEMPLATES['quote-sent'].data({
+    request: { id: 'r1', customerPhone: '1', location: 'l', locationNotes: 'n', vehicleInfo: 'v', quantity: 4 },
+    quote: { lineItems: [{ description: 'T', quantity: 4, unitPrice: 50 }], subtotal: 200, tax: null, total: 200 },
+    tire: { name: 'T', size: SIZE },
+    origin: 'https://x', to: 'a@b.c', toName: 'A',
+  })
+  const rendered = TEMPLATES['quote-sent'].render(data)
+  assert.doesNotMatch(rendered.text, /subtotal/i)
+  assert.doesNotMatch(rendered.text, /tax/i)
+  assert.match(rendered.text, /Total: \$200\.00/)
+})
+
 test('the decline carries the reason only when Ken wrote one, names the request, and offers no payment link or email reply', () => {
   const declined = TEMPLATES['quote-declined']
   const ctx = {
