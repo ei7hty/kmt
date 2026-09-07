@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createServer, request as httpRequest } from 'node:http'
 import { PassThrough } from 'node:stream'
-import { TYPES, cachePolicy, createStaticHandler, decodePath } from './static.mjs'
+import { TYPES, cachePolicy, createStaticHandler, decodePath, injectCopy } from './static.mjs'
 
 /** A dist/ the shape Vite produces, plus the public/ files that matter here. */
 function buildDist(t) {
@@ -198,4 +198,128 @@ test('HEAD answers the headers and no body', async t => {
   assert.equal(response.status, 200)
   assert.equal(response.headers.get('content-length'), '8')
   assert.equal((await response.arrayBuffer()).byteLength, 0)
+})
+
+// --- The owner's copy, injected into the shell -------------------------------
+//
+// These live here rather than in site-copy.test.mjs because the mechanism is
+// this file's: what the shell carries, and what validator goes with it.
+
+/** The same server as `serve`, but with copy injection wired in. */
+async function serveWithCopy(t, readCopy) {
+  const dist = buildDist(t)
+  const handler = createStaticHandler(dist, { readCopy })
+  const server = createServer((request, response) => handler(request, response, new URL(request.url, 'http://x').pathname))
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  return { base: `http://127.0.0.1:${server.address().port}`, dist }
+}
+
+test('the copy block reaches a shell with no head and no body, rather than vanishing', () => {
+  // String.replace with a missing needle returns the string unchanged, so both
+  // earlier branches are no-ops here. Without the append the copy would be
+  // dropped in silence and the page would render defaults with nothing wrong
+  // anywhere to find.
+  const dist = mkdtempSync(path.join(tmpdir(), 'kmt-shell-'))
+  try {
+    const file = path.join(dist, 'index.html')
+    writeFileSync(file, '<!doctype html><div id="root"></div>')
+    const { body } = injectCopy(file, { 'hero.eyebrow': 'PRESENT' })
+    assert.match(body, /id="site-copy"/)
+    assert.match(body, /PRESENT/)
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
+})
+
+test('the block is a data block, never an executable script', () => {
+  const dist = mkdtempSync(path.join(tmpdir(), 'kmt-shell-'))
+  try {
+    const file = path.join(dist, 'index.html')
+    writeFileSync(file, '<!doctype html><head></head><body></body>')
+    const { body } = injectCopy(file, { 'hero.eyebrow': 'X' })
+    // script-src 'self' with no 'unsafe-inline' refuses an executable inline
+    // script, and site.test.mjs asserts the policy stays that way. A JSON data
+    // block is never executed, so the policy does not apply to it.
+    assert.match(body, /<script type="application\/json" id="site-copy">/)
+    assert.doesNotMatch(body, /<script>/)
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
+})
+
+test('a "<" in the copy cannot end the block early', () => {
+  const dist = mkdtempSync(path.join(tmpdir(), 'kmt-shell-'))
+  try {
+    const file = path.join(dist, 'index.html')
+    writeFileSync(file, '<!doctype html><head></head><body></body>')
+    const { body } = injectCopy(file, { 'hero.eyebrow': 'a </script> b <b>' })
+    // The literal sequence must not survive into the markup, or everything
+    // after it spills into the page as HTML.
+    assert.ok(!body.includes('a </script> b'), 'the raw closing tag is escaped')
+    const payload = body.match(/id="site-copy">(.*?)<\/script>/s)[1]
+    assert.equal(JSON.parse(payload)['hero.eyebrow'], 'a </script> b <b>', 'and it round-trips through JSON.parse')
+  } finally {
+    rmSync(dist, { recursive: true, force: true })
+  }
+})
+
+test('the shell carries the copy, and its ETag moves when the copy does', async t => {
+  let copy = { 'hero.eyebrow': 'FIRST' }
+  const { base } = await serveWithCopy(t, () => copy)
+
+  const first = await fetch(base + '/')
+  const firstBody = await first.text()
+  const firstTag = first.headers.get('etag')
+  assert.match(firstBody, /FIRST/)
+
+  // Unchanged copy: a revalidation is a 304, so caching still works.
+  const revalidated = await fetch(base + '/', { headers: { 'If-None-Match': firstTag } })
+  assert.equal(revalidated.status, 304)
+
+  copy = { 'hero.eyebrow': 'SECOND' }
+  const second = await fetch(base + '/')
+  const secondTag = second.headers.get('etag')
+  assert.notEqual(secondTag, firstTag, 'the validator must move with the copy')
+  assert.match(await second.text(), /SECOND/)
+
+  // The one that matters. etagFor is size and mtime, and injecting changes
+  // neither -- so with the file's own validator a returning browser would
+  // match, take a 304, and keep the wording Ken had just replaced.
+  const stale = await fetch(base + '/', { headers: { 'If-None-Match': firstTag } })
+  assert.equal(stale.status, 200, 'an old validator must not win a 304 after an edit')
+  assert.match(await stale.text(), /SECOND/)
+})
+
+test('Content-Length counts the injected bytes, not the file on disk', async t => {
+  const { base, dist } = await serveWithCopy(t, () => ({ 'hero.eyebrow': 'PADDING PADDING PADDING' }))
+  const response = await fetch(base + '/')
+  const body = await response.text()
+  const onDisk = readFileSync(path.join(dist, 'index.html'), 'utf8')
+  assert.equal(Number(response.headers.get('content-length')), Buffer.byteLength(body))
+  assert.ok(Buffer.byteLength(body) > Buffer.byteLength(onDisk), 'the body really is longer than the file')
+})
+
+test('If-Modified-Since cannot win a 304 on the injected shell', async t => {
+  // mtime belongs to the file, and the file does not change when the copy
+  // does, so this validator can only ever be wrong for the shell.
+  const { base } = await serveWithCopy(t, () => ({ 'hero.eyebrow': 'LIVE' }))
+  const response = await fetch(base + '/', { headers: { 'If-Modified-Since': new Date('2030-01-01T00:00:00Z').toUTCString() } })
+  assert.equal(response.status, 200)
+  assert.match(await response.text(), /LIVE/)
+})
+
+test('without a readCopy the shell is served exactly as before', async t => {
+  const { base } = await serve(t)
+  const response = await fetch(base + '/')
+  assert.equal(response.status, 200)
+  assert.doesNotMatch(await response.text(), /site-copy/)
+})
+
+test('only the shell is injected; other files are streamed untouched', async t => {
+  const { base } = await serveWithCopy(t, () => ({ 'hero.eyebrow': 'SHELL ONLY' }))
+  const asset = await fetch(base + '/assets/index-abc123.js')
+  assert.equal(await asset.text(), 'console.log(1)')
+  const manifest = await fetch(base + '/manifest.webmanifest')
+  assert.equal(await manifest.text(), '{"name":"KMT"}')
 })

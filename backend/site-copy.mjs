@@ -1,105 +1,35 @@
 import { InputError } from './inventory.mjs'
+import { SITE_COPY_FIELDS, resolveSiteCopy } from '../src/site-copy.js'
 
-/**
- * The site copy Ken can edit, and the guards that replace the review he is
- * losing by being able to edit it.
- *
- * Until now every word on the site arrived through a pull request -- an
- * author, a diff, a second reader and a gate -- not because anyone designed a
- * copy-review process but because there was no other way to change a string.
- * This module removes that chain, so it also has to replace it. The design and
- * the rulings behind it are `.forge/site-copy-inventory.md`.
- *
- * Two facts shape everything here.
- *
- * **The literals stay in the JSX and this is only ever an override.** An
- * absent key renders today's site byte for byte. That is forced rather than
- * chosen: R15 and R22 require the customer flow to keep working with the
- * backend unreachable, and copy living only in the database would blank the
- * landing page's hero the moment the server was. It also makes per-field
- * revert free -- delete an override and the shipped default returns -- which
- * is a stronger undo than the whole-object `previous` snapshot beside it.
- *
- * **Copy editing changes words, never structure.** Every field below is
- * required and non-empty, so the strip is always three items and the hero
- * always has a heading. Removing an element is a layout change and belongs to
- * the UI lane, not to a text box. This is also what lets the gate assert
- * "three items, each non-empty" honestly (GATE ENGINEER's question, answered
- * in the inventory document): the audit and this module enforce the same rule
- * from two sides, which is the point -- a guard that has only ever been
- * watched pass is unproven in the direction that matters.
- */
-
-/**
- * Owner-editable strings, by stable key.
- *
- * `key` is stable across a rewording, exactly as `setPricingLines` keeps a
- * line's id stable across a rename: a reference that changes when the words
- * change is not a reference. `default` is the literal currently in the JSX and
- * must stay byte-identical to it -- if these drift, the site silently changes
- * wording on the deploy that wires a component up.
- *
- * `max` is sized to the field's job rather than to a single global number. A
- * 500-character eyebrow is not a long eyebrow, it is a broken layout, and the
- * responsive check is the only instrument that would notice.
- */
-export const SITE_COPY_FIELDS = [
-  { key: 'hero.eyebrow', max: 40, default: 'I COME TO YOU', label: 'Hero eyebrow' },
-  { key: 'hero.headingTop', max: 40, default: 'Mobile Tire', label: 'Hero heading, first line' },
-  { key: 'hero.headingAccent', max: 40, default: 'Service', label: 'Hero heading, second line (red)' },
-  { key: 'hero.lede1', max: 90, default: 'Tires. Repairs. Roadside assistance.', label: 'Hero lede, first line' },
-  { key: 'hero.lede2', max: 90, default: 'You deal with me, start to finish.', label: 'Hero lede, second line' },
-  { key: 'hero.visualLabel', max: 48, default: 'REAL MOBILE SERVICE / BOSTON', label: 'Hero logo caption' },
-
-  { key: 'strip.1.title', max: 32, default: 'I COME TO YOU', label: 'Service 1, title' },
-  { key: 'strip.1.body', max: 80, default: 'Home, work or roadside', label: 'Service 1, description' },
-  { key: 'strip.2.title', max: 32, default: 'PRICE UP FRONT', label: 'Service 2, title' },
-  { key: 'strip.2.body', max: 80, default: 'See the whole quote before I turn up', label: 'Service 2, description' },
-  { key: 'strip.3.title', max: 32, default: 'QUALITY SERVICE', label: 'Service 3, title' },
-  { key: 'strip.3.body', max: 80, default: 'Professional care every time', label: 'Service 3, description' },
-
-  { key: 'order.eyebrow', max: 40, default: 'SHOP KMT', label: 'Order section eyebrow' },
-  { key: 'order.heading', max: 60, default: 'Order tires online', label: 'Order section heading' },
-  { key: 'order.lede', max: 160, default: "Find the right fit for your vehicle and I'll handle the rest.", label: 'Order section lede' },
-
-  { key: 'footer.brand', max: 60, default: "KMT / KEN'S MOBILE TIRE", label: 'Footer brand line' },
-
-  { key: 'inquiry.eyebrow', max: 40, default: 'MORE THAN TIRES', label: 'Inquiry page eyebrow' },
-  { key: 'inquiry.heading', max: 60, default: 'Tell me what you need', label: 'Inquiry page heading' },
-  { key: 'inquiry.lede', max: 160, default: 'Flat repairs, roadside help and anything else that keeps you moving.', label: 'Inquiry page lede' },
-  { key: 'inquiry.sentHeading', max: 60, default: 'I got your message.', label: 'Inquiry sent, heading' },
-  { key: 'inquiry.sentBody', max: 160, default: "I'll read it and text you back using the contact you left.", label: 'Inquiry sent, body' },
-
-  { key: 'notFound.eyebrow', max: 40, default: 'NOT FOUND', label: '404 eyebrow' },
-  { key: 'notFound.heading', max: 60, default: "That page isn't here", label: '404 heading' },
-  { key: 'notFound.body', max: 200, default: 'If you followed a link, it may be out of date. These are the pages that exist:', label: '404 body' },
-]
+export { SITE_COPY_FIELDS, resolveSiteCopy, siteCopyDefaults } from '../src/site-copy.js'
 
 const FIELD_BY_KEY = new Map(SITE_COPY_FIELDS.map(field => [field.key, field]))
 
-/** The shipped wording, as rendered with nothing saved. */
-export function siteCopyDefaults() {
-  return Object.fromEntries(SITE_COPY_FIELDS.map(field => [field.key, field.default]))
-}
-
 /**
- * What a page should render: the defaults, with the owner's overrides on top.
+ * The guards that replace the review Ken loses by being able to edit copy.
  *
- * Unknown keys in storage are ignored rather than thrown on. A key removed
- * from the registry in a later release would otherwise make every read of an
- * old row fail -- the customer's landing page is not the place to discover a
- * migration, and the value has nowhere to render anyway.
+ * The registry itself -- the keys, the shipped wording, the length caps -- is
+ * `../src/site-copy.js`, imported rather than restated so the page and the
+ * server cannot hold different ideas of the default wording. Same reason
+ * `backend/inventory.mjs` imports `src/markup.js`. This file holds only what
+ * the server needs and the browser must not have: validation, the claim
+ * check, and the store.
+ *
+ * Until now every word on the site arrived through a pull request -- an
+ * author, a diff, a second reader and a gate -- not because anyone designed a
+ * copy-review process, but because there was no other way to change a string.
+ * Editing removes that chain, so this module has to replace it. The boundary
+ * and the rulings are `.forge/site-copy-inventory.md`.
+ *
+ * The narrower, truer version of that: four owner-authored fields already
+ * reach customers unreviewed -- quote line descriptions, the customer note,
+ * the decline reason, catalogue labels -- each guarded by a trim and a hard
+ * cap. So this is not the first unreviewed text to reach a reader; it is the
+ * first to reach *every* reader rather than one who already asked. The guards
+ * below mirror `cleanReason` in `quotes.mjs` for exactly that reason: the
+ * shape is proven, and a reviewer who knows one knows this.
  */
-export function resolveSiteCopy(stored) {
-  const values = stored && typeof stored === 'object' ? stored.values : null
-  const resolved = siteCopyDefaults()
-  if (!values || typeof values !== 'object') return resolved
-  for (const field of SITE_COPY_FIELDS) {
-    const value = values[field.key]
-    if (typeof value === 'string' && value.trim()) resolved[field.key] = value
-  }
-  return resolved
-}
+
 
 /**
  * Validate what the owner screen sent.
