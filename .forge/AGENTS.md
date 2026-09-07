@@ -256,7 +256,8 @@ file from opposite ends.
 | `.forge/*-audit.mjs`, `.forge/*-check.mjs` | verification tooling |
 | `backend/`, `src/owner/` | owner workspace and its API |
 | `src/markup.js` | supplier price -> customer price |
-| `Dockerfile`, `fly.toml`, `.github/workflows/` | deployment |
+| `Dockerfile`, `fly.toml` | deployment |
+| `.github/workflows/` | the repo agent, ruled explicitly by the PROJECT MANAGER on 2026-09-07 |
 | `index.html`'s marketing head (title, description, JSON-LD content, `og:*`/`twitter:*`), `public/brand/`, `docs/brand.md`, landing copy | growth and marketing (`roles/growth-marketing.md`) |
 | `index.html`'s `<link rel="canonical">`, `public/robots.txt`, `public/sitemap.xml` | SEO — crawler plumbing, no copy; see the ruling below |
 
@@ -267,6 +268,15 @@ Two rows above overlap on purpose and the split is by *kind of change*, not by
 file. In `src/routes/CustomerRequest.jsx` the landing **copy** is growth's and
 the **markup and CSS** are UI's: changing a string is one lane, anything
 needing structure is a claim row that says so and a pairing.
+
+**`.github/workflows/` was carrying three claim rows that pointed three different
+ways** (one to DEV OPS, one to the repo agent, one to no one), all written in
+good faith by sessions who had each looked and found a different answer. The
+"deployment" lane above still names DEV OPS on paper, but that session has been
+idle since 02:32Z and its working directory is `code/forge`, not this
+repository — a lane assignment to a session that cannot reach the file is not
+an assignment. The repo agent has actually edited this file, correctly, on
+#401. Ruled explicit rather than left for the next sweep to rediscover.
 
 **`index.html`'s head splits three ways, ruled by the PROJECT MANAGER on
 2026-09-06.** The split is by *whose question a tag answers*, not by position
