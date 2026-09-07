@@ -1,0 +1,146 @@
+# Baseline of https://kensmobiletire.com, 2026-09-06T23:14:05Z, read-only
+
+## TLS
+  issuer=C=US, O=Let's Encrypt, CN=YE1
+  subject=CN=kensmobiletire.com
+  notBefore=Sep  6 05:32:22 2026 GMT
+  notAfter=Dec  5 05:32:21 2026 GMT
+  X509v3 Subject Alternative Name: 
+      DNS:kensmobiletire.com
+  tls1.2: New, TLSv1.2, Cipher is ECDHE-ECDSA-AES256-GCM-SHA384
+  tls1.2: Protocol: TLSv1.2
+  tls1.3: New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+  tls1.3: Protocol: TLSv1.3
+
+## Redirects
+  http://kensmobiletire.com/            -> 301 https://kensmobiletire.com/
+  http://kensmobiletire.com/status      -> 301 https://kensmobiletire.com/status
+  https://www.kensmobiletire.com/ (if any) -> 301 https://kensmobiletire.com/
+
+## Response headers, GET / (every header, verbatim)
+  HTTP/1.1 200 OK
+  content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  x-content-type-options: nosniff
+  x-frame-options: DENY
+  referrer-policy: strict-origin-when-cross-origin
+  permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+  cross-origin-opener-policy: same-origin
+  strict-transport-security: max-age=31536000; includeSubDomains
+  x-kmt-release: f7c4d5c
+  x-kmt-service-area: on
+  content-type: text/html; charset=utf-8
+  cache-control: no-cache
+  etag: W/"9ed-1a078f25ac0"
+  last-modified: Sun, 06 Sep 2026 22:59:04 GMT
+  content-length: 2541
+  date: Sun, 06 Sep 2026 23:14:13 GMT
+  connection: keep-alive
+  keep-alive: timeout=5
+  server: Fly/ec1a4f957c (2026-08-31)
+  via: 1.1 fly.io
+  fly-request-id: 01M1WG0F1ZN7NRN1CPEYT56KH9-ewr
+
+## Security headers present on / (name only)
+  strict-transport-security: max-age=31536000; includeSubDomains
+  content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  x-content-type-options: nosniff
+  x-frame-options: DENY
+  referrer-policy: strict-origin-when-cross-origin
+  permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+  cross-origin-opener-policy: same-origin
+
+## Compression (GET with Accept-Encoding: br, gzip)
+  / -> content-encoding: br downloaded=1098 
+  /api/catalog -> content-encoding: br downloaded=180774 
+
+## Routes and status codes
+  /                                                200  text/html; charset=utf-8
+  /status                                          200  text/html; charset=utf-8
+  /owner                                           200  text/html; charset=utf-8
+  /owner/quotes                                    200  text/html; charset=utf-8
+  /owner/                                          200  text/html; charset=utf-8
+  /nonsense-path                                   200  text/html; charset=utf-8
+  /robots.txt                                      200  text/plain; charset=utf-8
+  /index.html                                      200  text/html; charset=utf-8
+  /api/nope                                        404  application/json
+  /api/health                                      200  application/json
+  /api/catalog                                     200  application/json
+  /api/owner/session                               200  application/json
+  /api/owner/inventory                             401  application/json
+  /api/owner/requests                              401  application/json
+  /api/owner/markup                                401  application/json
+  /api/owner/import-token                          401  application/json
+  /api/requests                                    400  application/json
+  /api/requests/0123456789abcdef0123456789abcdef   404  application/json
+  /brand/SOURCES.md                                200  text/html; charset=utf-8
+  /brand/og-1200x630.jpg                           200  image/jpeg
+  /.env                                            200  text/html; charset=utf-8
+  /backend/data/owner.sqlite                       200  text/html; charset=utf-8
+  /package.json                                    200  text/html; charset=utf-8
+
+## Method handling
+  HEAD /               -> 200
+  HEAD /api/health     -> 200
+  OPTIONS /api/owner/import (no Origin)      -> 403
+  OPTIONS /api/owner/import (Origin evil)    -> 403
+  OPTIONS /api/owner/import (Origin giga)    -> access-control-allow-origin: https://www.giga-tires.com code=204 
+  TRACE /              -> 405
+
+## Bodies of the public JSON answers (shape, not values)
+  /api/health: {"ok":true}
+  /api/owner/session: {"authenticated":false}
+  /api/owner/inventory: {"error":"Sign in to use the owner workspace."}
+  /api/requests/<unknown id>: {"error":"No such request."}
+  /api/requests (no key): {"error":"Pass the customer key this browser was given."}
+  /api/requests?customer=<key with no requests>: {"requests":[]}
+  /api/catalog: tires=6169 sizes=511 keys=[category,description,id,inStock,name,price,size]
+
+## Asset caching
+  /brand/og-1200x630.jpg -> cache-control: public, max-age=86400, stale-while-revalidate=604800 etag: W/"10ea5-1a078f256d8" last-modified: Sun, 06 Sep 2026 22:59:03 GMT 
+  /assets/index-Dsmd4rFp.js -> cache-control: public, max-age=31536000, immutable etag: W/"4587d-1a078f25ac0" last-modified: Sun, 06 Sep 2026 22:59:04 GMT 
+
+## Fly (read-only)
+   Hostname │ kmt.fly.dev                               
+   Image    │ kmt:deployment-01M1WF45ARC6G4CYAH4FAV1T43 
+   PROCESS │ ID             │ VERSION │ REGION │ STATE   │ ROLE │ CHECKS             │ LAST UPDATED         
+   app     │ d89459da977e78 │ 171     │ ewr    │ started │      │ 1 total, 1 passing │ 2026-09-06T22:59:17Z 
+   health │ passing │ d89459da977e78 │ 15m9s ago    │ {"ok":true} 
+  secret: KMT_SESSION_SECRET
+  secret: KMT_OWNER_PASSWORD
+  secret: KMT_SERVICE_RADIUS_MILES
+  secret: KMT_MAIL_FROM
+  secret: KMT_MAIL_SMTP_HOST
+  secret: KMT_MAIL_SMTP_PASSWORD
+  secret: KMT_MAIL_SMTP_PORT
+  secret: KMT_MAIL_SMTP_USER
+  secret: KMT_OWNER_EMAIL
+  secret: KMT_OWNER_NAME
+  secret: KMT_ALLOWED_HOSTS
+  secret: KMT_CANONICAL_HOST
+  certs: HOSTNAME                       SOURCE     STATUS
+  certs: order.kensmobiletire.com       Fly        Issued
+  certs: kensmobiletire.com             Fly        Issued
+  certs: www.kensmobiletire.com         Fly        Issued
+
+## Notes (hand-added the same run, read-only; not produced by baseline.sh)
+
+State: POST-CUTOVER, canonical host. Machine version 171, captured
+2026-09-06T23:14:05Z. kensmobiletire.com is now KMT_CANONICAL_HOST and serves
+the app at 200 with the full landed surface: six security headers + HSTS
+(max-age=31536000; includeSubDomains, no preload), real robots.txt (text/plain),
+/api/nope 404, TRACE 405, brand caching (public, max-age=86400, swr + ETag +
+Last-Modified), assets immutable. Catalog shape intact: 6169 tires / 511 sizes /
+7 fields.
+
+Compared against 2026-09-06-precutover-kensmobiletire-com.txt (#162), captured
+07:41Z / machine v87 -- the full-day "before". Every changed line is attributed:
+the #147/#167/#154/#169 surface changes (headers, 404 shape, robots, TRACE,
+brand cache) plus the cutover (www 301) plus intervening deploys (mail-seam
+secrets, release/service-area headers, HEAD /api/health fix, catalog data
+refresh: ~6% brotli growth with identical tire/size/field counts) plus cosmetic
+(dates, request-ids, asset hashes, deployment/version ids). No finding.
+
+Baseline shelf-life note: a before-capture is an instrument only while the
+system it measured still exists. #162 was v87; this is v171. The diff is
+readable only because each expected change is enumerated in README.md's
+"How to read the diff"; without that list a 84-version gap would be noise.
