@@ -33,7 +33,8 @@ function cleanText(value, label, max, required = true) {
 function profilePath(platform, pathname) {
   const parts = pathname.split('/').filter(Boolean)
   if (platform === 'facebook') {
-    if (parts.length !== 1 || ['share', 'watch', 'groups', 'events', 'marketplace'].includes(parts[0].toLowerCase())) return false
+    const pagePath = parts.length === 2 && parts[0].toLowerCase() === 'p' && /-\d+$/.test(parts[1])
+    if (!(parts.length === 1 || pagePath) || ['share', 'watch', 'groups', 'events', 'marketplace'].includes(parts[0].toLowerCase())) return false
   } else if (platform === 'instagram') {
     if (parts.length !== 1 || ['p', 'reel', 'stories', 'explore'].includes(parts[0].toLowerCase())) return false
   } else if (platform === 'tiktok') {
@@ -55,13 +56,17 @@ export function normalizeSocialProfile(input) {
   if (!PLATFORM_KEYS.has(platform)) throw new Error('Choose a supported social platform.')
   let url
   try { url = new URL(input.url) } catch { throw new Error('Social profile URL must be a complete HTTPS URL.') }
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !SOCIAL_PLATFORMS[platform].hosts.includes(url.hostname.toLowerCase())) {
+  const queryKeys = [...url.searchParams.keys()]
+  const instagramLocaleQuery = platform === 'instagram' && queryKeys.length === 1 && queryKeys[0].toLowerCase() === 'hl'
+  if (url.protocol !== 'https:' || url.username || url.password || (url.search && !instagramLocaleQuery) || url.hash || !SOCIAL_PLATFORMS[platform].hosts.includes(url.hostname.toLowerCase())) {
     throw new Error(`That is not a valid ${SOCIAL_PLATFORMS[platform].label} profile URL.`)
   }
   if (!profilePath(platform, url.pathname)) throw new Error(`That URL is not a ${SOCIAL_PLATFORMS[platform].label} profile or channel.`)
   const parts = url.pathname.split('/').filter(Boolean)
   url.hostname = SOCIAL_PLATFORMS[platform].hosts[0]
-  url.pathname = `/${parts.join('/')}/`
+  url.pathname = `/${parts.join('/').toLowerCase()}/`
+  url.search = ''
+  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new Error('Profile visibility must be boolean.')
   return { platform, url: url.toString(), enabled: input.enabled !== false }
 }
 
@@ -89,7 +94,8 @@ export function normalizeTestimonial(input, { id = null } = {}) {
   const sourceUrl = cleanSourceUrl(input.sourceUrl)
   if (kind === 'external-review' && !sourceUrl) throw new Error('An external review needs its source URL.')
   let date = input.date || null
-  if (date !== null && (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`)))) throw new Error('Date must be YYYY-MM-DD.')
+  const parsedDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00Z`) : null
+  if (date !== null && (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date)) throw new Error('Date must be YYYY-MM-DD.')
   const order = Number.isInteger(input.order) && input.order >= 0 ? input.order : 0
   return { id: id || cleanText(input.id, 'Review id', 80), kind, text, attribution, source, sourceUrl, date, visible: input.visible !== false, order }
 }

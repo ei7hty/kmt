@@ -14,11 +14,13 @@ function fakeInventory(initial = null) {
 }
 
 test('social profile URLs normalize to the approved host and trailing slash', () => {
-  assert.deepEqual(normalizeSocialProfile({ platform: 'instagram', url: 'https://www.instagram.com/KMTBoston' }), {
-    platform: 'instagram', url: 'https://instagram.com/KMTBoston/', enabled: true,
+  assert.deepEqual(normalizeSocialProfile({ platform: 'instagram', url: 'https://www.instagram.com/KMTBoston/?hl=en' }), {
+    platform: 'instagram', url: 'https://instagram.com/kmtboston/', enabled: true,
   })
   assert.deepEqual(normalizeSocialProfile({ platform: 'youtube', url: 'https://www.youtube.com/@kmt' }).url, 'https://youtube.com/@kmt/')
   assert.deepEqual(normalizeSocialProfile({ platform: 'youtube', url: 'https://youtube.com/channel/abc' }).url, 'https://youtube.com/channel/abc/')
+  assert.equal(normalizeSocialProfile({ platform: 'facebook', url: 'https://www.facebook.com/p/Kens-Mobile-Tire-61577670628260/' }).url, 'https://facebook.com/p/kens-mobile-tire-61577670628260/')
+  assert.equal(normalizeSocialProfile({ platform: 'tiktok', url: 'https://www.tiktok.com/@ken_thetireguy' }).url, 'https://tiktok.com/@ken_thetireguy/')
 })
 
 test('social profile validation rejects invented or unsafe destinations', () => {
@@ -31,6 +33,8 @@ test('social profile validation rejects invented or unsafe destinations', () => 
     { platform: 'youtube', url: 'https://youtube.com/watch?v=abc' },
     { platform: 'linkedin', url: 'https://linkedin.com/posts/kmt' },
     { platform: 'x', url: 'https://x.com/kmt?utm_source=ads' },
+    { platform: 'instagram', url: 'https://instagram.com/kmt?utm_source=ads' },
+    { platform: 'facebook', url: 'https://facebook.com/p/kmt/abc' },
   ]) assert.throws(() => normalizeSocialProfile(profile))
 })
 
@@ -53,6 +57,7 @@ test('review records distinguish owner testimonials from source-linked reviews',
   assert.equal(testimonial.kind, 'external-review')
   assert.equal(review.kind, 'testimonial')
   assert.throws(() => cleanTestimonials([{ id: 'x', kind: 'external-review', text: 'x', attribution: 'A', source: 'Google' }]), /source URL/)
+  assert.throws(() => cleanTestimonials([{ id: 'x', kind: 'testimonial', text: 'x', attribution: 'A', date: '2026-02-31' }]), /YYYY-MM-DD/)
 })
 
 test('malformed or absent metadata resolves to no public claims', () => {
