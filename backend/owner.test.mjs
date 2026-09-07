@@ -521,6 +521,91 @@ test('pricing settings reject a fee, a disposal amount, or a tax shape that woul
   assert.equal(db.getPricingSettings().mobileServiceFeeIsPlaceholder, true, 'nothing was written by the rejected saves')
 })
 
+// #354: the owner's own catalogue lines.
+
+const catalogueLine = (overrides = {}) => ({
+  label: 'Installation', amountCents: 1500, basis: 'perTire', mode: 'automatic', taxable: false, enabled: true,
+  ...overrides,
+})
+
+test('the catalogue starts empty, and saving assigns each new line a stable id', t => {
+  const db = setup(t)
+  assert.deepEqual(db.getCatalogueLines(), [])
+
+  const saved = db.saveCatalogueLines([catalogueLine()])
+  assert.equal(saved.length, 1)
+  assert.ok(saved[0].id, 'a line with no id is assigned one')
+  assert.equal(saved[0].label, 'Installation')
+  assert.deepEqual(db.getCatalogueLines(), saved, 'survives a fresh read')
+})
+
+test('saving again with an existing id keeps that id; a renamed label does not become a new line', t => {
+  const db = setup(t)
+  const [first] = db.saveCatalogueLines([catalogueLine()])
+  const [resaved] = db.saveCatalogueLines([{ ...first, label: 'Tire installation' }])
+  assert.equal(resaved.id, first.id)
+  assert.equal(resaved.label, 'Tire installation')
+})
+
+test('saveCatalogueLines has no isPlaceholder field, unlike every other pricing setting (#354)', t => {
+  const db = setup(t)
+  const [saved] = db.saveCatalogueLines([catalogueLine()])
+  assert.equal('isPlaceholder' in saved, false)
+})
+
+test('saveCatalogueLines validates every field, and a rejected save leaves the stored catalogue alone', t => {
+  const db = setup(t)
+  db.saveCatalogueLines([catalogueLine({ label: 'Installation' })])
+
+  assert.throws(() => db.saveCatalogueLines('not an array'), /list of lines/)
+  assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), label: '' }]), /needs a label/)
+  assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), amountCents: 19.5 }]), /whole-cent amount/)
+  assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), amountCents: -1 }]), /whole-cent amount/)
+  assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), basis: 'perWheel' }]), /basis of perTire or perJob/)
+  assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), mode: 'sometimes' }]), /mode of automatic or optional/)
+  assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), taxable: 'yes' }]), /taxable to be true or false/)
+  assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), enabled: 'yes' }]), /enabled to be true or false/)
+  assert.throws(() => db.saveCatalogueLines([catalogueLine(), catalogueLine()].map(l => ({ ...l, id: 'dup' }))), /repeats an id/)
+  assert.throws(() => db.saveCatalogueLines(Array.from({ length: 26 }, () => catalogueLine())), /at most 25 lines/)
+
+  assert.equal(db.getCatalogueLines().length, 1, 'none of the rejected saves touched the stored catalogue')
+  assert.equal(db.getCatalogueLines()[0].label, 'Installation')
+})
+
+test('disabling a line rather than removing it from the list is a normal save', t => {
+  const db = setup(t)
+  const [saved] = db.saveCatalogueLines([catalogueLine()])
+  const [disabled] = db.saveCatalogueLines([{ ...saved, enabled: false }])
+  assert.equal(disabled.id, saved.id, 'still the same line')
+  assert.equal(disabled.enabled, false)
+})
+
+test('the owner pricing-lines endpoint saves and validates over HTTP, session-gated like every other owner route', async t => {
+  const db = setup(t)
+  const api = createApi(db, new Refresher(db))
+  const server = createServer(async (request, response) => { if (!(await api(request, response))) response.writeHead(404).end() })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+  const call = (method, body) => fetch(`${base}/api/owner/pricing-lines`, {
+    method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body),
+  })
+
+  const empty = await call('GET')
+  assert.equal(empty.status, 200)
+  assert.deepEqual((await empty.json()).lines, [])
+
+  const ok = await call('PUT', { lines: [catalogueLine()] })
+  assert.equal(ok.status, 200)
+  const saved = (await ok.json()).lines
+  assert.equal(saved.length, 1)
+  assert.equal(saved[0].label, 'Installation')
+
+  const bad = await call('PUT', { lines: [{ ...catalogueLine(), basis: 'nowhere' }] })
+  assert.equal(bad.status, 400)
+  assert.equal(db.getCatalogueLines().length, 1, 'the rejected save left the stored catalogue alone')
+})
+
 test('owner pricing endpoint saves and validates over HTTP', async t => {
   const db = setup(t)
   const api = createApi(db, new Refresher(db))

@@ -581,7 +581,12 @@ export class Quotes {
 
     const id = newId()
     const stamp = now()
-    const draft = calculateDraftQuote({ ...request, id }, catalog, this.inventory.getPricingSettings())
+    // chosenLineIds is always [] until the wizard control exists (#354's
+    // stage 3): an optional catalogue entry cannot be picked yet, so only
+    // automatic entries can appear on a draft today. Passing [] here rather
+    // than omitting the argument keeps this call site the one place that
+    // will need to change once the wizard sends real choices.
+    const draft = calculateDraftQuote({ ...request, id }, catalog, this.inventory.getPricingSettings(), this.inventory.getCatalogueLines(), [])
     if (area.reason === REASONS.REVIEW) {
       draft.exceptionReasons = [...draft.exceptionReasons, `Service address is ${area.message.replace(/^About/, 'about')}`]
       draft.exception = true
@@ -792,6 +797,14 @@ export class Quotes {
    * numbers in place. `tax` is set explicitly (`undefined` when tax is off)
    * so JSON.stringify drops it from the stored payload instead of leaving a
    * pre-adjustment tax figure sitting beside a total that has moved on.
+   *
+   * computeQuoteTotals takes a resolved `taxable` per line rather than
+   * classifying one itself (#354's correction to this seam): an owner's
+   * hand-typed adjustment line carries no category the way the tire or a
+   * catalogue entry does, so it is taxed only when tax applies to
+   * everything (`appliesTo: 'all'`) and excluded otherwise -- undertaxed
+   * rather than guessed at, the same rule `calculateDraftQuote` follows for
+   * a catalogue line it cannot classify.
    */
   adjust(id, input) {
     const version = input?.version
@@ -800,7 +813,8 @@ export class Quotes {
     }
     const adjustment = cleanQuoteAdjustment(input)
     const settings = normalizePricingSettings(this.inventory.getPricingSettings())
-    const totals = computeQuoteTotals(adjustment.lineItems, settings)
+    const taxableLines = adjustment.lineItems.map(line => ({ ...line, taxable: Boolean(settings.tax) && settings.tax.appliesTo === 'all' }))
+    const totals = computeQuoteTotals(taxableLines, settings)
 
     return this.transaction(() => {
       const found = this.get(id)
