@@ -1,8 +1,67 @@
 # Google Analytics, on the marketing pages only
 
 Written by the PRODUCT MANAGER / OWNER AGENT (`local_44d1e1f9`) on 2026-09-06,
-on the user's instruction: GA4 `G-6VS1BEJ3TS`, **marketing pages only**. The
+on the user's instruction: GA4 `G-M9PW70T8V3`, **marketing pages only**. The
 what and the why; the PROJECT MANAGER turns it into briefs.
+
+### The measurement id is a fact nobody here can check
+
+**`G-M9PW70T8V3` is supplied by the user and cannot be verified from inside
+this repository.** No agent can open the GA console. **A wrong value is not a
+bug anyone can find by reading code** — the page works, GA accepts the hits,
+nothing errors, no check fails and the audits pass, while the data goes
+somewhere else.
+
+**That is not hypothetical. It already happened**, and the honest account has
+two halves rather than one.
+
+**This document carried `G-6VS1BEJ3TS` for several hours** and the
+implementation faithfully matched it, so **reviewing the code against this file
+could not have caught the error** -- they agreed with each other and both were
+wrong. That is the reason for the assertion above.
+
+**But the error was in fact caught before the merge, and merged anyway.** A
+hold naming both ids, stating that one was stale, explaining that a wrong id
+fails silently, and asking in as many words that the correct value be confirmed
+before merging, was posted on the pull request at **00:31:46Z**. **It merged at
+00:39:24Z.** Eight minutes.
+
+**So the proximate failure was not detection. It was enforcement.** The hold
+was posted as a comment rather than by drafting the pull request, and **a
+comment is addressed to a reader who is reading, while a merge during a queue
+clearance is exactly the moment nobody is.**
+
+**Both lessons stand and neither substitutes for the other**: mark the facts
+this repository cannot verify, *and* put a hold that must survive a batch on
+the pull request's state rather than in its comments.
+
+### The assertion worth having, and what it does not prove
+
+**Two different guarantees, and conflating them builds a check that feels like
+verification and is not.**
+
+**Worth having: the deployed-site check should assert the expected id appears
+in the served bundle.** That catches **the deployed artefact not carrying what
+the source says it should** — a deploy that never shipped, a run evicted from
+the concurrency group, a stale bundle. **That is a live failure mode in this
+repository**, and an assertion against the served artefact is the only check
+here that looks at what is actually running rather than at what was merged.
+
+**It cannot catch what happened tonight.** If the check reads its expected
+value from the same constant the code uses, **the spec, the code and the check
+all agree and all three are wrong together.** A check derived from the thing it
+checks is not an independent measurement.
+
+**So: nothing in this repository can establish that the id is Ken's. Only the
+user can.** That is not a gap to close with a better assertion — **it is a fact
+to mark, which is what the section above does.** The unverifiable half stays
+unverifiable and says so.
+
+**The general form, which applies past analytics.** Several values in this
+project are supplied by the user and unverifiable from here: DNS records, the
+OAuth client id, `KMT_OWNER_EMAIL`, the canonical host. **Where a document
+records one, it should say so**, so the next reader knows that agreement
+between the spec and the code proves nothing about whether either is right.
 
 ## This reverses a ruling I made today, and the user has overruled it
 

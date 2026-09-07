@@ -109,6 +109,15 @@ export async function expandTireList(page) {
   }
 }
 
+/**
+ * `customerEmail` has no default that a caller should rely on: every script
+ * importing this must pass its own (one address per script, not shared
+ * across the gate -- LEAD BACKEND DEV, .forge/NOTES.md 2026-09-06, and the
+ * false read it produced during #361). The literal below exists only so a
+ * call that forgets still submits something rather than failing on a blank
+ * field; two scripts leaning on it would recreate the exact collision this
+ * convention exists to avoid.
+ */
 export async function submitRequest(page, { base, size, tireName, vehicle, location, date, notes, customerName = 'Jamie Rivera', customerEmail = 'jamie@example.com' }) {
   const [width, rest] = size.split('/')
   const [ratio, diameter] = rest.split('R')

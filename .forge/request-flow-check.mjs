@@ -6,6 +6,19 @@ import assert from 'node:assert/strict'
 const base = process.env.AUDIT_BASE || 'http://localhost:4183'
 
 /**
+ * One address per script, not one shared across the gate (LEAD BACKEND DEV,
+ * .forge/NOTES.md 2026-09-06; the drift QA ENGINEER measured into
+ * AUDIT_BUDGET, and the false read it produced during #361): a run of this
+ * script alone still accumulates toward submitPerEmail the way AUDIT_BUDGET
+ * expects, but a manual rerun of one script no longer eats into the budget
+ * request-flow-check.mjs, responsive-check.mjs and a11y-85-measure.mjs each
+ * need against the same address. Nothing here asserts on the limit itself
+ * (that is backend/limits.test.mjs's job), so there is no coverage to lose
+ * by giving each script its own identity.
+ */
+const AUDIT_EMAIL = 'jamie+request-flow-check@example.com'
+
+/**
  * How many checks a complete run performs, across both widths.
  *
  * The baseline lives here, in the thing that produces it, and nowhere in
@@ -68,7 +81,7 @@ try {
     check(await page.locator('#locationNotes').inputValue() === 'Blue sedan near the gas station', 'service details survive back navigation')
     check(await overflow(), 'service controls fit within viewport')
     await page.locator('#customerName').fill('Jamie Rivera')
-    await page.locator('#customerEmail').fill('jamie@example.com')
+    await page.locator('#customerEmail').fill(AUDIT_EMAIL)
     await page.locator('#customerPhone').fill('(617) 410-8319')
     await page.locator('.step-panel').screenshot({ path: `.forge/shots/request-service-${width}.png` })
     await page.getByRole('button', { name: 'Request my quote' }).click()
@@ -85,7 +98,7 @@ try {
     check(ownerText.includes('02149'), 'owner sees the ZIP the customer entered')
     check(ownerText.includes('Blue sedan'), 'owner sees the access instructions the customer entered')
     const phoneLinkVisible = await page.locator('.owner-content a[href="tel:+16174108319"]').first().isVisible().catch(() => false)
-    check(ownerText.includes('Jamie Rivera') && ownerText.includes('jamie@example.com') && phoneLinkVisible, 'owner sees the contact name, email and normalized phone the customer entered')
+    check(ownerText.includes('Jamie Rivera') && ownerText.includes(AUDIT_EMAIL) && phoneLinkVisible, 'owner sees the contact name, email and normalized phone the customer entered')
     check(errors.length === 0, 'no browser runtime errors')
     await page.close()
   }
