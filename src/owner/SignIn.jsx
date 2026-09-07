@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './OwnerInventory.css'
 import { PrivacyFooter } from '../routes/Privacy.jsx'
 
@@ -23,6 +23,30 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace', 
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  // Whether this server has an OAuth client at all. The button appears only
+  // where pressing it would work: a local server and any deployment without
+  // the two Google variables set answer `google: false`, and offering a door
+  // that 404s is worse than not offering it.
+  const [googleOffered, setGoogleOffered] = useState(false)
+  useEffect(() => {
+    let live = true
+    fetch('/api/owner/session')
+      .then(response => (response.ok ? response.json() : {}))
+      .then(data => { if (live) setGoogleOffered(Boolean(data.google)) })
+      // A failure here means no Google button, which is the safe direction:
+      // the password path is unaffected and still signs the owner in.
+      .catch(() => {})
+    return () => { live = false }
+  }, [])
+
+  // The callback sends every refusal here with the same flag -- a wrong
+  // domain, an unverified address, a token minted for another application and
+  // a replayed callback are one answer to whoever is holding them. The reason
+  // is in the server log, where it can be acted on, and not in the browser,
+  // where it would only tell someone which door to try next.
+  const refused = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('signin') === 'refused'
 
   async function submit(event) {
     event.preventDefault()
@@ -60,12 +84,27 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace', 
         <h1>Sign in</h1>
         <p className="oi-muted">{what}</p>
         <label htmlFor="owner-password">Password</label>
-        <input id="owner-password" type="password" autoComplete="current-password" value={password}
-          onChange={e => setPassword(e.target.value)} disabled={busy} />
-        <button type="submit" className="oi-button oi-primary" disabled={busy || !password}>
+        <input id="owner-password" data-testid="owner-password" type="password" autoComplete="current-password"
+          value={password} onChange={e => setPassword(e.target.value)} disabled={busy} />
+        <button type="submit" data-testid="owner-signin-submit" className="oi-button oi-primary" disabled={busy || !password}>
           {busy ? 'Checking…' : 'Sign in'}
         </button>
         {error && <p role="alert" className="oi-error">{error}</p>}
+        {refused && <p role="alert" className="oi-error">That account cannot open this workspace. Try the password, or ask Ken.</p>}
+        {googleOffered && <>
+          {/* Second, not primary, and deliberately so. Brand red marks the one
+              primary action on a screen, and during this transition that is
+              still the password: it is the path that works today and the only
+              one proven to sign this owner in. Google is promoted to primary
+              when the password is removed, which does not happen until a real
+              sign-in has actually carried a login. Offering two red buttons
+              would break the brand rule and overstate what is proven. */}
+          <p className="oi-signin-or">or</p>
+          <a className="oi-button oi-signin-google" href="/api/owner/session/google/start" data-testid="owner-signin-google">
+            Sign in with Google
+          </a>
+          <p className="oi-muted oi-signin-hint">Use your @kensmobiletire.com account.</p>
+        </>}
       </form>
     </main>
     <PrivacyFooter navigate={navigate} />
