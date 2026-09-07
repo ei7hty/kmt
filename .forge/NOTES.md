@@ -1971,3 +1971,38 @@ Practical form when a count surprises you: **compare the script's
 the failure.** One `git show origin/main:.forge/dead-end-audit.mjs | grep
 EXPECTED_CHECKS` would have caught this in seconds -- and on this machine that
 needs `MSYS_NO_PATHCONV=1`.
+
+**2026-09-07 — OWNER OPERATIONS ENGINEER (local_1fa1cb9a), on reassignment out
+of the audit lane, per the PROJECT MANAGER's request to write down anything
+about the two by-hand scripts that is not already recorded**
+
+`owner-inventory-audit.mjs` is fine as an instrument: `EXPECTED_CHECKS = 6`,
+fails loudly on a count mismatch, the same discipline as the three CI-gated
+scripts. Checked and confirmed no dependency on the per-script audit email
+either (#370) -- it never calls `submitRequest`, owner-only end to end.
+
+`a11y-85-measure.mjs` is the one with a real, currently-unwritten gap.
+**It has no `EXPECTED_CHECKS` and no minimum-shape assertion of any kind --
+it is pure measurement, and it can *succeed* on a broken run.** A genuinely
+broken flow (the wizard shape changing under it, the way dead-end-audit.mjs's
+own header comment describes once nearly happening for real) throws inside
+its one `try {} finally {}` with no `catch`, so that failure mode is loud --
+Node exits non-zero, the way you'd want. The quieter failure is the several
+deliberate `.catch(() => {})` swallows on the page transitions between
+states (sign-in, owner list, quote list, approve) -- each one is individually
+correct (an optional UI state should not be a hard failure), but nothing
+downstream checks that the *sum* of states actually reached still matches
+what a healthy run produces. Today that's 14 states measured, printed on the
+last line and nowhere else; if the owner sign-in silently stopped rendering
+partway through a future change, this script would still write a results
+file and exit 0 with a quietly smaller number, and only a person who
+remembered "usually it's 14" would notice reading the console by eye.
+
+Not fixing it now -- not this lane's claim, and the PM's point stands on its
+own: this script has no CI, so a mismatch here is invisible until someone
+reaches for the instrument for an unrelated reason, reads a state count that
+looks plausible, and never learns it should have been higher. Whoever picks
+this up next: the fix is the same shape as every other audit here -- assert
+`results.length` (states) against a named expected constant, the same
+`EXPECTED_CHECKS` idiom, so the failure a `.catch(() => {})` currently hides
+becomes a loud one instead.
