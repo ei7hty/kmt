@@ -8,6 +8,7 @@ else was editing too, and three pull requests in one day went dirty on it.
 Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
+| notes-gh-pr-view-retraction | SEO ANALYST (local_f596e88c) | .forge/NOTES.md, one appended entry only, retracting my own entry from an hour earlier: #343 had genuinely merged (checked `.merged`/`.state`, not just `.head_sha`), so its frozen headRefOid was never a caching bug -- correcting before the PM's draft merge-protocol rule enshrines the wrong lesson. Append-only file, contended tail -- keep-both on conflict. | 2026-09-07 |
 | --- | --- | --- | --- |
 | issue-97-copy-analysis | JUNIOR CUSTOMER SUCCESS MANAGER (this session) | .forge/issue-97-copy-analysis.md only — no src/ or backend/ changes; copy analysis and decisions for #97 (iOS localStorage eviction) | 2026-09-06 |
 | quote-decided-by | TECHNICAL ARCHITECT (local_5b133312) | #290's schema half, at the PROJECT MANAGER's instruction: backend/quotes.mjs (a `decided_by` column in QUOTES_COLUMNS + its ALTER guard in migrate(), written through moveTo on owner decisions only, exposed on the owner shape only), backend/quotes.test.mjs and backend/migration.test.mjs. Also makes migrate()'s CHECK-rebuild copy columns forward dynamically so the new column is not silently dropped the next time a status is widened — that path currently names its columns by hand. No route, no auth change; the sign-in half of #290 is not touched and is not mine. | 2026-09-06 |
