@@ -6,7 +6,8 @@ import { Quotes } from './quotes.mjs'
 import { Outbox, OUTBOX_PERSONAL_DATA_KEYS } from './outbox.mjs'
 import { Mailer, NullAdapter, SmtpAdapter, addressLabel, describeMail, readMailConfig } from './mail.mjs'
 import { MAIL_TYPES, TEMPLATES } from './mail-templates.mjs'
-import { createApi, createRequestsApi } from './api.mjs'
+import { createApi, createMailStatusApi, createRequestsApi } from './api.mjs'
+import { isMonitorAuthorized, readMonitorConfig } from './auth.mjs'
 
 const SIZE = '215/60R16'
 const tire = (id = 'giga-a') => ({ id, name: 'Test Touring', size: SIZE, price: 50, inStock: true, category: 'all-season', description: '95H BSW',
@@ -425,4 +426,109 @@ test('every email links what it asks the reader to do', () => {
     }
     assert.doesNotMatch(text, /<a /, `${type}: the plain-text part stays plain`)
   }
+})
+
+/* -------------------------------------------------------------- SMTP probe */
+
+/** A transporter whose verify() answers as told; no socket is ever opened. */
+function fakeVerify(outcome) {
+  const transporter = { async verify() { if (outcome instanceof Error) throw outcome; return true } }
+  return new SmtpAdapter({ host: 'smtp-relay.gmail.com', port: 587, user: 'u', password: 'p', transporter })
+}
+
+test('probeSmtp reports ok when verify() succeeds', async t => {
+  const { mailer } = world(t, { adapter: fakeVerify('ok') })
+  const result = await mailer.probeSmtp()
+  assert.equal(result.status, 'ok')
+  assert.equal(result.error, null)
+  assert.ok(result.checkedAt)
+  assert.equal(mailer.smtpStatus, result, 'the mailer keeps the latest result, not a copy')
+})
+
+test('probeSmtp reports failing when the server answers with a real SMTP response code', async t => {
+  // 535 5.7.8, the exact failure from the 2026-09-06 outage this whole
+  // feature exists to catch: the credential was rejected, and nodemailer's
+  // error carries the code the server actually sent.
+  const error = Object.assign(new Error('Invalid login: 535-5.7.8 Username and Password not accepted'), { responseCode: 535 })
+  const { mailer } = world(t, { adapter: fakeVerify(error) })
+  const result = await mailer.probeSmtp()
+  assert.equal(result.status, 'failing')
+  assert.match(result.error, /535/)
+})
+
+test('probeSmtp reports unknown, not failing, when the probe never got an answer', async t => {
+  // A timeout or DNS failure carries no responseCode -- nothing was asked
+  // and answered "no", the probe simply could not complete. Reporting this
+  // as "failing" would tell a monitor the credential is bad when the real
+  // problem might be the network between here and the mail server.
+  const error = new Error('connect ETIMEDOUT')
+  const { mailer } = world(t, { adapter: fakeVerify(error) })
+  const result = await mailer.probeSmtp()
+  assert.equal(result.status, 'unknown')
+  assert.match(result.error, /ETIMEDOUT/)
+})
+
+test('probeSmtp reports unknown without probing when mail is not configured for SMTP', async t => {
+  const { mailer } = world(t, { adapter: new NullAdapter() })
+  const result = await mailer.probeSmtp()
+  assert.equal(result.status, 'unknown')
+  assert.match(result.error, /not configured/)
+})
+
+test('before the first probe, smtpStatus is unknown with no checkedAt', async t => {
+  const { mailer } = world(t, { adapter: fakeVerify('ok') })
+  assert.equal(mailer.smtpStatus.status, 'unknown')
+  assert.equal(mailer.smtpStatus.checkedAt, null)
+})
+
+/* --------------------------------------------------------- mail-status API */
+
+function mailStatusServer(t, { mailer, token = 'a-real-monitor-token' }) {
+  const monitorConfig = readMonitorConfig({ KMT_MONITOR_TOKEN: token })
+  const mailStatusApi = createMailStatusApi(mailer, monitorConfig, {
+    isAuthorized: request => isMonitorAuthorized(monitorConfig, request),
+  })
+  const server = createServer(async (req, res) => { if (await mailStatusApi(req, res)) return; res.writeHead(404); res.end() })
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({
+    base: `http://127.0.0.1:${server.address().port}`,
+    close: () => new Promise(r => server.close(r)),
+  })))
+}
+
+test('the mail-status route answers the probed status only with the right bearer token', async t => {
+  const { mailer } = world(t, { adapter: fakeVerify('ok') })
+  await mailer.probeSmtp()
+  const { base, close } = await mailStatusServer(t, { mailer })
+  t.after(close)
+
+  const unauthorized = await fetch(base + '/api/mail-status')
+  assert.equal(unauthorized.status, 401)
+
+  const wrong = await fetch(base + '/api/mail-status', { headers: { Authorization: 'Bearer nope' } })
+  assert.equal(wrong.status, 401)
+
+  const ok = await fetch(base + '/api/mail-status', { headers: { Authorization: 'Bearer a-real-monitor-token' } })
+  assert.equal(ok.status, 200)
+  const body = await ok.json()
+  // DEV OPS's contract: { smtp, checkedAt, error }, smtp not status.
+  assert.deepEqual(Object.keys(body).sort(), ['checkedAt', 'error', 'smtp'])
+  assert.equal(body.smtp, 'ok')
+  assert.equal(body.error, null)
+  assert.ok(body.checkedAt)
+})
+
+test('the mail-status route is a GET only', async t => {
+  const { mailer } = world(t, { adapter: fakeVerify('ok') })
+  const { base, close } = await mailStatusServer(t, { mailer })
+  t.after(close)
+  const posted = await fetch(base + '/api/mail-status', { method: 'POST', headers: { Authorization: 'Bearer a-real-monitor-token' } })
+  assert.equal(posted.status, 405)
+})
+
+test('the mail-status route does not exist at all when no token is configured', async t => {
+  const { mailer } = world(t, { adapter: fakeVerify('ok') })
+  const { base, close } = await mailStatusServer(t, { mailer, token: '' })
+  t.after(close)
+  const response = await fetch(base + '/api/mail-status', { headers: { Authorization: 'Bearer anything' } })
+  assert.equal(response.status, 404, 'unconfigured means the route does not exist, not that it exists half-protected')
 })

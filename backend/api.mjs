@@ -47,6 +47,15 @@ const IMPORT_ORIGINS = new Set(['https://www.giga-tires.com', 'https://giga-tire
 export const PUBLIC_API_PATHS = new Set(['/api/catalog', '/api/health'])
 
 /**
+ * The mail-status route's own path, kept out of PUBLIC_API_PATHS: it is
+ * reachable without a session, but not without the bearer token
+ * `auth.isMonitorAuthorized` checks -- "public" in that set means no
+ * credential at all, which this route is not. server.mjs treats it as its
+ * own case, the same way it does `/api/owner/import`.
+ */
+export const MAIL_STATUS_PATH = '/api/mail-status'
+
+/**
  * Public request paths, which a customer reaches without signing in.
  *
  * A prefix rather than a list of ids, because a request path carries one. Still
@@ -89,6 +98,7 @@ const REQUEST_ACTIONS = ['/pay', '/cancel']
  */
 export function isKnownApiPath(pathname) {
   return PUBLIC_API_PATHS.has(pathname) ||
+    pathname === MAIL_STATUS_PATH ||
     pathname === PUBLIC_REQUEST_PREFIX ||
     pathname === PUBLIC_INQUIRIES_PATH ||
     pathname.startsWith(PUBLIC_REQUEST_PREFIX + '/') ||
@@ -233,6 +243,61 @@ export function createHealthApi(inventory) {
       response.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
       response.end(head ? undefined : JSON.stringify({ ok: false }))
     }
+    return true
+  }
+}
+
+/**
+ * The active-probe result, for an external monitor to read -- DEV OPS's half
+ * of the two-hour outage detection gap (#285-adjacent), the counterpart to
+ * `.forge/mail-failure-check.mjs`'s passive outbox scan. That script answers
+ * "did an attempted send get through"; this answers "is the SMTP seam alive
+ * right now", from whatever `mailer.probeSmtp()` last found -- nothing is
+ * probed on this request, so the route stays cheap enough for a tight
+ * interval and never blocks on an outside server.
+ *
+ * Gated by `auth.isMonitorAuthorized`, not the owner session: the caller is a
+ * monitoring job, not Ken's browser, and a standalone token can be handed to
+ * it and revoked on its own, independent of his login. Wrong or missing
+ * token reads 401, same shape as the owner gate elsewhere, but with its own
+ * message -- "sign in" would be wrong instruction for a script that cannot.
+ * No token configured at all (`KMT_MONITOR_TOKEN` unset) reads 404: the
+ * route does not exist yet rather than existing half-protected, the same
+ * choice `readMonitorConfig`'s doc comment explains.
+ *
+ * The response shape is DEV OPS's contract: `{ smtp, checkedAt, error }`,
+ * `smtp` one of `ok`/`failing`/`unknown`. `checkedAt` is whatever
+ * `probeSmtp` last set -- before the first probe finishes, that is `null`,
+ * which is deliberately how a monitor tells "never probed" from "probed and
+ * fine" apart, since a `checkedAt` that is merely old is unreadable as
+ * staleness by anyone but the monitor itself (it owns the interval it
+ * expects, this route does not).
+ */
+export function createMailStatusApi(mailer, monitorConfig, { isAuthorized } = {}) {
+  const authorized = isAuthorized || (() => false)
+  return async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (url.pathname !== MAIL_STATUS_PATH) return false
+    if (!monitorConfig.token) return false
+
+    if (request.method !== 'GET') {
+      response.writeHead(405, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Allow: 'GET' })
+      response.end(JSON.stringify({ error: 'mail-status is a GET.' }))
+      return true
+    }
+    if (!authorized(request)) {
+      response.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+      response.end(JSON.stringify({ error: 'Missing or wrong bearer token.' }))
+      return true
+    }
+
+    // DEV OPS's contract names the field `smtp`; `mailer.smtpStatus` calls it
+    // `status` internally, where "smtp" would be redundant next to the class
+    // it already hangs off of. Translated here rather than renaming the
+    // internal field for one external consumer's naming.
+    const { status, checkedAt, error } = mailer.smtpStatus
+    response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+    response.end(JSON.stringify({ smtp: status, checkedAt, error }))
     return true
   }
 }

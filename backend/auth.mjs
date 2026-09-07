@@ -76,8 +76,15 @@ export function memorySessionStore() {
 
 const b64 = (value) => Buffer.from(value).toString('base64url')
 
-/** Constant-time compare that tolerates different lengths without throwing. */
-function equals(a, b) {
+/**
+ * Constant-time compare that tolerates different lengths without throwing.
+ *
+ * Exported for `readMonitorConfig`/`isMonitorAuthorized` below: a monitoring
+ * token is a leaked-secret risk of its own (it costs a status read, not the
+ * workspace), and the same discipline that protects the owner password
+ * costs nothing extra to reuse rather than re-implement.
+ */
+export function equals(a, b) {
   const left = Buffer.from(String(a))
   const right = Buffer.from(String(b))
   if (left.length !== right.length) {
@@ -176,6 +183,50 @@ export function readSessionSigningConfig(env = process.env) {
   }
 
   return { secret, ttlMs: hours * 3600_000 }
+}
+
+/**
+ * The mail-status route's bearer token, read separately from everything
+ * above it.
+ *
+ * Deliberately not `issue`/`verify` below, and not derived from
+ * `KMT_SESSION_SECRET`: those tokens are short-lived and signed, made to
+ * expire. A monitoring token has to be long-lived -- nobody is going to
+ * re-mint it every two hours the way the import bookmarklet is re-pasted --
+ * so it is a standalone shared secret instead, `KMT_MONITOR_TOKEN`, compared
+ * literally rather than verified as a signature. The reason this matters:
+ * if it derived from `KMT_SESSION_SECRET`, revoking a leaked monitor token
+ * would mean rotating that secret and signing Ken out of his own workspace.
+ * A standalone secret costs nothing to revoke -- unset it, or set a new one --
+ * which is the whole argument for a token over an open endpoint in the
+ * first place.
+ *
+ * Unset by default and that is fine: the route this gates answers 404 until
+ * a token exists, the same way the server runs fine before KMT_SESSION_SECRET
+ * is set. Setting it is a Fly secret, which restarts the machine -- stage it
+ * for a deploy that was going to happen anyway (#285: a restart can strand
+ * in-flight mail).
+ */
+export function readMonitorConfig(env = process.env) {
+  const token = (env.KMT_MONITOR_TOKEN || '').trim()
+  return { token: token || null }
+}
+
+/**
+ * Whether a request carries the mail-status token, the same bearer shape
+ * `isImportAuthorized` uses (`Authorization: Bearer <token>`) but checked
+ * against the standalone secret above rather than a signed, purpose-scoped
+ * token -- there is no session for this to be scoped against.
+ *
+ * No token configured means no caller can ever be authorised, which is what
+ * makes the route 404 rather than exist half-protected before the secret is
+ * set.
+ */
+export function isMonitorAuthorized(config, request) {
+  if (!config.token) return false
+  const header = request.headers.authorization || ''
+  if (!header.startsWith('Bearer ')) return false
+  return equals(header.slice(7).trim(), config.token)
 }
 
 const sign = (secret, value) => createHmac('sha256', secret).update(value).digest('base64url')

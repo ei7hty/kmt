@@ -7,7 +7,8 @@ import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
-import { createApi, createCatalogApi, createHealthApi, createRequestsApi } from './api.mjs'
+import { createApi, createCatalogApi, createHealthApi, createMailStatusApi, createRequestsApi } from './api.mjs'
+import { isMonitorAuthorized, readMonitorConfig } from './auth.mjs'
 import { Quotes } from './quotes.mjs'
 import { Outbox } from './outbox.mjs'
 import { createMailer, describeMail } from './mail.mjs'
@@ -35,6 +36,13 @@ const catalogApi = createCatalogApi(inventory)
 // The platform's health check, mounted here too so the local server and the
 // hosted one answer the same routes.
 const healthApi = createHealthApi(inventory)
+// Mounted here too, so KMT_MONITOR_TOKEN can be exercised against the local
+// server the same way it is against the hosted one -- see server.mjs.
+const monitorConfig = readMonitorConfig()
+const mailStatusApi = createMailStatusApi(mailer, monitorConfig, {
+  isAuthorized: (request) => isMonitorAuthorized(monitorConfig, request),
+})
+const smtpProbeTimer = mailer.startSmtpProbe()
 // Requests and their quotes live in the same database as inventory. The same
 // limits as the hosted server, so a local run trips over them before a deploy does.
 const publicLimiter = new RateLimiter()
@@ -52,6 +60,7 @@ const server = createHttpServer(async (request, response) => {
     response.writeHead(403); response.end('Local owner workspace only'); return
   }
   if (await healthApi(request, response)) return
+  if (await mailStatusApi(request, response)) return
   if (await catalogApi(request, response)) return
   if (await requestsApi(request, response)) return
   if (await inquiriesApi(request, response)) return
@@ -72,6 +81,7 @@ async function shutdown() {
   if (stopping) return
   stopping = true
   if (refresher.active) { refresher.cancel(); await refresher.done }
+  clearInterval(smtpProbeTimer)
   server.close()
   await vite.close()
   inventory.close()
