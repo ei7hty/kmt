@@ -259,3 +259,86 @@ test('reopening a t36 database a second time changes nothing further', t => {
     'nothing is left unbackfilled after the first open',
   )
 })
+
+/* --------------------------------------------- decided_by (#290 schema half) --- */
+
+test('the deployed schema has no decided_by, and opening it adds one that reads null', t => {
+  const fixture = deployedDatabase(t)
+  const before = fixture.raw().prepare('PRAGMA table_info(quotes)').all().map(column => column.name)
+  assert.ok(!before.includes('decided_by'), 'the fixture must predate the column, or this test proves nothing')
+
+  const { inventory } = fixture.open()
+  const after = inventory.db.prepare('PRAGMA table_info(quotes)').all().map(column => column.name)
+  assert.ok(after.includes('decided_by'), 'migrate() adds it')
+
+  const row = inventory.db.prepare('SELECT decided_by FROM quotes WHERE id=?').get('q-old')
+  assert.equal(row.decided_by, null,
+    "a quote decided before the column existed has no recorded actor, and back-filling one would invent a record")
+})
+
+/**
+ * The rebuild path must carry `decided_by` forward.
+ *
+ * This is the test for the change that made the rebuild's column list
+ * dynamic. Before it, that list was written by hand and named neither
+ * `decided_by` nor the two draft columns -- which was harmless while every
+ * unnamed column could be re-derived from `payload`, and stops being harmless
+ * the moment one cannot. A quote knows its total; it cannot work out who
+ * approved it.
+ *
+ * So the fixture is the awkward middle case that will actually exist in
+ * production between now and the next status widening: a table that already
+ * carries `decided_by` with a real value in it, and still has an old CHECK
+ * that forces a rebuild.
+ */
+test('a status widening does not discard who decided: the rebuild copies decided_by forward', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'kmt-migration-decided-'))
+  const opened = []
+  t.after(() => {
+    for (const handle of opened.reverse()) { try { handle.close() } catch { /* already closed */ } }
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  const file = join(dir, 'kmt.db')
+  const seed = new DatabaseSync(file)
+  // The old CHECK, so migrate() takes the rebuild path -- but with the column
+  // present and populated, which is the state this test exists for.
+  seed.exec(`
+    CREATE TABLE requests (
+      id TEXT PRIMARY KEY, customer_key TEXT NOT NULL, payload TEXT NOT NULL,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE quotes (
+      id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES requests(id),
+      payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
+      version INTEGER NOT NULL DEFAULT 1, reason TEXT, decided_by TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      CHECK(status IN ('draft', 'approved', 'rejected', 'paid'))
+    );
+  `)
+  seed.prepare('INSERT INTO requests VALUES (?, ?, ?, ?, ?)')
+    .run(REQUEST_ID, 'a1b2c3d4e5f60718', JSON.stringify({ vehicleInfo: 'TEST' }), STAMP, STAMP)
+  seed.prepare(`INSERT INTO quotes
+      (id, request_id, payload, status, version, reason, decided_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run('q-decided', REQUEST_ID, QUOTE_PAYLOAD, 'approved', 2, null, 'owner:ken@kensmobiletire.com', STAMP, STAMP)
+  seed.close()
+
+  const inventory = new Inventory(file, ['215/60R16'])
+  opened.push(inventory)
+  new Quotes(inventory)
+
+  const row = inventory.db.prepare('SELECT status, version, decided_by FROM quotes WHERE id=?').get('q-decided')
+  assert.equal(row.decided_by, 'owner:ken@kensmobiletire.com',
+    'the rebuild must carry decided_by forward -- it cannot be re-derived from anything')
+  assert.equal(row.status, 'approved', 'and the rest of the row is unchanged')
+  assert.equal(row.version, 2)
+
+  // And the widening actually happened, so this really did take the rebuild
+  // path rather than passing because nothing ran.
+  const stored = inventory.db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='quotes'").get().sql
+  for (const status of QUOTE_STATUSES) {
+    assert.ok(stored.includes(`'${status}'`), `the rebuilt CHECK carries ${status}`)
+  }
+})

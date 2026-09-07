@@ -353,6 +353,27 @@ function cleanRequest(input, today) {
  * rows that were approved before that was true. Dropping it from this list
  * would not tidy the vocabulary, it would make those rows unreadable.
  */
+/**
+ * Who performed an owner decision, recorded in `quotes.decided_by`.
+ *
+ * Today the owner screen is behind one shared password, so the system cannot
+ * say *which person* approved a quote -- only that somebody holding that
+ * password did. **"Ken approved this quote" is not a fact this system can
+ * produce**, and that is a hole in the product's central promise rather than a
+ * login inconvenience: the owner approval gate is what stands between a draft
+ * and a customer being charged, and nothing records who operated it.
+ *
+ * This constant is the honest answer until Google sign-in lands (#290): rows
+ * decided under the shared credential say so, and rows decided afterwards
+ * carry the verified address. Both are true statements about how the decision
+ * was authorised, and telling them apart later is the whole reason the column
+ * exists now rather than after months of decisions nobody can attribute.
+ *
+ * `moveTo` takes an `actor` so the sign-in work has a seam to fill; until then
+ * every owner decision falls back to this.
+ */
+export const SHARED_PASSWORD_ACTOR = 'owner:shared-password'
+
 export const QUOTE_STATUSES = [
   'draft', 'sent', 'approved', 'rejected', 'paid', 'done', 'cancelled',
 ]
@@ -390,6 +411,7 @@ const QUOTES_COLUMNS = `
   payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
   version INTEGER NOT NULL DEFAULT 1, reason TEXT,
   draft_line_items TEXT, draft_total_cents INTEGER,
+  decided_by TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   CHECK(status IN (${QUOTE_STATUSES.map(status => `'${status}'`).join(', ')}))
 `
@@ -450,13 +472,28 @@ export class Quotes {
       try {
         this.transaction(() => {
           this.db.exec(`CREATE TABLE quotes_migrating (${QUOTES_COLUMNS})`)
-          // Named columns, not SELECT *: older tables do not carry every
-          // column the current table does.
+          // Copy forward every column both tables have, read off the tables
+          // themselves rather than named by hand.
+          //
+          // This used to be a hand-written list, which was correct when the
+          // only columns it could lose were `draft_line_items` and
+          // `draft_total_cents` -- both re-derived from `payload` by the
+          // additive step below, so dropping them cost nothing. `decided_by`
+          // broke that: it cannot be re-derived from anything, so the next
+          // status widening would have silently discarded who decided every
+          // existing quote, in the one place where "it passed every test and
+          // failed in production" is this file's own documented history.
+          //
+          // Reading the new shape from `quotes_migrating` and the old shape
+          // from `quotes` keeps the two in step with no second list to
+          // maintain: a column present in both is carried, one only in the new
+          // shape is left to its default, and the next column added is
+          // preserved without anyone remembering this comment.
+          const target = this.db.prepare('PRAGMA table_info(quotes_migrating)').all().map(column => column.name)
+          const source = new Set(this.db.prepare('PRAGMA table_info(quotes)').all().map(column => column.name))
+          const carried = target.filter(column => source.has(column)).join(', ')
           this.db.exec(`
-            INSERT INTO quotes_migrating
-              (id, request_id, payload, status, version, reason, created_at, updated_at)
-            SELECT id, request_id, payload, status, version, NULL, created_at, updated_at
-            FROM quotes;
+            INSERT INTO quotes_migrating (${carried}) SELECT ${carried} FROM quotes;
             DROP TABLE quotes;
             ALTER TABLE quotes_migrating RENAME TO quotes;
             CREATE INDEX IF NOT EXISTS quotes_request ON quotes(request_id);
@@ -470,6 +507,13 @@ export class Quotes {
     const columns = new Set(this.db.prepare('PRAGMA table_info(quotes)').all().map(column => column.name))
     if (!columns.has('draft_line_items')) this.db.exec('ALTER TABLE quotes ADD COLUMN draft_line_items TEXT')
     if (!columns.has('draft_total_cents')) this.db.exec('ALTER TABLE quotes ADD COLUMN draft_total_cents INTEGER')
+    // Who decided. Nullable and left null on existing rows on purpose: a quote
+    // decided before this column existed genuinely has no recorded actor, and
+    // back-filling `SHARED_PASSWORD_ACTOR` would invent a record rather than
+    // admit its absence. Null means "we did not record it"; the constant means
+    // "we recorded that it was the shared credential". Those are different
+    // claims and the difference is the point.
+    if (!columns.has('decided_by')) this.db.exec('ALTER TABLE quotes ADD COLUMN decided_by TEXT')
     const missing = this.db.prepare('SELECT id, payload FROM quotes WHERE draft_line_items IS NULL OR draft_total_cents IS NULL').all()
     const saveDraft = this.db.prepare('UPDATE quotes SET draft_line_items=?, draft_total_cents=? WHERE id=?')
     for (const row of missing) {
@@ -589,6 +633,14 @@ export class Quotes {
             // reason. Every screen that shows a closed request reads it here
             // rather than each one inventing a place to keep it.
             reason: quote.reason ?? null,
+            // Who decided, owner-side only. Deliberately spread in rather than
+            // listed unconditionally: the quote half of this shape is not
+            // audience-partitioned the way the request half is (see the
+            // comment above `shapeRow`, and .forge/personal-data-removal.md
+            // finding 1), so a field added plainly here reaches the shareable
+            // customer link. Nothing about who operates the owner screen is a
+            // customer's business.
+            ...(audience === 'owner' ? { decidedBy: quote.decided_by ?? null } : {}),
             createdAt: quote.created_at, updatedAt: quote.updated_at,
           }
         : null,
@@ -766,7 +818,7 @@ export class Quotes {
    * they share is only this: a version, the statuses the move is legal from,
    * and a sentence for when it is not.
    */
-  moveTo(id, version, { to, from, reason = null, refused, audience = 'customer' }) {
+  moveTo(id, version, { to, from, reason = null, refused, audience = 'customer', actor = null }) {
     if (!Number.isInteger(version) || version < 0) {
       throw new InputError('Send the version you were shown, so a stale screen cannot overwrite a newer decision.')
     }
@@ -783,10 +835,21 @@ export class Quotes {
 
       // A reason is only ever added, never cleared: a row that carries why it
       // was closed should not lose that to a later write which had none.
+      //
+      // `decided_by` follows the same COALESCE rule, and for a sharper reason:
+      // a quote goes draft -> sent (owner) -> paid (customer) -> done (owner),
+      // and this is one column holding one value. Writing it on every
+      // transition would let the customer's payment overwrite who sent the
+      // quote -- destroying the exact fact the column exists to keep. So only
+      // an owner decision writes it, and only when it has an actor to write.
+      // `audience` already tells us which this is: `decide`, `finish` and
+      // `cancel` pass 'owner', while the customer's own cancel does not.
+      const decidedBy = audience === 'owner' ? (actor ?? SHARED_PASSWORD_ACTOR) : null
       this.db.prepare(`UPDATE quotes
-          SET status=?, reason=COALESCE(?, reason), version=version+1, updated_at=?
+          SET status=?, reason=COALESCE(?, reason), decided_by=COALESCE(?, decided_by),
+              version=version+1, updated_at=?
           WHERE id=?`)
-        .run(to, reason, now(), found.quote.id)
+        .run(to, reason, decidedBy, now(), found.quote.id)
       return this.get(id, audience)
     })
   }

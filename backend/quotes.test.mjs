@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
-import { FORM_FIELDS, Quotes, REQUEST_NON_PERSONAL_FIELDS, REQUEST_PERSONAL_DATA_KEYS, todayInServiceArea } from './quotes.mjs'
+import { FORM_FIELDS, Quotes, REQUEST_NON_PERSONAL_FIELDS, REQUEST_PERSONAL_DATA_KEYS, SHARED_PASSWORD_ACTOR, todayInServiceArea } from './quotes.mjs'
 import { readServiceAreaConfig } from './service-area.mjs'
 import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, readAuthConfig } from './auth.mjs'
@@ -1423,4 +1423,88 @@ test('the Host guard refuses a strange host, and never the health check', async 
 
   // Unset means accept anything, which is what a local run does.
   assert.equal(isHostAllowed('anything', '/', []), true)
+})
+
+/* ------------------------------------------------ who decided (#290, schema) --- */
+
+test('an owner decision records who made it; today that is the shared credential', t => {
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form())
+
+  const sent = quotes.decide(request.id, 'sent', 1)
+  assert.equal(sent.quote.decidedBy, SHARED_PASSWORD_ACTOR,
+    "one shared password means the system can say a decision was authorised, not by whom")
+})
+
+test('a customer paying does not overwrite who sent the quote', t => {
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form())
+  quotes.decide(request.id, 'sent', 1)
+
+  quotes.pay(request.id)
+
+  // The column holds one value and the lifecycle has several transitions:
+  // draft -> sent (owner) -> paid (customer) -> done (owner). If every
+  // transition wrote it, payment would erase the approval this exists to
+  // record.
+  const owned = quotes.get(request.id, 'owner')
+  assert.equal(owned.quote.status, 'paid')
+  assert.equal(owned.quote.decidedBy, SHARED_PASSWORD_ACTOR,
+    "the approval survives the payment that followed it")
+})
+
+test('a customer cancelling their own request does not write an owner actor', t => {
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form())
+
+  quotes.cancelByCustomer(request.id, 'Changed my mind')
+
+  const owned = quotes.get(request.id, 'owner')
+  assert.equal(owned.quote.status, 'cancelled')
+  assert.equal(owned.quote.decidedBy, null,
+    "the customer closed this, and recording them as the deciding owner would be false")
+})
+
+test('marking a paid job done records the owner again', t => {
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form())
+  quotes.decide(request.id, 'sent', 1)
+  quotes.pay(request.id)
+
+  const done = quotes.finish(request.id, quotes.get(request.id, 'owner').quote.version)
+  assert.equal(done.quote.status, 'done')
+  assert.equal(done.quote.decidedBy, SHARED_PASSWORD_ACTOR)
+})
+
+/**
+ * The seam #290's sign-in half fills.
+ *
+ * `moveTo` takes an actor so that, once a verified Google identity exists,
+ * the decision carries the person rather than the credential. Nothing passes
+ * one today, which is why every test above sees the fallback -- but the seam
+ * has to work before the sign-in work depends on it.
+ */
+test('moveTo records a supplied actor instead of the fallback', t => {
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form())
+
+  quotes.moveTo(request.id, 1, {
+    to: 'sent', from: ['draft'], refused: () => 'no', audience: 'owner',
+    actor: 'owner:ken@kensmobiletire.com',
+  })
+
+  assert.equal(quotes.get(request.id, 'owner').quote.decidedBy, 'owner:ken@kensmobiletire.com')
+})
+
+test('who operates the owner screen never reaches the customer shape', t => {
+  const { quotes } = setup(t)
+  const { request } = quotes.submit(form())
+  quotes.decide(request.id, 'sent', 1)
+
+  // The quote half of shapeRow is not audience-partitioned the way the
+  // request half is, so a field added plainly there reaches the shareable
+  // link (.forge/personal-data-removal.md, finding 1). This one is not.
+  const customer = quotes.get(request.id)
+  assert.equal('decidedBy' in customer.quote, false, 'not merely null -- absent')
+  assert.equal(quotes.get(request.id, 'owner').quote.decidedBy, SHARED_PASSWORD_ACTOR)
 })
