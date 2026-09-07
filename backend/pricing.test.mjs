@@ -191,6 +191,28 @@ test('a perTire catalogue line multiplies by quantity; a perJob line does not', 
   assert.equal(perJobLine.quantity, 1)
 })
 
+test('subtotal + tax = total holds across every catalogue shape, not just the empty-catalogue no-op (#354, per review)', () => {
+  // Stage 1 is inert until the catalogue has entries, which makes "nothing
+  // changed" the easy half of testing it -- the fixture that never feeds a
+  // real entry through would pass whether or not the arithmetic was right.
+  // Each of these actually puts a line through calculateDraftQuote and
+  // checks the invariant on the result, not on a hand-built object.
+  const invariantHolds = quote => {
+    const taxAmount = quote.tax?.amount ?? 0
+    assert.equal(roundToCents(quote.subtotal + taxAmount), quote.total, `subtotal (${quote.subtotal}) + tax (${taxAmount}) should equal total (${quote.total})`)
+  }
+
+  const settings = normalizePricingSettings({ tax: { rate: 0.1, appliesTo: 'goods' } })
+  const automaticPerTire = line({ id: 'install', basis: 'perTire', mode: 'automatic', taxable: true })
+  const optionalPerJob = line({ id: 'nitrogen', label: 'Nitrogen fill', basis: 'perJob', mode: 'optional', taxable: false })
+
+  invariantHolds(calculateDraftQuote(request({ quantity: 4 }), [tire()], settings, [automaticPerTire]))
+  invariantHolds(calculateDraftQuote(request({ quantity: 4 }), [tire()], settings, [automaticPerTire, optionalPerJob], ['nitrogen']))
+  invariantHolds(calculateDraftQuote(request({ quantity: 4 }), [tire()], settings, [automaticPerTire, optionalPerJob], []))
+  invariantHolds(calculateDraftQuote(request({ quantity: 2, disposeOldTires: true }), [tire()], normalizePricingSettings({ disposalFee: 10, tax: { rate: 0.0625, appliesTo: 'all' } }), [automaticPerTire, optionalPerJob], ['nitrogen']))
+  invariantHolds(calculateDraftQuote(request(), [tire()], DEFAULT_PRICING_SETTINGS, [automaticPerTire])) // tax off entirely
+})
+
 test('a catalogue line\'s own taxable flag governs it, regardless of appliesTo -- #354\'s correction to #335', () => {
   // taxable:true still taxes the line even though appliesTo is 'goods' and
   // installation is neither a tire nor a service classification -- the
