@@ -852,12 +852,28 @@ test('a minted session respects its own ttl and the store it was minted into', a
   const sessions = memorySessionStore()
 
   // Default ttl comes from config, the same one the server would issue.
+  // The clock is read once, before minting, and compared against that fixed
+  // value rather than a fresh Date.now() at assert time -- re-reading it here
+  // makes the assertion "less than a second has passed since minting", which
+  // a suite that spawns real servers can occasionally lose (TECHNICAL
+  // ARCHITECT's diagnosis of a flake reported against this test).
+  const before = Date.now()
   const defaultTtl = mintSession(config, sessions)
-  assert.ok(defaultTtl.expiresAt > Date.now() + config.ttlMs - 1000)
+  assert.ok(defaultTtl.expiresAt > before + config.ttlMs - 1000)
 
-  // An explicit ttl overrides it -- the CLI's --hours flag.
+  // An explicit ttl overrides the default -- the CLI's --hours flag. Checked
+  // with a ttl comfortably longer than any test-runner overhead: a second,
+  // independent race turned up empirically while fixing the first one above
+  // -- a 1ms ttl checked immediately for "still valid" can itself have
+  // expired by the time the assertion runs, on exactly the same loaded-suite
+  // timing that caused the flake up top. Nothing about a longer ttl weakens
+  // what this line is proving (that an explicit ttl overrides the default).
+  const valid = mintSession(config, sessions, 60_000)
+  assert.equal(isAuthenticatedWith(config, sessions, valid), true)
+
+  // Expiry itself needs a genuinely short ttl, minted separately so it
+  // cannot be confused with the override check above.
   const brief = mintSession(config, sessions, 1)
-  assert.equal(isAuthenticatedWith(config, sessions, brief), true)
   await new Promise(resolve => setTimeout(resolve, 5))
   assert.equal(isAuthenticatedWith(config, sessions, brief), false, 'a 1ms session expires')
 
