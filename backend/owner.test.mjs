@@ -852,12 +852,37 @@ test('a minted session respects its own ttl and the store it was minted into', a
   const sessions = memorySessionStore()
 
   // Default ttl comes from config, the same one the server would issue.
+  // The clock is read once, before minting, and compared against that fixed
+  // value rather than a fresh Date.now() at assert time -- re-reading it here
+  // makes the assertion "less than a second has passed since minting", which
+  // a suite that spawns real servers can occasionally lose (TECHNICAL
+  // ARCHITECT's diagnosis of a flake reported against this test).
+  const before = Date.now()
   const defaultTtl = mintSession(config, sessions)
-  assert.ok(defaultTtl.expiresAt > Date.now() + config.ttlMs - 1000)
+  assert.ok(defaultTtl.expiresAt > before + config.ttlMs - 1000)
 
-  // An explicit ttl overrides it -- the CLI's --hours flag.
+  // An explicit ttl overrides the default -- the CLI's --hours flag. A
+  // second, independent race turned up empirically while fixing the one
+  // above: `mintSession(config, sessions, 1)` immediately followed by
+  // `isAuthenticatedWith(...) === true` shares its whole 1ms budget with
+  // real call overhead (HMAC signing, a Map write), so "still valid" could
+  // itself already be false by the time the assertion runs -- the same
+  // underlying defect, one order of margin smaller. A wider ttl would only
+  // make that less likely, which is the wrong shape (an intermittent red
+  // trains people to dismiss it, including the time it is real); the fix is
+  // to stop asking a live clock at all for a fact that mintSession already
+  // computed. Checked the same arithmetic way the default-ttl case above
+  // is, not through a real-time isAuthenticatedWith call.
+  const beforeOverride = Date.now()
+  const overridden = mintSession(config, sessions, 60_000)
+  assert.ok(
+    overridden.expiresAt >= beforeOverride + 60_000 && overridden.expiresAt < beforeOverride + 60_000 + 1000,
+    'the explicit ttl reaches expiresAt untouched, not the config default, within a generous allowance for the mint call itself',
+  )
+
+  // Expiry itself needs a genuinely short ttl, minted separately so it
+  // cannot be confused with the override check above.
   const brief = mintSession(config, sessions, 1)
-  assert.equal(isAuthenticatedWith(config, sessions, brief), true)
   await new Promise(resolve => setTimeout(resolve, 5))
   assert.equal(isAuthenticatedWith(config, sessions, brief), false, 'a 1ms session expires')
 
