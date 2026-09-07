@@ -161,6 +161,67 @@ export class Mailer {
     this.templates = templates
     this.log = log
     this.inFlight = new Set()
+    // The active probe's last result (#285's sibling): unlike the outbox,
+    // this asks whether the seam is alive even when nothing is being sent --
+    // the case that hid the 2026-09-06 outage for two hours, because every
+    // row that would have surfaced it was queued test traffic and nobody
+    // looked. Not persisted: a restart re-probing from scratch is exactly
+    // right, since the question is "right now", not "historically".
+    this.smtpStatus = { status: 'unknown', checkedAt: null, error: 'Not probed yet.' }
+  }
+
+  /**
+   * Ask whether the mail seam can actually authenticate, without sending
+   * anything: `transporter.verify()` opens the connection, performs AUTH,
+   * and disconnects -- no message, no recipient, no quota spent.
+   *
+   * Three states, not two, because "the probe could not run" and "the
+   * probe ran and was refused" are different findings and only one of them
+   * is about the credential. `responseCode` is nodemailer's signal that the
+   * server actually answered (a real SMTP response came back, even a bad
+   * one); its absence means the attempt never got that far -- a timeout, a
+   * DNS failure, a connection refused -- which says nothing about whether
+   * the credential is good. Regenerating an App Password that was never the
+   * problem is exactly the ninety minutes #285's incident report spent.
+   *
+   * With no SMTP configured (the null adapter), there is no seam to ask
+   * about at all -- `unknown`, not `ok`, because "nothing is wrong" and
+   * "nothing was checked" are not the same claim.
+   */
+  async probeSmtp() {
+    const checkedAt = new Date().toISOString()
+    if (this.adapter.name !== 'smtp') {
+      this.smtpStatus = { status: 'unknown', checkedAt, error: 'SMTP is not configured; nothing to probe.' }
+      return this.smtpStatus
+    }
+    try {
+      const transporter = await this.adapter.transport()
+      await transporter.verify()
+      this.smtpStatus = { status: 'ok', checkedAt, error: null }
+    } catch (error) {
+      const answered = Number.isFinite(error?.responseCode)
+      this.smtpStatus = {
+        status: answered ? 'failing' : 'unknown',
+        checkedAt,
+        error: String(error?.message || error).slice(0, 500),
+      }
+    }
+    return this.smtpStatus
+  }
+
+  /**
+   * Start the periodic probe. Five minutes: a healthy `verify()` finishes in
+   * well under a second, so this is not paced by cost -- it is paced to stay
+   * well clear of anything Google might read as unusual traffic against one
+   * mailbox, while still being frequent enough that a revoked credential is
+   * caught within minutes rather than the two hours nobody looked tonight.
+   * Runs once immediately rather than waiting for the first interval, so a
+   * fresh deploy (which #285 means happens on every merge to main) is not
+   * silently `unknown` for five minutes after every restart.
+   */
+  startSmtpProbe(intervalMs = 5 * 60_000) {
+    this.probeSmtp().catch(() => {})
+    return setInterval(() => { this.probeSmtp().catch(() => {}) }, intervalMs)
   }
 
   /** Who a message goes to: the customer on the request, or the owner. */

@@ -38,10 +38,10 @@ import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
-import { createApi, createCatalogApi, createHealthApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
+import { MAIL_STATUS_PATH, createApi, createCatalogApi, createHealthApi, createMailStatusApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { Quotes } from './quotes.mjs'
 import { describeServiceArea, readServiceAreaConfig } from './service-area.mjs'
-import { createAuth, createSessionStore, readAuthConfig } from './auth.mjs'
+import { createAuth, createSessionStore, isMonitorAuthorized, readAuthConfig, readMonitorConfig } from './auth.mjs'
 import { LoginThrottle, RateLimiter } from './limits.mjs'
 import { applySecurityHeaders, assertCanonicalIsAllowed, canonicalRedirectTarget, parseRequestUrl, readRelease } from './site.mjs'
 import { createStaticHandler } from './static.mjs'
@@ -145,6 +145,17 @@ const catalogApi = createCatalogApi(inventory)
 // The platform's health check, mounted here too so the local server and the
 // hosted one answer the same routes.
 const healthApi = createHealthApi(inventory)
+// The monitor's own token, separate from the owner session -- see
+// readMonitorConfig's doc comment in auth.mjs. Unset by default, which is
+// what keeps the route 404 until a token is staged.
+const monitorConfig = readMonitorConfig()
+const mailStatusApi = createMailStatusApi(mailer, monitorConfig, {
+  isAuthorized: (request) => isMonitorAuthorized(monitorConfig, request),
+})
+// Started once at boot, not per-request: a request should read the last
+// probe, not trigger one and wait on an outside server. Cleared in
+// shutdown() so the interval does not keep the process alive past close().
+const smtpProbeTimer = mailer.startSmtpProbe()
 // Requests and their quotes live in the same database as inventory. The three
 // public writes are limited per address, per browser key and per email (#63).
 const publicLimiter = new RateLimiter()
@@ -195,6 +206,13 @@ const server = createServer(async (request, response) => {
       const importCall = url.pathname === '/api/owner/import' &&
         (request.method === 'OPTIONS' || auth.isImportAuthorized(request))
 
+      // The mail-status route carries its own bearer token, checked by the
+      // route itself (401 on a wrong or missing one), not the owner session
+      // cookie -- so it is exempted from the session gate below the same way
+      // importCall is, on path alone. Whether the token is actually right is
+      // createMailStatusApi's job, not this gate's.
+      const monitorCall = url.pathname === MAIL_STATUS_PATH && request.method === 'GET'
+
       // The catalog is what a customer is quoted from, and a customer never
       // signs in. Named in the allow-list in api.mjs rather than by relaxing
       // the check below, so every other route stays refused by default.
@@ -208,12 +226,13 @@ const server = createServer(async (request, response) => {
         return
       }
 
-      if (!publicCall && !importCall && !auth.isAuthenticated(request)) {
+      if (!publicCall && !importCall && !monitorCall && !auth.isAuthenticated(request)) {
         response.writeHead(401, { 'Content-Type': 'application/json' })
         response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' }))
         return
       }
       if (await healthApi(request, response)) return
+      if (await mailStatusApi(request, response)) return
       if (await catalogApi(request, response)) return
       if (await requestsApi(request, response)) return
       if (await inquiriesApi(request, response)) return
@@ -258,6 +277,7 @@ async function shutdown() {
   // Let an in-flight refresh stop cleanly rather than leaving a job row that
   // claims to be running forever.
   if (refresher.active) { refresher.cancel(); await refresher.done }
+  clearInterval(smtpProbeTimer)
   server.close()
   inventory.close()
 }

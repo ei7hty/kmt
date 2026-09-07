@@ -7,7 +7,7 @@ import { createServer, request as httpRequest } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { createApi, createCatalogApi, isPublicApiCall, readJsonBody } from './api.mjs'
-import { createAuth, createImportToken, createSessionStore, memorySessionStore, mintSession, readAuthConfig, readSessionSigningConfig, SESSION_COOKIE_NAME, verifyImportToken } from './auth.mjs'
+import { createAuth, createImportToken, createSessionStore, isMonitorAuthorized, memorySessionStore, mintSession, readAuthConfig, readMonitorConfig, readSessionSigningConfig, SESSION_COOKIE_NAME, verifyImportToken } from './auth.mjs'
 import { LoginThrottle } from './limits.mjs'
 import { PageImporter } from './import.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
@@ -1055,6 +1055,33 @@ test('import tokens cannot be swapped for session tokens', () => {
   assert.equal(auth.isImportAuthorized({ headers: { authorization: `Bearer ${importToken}` } }), true)
   assert.equal(auth.isImportAuthorized({ headers: { authorization: 'Bearer nonsense' } }), false)
   assert.equal(auth.isImportAuthorized({ headers: {} }), false)
+})
+
+test('a session-derived token is not accepted as a mail-status monitor token', () => {
+  const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'secret-one' }
+  const config = readAuthConfig(env)
+  const importToken = createImportToken(config)
+  const monitorConfig = readMonitorConfig({ KMT_MONITOR_TOKEN: 'a-real-monitor-token' })
+
+  // A signed, purpose-scoped token minted from KMT_SESSION_SECRET -- of any
+  // purpose, import included -- must not unlock the monitor route: the
+  // monitor token is a standalone shared secret, not verified against that
+  // signature at all, the same separation import tokens and session tokens
+  // get above.
+  assert.equal(
+    isMonitorAuthorized(monitorConfig, { headers: { authorization: `Bearer ${importToken}` } }),
+    false,
+  )
+  assert.equal(
+    isMonitorAuthorized(monitorConfig, { headers: { authorization: 'Bearer a-real-monitor-token' } }),
+    true,
+  )
+  assert.equal(isMonitorAuthorized(monitorConfig, { headers: { authorization: 'Bearer nonsense' } }), false)
+  assert.equal(isMonitorAuthorized(monitorConfig, { headers: {} }), false)
+  // No token configured: nobody is ever authorized, which is what keeps the
+  // route 404 rather than open until KMT_MONITOR_TOKEN is set.
+  const unconfigured = readMonitorConfig({})
+  assert.equal(isMonitorAuthorized(unconfigured, { headers: { authorization: 'Bearer anything' } }), false)
 })
 
 /* ------------------------------------------------------------------ catalog */

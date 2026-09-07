@@ -6,7 +6,8 @@ import { Quotes } from './quotes.mjs'
 import { Outbox, OUTBOX_PERSONAL_DATA_KEYS } from './outbox.mjs'
 import { Mailer, NullAdapter, SmtpAdapter, addressLabel, describeMail, readMailConfig } from './mail.mjs'
 import { MAIL_TYPES, TEMPLATES } from './mail-templates.mjs'
-import { createApi, createRequestsApi } from './api.mjs'
+import { createApi, createMailStatusApi, createRequestsApi } from './api.mjs'
+import { isMonitorAuthorized, readMonitorConfig } from './auth.mjs'
 
 const SIZE = '215/60R16'
 const tire = (id = 'giga-a') => ({ id, name: 'Test Touring', size: SIZE, price: 50, inStock: true, category: 'all-season', description: '95H BSW',
@@ -425,4 +426,235 @@ test('every email links what it asks the reader to do', () => {
     }
     assert.doesNotMatch(text, /<a /, `${type}: the plain-text part stays plain`)
   }
+})
+
+/* -------------------------------------------------------------- SMTP probe */
+
+/** A transporter whose verify() answers as told; no socket is ever opened. */
+function fakeVerify(outcome) {
+  const transporter = { async verify() { if (outcome instanceof Error) throw outcome; return true } }
+  return new SmtpAdapter({ host: 'smtp-relay.gmail.com', port: 587, user: 'u', password: 'p', transporter })
+}
+
+test('probeSmtp reports ok when verify() succeeds', async t => {
+  const { mailer } = world(t, { adapter: fakeVerify('ok') })
+  const result = await mailer.probeSmtp()
+  assert.equal(result.status, 'ok')
+  assert.equal(result.error, null)
+  assert.ok(result.checkedAt)
+  assert.equal(mailer.smtpStatus, result, 'the mailer keeps the latest result, not a copy')
+})
+
+test('probeSmtp reports failing when the server answers with a real SMTP response code', async t => {
+  // 535 5.7.8, the exact failure from the 2026-09-06 outage this whole
+  // feature exists to catch: the credential was rejected, and nodemailer's
+  // error carries the code the server actually sent.
+  const error = Object.assign(new Error('Invalid login: 535-5.7.8 Username and Password not accepted'), { responseCode: 535 })
+  const { mailer } = world(t, { adapter: fakeVerify(error) })
+  const result = await mailer.probeSmtp()
+  assert.equal(result.status, 'failing')
+  assert.match(result.error, /535/)
+})
+
+test('probeSmtp reports unknown, not failing, when the probe never got an answer', async t => {
+  // A timeout or DNS failure carries no responseCode -- nothing was asked
+  // and answered "no", the probe simply could not complete. Reporting this
+  // as "failing" would tell a monitor the credential is bad when the real
+  // problem might be the network between here and the mail server.
+  const error = new Error('connect ETIMEDOUT')
+  const { mailer } = world(t, { adapter: fakeVerify(error) })
+  const result = await mailer.probeSmtp()
+  assert.equal(result.status, 'unknown')
+  assert.match(result.error, /ETIMEDOUT/)
+})
+
+test('probeSmtp reports unknown without probing when mail is not configured for SMTP', async t => {
+  const { mailer } = world(t, { adapter: new NullAdapter() })
+  const result = await mailer.probeSmtp()
+  assert.equal(result.status, 'unknown')
+  assert.match(result.error, /not configured/)
+})
+
+test('before the first probe, smtpStatus is unknown with no checkedAt', async t => {
+  const { mailer } = world(t, { adapter: fakeVerify('ok') })
+  assert.equal(mailer.smtpStatus.status, 'unknown')
+  assert.equal(mailer.smtpStatus.checkedAt, null)
+})
+
+/* --------------------------------------------------------- mail-status API */
+
+function mailStatusServer(t, { mailer, token = 'a-real-monitor-token' }) {
+  const monitorConfig = readMonitorConfig({ KMT_MONITOR_TOKEN: token })
+  const mailStatusApi = createMailStatusApi(mailer, monitorConfig, {
+    isAuthorized: request => isMonitorAuthorized(monitorConfig, request),
+  })
+  const server = createServer(async (req, res) => { if (await mailStatusApi(req, res)) return; res.writeHead(404); res.end() })
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({
+    base: `http://127.0.0.1:${server.address().port}`,
+    close: () => new Promise(r => server.close(r)),
+  })))
+}
+
+test('the mail-status route answers the probed status only with the right bearer token', async t => {
+  const { mailer } = world(t, { adapter: fakeVerify('ok') })
+  await mailer.probeSmtp()
+  const { base, close } = await mailStatusServer(t, { mailer })
+  t.after(close)
+
+  const unauthorized = await fetch(base + '/api/mail-status')
+  assert.equal(unauthorized.status, 401)
+
+  const wrong = await fetch(base + '/api/mail-status', { headers: { Authorization: 'Bearer nope' } })
+  assert.equal(wrong.status, 401)
+
+  const ok = await fetch(base + '/api/mail-status', { headers: { Authorization: 'Bearer a-real-monitor-token' } })
+  assert.equal(ok.status, 200)
+  const body = await ok.json()
+  // DEV OPS's contract: { smtp, checkedAt, error }, smtp not status.
+  assert.deepEqual(Object.keys(body).sort(), ['checkedAt', 'error', 'smtp'])
+  assert.equal(body.smtp, 'ok')
+  assert.equal(body.error, null)
+  assert.ok(body.checkedAt)
+})
+
+test('the mail-status route is a GET only', async t => {
+  const { mailer } = world(t, { adapter: fakeVerify('ok') })
+  const { base, close } = await mailStatusServer(t, { mailer })
+  t.after(close)
+  const posted = await fetch(base + '/api/mail-status', { method: 'POST', headers: { Authorization: 'Bearer a-real-monitor-token' } })
+  assert.equal(posted.status, 405)
+})
+
+test('the mail-status route does not exist at all when no token is configured', async t => {
+  const { mailer } = world(t, { adapter: fakeVerify('ok') })
+  const { base, close } = await mailStatusServer(t, { mailer, token: '' })
+  t.after(close)
+  const response = await fetch(base + '/api/mail-status', { headers: { Authorization: 'Bearer anything' } })
+  assert.equal(response.status, 404, 'unconfigured means the route does not exist, not that it exists half-protected')
+})
+
+/* ------------------------------------------------ unresolved-failures route */
+
+function ownerApiServer(t, { quotes, mailer }) {
+  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer })
+  const server = createServer(async (req, res) => { if (await ownerApi(req, res)) return; res.writeHead(404); res.end() })
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({
+    base: `http://127.0.0.1:${server.address().port}`,
+    close: () => new Promise(r => server.close(r)),
+  })))
+}
+
+test('GET /api/owner/outbox/unresolved-failures answers only unresolved failed rows, not the general recent-messages window', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+
+  const { request } = quotes.submit(form())
+  outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'queued' }, to: 'a@b.c', toName: 'A' })
+  const failed = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'will fail' }, to: 'a@b.c', toName: 'A' })
+  outbox.updateStatus(failed.id, { status: 'failed', error: '535 5.7.8 credential dead' })
+  const settled = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'already handled' }, to: 'a@b.c', toName: 'A' })
+  outbox.updateStatus(settled.id, { status: 'failed', error: 'old incident' })
+  outbox.resolve(settled.id, 'handled earlier tonight')
+
+  const response = await fetch(base + '/api/owner/outbox/unresolved-failures?limit=200')
+  assert.equal(response.status, 200)
+  const { messages } = await response.json()
+  assert.equal(messages.length, 1, 'the queued row and the resolved failure are both excluded')
+  assert.equal(messages[0].id, failed.id)
+  assert.equal(messages[0].error, '535 5.7.8 credential dead')
+})
+
+test('GET /api/owner/outbox/unresolved-failures is a real query, not the general list scrolled past', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+  const { request } = quotes.submit(form())
+
+  const failure = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'x' }, to: 'a@b.c', toName: 'A' })
+  outbox.updateStatus(failure.id, { status: 'failed', error: 'still unresolved' })
+  for (let i = 0; i < 210; i++) {
+    outbox.record({ requestId: request.id, type: 'request-received', data: { note: `q${i}` }, to: 'a@b.c', toName: 'A' })
+  }
+
+  const generalList = await (await fetch(base + '/api/owner/outbox?limit=200')).json()
+  assert.equal(generalList.messages.some(m => m.id === failure.id), false,
+    'sanity check: the general recency-windowed route really has scrolled past the failure by now')
+
+  const unresolved = await (await fetch(base + '/api/owner/outbox/unresolved-failures?limit=200')).json()
+  assert.equal(unresolved.messages.length, 1)
+  assert.equal(unresolved.messages[0].id, failure.id, 'the failure-filtered route still sees it')
+})
+
+/* -------------------------------------------------------------- resolve route */
+
+test('POST /api/owner/outbox/:id/resolve settles a row and takes it out of unresolved-failures', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+  const { request } = quotes.submit(form())
+  const failure = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'x' }, to: 'a@b.c', toName: 'A' })
+  outbox.updateStatus(failure.id, { status: 'failed', error: '535 5.7.8 credential dead' })
+
+  const resolved = await (await fetch(`${base}/api/owner/outbox/${failure.id}/resolve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note: 'credential rotated' }),
+  })).json()
+  assert.equal(resolved.status, 'failed', 'status is untouched -- the attempt really was rejected')
+  assert.ok(resolved.resolvedAt)
+  assert.equal(resolved.resolutionNote, 'credential rotated')
+  assert.equal(resolved.error, '535 5.7.8 credential dead', 'the diagnostic survives, in its own column')
+
+  const unresolved = await (await fetch(base + '/api/owner/outbox/unresolved-failures?limit=200')).json()
+  assert.equal(unresolved.messages.length, 0, 'the resolved row no longer appears')
+})
+
+test('POST /api/owner/outbox/:id/resolve on a message that does not exist answers 404', async t => {
+  const { quotes, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+
+  const response = await fetch(`${base}/api/owner/outbox/${'0'.repeat(32)}/resolve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+  })
+  assert.equal(response.status, 404)
+})
+
+test('POST /api/owner/outbox/:id/resolve works on a queued row too, and never fills error', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+  const { request } = quotes.submit(form())
+  const stranded = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'x' }, to: 'a@b.c', toName: 'A' })
+
+  const resolved = await (await fetch(`${base}/api/owner/outbox/${stranded.id}/resolve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note: 'never attempted; no adapter was configured when this was recorded' }),
+  })).json()
+  assert.equal(resolved.status, 'queued', 'still queued -- it was never attempted, resolving does not invent an attempt')
+  assert.ok(resolved.resolvedAt)
+  assert.equal(resolved.resolutionNote, 'never attempted; no adapter was configured when this was recorded')
+  assert.equal(resolved.error, null, 'error stays null, not the resolution note')
+})
+
+test('POST /api/owner/outbox/:id/resolve answers 400, not 500, on a note that is not text', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+  const { request } = quotes.submit(form())
+  const message = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'x' }, to: 'a@b.c', toName: 'A' })
+
+  // { note: 12345 } would otherwise land a number in a TEXT column; { note:
+  // {...} } would otherwise throw inside node:sqlite as an unhandled 500 --
+  // exactly the worst moment for one, since this is the route Ken reaches
+  // for after something has already gone wrong.
+  const number = await fetch(`${base}/api/owner/outbox/${message.id}/resolve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note: 12345 }),
+  })
+  assert.equal(number.status, 400)
+
+  const object = await fetch(`${base}/api/owner/outbox/${message.id}/resolve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note: { nested: true } }),
+  })
+  assert.equal(object.status, 400)
+
+  assert.equal(outbox.get(message.id).resolvedAt, null, 'neither refused call left the row half-resolved')
 })
