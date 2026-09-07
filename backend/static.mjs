@@ -10,6 +10,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { SITE_COPY_ELEMENT_ID } from '../src/site-copy.js'
+import { SOCIAL_PROOF_ELEMENT_ID } from '../src/social-proof.js'
 
 /** Content types by extension. Anything not listed is served as bytes. */
 export const TYPES = {
@@ -78,10 +79,13 @@ export function etagFor(stat) {
  * seconds in on a slow connection, on exactly the strings Ken cared enough to
  * edit.
  */
-export function injectCopy(file, copy) {
-  const html = readFileSync(file, 'utf8')
+export function injectCopy(file, copy, socialProof = null) {
+  let html = readFileSync(file, 'utf8')
+  if (socialProof !== null) html = injectSocialSameAs(html, socialProof)
   const payload = JSON.stringify(copy ?? {}).replace(/</g, '\\u003c')
-  const block = `<script type="application/json" id="${SITE_COPY_ELEMENT_ID}">${payload}</script>`
+  const socialPayload = socialProof === null ? '' : JSON.stringify(socialProof ?? {}).replace(/</g, '\\u003c')
+  const block = `<script type="application/json" id="${SITE_COPY_ELEMENT_ID}">${payload}</script>` +
+    (socialProof === null ? '' : `<script type="application/json" id="${SOCIAL_PROOF_ELEMENT_ID}">${socialPayload}</script>`)
   // Before </head> where there is one, then </body>, then appended.
   //
   // The last branch is not defensive padding: `String.replace` with a missing
@@ -96,6 +100,24 @@ export function injectCopy(file, copy) {
   return { body, etag }
 }
 
+/** Keep the structured identity facts in step with the same public profile list. */
+function injectSocialSameAs(html, socialProof) {
+  const profiles = Array.isArray(socialProof?.profiles) ? socialProof.profiles : []
+  const match = html.match(/<script\s+type="application\/ld\+json">([\s\S]*?)<\/script>/i)
+  if (!match) return html
+  try {
+    const data = JSON.parse(match[1])
+    if (!data || data['@type'] !== 'AutoRepair') return html
+    if (profiles.length) data.sameAs = profiles.map(profile => profile.url)
+    else delete data.sameAs
+    const block = `<script type="application/ld+json">\n      ${JSON.stringify(data, null, 2)}\n    </script>`
+    return html.replace(match[0], block)
+  } catch {
+    // A malformed shipped JSON-LD block is not made worse by owner metadata.
+    return html
+  }
+}
+
 /**
  * A handler that serves one file out of `dist`, falling back to index.html.
  *
@@ -103,7 +125,7 @@ export function injectCopy(file, copy) {
  * the same job vercel.json's rewrite did, and forgetting it is how this project
  * once shipped a build that passed every local check and 404'd in production.
  */
-export function createStaticHandler(dist, { readCopy = null } = {}) {
+export function createStaticHandler(dist, { readCopy = null, readSocialProof = null } = {}) {
   const distRoot = path.resolve(dist)
 
   return function serveStatic(request, response, pathname) {
@@ -139,7 +161,7 @@ export function createStaticHandler(dist, { readCopy = null } = {}) {
     // The app shell, with the owner's copy in it. Only the shell: every other
     // file is bytes on disk and is streamed untouched.
     const shell = readCopy && path.resolve(file) === path.join(distRoot, 'index.html')
-      ? injectCopy(file, readCopy())
+      ? injectCopy(file, readCopy(), readSocialProof ? readSocialProof() : null)
       : null
 
     // The shell's validator has to move when the copy moves, and the file's

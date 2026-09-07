@@ -285,3 +285,35 @@ export async function saveSiteCopy(values, acknowledged = []) {
 export async function undoSiteCopy() {
   return call('/api/owner/site-copy/undo', { method: 'POST', body: JSON.stringify({}) })
 }
+
+/* ------------------------------------------------------ social proof */
+
+export async function ownerSocialProof() {
+  return call('/api/owner/social-proof')
+}
+
+export async function saveSocialProfiles(profiles) {
+  return call('/api/owner/social-profiles', {
+    method: 'PUT', body: JSON.stringify({ profiles }),
+  })
+}
+
+export async function createTestimonial(review) {
+  return call('/api/owner/testimonials', {
+    method: 'POST', body: JSON.stringify(review),
+  })
+}
+
+export async function updateTestimonial(id, review) {
+  return call(`/api/owner/testimonials/${encodeURIComponent(id)}`, {
+    method: 'PUT', body: JSON.stringify(review),
+  })
+}
+
+export async function deleteTestimonial(id) {
+  return call(`/api/owner/testimonials/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function undoSocialProof() {
+  return call('/api/owner/social-proof/undo', { method: 'POST', body: JSON.stringify({}) })
+}

@@ -7,6 +7,7 @@ import { VehicleDetails, ServiceDetails } from '../components/RequestDetails'
 import { MIN_LEAD_DAYS, serviceDay } from '../components/serviceDay'
 import { TEXT_HREF, TEXT_LABEL, URGENT_TEXT_HREF } from '../contact.js'
 import { siteCopy } from '../site-copy.js'
+import SocialProof from '../components/SocialProof.jsx'
 
 /**
  * The words on this page, as Ken has them.
@@ -513,7 +514,7 @@ function CustomerRequest({ navigate }) {
           </div>
         </div>}
       </main>
-      <footer className="site-footer"><span data-testid="copy-footer-brand">{COPY['footer.brand']}</span><span>Mobile tire service. Malden, MA.</span><a href="/privacy" className="privacy-link" onClick={event => { event.preventDefault(); navigate('/privacy') }}>Privacy</a></footer>
+      <SocialProof /><footer className="site-footer"><span data-testid="copy-footer-brand">{COPY['footer.brand']}</span><span>Mobile tire service. Malden, MA.</span><a href="/privacy" className="privacy-link" onClick={event => { event.preventDefault(); navigate('/privacy') }}>Privacy</a></footer>
     </div>
   )
 }

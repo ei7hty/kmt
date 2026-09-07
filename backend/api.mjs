@@ -1,6 +1,7 @@
 import { InputError } from './inventory.mjs'
 import { PUBLIC_BODY_LIMIT, clientIp, refuse } from './limits.mjs'
 import { SITE_COPY_FIELDS, SiteCopy, siteCopyDefaults } from './site-copy.mjs'
+import { SocialProof } from './social-proof.mjs'
 
 /**
  * Exported as `readJsonBody` so the auth routes parse request bodies the same
@@ -468,6 +469,7 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
     const url = new URL(request.url, 'http://localhost')
     if (!url.pathname.startsWith('/api/owner/')) return false
     const siteCopy = new SiteCopy(inventory)
+    const socialProof = new SocialProof(inventory)
     const origin = request.headers.origin
 
     // The import endpoint is the one thing a giga-tires page may talk to, and
@@ -668,6 +670,21 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
         }
       } else if (request.method === 'POST' && url.pathname === '/api/owner/site-copy/undo') {
         send(200, siteCopy.undo())
+      } else if (request.method === 'GET' && url.pathname === '/api/owner/social-proof') {
+        send(200, socialProof.stored())
+      } else if (request.method === 'PUT' && url.pathname === '/api/owner/social-profiles') {
+        const body = await readJsonBody(request)
+        send(200, socialProof.setProfiles(body?.profiles))
+      } else if (request.method === 'POST' && url.pathname === '/api/owner/testimonials') {
+        send(201, socialProof.create(await readJsonBody(request)))
+      } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/testimonials/')) {
+        const id = decodeURIComponent(url.pathname.slice('/api/owner/testimonials/'.length))
+        send(200, socialProof.update(id, await readJsonBody(request)))
+      } else if (request.method === 'DELETE' && url.pathname.startsWith('/api/owner/testimonials/')) {
+        const id = decodeURIComponent(url.pathname.slice('/api/owner/testimonials/'.length))
+        send(200, socialProof.remove(id))
+      } else if (request.method === 'POST' && url.pathname === '/api/owner/social-proof/undo') {
+        send(200, socialProof.undo())
       } else if (request.method === 'POST' && url.pathname === '/api/owner/refresh') {
         const input = await readJsonBody(request)
         send(202, refresher.start(input.sizes))
