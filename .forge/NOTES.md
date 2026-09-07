@@ -2109,8 +2109,60 @@ created_at): `18b78ee1201a43254ca2775267d4da38 | fb0da6739162bd7046ba2444604a84d
 c8f59dccd1383e5caab89bfc2e0f5f25 | 2026-09-06T19:13:21.678Z`;
 `705bb87aa419a88a969ba2d731b8f5b3 | 0c5a55b8003c31d5800d446372cdf78a |
 2026-09-06T19:30:46.096Z` (the boundary row itself). The remaining five
-are still being gathered. Still held -- the script also still needs
-`#359` merged before `resolve()`/`resolution_note` exist to call.
+are still being gathered -- both `JUNIOR DB ADMIN` and I have no Fly
+access to get them ourselves, and `OWNER AGENT`'s own follow-up reads hit
+a permission classifier after these three; flagged to the user. What
+looked briefly like the three above being cross-checked by two
+independent reads turned out to be one read relayed through two paths --
+corrected once `JUNIOR DB ADMIN` pointed it out, recorded here so it
+doesn't stand uncorrected: one source, partial, is what it actually is.
+
+**In my own words, since the OWNER AGENT asked for that rather than
+theirs**: the bug in my query bound wasn't a coherent artifact carrying
+wrong content, which is the shape every other correction tonight has
+had. It was a precise-looking instrument built on an approximate
+input -- a `BETWEEN` clause reads as a measurement regardless of whether
+the timestamp typed into it was ever measured, and mine was a rounded
+sentence from an incident description, not a number anyone had checked
+against a real row. The tell worth keeping: I had already decided the
+*write* needed named ids rather than an inferred query, and used a
+weaker standard for the *read* that would go on to define what the write
+touched. The rigor went where the step looked dangerous; the error came
+in through the step that felt like just asking a question.
+
+**OWNER AGENT's ruling was a frozen id list with a count check. Built
+something stricter, and they've endorsed it as the version to keep**: a
+frozen list still goes wrong if a live row changes between when the id
+was gathered and when the script actually runs -- resent, redacted,
+anything -- so every row is re-read and its `request_id` and `status`
+compared against what was true when it was gathered, for every row,
+before any write happens to any of them. One mismatch aborts the whole
+run rather than resolving the seven that still check out, because this
+corrects one specific, understood incident, not a queue to clear
+partially. And the abort names the row, the field, and both values --
+not "mismatch, aborting" -- on the same reasoning as the alert that has
+to name the `535` rather than a count: whoever runs this may be doing so
+weeks from now with no memory of why, and a bare refusal sends them to
+read the database before they know what they're looking for.
+
+Verified live against a seeded copy of the schema on `#359`'s branch,
+not just reasoned about: the script refuses to touch anything while its
+own frozen list is incomplete (five of eight are still real placeholders
+that fail the shape check on purpose); a full dry run against all eight
+reads correctly; mutating one row's status after gathering makes the
+whole run abort, naming that row and the exact field that changed,
+leaving all eight -- including the seven that still matched -- untouched;
+and a clean run once reverted resolves all eight with `error` left `null`
+throughout. The actual script isn't in this repo yet -- it lives outside
+it until the full id list exists and `#359` is on `main` -- but its
+behavior is proven, not assumed.
+
+One staffing note that changes who else needs this context: QA ENGINEER
+has been reassigned to OWNER OPERATIONS ENGINEER and now owns the
+owner-screen control that resolves the seven live `failed` rows. Two
+paths to the same mechanism, deliberately not merged into one: this
+backfill clears the eight rows that predate any screen; their control is
+how Ken clears rows going forward. Neither should grow into the other.
 
 **2026-09-07 - Claude (DEV OPS/INFRASTRUCTURE)**
 The monitor is shaped like CI; the things worth monitoring are shaped like the
