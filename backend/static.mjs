@@ -134,16 +134,6 @@ export function createStaticHandler(dist, { readCopy = null } = {}) {
     const file = isFile ? resolved : path.join(distRoot, 'index.html')
     const stat = statSync(file)
     const type = TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream'
-    // Still the file's mtime, including for the injected shell, where this
-    // server deliberately will not honour it (see the 304 condition below).
-    // So the shell advertises a validator the origin has opted out of keeping.
-    //
-    // That is safe only because nothing caches between Fly and the customer:
-    // `no-cache` obliges any shared cache to revalidate with the origin, where
-    // the `!shell` logic runs and answers correctly. Put a CDN or proxy in
-    // front that implements `If-Modified-Since` itself and it would serve
-    // stale copy from this header without ever consulting the logic that knows
-    // better. Drop it for the shell on the day anything caches in front.
     const lastModified = stat.mtime.toUTCString()
 
     // The app shell, with the owner's copy in it. Only the shell: every other
@@ -164,8 +154,22 @@ export function createStaticHandler(dist, { readCopy = null } = {}) {
       'Content-Type': type,
       'Cache-Control': cachePolicy(relative, isFile),
       'ETag': etag,
-      'Last-Modified': lastModified,
     }
+    // `Last-Modified` is the file's mtime, and the injected shell is not the
+    // file: its bytes change when the copy does and the mtime does not. So the
+    // shell does not send one at all, rather than sending a validator this
+    // server then refuses to honour.
+    //
+    // Not merely tidy. The 304 condition below is an OR, so a client holding
+    // both validators sends both -- and a correct ETag alone would not have
+    // closed this: the ETag branch says changed, the mtime branch says
+    // unchanged because the file's mtime genuinely has not moved, and the OR
+    // hands back a stale 304 anyway. That branch is disabled for the shell,
+    // which fixes this server; omitting the header is what fixes every other
+    // cache in the path, because a proxy implementing `If-Modified-Since`
+    // itself never reaches this code, and cannot read a comment explaining
+    // that the header it was given is void.
+    if (!shell) headers['Last-Modified'] = lastModified
 
     // A browser holding a copy asks with one of these; when the copy is still
     // good, the answer is the headers and nothing else.

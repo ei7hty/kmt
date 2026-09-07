@@ -336,3 +336,21 @@ test('only the shell is injected; other files are streamed untouched', async t =
   const manifest = await fetch(base + '/manifest.webmanifest')
   assert.equal(await manifest.text(), '{"name":"KMT"}')
 })
+
+test('the injected shell sends no Last-Modified, because the file is not the answer', async t => {
+  const { base } = await serveWithCopy(t, () => ({ 'hero.eyebrow': 'LIVE' }))
+  const response = await fetch(base + '/')
+  assert.equal(response.status, 200)
+  // A validator derived from the file cannot describe a body that changes
+  // when the copy does. Disabling the mtime branch fixes this server; not
+  // sending the header is what protects any cache in front of it, which
+  // never reaches that branch.
+  assert.equal(response.headers.get('last-modified'), null)
+  assert.ok(response.headers.get('etag'), 'the ETag is still there, and it is content-derived')
+})
+
+test('without injection the shell still carries Last-Modified, unchanged', async t => {
+  const { base } = await serve(t)
+  const response = await fetch(base + '/')
+  assert.equal(response.headers.get('last-modified'), 'Sun, 06 Sep 2026 00:00:00 GMT')
+})
