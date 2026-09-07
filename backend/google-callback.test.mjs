@@ -98,7 +98,7 @@ test('start sends the owner to Google with a state that matches its cookie', asy
   assert.ok(target.searchParams.get('state'), 'a state is always issued')
 
   const cookie = String(out.sent.headers['Set-Cookie'])
-  assert.match(cookie, /^kmt_oauth_state=/)
+  assert.match(cookie, /^kmt_signin_state=/)
   assert.match(cookie, /HttpOnly/)
   // Lax, not Strict: the callback is a top-level cross-site GET navigation,
   // which is exactly what Strict withholds the cookie on. Strict here would
@@ -138,7 +138,7 @@ test('a verified owner on the domain is signed in and sent to the workspace', as
   assert.ok(Array.isArray(cookies), 'the session is set and the state cookie cleared, together')
   assert.match(cookies[0], /^kmt_owner=/)
   assert.match(cookies[0], /SameSite=Lax/)
-  assert.match(cookies[1], /^kmt_oauth_state=; .*Max-Age=0/, 'the state cookie does not outlive the flow')
+  assert.match(cookies[1], /^kmt_signin_state=; .*Max-Age=0/, 'the state cookie does not outlive the flow')
 
   const token = cookies[0].split(';')[0].slice('kmt_owner='.length)
   assert.equal(sessions.size ?? undefined, undefined) // memory store exposes no size; check by use
