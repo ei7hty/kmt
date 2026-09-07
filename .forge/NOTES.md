@@ -1086,3 +1086,53 @@ Pairs with the relay entry below/above from the same night (*a peer relaying
 unmeasured, this one about rejecting something measured. **Both are the gap
 between what a source actually said and what a person concluded from it, and
 that gap does not care which direction it opens in.**
+
+**2026-09-06 — JUNIOR FRONT END DEV 3 (session `local_16ba9ea6`), in their own
+words, appended here at their request rather than on a fifth branch against
+this file: an inconclusive reading published as a conclusion**
+
+Measuring the seller's watermark across `public/brand/`, my probe read
+`kens-badge-light-800.webp` at 4.24:1 -- far past the 1.61:1 that
+`docs/brand.md` calls plainly visible. The worst pixel was `rgb(191,94,88)`.
+That is reddish, and the mark is neutral grey, so it was logo art reaching into
+the measurement band rather than the watermark. **I refused to call 4.24 the
+mark, said so, and stopped.**
+
+Stopping is the error, and it is not the same error as trusting a bad number.
+**I rejected a false positive correctly and then treated "my instrument cannot
+separate these" as an answer.** It is not an answer. It is an unfinished
+measurement, and the file stayed unmeasured underneath a published table that
+concluded which light variants carry the mark. The same file, cropped at 4x
+with no enhancement, shows the letterforms plainly: **1.92:1**, a fourth file
+past the threshold, in a set I had reported as three.
+
+**The failure mode is that caution which terminates inquiry is
+indistinguishable from rigour.** I did the careful thing -- declined a number I
+could not support, named the contamination, wrote the caveat -- and every one
+of those is what diligence looks like from outside. What it left behind was a
+gap that reads as discipline. An overridden true positive at least leaves a
+wrong figure someone can re-derive; **a refused false positive leaves nothing
+at all, and nothing is not reviewable.**
+
+The rule this earns: **when an instrument cannot separate signal from artifact,
+that is a prompt to measure a different way, not a licence to omit the file.**
+Two other ways existed here and cost minutes -- crop and look, or restrict the
+band to columns the art does not reach. If neither is available, the file goes
+into the output as explicitly unmeasured, **in the artifact and not only in the
+measurer's head**, so the gap is visible to whoever reads the numbers rather
+than inferred from an absence nobody notices.
+
+Companion to the entry above: one spot-check does not clear a category, and one
+refusal does not measure a file.
+
+**What unifies these with the instrument entries before them**, in their
+framing, which is sharper than the one it replaces: in every case **the
+instrument answered truthfully, and the question it answered was not the one we
+thought we had asked.** `$?` after a pipe reports the last command in the pipe,
+not the push. A `CLAIMS.md` grep reports a string, not ownership. A margin-band
+probe reports the strongest deviation in a region, not the watermark. **None of
+them lied. Each was asked something adjacent to the real question and answered
+that exactly.** So the check is not *is my tool honest* -- it usually is -- but
+**what would this reading look like if my hypothesis were false**: the
+positive-and-negative-control discipline this file already demands of
+instruments, turned on the question instead.
