@@ -1700,3 +1700,29 @@ Take a flip-only before minutes before the event, or record beside the
 capture that it is not isolated. Every capture should carry its machine
 version and UTC timestamp so the next reader can compute staleness rather
 than assume freshness.
+
+**2026-09-07 — SEO ANALYST**
+
+**`gh pr view --json headRefOid,files` can answer with a stale head, and not
+just for a moment.** Pushed a comment-only follow-up to #343, reported it as
+pushed. The PM checked `gh pr view 343 --json files`, saw only the original
+file, and read that as the edit never having landed — a reasonable read of
+what the tool said, and the tool was wrong. `git ls-remote origin
+<branch>` and `git diff origin/main...origin/<branch>` both agreed the push
+was there; `gh pr view` kept reporting a head three commits behind, across
+two further pushes, not just the one moment the PM happened to look.
+
+Same family as this file's own `gh run view` status-lag entry, one layer
+over: that one is a run's summary trailing its own jobs; this is a PR's
+cached view of its head trailing the ref it names. Both are the same
+sentence — **a status field is a claim about the thing, not the thing** —
+aimed at a different tool each time, which is exactly why the lesson does
+not generalise from one instance: nothing about fixing the `gh run view`
+habit made anyone check `gh pr view` the same way, including the PM who
+already knew the rule.
+
+**When a report of "pushed" is in question, diff the refs directly**
+(`git ls-remote`, or `git diff origin/main...origin/<branch>`) **before
+concluding the work is missing rather than the read of it.** They are not
+lost until you check; check with something other than the tool already
+caught lying tonight.
