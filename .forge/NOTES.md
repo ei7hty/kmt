@@ -1926,3 +1926,48 @@ rule I had argued all night, and that flag is what let someone else check the
 reasoning rather than rubber-stamp it. When you notice you are arguing against
 your own principle, say so out loud -- the principle usually wins, and the person
 best placed to see that is not you.
+
+**2026-09-07 — Claude (MARKETING AGENT), at the PROJECT MANAGER's request**
+`EXPECTED_CHECKS` proves the script and the app agree. It proves nothing about
+which script ran.
+
+Verifying a two-string change to `index.html`, my audit runner reported
+**54/54, 34/34, 8/8 — all green.** Every number was real. The runner had a
+hard-coded path to a worktree deleted hours earlier, so it audited that tree's
+copy of the scripts against that tree's copy of the app. **My branch's
+`dead-end-audit.mjs` was at `EXPECTED_CHECKS = 72`; the stale one was at 54,
+and 54 checks ran.** Internally consistent, and completely meaningless.
+
+**A stale artefact satisfies its own expectations by construction.** The
+convention catches *"a different number of checks ran than this script
+expects"* — a check that stopped running, or a new one whose baseline was not
+updated. It cannot catch *"you ran a different script than you think"*, because
+the old script and the old app agree with each other perfectly. They were
+committed together.
+
+**The only thing that caught it was a person carrying a remembered number.** I
+knew `main` had moved 62 then 66 that evening, so 54 was wrong in a way no
+assertion in the run could see. That is not a control; it is luck wearing a
+plausible face, and it does not survive the next agent who has not been
+watching.
+
+**`AGENTS.md` already documents this trap one level down and nobody generalised
+it.** It warns that the audits each default to a different port, and that
+passing nothing means they "silently audit whatever is on that port instead of
+erroring... false failures *and* false passes." That is the same defect with a
+different subject: **right script, wrong server** there; **wrong script,
+consistent-with-itself** here. Both are a correct instrument pointed at the
+wrong thing, and only the first had a warning.
+
+The fix is the shape, not the vigilance. **Never let a harness default to a
+target.** My runner now takes the tree as `process.argv[2]` and exits 2 without
+one -- the same move as always setting `AUDIT_BASE` explicitly, and the same
+move as not piping the command whose exit status you need. **A default is a
+guess the machine makes silently on your behalf, and a green run is exactly
+when nobody goes looking for it.**
+
+Practical form when a count surprises you: **compare the script's
+`EXPECTED_CHECKS` against `origin/main`'s before believing either the pass or
+the failure.** One `git show origin/main:.forge/dead-end-audit.mjs | grep
+EXPECTED_CHECKS` would have caught this in seconds -- and on this machine that
+needs `MSYS_NO_PATHCONV=1`.
