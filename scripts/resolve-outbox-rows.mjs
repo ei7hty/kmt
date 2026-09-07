@@ -243,12 +243,15 @@ function main() {
   // before Outbox.resolve() ever runs).
   const reader = new DatabaseSync(options.db, { readOnly: true })
   const mismatches = []
+  const before = new Map()
   try {
     const outbox = new Outbox(reader)
     for (const frozen of FROZEN_ROWS) {
       const mismatch = checkRowAgainstLive(outbox, frozen)
       if (mismatch) { mismatches.push(mismatch); continue }
-      for (const line of describe(outbox.get(frozen.id))) console.log(line)
+      const row = outbox.get(frozen.id)
+      before.set(frozen.id, { status: row.status, error: row.error, resolvedAt: row.resolvedAt })
+      for (const line of describe(row)) console.log(line)
     }
   } catch (error) {
     console.error(error.message)
@@ -281,10 +284,30 @@ function main() {
     for (const row of results) {
       console.log(`  ${row.id}  resolved_at=${row.resolvedAt}  resolution_note=${JSON.stringify(row.resolutionNote)}  error=${row.error ? JSON.stringify(row.error) : 'null'}`)
     }
-    // What this ran does, in one line a person can check afterwards without
-    // re-reading the script -- this runs once, at some hour, and whoever
-    // runs it should be able to confirm it did what it said.
-    console.log(`\nSummary: ${results.length} rows moved from unresolved to resolved. status unchanged on every row (still 'queued'). error unchanged on every row (was null, still null).`)
+
+    // A post-condition, not a restatement of intent: read every row back
+    // and compare it against what it actually was before this ran (the
+    // `before` snapshot taken in the read-only pass above), rather than
+    // asserting what resolve()'s contract says should be true. If resolve()
+    // had a defect, this reports what's actually in the table, not what
+    // the script expected to find there.
+    const newlyResolved = []
+    const statusChanged = []
+    const errorChanged = []
+    for (const row of results) {
+      const was = before.get(row.id)
+      if (!was.resolvedAt) newlyResolved.push(row.id)
+      if (was.status !== row.status) statusChanged.push(`${row.id}: was "${was.status}", now "${row.status}"`)
+      if (was.error !== row.error) errorChanged.push(`${row.id}: was ${JSON.stringify(was.error)}, now ${JSON.stringify(row.error)}`)
+    }
+    console.log(`\nSummary, read back from the database after writing (not assumed):`)
+    console.log(`  ${newlyResolved.length} of ${results.length} rows newly resolved just now; ${results.length - newlyResolved.length} were already resolved (idempotent no-op).`)
+    console.log(statusChanged.length
+      ? `  status changed on ${statusChanged.length} row(s), which should not happen -- look before trusting this run:\n    ${statusChanged.join('\n    ')}`
+      : `  status confirmed unchanged on all ${results.length} rows read back.`)
+    console.log(errorChanged.length
+      ? `  error changed on ${errorChanged.length} row(s), which should not happen -- look before trusting this run:\n    ${errorChanged.join('\n    ')}`
+      : `  error confirmed unchanged on all ${results.length} rows read back.`)
   } catch (error) {
     console.error(`\nFailed partway through: ${error.message}`)
     console.error('resolve() is idempotent per row -- re-running is safe; already-settled rows come back unchanged.')
