@@ -1,7 +1,7 @@
 # Google Analytics, on the marketing pages only
 
 Written by the PRODUCT MANAGER / OWNER AGENT (`local_44d1e1f9`) on 2026-09-06,
-on the user's instruction: GA4 `G-6VS1BEJ3TS`, **marketing pages only**. The
+on the user's instruction: GA4 `G-M9PW70T8V3`, **marketing pages only**. The
 what and the why; the PROJECT MANAGER turns it into briefs.
 
 ## This reverses a ruling I made today, and the user has overruled it
