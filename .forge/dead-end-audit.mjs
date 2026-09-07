@@ -13,7 +13,7 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 70;
+const EXPECTED_CHECKS = 72;
 
 /**
  * Preferred dates, always ahead of today. The server refuses anything inside
@@ -717,6 +717,94 @@ async function main() {
       );
     }
     await page.unroute('**/api/catalog?size=*');
+
+    await context.close();
+  }
+
+  // The route gate that keeps a customer's own request id out of Google
+  // (src/analytics.js, .forge/analytics.md): GA4 must fire on the marketing
+  // surface and never on a page whose URL carries a request id, which is
+  // the credential for that record -- GA sends the full URL, query string
+  // included, with every page view. A gate check, not a rerunnable control
+  // script (the OWNER AGENT's ruling, 2026-09-07): a control only runs when
+  // someone remembers to, and this project has already found three things
+  // tonight that a control script would have caught only by accident.
+  // Folded in here rather than given its own run, so it inherits
+  // EXPECTED_CHECKS, which fails on a mismatch in either direction -- the
+  // one thing that notices a check silently no longer running.
+  //
+  // AUDIT_BASE is never the canonical host, so the hostname gate alone
+  // cannot be exercised by a plain page.goto(BASE + ...) the way the rest
+  // of this file navigates. This instead routes a fake
+  // https://kensmobiletire.com/* origin to the real server under test, the
+  // same technique proved by hand before this check existed -- so
+  // window.location is genuinely the canonical host, no property-spoofing
+  // of `location` needed. GA's own two domains are intercepted
+  // unconditionally, in a context of their own, and never allowed to leave
+  // the browser: nothing here can reach Google for real even if the gate
+  // under test is wrong.
+  //
+  // The /status assertion below also watches for a CSP violation, not only
+  // a GA network attempt, and treats either as a failure -- found by
+  // actually breaking the frontend gate before trusting this check to catch
+  // it (the standard this file's own reportCount() comment sets). With
+  // ANALYTICS_PATHS in src/analytics.js widened to include /status, the
+  // frontend genuinely tried to inject GA's script -- but backend/site.mjs
+  // carries its own separate, unmodified ANALYTICS_PATHS gating the CSP, so
+  // the browser's own CSP enforcement blocked the request before it ever
+  // reached this test's route interception, and a check that only watched
+  // network traffic would have reported that break as a pass. The two
+  // controls are independent on purpose (the repo agent traced this on
+  // #314); a check meant to catch one of them failing must not let the
+  // other one quietly cover for it.
+  {
+    const FAKE_ORIGIN = 'https://kensmobiletire.com';
+    const context = await browser.newContext();
+    const gaAttempts = [];
+    const cspViolations = [];
+    await context.route('**://www.googletagmanager.com/**', route => {
+      gaAttempts.push(route.request().url());
+      route.fulfill({ status: 200, contentType: 'application/javascript', body: '// stubbed for the gate -- never reaches Google' });
+    });
+    await context.route('**://*.google-analytics.com/**', route => {
+      gaAttempts.push(route.request().url());
+      route.abort();
+    });
+    await context.route(`${FAKE_ORIGIN}/**`, async route => {
+      const url = new URL(route.request().url());
+      const local = await fetch(BASE + url.pathname + url.search);
+      const headers = {};
+      for (const [key, value] of local.headers.entries()) headers[key] = value;
+      delete headers['content-encoding'];
+      delete headers['content-length'];
+      await route.fulfill({ status: local.status, headers, body: Buffer.from(await local.arrayBuffer()) });
+    });
+
+    const page = await context.newPage();
+    page.on('console', msg => {
+      if (msg.type() === 'error' && /content security policy/i.test(msg.text())) cspViolations.push(msg.text());
+    });
+
+    await page.goto(`${FAKE_ORIGIN}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    if (gaAttempts.length > 0) {
+      ok('GA4 is attempted on / when this is genuinely the canonical host (intercepted, never reached Google)');
+    } else {
+      fail('GA4 is attempted on / when this is genuinely the canonical host -- expected a request to googletagmanager.com, got none');
+    }
+
+    gaAttempts.length = 0;
+    cspViolations.length = 0;
+    await page.goto(`${FAKE_ORIGIN}/status?request=audit-fake-request-id`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    if (gaAttempts.length === 0 && cspViolations.length === 0) {
+      ok('GA4 never even attempts to load on /status, even with the hostname spoofed to canonical and a request id in the URL -- not blocked by CSP, never tried');
+    } else {
+      fail(
+        `GA4's frontend gate tried to run on /status -- attempts: ${JSON.stringify(gaAttempts)}, ` +
+          `CSP violations: ${JSON.stringify(cspViolations)}. Blocked by CSP is not the same as never having tried.`,
+      );
+    }
 
     await context.close();
   }
