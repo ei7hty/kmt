@@ -94,14 +94,19 @@ released when the PR lands on `main`, not when you push it and open the PR: an
 open PR is still a claim on the file, and it can sit an hour or more waiting on a
 second reader — for that whole window a released row would tell the busiest
 coordination file that nobody is touching a file you are, and the reader who
-needs it is the one who has *not* read your PR. **The agent who merges removes
-the row, in the same pass** — they are the party who always observes the merge,
-they are already committing to `main` at that moment, and the author is elsewhere
-on someone else's clock with no reason to look. "Released when it merges" but
-owned by the author has no agent and produces the opposite staleness — rows that
-outlive their merged PR (four accumulated in one night behind an earlier sweep).
-An author who happens to see their PR land may remove their own row, but the
-merger owns it; match it by branch name, the row's first column. Then, if you
+needs it is the one who has *not* read your PR. **The agent who ends the PR —
+merging it, or closing it without merging — removes the row, in the same pass.**
+They always observe the ending and are at `main` for it; the author is elsewhere
+on someone else's clock with no reason to look. Both exits orphan a row
+otherwise: a merge does (four rows accumulated in one night, because "release on
+merge" owned by the author has no agent), and so does a close-without-merge
+(#317, closed as a duplicate — its row released by nobody under a merge-only
+rule). An author who sees their PR end may remove their own, but the ender owns
+it; match it by branch name, the row's first column. The ender's removal also
+needs no one's *account* of what they did — which matters because a release
+report is the one kind of report nothing in this repo checks: a row was found
+stale since its original claim, behind a stated release a full-history search
+showed never happened. Then, if you
 learned something the next agent would otherwise rediscover the hard way, append
 it to [`.forge/NOTES.md`](NOTES.md). Update `.forge/state.json` if you closed a
 task, and record architecture decisions in `.forge/decisions.md`.
