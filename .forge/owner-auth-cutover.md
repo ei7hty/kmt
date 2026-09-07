@@ -472,3 +472,108 @@ Three lanes, and **nobody starts until this document is merged**:
 - `.github/workflows/` — the repo agent.
 
 The author of this document holds none of it.
+
+---
+
+## Re-measured 2026-09-07 by the OWNER AUTH ENGINEER, at `origin/main` `c5eaf80`
+
+Recorded at the PROJECT MANAGER's and the OWNER AGENT's request, by the first
+person to read these two documents cold. This section corrects **state**; every
+**intent** conclusion above survives unchanged, because all of it is about what
+breaks when the password goes, and none of that moved.
+
+**Start with the gap, because it is the reason the rest of this section
+exists.** A document that records the SHA it was written at is claiming to have
+been checked against that commit. Both of these were, and both have drifted:
+
+| document | written at | commits behind `origin/main` at re-measurement |
+| --- | --- | --- |
+| [`owner-google-signin.md`](owner-google-signin.md) | `71cd81a` | **211** |
+| this file | `c68408c` | **120** |
+
+### What is still true
+
+The five-audit count in the table above is **correct**. Five audits reach the
+owner screen, exactly as listed.
+
+The four "preconditions already true" all still hold, re-measured rather than
+inherited: `auth.handle` still runs at `server.mjs:189` **before** the `/api/`
+gate at `:191`; `SameSite=Lax` is live at `auth.mjs:283`; `readAuthConfig`
+still throws on a missing `KMT_OWNER_PASSWORD` at `:99`, so the change-two
+ordering hazard is live; and `kmt.fly.dev` still answers `301` to the canonical
+host (measured live, read-only, against `/owner`).
+
+### `audit-ui.mjs` has six importers, and the sixth is not a drift
+
+Recorded so the next sweep does not re-open a settled question. **Six files
+import `audit-ui.mjs`.** The sixth is `deployed-site-check.mjs`, which takes
+`CATALOG_FIELDS` and nothing else — no sign-in, no password — so its "not
+affected" line above is right.
+
+**And the verb in the table is the trap, not the number.** `signInIfAsked` is
+*imported* by **three** files (`a11y-85-measure.mjs`, `responsive-check.mjs`,
+`owner-inventory-audit.mjs`); the other two reach it through
+`openOwnerQuotes`. The original miscount came from a grep that swept
+`openOwnerQuotes` importers and missed the direct ones — and "imported by five
+audit scripts", which still appears in `sprint-next.md` and in
+`scripts/mint-session.mjs`'s header, is exactly the phrasing that makes the
+narrow grep look sufficient. **Fixing the number without fixing the concept
+leaves the trap armed.**
+
+### Stale: `a11y-85-measure.mjs` is not in the gate
+
+The table above marks it "yes (t107)". **It is not.** `a11y` appears nowhere in
+`.github/`; the workflows run `bundle-leak-check`, `dead-end-audit`,
+`request-flow-check`, `responsive-check`, and `deployed-site-check` after the
+deploy. There is no `t107` in `state.json`.
+
+So **three** of the five are the gate; `a11y-85-measure.mjs` and
+`owner-inventory-audit.mjs` are run by hand. **The correction runs the opposite
+way from "less important."** A gate audit that breaks fails loudly on the next
+pull request. A by-hand instrument that breaks fails silently, months later,
+the first time someone reaches for it — and by then nobody remembers what
+changed. The two ungated scripts are the ones with nobody watching.
+
+### Stale: the blocking precondition is largely closed
+
+`#362` **merged** (`b41056d`). On `main` today:
+
+- `backend/auth.mjs` exports `mintSession` (`:247`) and `readSessionSigningConfig`
+  (`:158`) — the second written precisely so minting does not inherit
+  `readAuthConfig`'s password requirement.
+- **`signInIfAsked` already carries the complete minted-session path**
+  (`audit-ui.mjs:34`, `:56-64`): it reads `KMT_OWNER_SESSION_COOKIE`, validates
+  the `name=value` shape, sets the cookie, reloads, and logs that the password
+  path is not exercised.
+
+**There is no audit conversion left to do.** What remains is CI wiring:
+`fly-deploy.yml:152` and `:298` still authenticate with `KMT_OWNER_PASSWORD`,
+and nothing sets `KMT_OWNER_SESSION_COOKIE`. That is `.github/workflows/`.
+
+### Stale: the attribution column already exists
+
+[`owner-google-signin.md`](owner-google-signin.md) says `quotes.decide` "does
+not record who made it", calls the column "the one part that is not free", and
+defers it to a second change. **It landed as `c108566` (#349).**
+`quotes.decided_by` is in the `CREATE` (`quotes.mjs:431`) with the guarded
+additive `ALTER` in `migrate()` (`:533`); `moveTo` takes an `actor` (`:852`),
+writes it only for `audience === 'owner'` (`:878`), defaults to
+`SHARED_PASSWORD_ACTOR` (`:392`), and surfaces it as `decidedBy` (`:665`).
+
+So the migration and the seam both exist, and Google sign-in **adds a value
+rather than a column**. Note which table: `decided_by` is on **`quotes`**.
+`owner_sessions` is still `(id, expires_at)`; its `actor` column is #374.
+
+### One reference that reads backwards
+
+`#290` is **merged** — it was the issue that specified this work, closed when
+the spec landed. Anything pointing at "once #290 lands" as a future event will
+be read by someone who checks, sees MERGED, and concludes the identity work is
+done. The implementation carries no issue number of its own.
+
+### How this was measured, since that is the point
+
+`git grep <pattern> origin/main` throughout, never the shared checkout. That
+checkout was nine commits behind when this began, and `.forge/AGENTS.md`
+changed on disk mid-read. **A document is a measurement with a timestamp; so is
+a working tree.**
