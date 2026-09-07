@@ -4,12 +4,16 @@
  * `dev.mjs` stays the local entry point and is unchanged -- it runs Vite in
  * middleware mode, binds loopback and needs no password, which is right for a
  * workspace only you can reach. This is the other half: it serves the built
- * `dist/`, binds a real interface, and refuses to start without a password.
+ * `dist/`, binds a real interface, and refuses to start without either a
+ * Google OAuth client or a valid owner password.
  *
  * Everything it needs comes from the environment, so the same image runs on
  * Fly, Render, Railway, a VPS or `docker run` with no host-specific code:
  *
- *   KMT_OWNER_PASSWORD   required; the server exits without it
+ *   KMT_OWNER_PASSWORD   optional when both Google client variables are set;
+ *                        otherwise required and at least 12 characters
+ *   KMT_GOOGLE_CLIENT_ID and KMT_GOOGLE_CLIENT_SECRET
+ *                        together enable Google owner sign-in
  *   KMT_SESSION_SECRET   recommended; random per boot otherwise, which signs
  *                        everyone out on restart
  *   KMT_OWNER_DB         SQLite path. Point it at a mounted volume -- the
@@ -59,8 +63,9 @@ if (!existsSync(path.join(dist, 'index.html'))) {
   process.exit(1)
 }
 
-// The password is checked before the database is opened, so a misconfigured
-// deploy fails on the first line of its log rather than after a migration.
+// Every configured way in is checked before the database is opened, so a
+// deploy with neither Google nor a usable password fails on the first line of
+// its log rather than after a migration.
 let authConfig
 try {
   authConfig = readAuthConfig()

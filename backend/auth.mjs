@@ -1,16 +1,12 @@
 /**
- * Password gate for the owner workspace.
+ * Authentication gate for the owner workspace.
  *
  * The local server did not need this: it bound to loopback and refused any Host
  * but localhost, so the only person who could reach it was already at the
  * keyboard. A hosted server has no such protection, and behind `/owner` sit
  * supplier costs, KMT's margins and a button that rewrites every price. So the
- * gate is not optional, and `requireOwnerPassword` refuses to start without one
- * rather than defaulting to open.
- *
- * One shared password, because there is one owner. It is deliberately not an
- * account system: no users table, no registration, no reset flow. If more than
- * one person ever needs their own login, replace this rather than growing it.
+ * gate is not optional: the hosted server refuses to start unless Google or a
+ * valid shared password provides a way in, rather than defaulting to open.
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
@@ -171,10 +167,10 @@ export function equals(a, b) {
 /**
  * Read the configuration, and fail loudly if it would leave the workspace open.
  *
- * `KMT_OWNER_PASSWORD` is required. `KMT_SESSION_SECRET` is not: without one a
- * random secret is generated per boot, which is safe but signs every existing
- * session out on restart. Set it in any deployment you do not want logging
- * people out on every deploy.
+ * A valid `KMT_OWNER_PASSWORD` or both Google client variables are required.
+ * `KMT_SESSION_SECRET` is not: without one a random secret is generated per
+ * boot, which is safe but signs every existing session out on restart. Set it
+ * in any deployment you do not want logging people out on every deploy.
  */
 export function readAuthConfig(env = process.env) {
   const password = env.KMT_OWNER_PASSWORD || ''
@@ -221,13 +217,10 @@ export function readAuthConfig(env = process.env) {
 /**
  * The minimal config mintSession needs: a secret and a ttl, not a password.
  *
- * readAuthConfig refuses without KMT_OWNER_PASSWORD because it is the login
- * config -- a server that will check a password must have one to check.
- * Minting a session never checks a password, so requiring one here would be
- * an incidental dependency inherited from that guard, not a real one -- and
- * it is exactly the dependency that broke scripts/mint-session.mjs at the
- * one moment it exists to work: after the password is retired for
- * Google-only owner sign-in.
+ * readAuthConfig refuses when neither Google nor a valid password provides a
+ * way in. Minting a session needs neither, so inheriting that boot guard here
+ * would be an incidental dependency -- and would break the recovery tool at
+ * the one moment it exists to work: after password sign-in is retired.
  *
  * KMT_SESSION_SECRET is required here, unlike in readAuthConfig, for the
  * opposite reason readAuthConfig lets it default: a server signs and later

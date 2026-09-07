@@ -139,9 +139,10 @@ from `/owner`.
 There are two entry points. `backend/dev.mjs` is local development, described
 above. `backend/server.mjs` is the hosted one: it serves the built `dist/` and
 the API, binds a real interface, and refuses to start without
-`KMT_OWNER_PASSWORD`. The password guards the API, not the pages: the customer
-flow and its four public routes need no sign-in, and `/owner` and
-`/owner/quotes` show the sign-in form when their API answers 401.
+either both Google client variables or a valid `KMT_OWNER_PASSWORD`. Owner
+authentication guards the API, not the pages: the customer flow and its public
+routes need no sign-in, and `/owner` and `/owner/quotes` show the available
+sign-in controls when their API answers 401.
 
 The full design, data contract and refresh rules are in
 [`.forge/owner-backend.md`](.forge/owner-backend.md).
@@ -318,7 +319,8 @@ Environment for the hosted server:
 
 | Variable | |
 | --- | --- |
-| `KMT_OWNER_PASSWORD` | **Required.** The server exits without it. |
+| `KMT_OWNER_PASSWORD` | Optional only when both Google client variables are configured; otherwise required and at least 12 characters. Keep it during the cutover. After this support is deployed, complete another successful production Google login before removing the password secret as a separate operation. |
+| `KMT_GOOGLE_CLIENT_ID`, `KMT_GOOGLE_CLIENT_SECRET` | Together enable Google owner sign-in; one without the other refuses to boot. With both set, the hosted server can run Google-only and the owner screen hides password controls when no password is configured. |
 | `KMT_SESSION_SECRET` | Recommended. Otherwise sessions are signed with a per-boot secret and every restart signs the owner out. |
 | `KMT_OWNER_DB` | SQLite path. Point it at the volume. |
 | `PORT`, `KMT_BIND` | Default `8080` and `0.0.0.0`. |
