@@ -405,7 +405,7 @@ export async function enrichRows(rows, urls, options, fetcher) {
   const enriched = new Map(rows.map(row => [row.id, row]))
   const failures = []
   let stoppedOnRefusal = null
-  let cursor = 0
+  let cursor = 1
   let lastStart = 0
   let pace = Promise.resolve()
 
@@ -422,25 +422,38 @@ export async function enrichRows(rows, urls, options, fetcher) {
     pace = turn.catch(() => {})
     return turn
   }
+  const fetchOne = async url => {
+    try {
+      const fetched = await fetcher(url)
+      const row = parseProductPage(fetched.html, { url: fetched.url || url, fallback: fallbacks.get(url) })
+      if (!row.id || !row.size || !Number.isFinite(row.price)) throw new Error('Product page did not contain an importable SKU, size, and price')
+      enriched.set(row.id, row)
+    } catch (error) {
+      if (error instanceof ProviderRefusalError) {
+        stoppedOnRefusal = { url, status: error.status, reason: error.reason, message: error.message }
+        throw error
+      }
+      failures.push({ url, message: error.message })
+    }
+  }
+
+  // Establish the provider's answer before reserving any parallel work. If
+  // the first page is refused immediately, no other worker can have already
+  // reserved a URL and later slip through the stop check.
+  if (targets.length) {
+    await waitForTurn()
+    if (!stoppedOnRefusal) await fetchOne(targets[0])
+  }
+
   const worker = async () => {
     for (let url; (url = nextTarget());) {
       if (stoppedOnRefusal) return
       await waitForTurn()
-      try {
-        const fetched = await fetcher(url)
-        const row = parseProductPage(fetched.html, { url: fetched.url || url, fallback: fallbacks.get(url) })
-        if (!row.id || !row.size || !Number.isFinite(row.price)) throw new Error('Product page did not contain an importable SKU, size, and price')
-        enriched.set(row.id, row)
-      } catch (error) {
-        if (error instanceof ProviderRefusalError) {
-          stoppedOnRefusal = { url, status: error.status, reason: error.reason, message: error.message }
-          throw error
-        }
-        failures.push({ url, message: error.message })
-      }
+      if (stoppedOnRefusal) return
+      await fetchOne(url)
     }
   }
-  await Promise.all(Array.from({ length: Math.min(options.concurrency, targets.length) }, worker))
+  await Promise.all(Array.from({ length: Math.min(options.concurrency, Math.max(0, targets.length - 1)) }, worker))
   return { rows: [...enriched.values()], failures, attempted: targets.length, stoppedOnRefusal }
 }
 

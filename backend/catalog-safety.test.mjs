@@ -80,11 +80,11 @@ test('a listing refusal stops scrapeAll globally without recording coverage or c
   assert.equal(result.stoppedOnRefusal.status, 403)
 })
 
-test('a product refusal stops the bounded queue globally and does not retry or continue', async () => {
+test('an immediate product refusal stops a concurrent queue before other workers reserve pages', async () => {
   const calls = []
   const urls = Array.from({ length: 5 }, (_, index) => URL.replace('SKU123', `SKU${index}`))
   await assert.rejects(
-    enrichRows([], urls, { enrichLimit: 5, concurrency: 1, productDelay: 0 }, async url => {
+    enrichRows([], urls, { enrichLimit: 5, concurrency: 4, productDelay: 0 }, async url => {
       calls.push(url)
       throw new ProviderRefusalError('429 from supplier', { status: 429, reason: 'rate-limit' })
     }),
