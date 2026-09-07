@@ -220,6 +220,8 @@ export class Mailer {
     this.templates = templates
     this.log = log
     this.inFlight = new Set()
+    // Rows with a manual resend in flight; see resend().
+    this.resending = new Set()
     // The active probe's last result (#285's sibling): unlike the outbox,
     // this asks whether the seam is alive even when nothing is being sent --
     // the case that hid the 2026-09-06 outage for two hours, because every
@@ -381,7 +383,41 @@ export class Mailer {
     if (row.templateVersion !== template.version) {
       throw new InputError(`Outbox message ${id} was composed for ${row.type} v${row.templateVersion}; the template is now v${template.version}.`)
     }
-    return this.deliver(row, template.render(row.data))
+    if (row.status === 'sent') {
+      throw new InputError('That message was already sent, so sending it again would be a duplicate rather than a retry.', 409)
+    }
+
+    // One send per row at a time. A double-click is enough to break this
+    // without it: measured on the unguarded version, two concurrent calls both
+    // reached the provider and one customer got two copies of the same quote
+    // -- the exact harm this whole change exists to prevent, arriving through
+    // the manual door after being shut on the automatic one.
+    //
+    // In process rather than in the database, and that is not a shortcut. A
+    // compare-and-swap on `updated_at` was written first and guarded nothing:
+    // `resend()` re-reads the row itself, so the second caller reads the value
+    // the first just wrote and its swap succeeds honestly. Measured -- the
+    // repro still sent twice with the CAS in place. The thing being excluded
+    // is *concurrency inside one process*, and only a marker taken and
+    // released inside that process can see it.
+    //
+    // Safe because this is a single-machine design and says so: `fly.toml`
+    // refuses a second machine, since a Fly volume attaches to one and two
+    // would silently diverge. If that ever changes, this needs a real lock in
+    // the row and so does everything else here.
+    //
+    // The check and the add sit together with no await between them, so no
+    // second caller can interleave; `finally` releases it even when the
+    // provider throws, or a row could never be sent again after one failure.
+    if (this.resending.has(id)) {
+      throw new InputError('That message is already being sent. Give it a moment rather than sending a second copy.', 409)
+    }
+    this.resending.add(id)
+    try {
+      return await this.deliver(row, template.render(row.data))
+    } finally {
+      this.resending.delete(id)
+    }
   }
 
   /**

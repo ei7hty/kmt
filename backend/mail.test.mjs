@@ -1037,3 +1037,103 @@ test('the resend route refuses what it should: unknown id, wrong method, no trai
   const bare = await fetch(`${base}/api/owner/outbox/resend`, { method: 'POST' })
   assert.equal(bare.status, 404)
 })
+
+/* --------------------------------------- the resend guard (#407 review) */
+
+test('#407: two concurrent resends of one row send exactly once', async t => {
+  // Found by OWNER OPERATIONS ENGINEER reviewing the route, reproduced here
+  // before it was fixed: a double-click sent two copies of one quote to one
+  // customer. The exact harm the whole of #285 exists to prevent, arriving
+  // through the manual door after being shut on the automatic one.
+  const sent = []
+  const adapter = {
+    name: 'smtp',
+    async send(message) { sent.push(message.to); await new Promise(r => setTimeout(r, 40)); return { providerId: '<p@x>', sent: true } },
+  }
+  const world = durableWorld(t, adapter)
+  const request = world.quotes.submit(form()).request
+  const row = world.outbox.record({
+    requestId: request.id, type: 'quote-sent', templateVersion: 1,
+    data: dataFor(world, request.id, 'quote-sent', 'jamie@example.com', 'Jamie Rivera'),
+    to: 'jamie@example.com', toName: 'Jamie Rivera',
+  })
+  world.outbox.updateStatus(row.id, { status: 'failed', error: '535 5.7.8' })
+
+  const results = await Promise.allSettled([world.mailer.resend(row.id), world.mailer.resend(row.id)])
+  const rejected = results.filter(r => r.status === 'rejected')
+
+  assert.equal(sent.length, 1, 'exactly one message reached the provider')
+  assert.equal(rejected.length, 1, 'and the second call was refused rather than quietly sending')
+  assert.equal(rejected[0].reason.status, 409)
+  assert.match(rejected[0].reason.message, /already being sent/)
+  assert.equal(world.outbox.get(row.id).status, 'sent')
+})
+
+test('#407: a row that already went is refused, because that is a duplicate not a retry', async t => {
+  const sent = []
+  const adapter = { name: 'smtp', async send(message) { sent.push(message.to); return { providerId: '<p@x>', sent: true } } }
+  const world = durableWorld(t, adapter)
+  const request = world.quotes.submit(form()).request
+  const row = world.outbox.record({
+    requestId: request.id, type: 'quote-sent', templateVersion: 1,
+    data: dataFor(world, request.id, 'quote-sent', 'jamie@example.com', 'Jamie Rivera'),
+    to: 'jamie@example.com', toName: 'Jamie Rivera',
+  })
+  await world.mailer.resend(row.id)
+  assert.equal(sent.length, 1)
+
+  await assert.rejects(() => world.mailer.resend(row.id), error => {
+    assert.equal(error.status, 409)
+    assert.match(error.message, /already sent/)
+    return true
+  })
+  assert.equal(sent.length, 1, 'and nothing left the building on the second attempt')
+})
+
+test('#407: the guard is released when a send fails, or one failure would freeze the row forever', async t => {
+  // The failure mode a `finally` exists to stop: a row that threw once could
+  // never be resent again, which is precisely the row Ken most needs to retry.
+  let fail = true
+  const sent = []
+  const adapter = {
+    name: 'smtp',
+    async send(message) {
+      if (fail) throw new Error('421 4.7.0 Try again later')
+      sent.push(message.to)
+      return { providerId: '<ok@x>', sent: true }
+    },
+  }
+  const world = durableWorld(t, adapter)
+  const request = world.quotes.submit(form()).request
+  const row = world.outbox.record({
+    requestId: request.id, type: 'request-arrived', templateVersion: 1,
+    data: dataFor(world, request.id, 'request-arrived', CONFIG.ownerEmail, CONFIG.ownerName),
+    to: CONFIG.ownerEmail, toName: CONFIG.ownerName,
+  })
+
+  await world.mailer.resend(row.id)
+  assert.equal(world.outbox.get(row.id).status, 'failed')
+
+  fail = false
+  await world.mailer.resend(row.id)
+  assert.equal(sent.length, 1, 'the second attempt was allowed through')
+  assert.equal(world.outbox.get(row.id).status, 'sent')
+})
+
+test('#407: the route answers 409 rather than 500 when a resend is refused', async t => {
+  const { adapter } = fakeSmtp({ messageId: '<x@x>' })
+  const { quotes, outbox, mailer } = world(t, { adapter })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+
+  const { request } = quotes.submit(form())
+  const row = outbox.record({
+    requestId: request.id, type: 'request-arrived', templateVersion: 1,
+    data: { any: 'thing' }, to: CONFIG.ownerEmail, toName: CONFIG.ownerName,
+  })
+  outbox.updateStatus(row.id, { status: 'sent', providerId: '<already@x>' })
+
+  const response = await fetch(`${base}/api/owner/outbox/${row.id}/resend`, { method: 'POST' })
+  assert.equal(response.status, 409, 'a refused resend is a conflict the owner screen can render, not a server error')
+  assert.match((await response.json()).error, /already sent/)
+})
