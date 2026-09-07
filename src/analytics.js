@@ -27,6 +27,16 @@ import { useEffect } from 'react'
  * one answers "what should a crawler index", the other "what may send a
  * customer's URL to a third party", and nothing requires the two questions
  * to keep the same answer forever.
+ *
+ * Deliberately duplicated in `backend/site.mjs`, not imported from there:
+ * this decides whether to load GA at all, that one decides whether the CSP
+ * would let it through if this one failed. They are two independent gates
+ * only as long as they are two separately written constants -- sharing one
+ * would make them one gate while `.forge/dead-end-audit.mjs`'s route-gate
+ * check kept passing, because the surviving gate still produces the right
+ * outcome. That check watches for a CSP violation precisely so this
+ * collapsing would not pass silently, but a check should not be the only
+ * thing standing between two controls and one control playing two parts.
  */
 const ANALYTICS_PATHS = new Set(['/', '/privacy'])
 

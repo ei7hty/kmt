@@ -95,6 +95,17 @@ export function assertCanonicalIsAllowed({ canonicalHost, allowedHosts }) {
  * customer's own record. index.html is one static shell for every route, so
  * this has to be decided per-request, from the path, not baked into the
  * page.
+ *
+ * Deliberately duplicated in `src/analytics.js`, not imported from there:
+ * that one decides whether to load GA at all, this one decides whether the
+ * CSP would let it through if that one failed. They are two independent
+ * gates only as long as they are two separately written constants -- an
+ * "obvious" cleanup that imports one from the other collapses them into one
+ * gate that still produces the right outcome, which is exactly the shape
+ * of failure that stays invisible to a test watching only the outcome.
+ * `.forge/dead-end-audit.mjs`'s route-gate check also watches for a CSP
+ * violation on its own, precisely because that collapse would otherwise
+ * pass silently.
  */
 export const ANALYTICS_PATHS = new Set(['/', '/privacy'])
 
