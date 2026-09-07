@@ -2051,6 +2051,18 @@ six requests, all terminal or advanced, nobody owed a response. Only what
 from under it, each time by someone reading the code rather than the
 description of it.
 
+**Closing the loop on both gaps above, measured against the branch head
+rather than a summary of it.** The note-discard fix landed while `#359`
+sat in draft: `resolve()` now does a plain assignment into
+`resolution_note`, no `COALESCE`, `error` untouched -- confirmed directly
+against `origin/mail-failure-check`. And PM/LEAD has ruled placement on
+the write-route gap: it belongs inside `#359` itself, not a separate
+follow-up ("an unreachable method is an incomplete PR"), since that is
+where the rest of the mechanism lives. The owner-screen control that
+calls it is its own front-end PR, a different lane. Nothing here changes
+what this PR is: still a one-time historical backfill, still held until
+both the route and the note column are real and reachable on `main`.
+
 **2026-09-07 - Claude (DEV OPS/INFRASTRUCTURE)**
 The monitor is shaped like CI; the things worth monitoring are shaped like the
 server.
