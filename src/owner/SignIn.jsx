@@ -29,13 +29,22 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace', 
   // the two Google variables set answer `google: false`, and offering a door
   // that 404s is worse than not offering it.
   const [googleOffered, setGoogleOffered] = useState(false)
+  // Default on preserves the existing door while the capability request is in
+  // flight or fails. A server that explicitly answers `password: false` is the
+  // only thing allowed to remove the form.
+  const [passwordOffered, setPasswordOffered] = useState(true)
   useEffect(() => {
     let live = true
     fetch('/api/owner/session')
       .then(response => (response.ok ? response.json() : {}))
-      .then(data => { if (live) setGoogleOffered(Boolean(data.google)) })
-      // A failure here means no Google button, which is the safe direction:
-      // the password path is unaffected and still signs the owner in.
+      .then(data => {
+        if (!live) return
+        setGoogleOffered(Boolean(data.google))
+        if (typeof data.password === 'boolean') setPasswordOffered(data.password)
+      })
+      // A failure here leaves the established password path visible and hides
+      // the unconfirmed Google path. Capability removal requires an explicit
+      // server answer, never a network failure.
       .catch(() => {})
     return () => { live = false }
   }, [])
@@ -96,20 +105,20 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace', 
             Sign in with Google
           </a>
           <p className="oi-muted oi-signin-hint">Use your @kensmobiletire.com account.</p>
-          <p className="oi-signin-or">or use the password until it is switched off</p>
+          {passwordOffered && <p className="oi-signin-or">or use the password until it is switched off</p>}
         </>}
-        <label htmlFor="owner-password">Password</label>
-        <input id="owner-password" data-testid="owner-password" type="password" autoComplete="current-password"
-          value={password} onChange={e => setPassword(e.target.value)} disabled={busy} />
-        {/* Red marks the one primary action on a screen. Where Google is
-            configured that is Google; where it is not -- every environment
-            today, and every gate run -- the password is the only way in and
-            stays primary. The conditional is what keeps this screen honest in
-            both states rather than demoting the only door on offer. */}
-        <button type="submit" data-testid="owner-signin-submit" disabled={busy || !password}
-          className={googleOffered ? 'oi-button' : 'oi-button oi-primary'}>
-          {busy ? 'Checking…' : 'Sign in'}
-        </button>
+        {passwordOffered && <>
+          <label htmlFor="owner-password">Password</label>
+          <input id="owner-password" data-testid="owner-password" type="password" autoComplete="current-password"
+            value={password} onChange={e => setPassword(e.target.value)} disabled={busy} />
+          {/* Red marks the one primary action on a screen. Where Google is
+              configured that is Google; where it is not, the password is the
+              only way in and stays primary. */}
+          <button type="submit" data-testid="owner-signin-submit" disabled={busy || !password}
+            className={googleOffered ? 'oi-button' : 'oi-button oi-primary'}>
+            {busy ? 'Checking…' : 'Sign in'}
+          </button>
+        </>}
         {error && <p role="alert" className="oi-error">{error}</p>}
       </form>
     </main>
