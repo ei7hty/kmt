@@ -1,97 +1,97 @@
 {
   "version": 1,
   "name": "KMT Tire Quoting",
-  "summary": "Automated draft quotes for Ken's Mobile Tire, reviewed by the owner before they go out. Task status below was reconciled against merged code on 2026-09-06 after the record had stood still for eleven hours; each task's notes name the artifact that settled it.",
+  "summary": "Automated draft quotes for Ken's Mobile Tire, reviewed by the owner before they go out. Task status below is NOT current and must not be read as current. It was last reconciled against merged code on 2026-09-06T16:54Z, and origin/main has moved several hundred commits since. The field is named statusAtLastReconcile for that reason: it is a dated snapshot, not a board. Re-derive task state from merged pull requests. The PLAN here -- what is intended, why, and what is ranked against what -- is durable and is the part worth reading; it is the status beside it that goes stale in hours. Each task's notes name the artifact that settled it.",
   "milestones": [
     {
       "id": "m1",
       "title": "Skeleton app is live at a public URL",
       "description": "Empty React+Vite+Tailwind app with routing for / and /owner and a nav link between them, deployed to a public URL reachable from a phone. Retires deployment risk before any feature work, since project.md treats deployment as part of \"done,\" not a follow-up.",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "order": 0
     },
     {
       "id": "m2",
       "title": "Customer can submit a tire request",
       "description": "R1: vehicle info, tire choice from a hardcoded catalog, location/date placeholders, no login. Catalog data is structured so a later swap to real pricing entry doesn't require a rewrite.",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "order": 1
     },
     {
       "id": "m3",
       "title": "Submitted request gets an instant draft quote",
       "description": "R2: faked/simplified pricing rules run immediately over the catalog, no manual pricing step. Includes the shared-state mechanism that lets the owner view see what the customer submitted in the same demo session.",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "order": 2
     },
     {
       "id": "m4",
       "title": "Owner can approve or see exceptions",
       "description": "R3: owner sees drafted quotes at /owner, can Approve & Send in one tap, or see a visibly distinct exception state for quotes a scripted rule flags as needing attention.",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "order": 3
     },
     {
       "id": "m5",
       "title": "Customer can view the approved quote and pay",
       "description": "R5: once approved, the customer sees the approved quote and completes a fake payment that always succeeds.",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "order": 4
     },
     {
       "id": "m6",
       "title": "Happy path is demo-ready end to end",
       "description": "R6, R7, and the non-functionals: clear \"confirmed and paid\" end state, no dead ends anywhere in the path, responsive from phone to desktop, and the final build verified live on an actual phone browser.",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "order": 5
     },
     {
       "id": "m7",
       "title": "m7 - App looks like one product across every screen",
       "description": "Phase 2 outcome: a person tapping through /, /owner, /status, and /confirmation experiences one consistently branded product, not a polished customer flow bolted onto default-Tailwind internal screens. No functional/behavioral change from Phase 1 (R1-R7 unchanged). Verified with the same mobile-first-then-desktop screenshot pattern used in Phase 1, plus a re-run of the existing dead-end audit to confirm no behavior regressed.",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "order": 6
     },
     {
       "id": "m8",
       "title": "m8 — Customer quotes are priced from the owner's real inventory, not the static demo catalog",
       "description": "A separate effort already built a real owner backend (SQLite: supplier inventory, owner-set prices/offers, a markup fallback rule) at /owner, reachable via node backend/dev.mjs. It was deliberately scoped as \"customer catalog integration is a separate, deliberate step\" (see .forge/owner-backend.md) and never wired up: the customer flow at / and the quote engine in pricing.js still read the fully-generated static catalog (src/data/catalog.js's buildCatalog() with no options), and requests/quotes still live in localStorage (src/store.js), untouched by the backend. This milestone closes that gap: when the real backend is running, a customer sees and gets quoted the tires the owner actually chose to offer, at the prices he actually set (falling back to markup where he has not priced a tire), and falls back to today's generated catalog when the backend is not reachable (e.g. the static Vercel deployment). No changes to the quote/request storage mechanism, the exception rules, or payment in this milestone -- those are flagged as open questions in roadmap.md because they need an owner decision, not assumed here.",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "order": 7
     },
     {
       "id": "m9",
       "title": "The owner reviews real requests from any device",
       "description": "Phase 4 outcome: a request made on a customer's phone is stored by the backend, drafted server-side by the existing rules, reviewed by the owner at /owner/quotes from any device behind the owner sign-in when hosted, and its approval and (fake) payment are visible to both sides from their own devices. The localStorage request/quote store is retired; only a per-browser customer key remains in the browser. R17-R22.",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "order": 8
     },
     {
       "id": "m10",
       "title": "The quote is a real exchange between two people",
       "description": "Second phase 4 milestone, after m9. The request carries a name and an email address (mobile optional); the owner can adjust the price and add lines and a note before sending; the customer is emailed when the request is received, when the quote is sent (the quote itself, itemised, with a link to view and pay) and when payment is recorded (a receipt); the owner is emailed when a request arrives; a request has a lifecycle with an end, and the owner list is usable once real requests arrive. Email goes through a provider's REST API behind a one-module seam with an outbox fallback so nothing waits on the account. R23-R28. Revised from text messages to email on 2026-09-05 on the client's direction. Sequenced as stage 4 of the m12 sprint (sprint-live.md): the seam, the outbox and the SMTP adapter are merged (t37); what remains is t38, which is the user's hands. Reading this milestone as the live front is what misled a JUNIOR FULL STACK engineer on 2026-09-06.",
-      "status": "planned",
+      "statusAtLastReconcile": "planned",
       "order": 10
     },
     {
       "id": "m11",
       "title": "Live baseline corrections",
       "description": "Decided by the user on 2026-09-06 after the v1 baseline push and the scrutiny reports: supplier data must leave the public bundle (#61), invented tires must route to owner review rather than auto-quote (#62), and a job is quoted for the number of tires asked for, default four (#93). Three PRs in that order from the owner-screen lane; the gate gains a bundle check.",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "order": 9
     },
     {
       "id": "m12",
       "title": "Live on the client's own domain",
       "description": "The final sprint to live, decided by the user on 2026-09-06: stock data on every listed size (page-one coverage), the app made safe for real customers, the client's domain with certificate, monitoring and a rehearsed restore, then email (m10's t37 and t38) last. The plan, gates and assignment table by agent name are in .forge/sprint-live.md. The owner approval gate is untouched throughout. Stage 3 is the open gate as of 2026-09-06 16:50Z: every task an agent can do in it is done, and what remains -- SPF/DKIM, KMT_ALLOWED_HOSTS, KMT_CANONICAL_HOST and the restore drill -- is the user's hands.",
-      "status": "in_progress",
+      "statusAtLastReconcile": "in_progress",
       "order": 11
     },
     {
       "id": "m13",
       "title": "Ken's day-to-day: finding a request, remembering a customer, pricing a size",
       "description": "The first post-launch milestone for the owner portal, planned in .forge/m13-owner-day-to-day.md by the OWNER PORTAL ANALYST against measurements recorded there. Ken finds the request a customer is calling about in one search, remembers what he told them last time, and prices a whole size in one action. Nothing in it starts before gate 3 of sprint-live.md.",
-      "status": "planned",
+      "statusAtLastReconcile": "planned",
       "order": 12
     }
   ],
@@ -101,7 +101,7 @@
       "title": "Scaffold React + Vite + Tailwind project",
       "description": "Run Vite's React template, add Tailwind, confirm `npm run dev` serves a blank styled page locally. Done when: `npm install && npm run dev` starts with no errors and a Tailwind utility class visibly renders (e.g. background color) in the browser.",
       "milestoneId": "m1",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "critical",
       "dependsOn": [],
       "notes": [
@@ -120,7 +120,7 @@
       "title": "Add two-route shell (/ and /owner) with nav link between them",
       "description": "Implement the manual path-based routing decided on. Each route renders a placeholder screen with a visible, tappable link/button to the other route. Done when: loading / shows a link to /owner and vice versa, verified by clicking through in a browser at both a phone-width and desktop-width viewport.",
       "milestoneId": "m1",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "critical",
       "dependsOn": [
         "t1"
@@ -143,7 +143,7 @@
       "title": "Deploy skeleton to Vercel and confirm public URL loads on a phone",
       "description": "Connect the repo to Vercel (or push a build), get a live URL, and open it on an actual phone browser (not just resized desktop) to confirm both routes load with no login wall. Done when: a public https URL is reachable from a phone on cellular/wifi outside any VPN, showing the two-route shell from the previous task.",
       "milestoneId": "m1",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "critical",
       "dependsOn": [
         "t2"
@@ -166,7 +166,7 @@
       "title": "Define hardcoded tire catalog data module",
       "description": "Create a data module (e.g. src/data/catalog.js) exporting a small array of tire options (name/size, price, maybe a stock flag usable later for exceptions). Structure it as plain data/functions so swapping in a real pricing source later doesn't require touching consumers. Done when: the module exports at least 4-6 believable tire entries and can be imported and console-logged/rendered with no errors.",
       "milestoneId": "m2",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t2"
@@ -189,7 +189,7 @@
       "title": "Build customer request form at /",
       "description": "Form fields: vehicle info (make/model/year or similar), tire choice selected from the catalog module, and location/date placeholders. Client-side validation only (required fields). Done when: filling every field and submitting does not error, and an incomplete form visibly blocks submission with a message, tested on a phone-width viewport.",
       "milestoneId": "m2",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t2",
@@ -214,7 +214,7 @@
       "title": "Persist submitted request to shared demo store",
       "description": "On form submit, write the request to the localStorage-backed store decided on (per architecture decision), keyed so /owner can read it in the same session. Done when: submitting the form on / and then opening /owner in the same browser shows the submitted request's raw data (even before quote/UI work exists), verified manually.",
       "milestoneId": "m2",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t5"
@@ -228,7 +228,7 @@
       "title": "Write faked pricing rule engine over the catalog",
       "description": "A pure function that takes a submitted request and the catalog and returns a draft quote (line items, total, and a scripted condition that marks it as an \"exception\" instead of auto-approvable -- e.g. an unusual vehicle type or a specific tire flagged out-of-stock in the catalog). Done when: calling the function with a few different sample requests in isolation (e.g. a quick console/test script) returns a normal quote for typical inputs and an exception for the scripted trigger input.",
       "milestoneId": "m3",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t4"
@@ -242,7 +242,7 @@
       "title": "Run pricing engine immediately on submit and store the draft quote",
       "description": "Wire the pricing function into the submit flow from t6: as soon as a request is submitted, generate its draft quote and save both to the shared store, linked by an id. Done when: submitting the form on / immediately shows the customer some acknowledgment that a quote was drafted (even a simple \"quote drafted, awaiting review\" message), and /owner can read the same draft quote for that request id.",
       "milestoneId": "m3",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t6",
@@ -257,7 +257,7 @@
       "title": "Build owner quote list/review screen at /owner",
       "description": "Read all drafted quotes from the shared store and render each with its details, a normal state showing an \"Approve & Send\" button, or -- if flagged by the pricing engine -- a visibly distinct exception state (different styling/badge, no auto-send button). Done when: after submitting a request from /, opening /owner shows that quote in the correct state (normal vs. exception) matching the scripted trigger, verified for both a typical and an exception-triggering submission.",
       "milestoneId": "m4",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t8"
@@ -271,7 +271,7 @@
       "title": "Wire Approve & Send action to update quote status",
       "description": "Clicking Approve & Send on a non-exception quote updates its status in the shared store (e.g. to \"approved\") and reflects that change in the /owner UI without a page reload surprise. Done when: clicking Approve & Send changes that quote's visible state on /owner and the update is readable back from the store (e.g. by reloading /owner and seeing it persist as approved for that session).",
       "milestoneId": "m4",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t9"
@@ -285,7 +285,7 @@
       "title": "Build customer-facing approved quote view",
       "description": "After the owner approves, the customer (on / or a dedicated quote view reachable from /) can see the approved quote's details reflecting the store update. Done when: approving a quote at /owner and then navigating back to / (or the relevant screen) in the same browser session shows the quote as approved with its details, no dead end.",
       "milestoneId": "m5",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t10"
@@ -299,7 +299,7 @@
       "title": "Build fake payment step that always succeeds",
       "description": "From the approved quote view, a \"Pay\" action that requires no real payment details (or accepts anything without validation) and always resolves to success, updating the quote's status to paid/confirmed in the shared store. Done when: clicking Pay on an approved quote transitions to a confirmation state and that state is reflected in the store.",
       "milestoneId": "m5",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t11"
@@ -313,7 +313,7 @@
       "title": "Build clear confirmation end screen",
       "description": "After fake payment succeeds, show a final \"confirmed and paid\" screen with no further action implied (no scheduling/dispatch prompts), satisfying R6. Done when: completing payment lands on a screen that clearly reads as the end of the flow, with only a way back to start over (e.g. link to /), not a broken or missing next step.",
       "milestoneId": "m6",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t12"
@@ -331,7 +331,7 @@
       "title": "Responsive pass: verify every screen at phone and desktop widths",
       "description": "Walk every screen in the happy path (/, request form, drafted-quote ack, /owner list, approved view, payment, confirmation) at a phone-sized viewport and a desktop-sized viewport, fixing any layout that breaks or overflows. Done when: no screen requires horizontal scrolling or has overlapping/cut-off elements at common phone widths (~375px) or desktop widths (~1280px+).",
       "milestoneId": "m6",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t13"
@@ -347,7 +347,7 @@
       "title": "No-dead-end audit of the full happy path",
       "description": "Walk the entire flow start to finish (submit request -> drafted -> owner approves -> customer views -> pays -> confirmation) and confirm every screen has a visible, working next action, including the exception path rendering distinctly at /owner. Done when: a full run-through from / to the confirmation screen completes with no point requiring the tester to guess a URL or hit a browser back button to continue.",
       "milestoneId": "m6",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t13"
@@ -363,7 +363,7 @@
       "title": "Deploy final build and verify full flow on a real phone",
       "description": "Push the finished happy path to the live Vercel URL and run through the entire flow (steps 1-4 of the MVP) on an actual phone browser, not a resized desktop window. Done when: the full flow -- submit, draft, approve, pay, confirm -- completes on the public URL from a phone with no errors and no dead ends.",
       "milestoneId": "m6",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "critical",
       "dependsOn": [
         "t14",
@@ -381,7 +381,7 @@
       "title": "Extract shared branded UI classes (top bar, card panel, buttons, eyebrow/heading, secondary text) into App.css",
       "description": "Generalize the visual language already proven on / (near-black ground, dark card panels with subtle borders, small red uppercase eyebrow labels, bold condensed uppercase headings, red reserved for primary actions/key figures, small gray secondary text, button variants for primary/approve/reject/neutral) into a small set of shared classes in App.css that /owner, /status, and /confirmation can apply, plus a simpler internal top bar variant (KMT wordmark + route-appropriate nav links) distinct from the marketing site-nav per the recorded decision. Done when these classes exist and are exercised by at least one non-customer route (can land together with the /owner task), and no class name collides with or changes the rendering of the existing customer flow (/ must look pixel-identical after this change -- verify by diffing a phone+desktop screenshot of / against .forge/shots/phone-_.png and desktop-_.png).",
       "milestoneId": "m7",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -395,7 +395,7 @@
       "title": "Redesign /owner to use the shared branded UI (R8)",
       "description": "Replace the default/unstyled Tailwind gray-and-blue layout at /owner with the shared classes from the previous task: dark ground, card-based request/quote panels with subtle borders, condensed uppercase headings with red eyebrow labels, small gray secondary text, red reserved for the primary Approve & Send action and key figures (quote total). No change to what data is shown, what Approve & Send/Reject do, or the exception trigger logic (R13) -- this is App.jsx JSX/class changes only, calculateDraftQuote and store.js are untouched. Verify by loading /owner (seed via localStorage as the audit script does) at phone and desktop widths and confirming it visually matches the / design language, not default Tailwind.",
       "milestoneId": "m7",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t17"
@@ -411,7 +411,7 @@
       "title": "Verify exception state stays visually distinct on redesigned /owner (R9)",
       "description": "After the /owner redesign, confirm a flagged-exception quote is still unmistakably distinct from a normal approvable draft using amber (not brand red, not brand green) -- per the design reference and R9. Verify by seeding an exception quote (same fixture makeStore({exception:true}) used in .forge/dead-end-audit.mjs) and a normal draft quote side by side on /owner at phone and desktop widths, confirming the exception card/badge is amber-coded and reads clearly as 'needs attention' rather than 'error' (red) or 'success' (green).",
       "milestoneId": "m7",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t18"
@@ -427,7 +427,7 @@
       "title": "Restyle /status: reuse shared components and add the numbered stepper (R10, R11)",
       "description": "Apply the shared branded classes (top bar, card panel, typography, buttons) to /status so it reads as the same product as / and /owner. Add the same numbered stepper pattern already used for the customer order flow on / (the order-step markup/classes) to show the request's position in draft -> approved -> paid, reusing the existing CSS rather than inventing a new progress indicator. No change to what triggers each status or what the Pay button does (R13). Verify at phone and desktop widths for a draft, approved, paid, and rejected quote (all four states already covered by fixtures in .forge/dead-end-audit.mjs / responsive-check.mjs).",
       "milestoneId": "m7",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t18"
@@ -443,7 +443,7 @@
       "title": "Restyle /confirmation to reuse shared components (R10, R12)",
       "description": "Apply the shared branded classes to /confirmation (top bar, card panel, typography, buttons) so it matches / and /owner, keeping the existing green success-state color per R12 (green already used for success elsewhere; do not force it to brand red). No new layout beyond what's needed for visual consistency, and no change to what data is shown or the 'Start a New Request' action (R13). Verify at phone and desktop widths using the existing quote-1/paid fixture.",
       "milestoneId": "m7",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t18"
@@ -459,7 +459,7 @@
       "title": "Responsive verification pass on all four restyled screens",
       "description": "Run .forge/responsive-check.mjs (or an equivalent phone-then-desktop screenshot pass) against /, /owner, /status, /confirmation after the restyle, confirming no horizontal overflow and that every screen looks like one product at both 375px and 1280px widths. Save updated screenshots into .forge/shots/ following the existing phone-*/desktop-* naming pattern so before/after is comparable. Done when the script reports no overflow issues and a visual check confirms /owner, /status, /confirmation no longer look like a different product from /.",
       "milestoneId": "m7",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t19",
@@ -477,7 +477,7 @@
       "title": "Re-run dead-end audit to confirm no behavior regressed (R13)",
       "description": "Run .forge/dead-end-audit.mjs against the restyled app and confirm every check still passes (submission acknowledgement, exception badge, Approve/Reject, Pay flow, confirmation end state, validation errors, rejected-quote messaging). This is the guardrail for R13 -- a pure restyle must not change any Phase 1 business rule, state transition, or route behavior. Done when the script exits 0 with all OK lines and no FAIL lines.",
       "milestoneId": "m7",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t22"
@@ -493,7 +493,7 @@
       "title": "Deploy Phase 2 build and spot-check the full flow on a real phone",
       "description": "Deploy the restyled app to Vercel (existing project; URL stability across phases is explicitly not a goal) and tap through the full happy path -- submit request, owner approve, pay, confirmation, plus the exception branch -- on an actual phone browser to confirm the redesign holds up outside a simulated viewport. Done when all four screens are reachable and visually consistent on a real device from the deployed URL.",
       "milestoneId": "m7",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t23"
@@ -510,7 +510,7 @@
       "title": "Split src/App.jsx into per-route modules with no behavior change",
       "description": "src/App.jsx is a single ~23KB file holding all four routes (/, /owner/quotes, /status, /confirmation) plus the customer wizard state, flagged in .forge/AGENTS.md as the reason multiple agents have exhausted their context editing it. Every later task in this milestone touches the customer route's tire-loading logic, so do this first while the diff is behavior-only and easy to verify. Extract each route into its own component file (e.g. src/routes/CustomerRequest.jsx, src/routes/QuoteRequests.jsx, src/routes/Status.jsx, src/routes/Confirmation.jsx), keeping shared state (navigate, ownerVersion, storage-event listener) in App.jsx or a small shared hook. No new dependency (still no router library, per the existing decision). Verify: npm run build, npm run lint, node .forge/dead-end-audit.mjs and node .forge/responsive-check.mjs against vite preview all pass with the same counts as before the split (36 and 8 checks respectively).",
       "milestoneId": "m8",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -528,7 +528,7 @@
       "title": "Add a customer-safe catalog endpoint to the owner backend",
       "description": "Add GET /api/catalog to backend/api.mjs (or a small new module it calls into), backed by a new Inventory method that returns every offered, priced tire across all sizes -- unpaginated, unlike inventory.list() -- in exactly the shape src/data/catalog.js's buildCatalog() already produces: {id, name, size, price, inStock, category, description}. Reuse markup.js's quotedPrice (already imported by inventory.mjs) so owner price overrides markup exactly as it does in the owner workspace, and exclude any tire where offer.enabled is false or price resolves to null. Do not expose SKU, notes, list price, or supplier URL. Verify with new tests in backend/owner.test.mjs: an owner-priced tire appears at the owner's price; an unpriced tire with a markup rate set appears at the marked-up price; a disabled tire and one with no usable price are both absent; the response shape matches what src/data/catalog.js's buildCatalog() rows already carry field-for-field.",
       "milestoneId": "m8",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -543,7 +543,7 @@
       "title": "Wire the customer flow to fetch the live catalog, with fallback to the static one",
       "description": "In the customer route (after t25's split), replace the direct getAllTires() call with a loader that tries GET /api/catalog first and falls back to the existing static buildCatalog()/getAllTires() result on any network error, non-2xx, or non-JSON response (same failure detection pattern OwnerInventory.jsx already uses for its own api() helper). Show a brief loading state consistent with existing patterns; once resolved, the rest of the wizard (fitment selector, tire list, submit) works unchanged against whichever tire array loaded. No change to src/pricing.js or src/store.js in this task -- pricing still runs over whichever catalog array was loaded, exactly as calculateDraftQuote already accepts a catalog argument. Verify: with backend/dev.mjs running and an owner price/markup set, the customer sees that tire at that price; with the backend stopped (plain npm run dev / vite preview), the customer flow behaves exactly as today (dead-end audit and responsive check both pass unchanged) -- confirming the fallback, not just the happy path.",
       "milestoneId": "m8",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t25",
@@ -561,7 +561,7 @@
       "title": "Deploy through CI and verify both catalog paths on the public site",
       "description": "Deployment is to Fly through CI on every push to main (https://kmt.fly.dev), not to Vercel, and the deployed site runs the owner backend -- so production exercises the live-backend path, not only the fallback. Merge to main, let CI deploy, then on a real phone confirm the customer flow works end to end against the live catalog. Prove the fallback separately by pointing the frontend at a backend that is refusing connections, since that path no longer happens by accident in production. Run the browser audits locally against your own build before opening the PR: CI does not run them on pull requests. AUDIT_BASE=<url> node .forge/dead-end-audit.mjs, .forge/responsive-check.mjs, .forge/request-flow-check.mjs.",
       "milestoneId": "m8",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t27"
@@ -577,7 +577,7 @@
       "title": "Backend owns requests and quotes, and drafts the quote server-side",
       "description": "Add requests and quotes to the existing SQLite database in backend/inventory.mjs (or a sibling module it composes, e.g. backend/quotes.mjs, if inventory.mjs is getting long -- keep it to one database file and one migration style). Request rows hold what the form submits today (vehicleInfo, tireSelection, location, date, locationType, serviceZip, locationNotes), a random 128-bit id from node:crypto, the per-browser customer key that submitted it, and timestamps. Quote rows hold what saveQuote stores today (requestId, lineItems, total, exception, exceptionReasons, status draft/approved/rejected/paid, timestamps) plus a version for optimistic updates like offers. Draft the quote on the server: compose the same catalog the customer was shown with catalogFromLiveRows(inventory.catalog()) from src/data/catalog.js and run calculateDraftQuote from src/pricing.js over it, unchanged, the way the backend already imports src/markup.js. Public endpoints, added to the GET-only allow-list pattern in backend/api.mjs but as their own handler (like createCatalogApi, not inside createApi): POST /api/requests {customerKey, ...form fields} -> 201 {request, quote}; GET /api/requests?customer=<key> -> that key's requests with quotes, newest first; GET /api/requests/:id -> one request with its quote, by id alone; POST /api/requests/:id/pay {customerKey} -> marks the quote paid if it is approved and the key matches. Validate every field the way saveOffer does; reject unknown tire ids against the composed catalog; never return another customer's rows. Mount the handler in both backend/dev.mjs and backend/server.mjs, and extend isPublicApiCall so these paths need no owner session (a prefix rule for /api/requests, still GET-or-listed-POST only). Tests in backend/owner.test.mjs or a new backend/quotes.test.mjs run by the same node --test command: a submit stores both rows and returns the same total and exception state the frontend computes today for the same input (compare against calculateDraftQuote directly); an out-of-stock or off-road tire produces an exception; a wrong customer key cannot list or pay; an unknown id is 404; paying a draft (not yet approved) is refused; no owner session is needed for any of these and the owner endpoints still 401 without one.",
       "milestoneId": "m9",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [],
       "notes": [
@@ -591,7 +591,7 @@
       "title": "Owner endpoints to list, approve and reject quotes",
       "description": "Under /api/owner/, session-gated like the rest of createApi: GET /api/owner/requests -> every request with its quote, newest first, with the same fields the owner screen shows today (vehicle, tire name and size resolved from the catalog the quote was drafted against, location, date, draft total, exception reasons, status). POST /api/owner/quotes/:id/approve and /reject with {version}; a stale version returns 409 like PUT /api/owner/offers/:id, and approving or rejecting anything but a draft is refused. Do not add price editing; it is an open question for the owner in requirements.md. Tests: approve moves draft to approved and the customer's GET /api/requests/:id sees it; reject likewise; 401 without a session on the hosted server; 409 on a stale version; the customer-facing endpoints from t29 are unchanged by this task (re-run their tests).",
       "milestoneId": "m9",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t29"
@@ -607,7 +607,7 @@
       "title": "The four routes read and write the backend; the browser store is retired",
       "description": "Replace the localStorage implementation in src/store.js with an API client that keeps the call sites small: saveRequest posts to /api/requests (the server drafts the quote, so CustomerRequest.jsx no longer calls calculateDraftQuote or saveQuote itself), getAllRequests/getAllQuotes for the customer become one call to /api/requests?customer=<key>, updateQuoteStatus('paid') becomes POST /api/requests/:id/pay, and the owner screen's list/approve/reject call the t30 endpoints. The per-browser customer key is generated once with crypto.randomUUID() and kept in localStorage under its own name; nothing else is stored there, and the old kmt_store key is removed on first load. Failure handling follows the phase 3 loader's rule for detection (content-type before parse, non-2xx is a failure) but NOT its rule for recovery: a failed submit shows a clear message with the shop's phone number and a retry, and never drafts a quote locally (R21). /owner/quotes gets the same sign-in gate OwnerInventory.jsx already has; extract SignIn into src/owner/SignIn.jsx rather than copying it. /status accepts ?request=<id> to show one request from any device, and otherwise lists the device's requests. Keep the catalog fallback from phase 3 untouched: browsing works with the backend down, only submit needs it. Loading states in the existing style. No change to src/pricing.js beyond what t29 needed, none to the exception rules, none to routes or CSS beyond the new failure and loading states. Verify against node backend/dev.mjs: submit from one browser profile, approve from another (owner), pay from the first, and confirm each step is visible to the other side after at most one reload; then confirm the submit-failure state with the backend stopped. The audits will not pass against a plain preview after this task; run them against the real server per t32's method, and record the counts you got in the PR body.",
       "milestoneId": "m9",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t29",
@@ -624,7 +624,7 @@
       "title": "The browser audits run against the real server, locally and in the CI gate",
       "description": "Change the three audit scripts (.forge/dead-end-audit.mjs, request-flow-check.mjs, responsive-check.mjs) and the CI gate so they run against backend/server.mjs serving the built dist/, not vite preview: in the workflow's check job, after npm run build, start node backend/server.mjs with KMT_OWNER_DB pointing at a temp file, KMT_OWNER_PASSWORD set to a throwaway value, PORT 4173, bound to 127.0.0.1, using the reachable-start form already in the workflow (node directly, $! captured, trap on EXIT), wait for it as the preview is waited for today, then run the audits with AUDIT_BASE and the same KMT_OWNER_PASSWORD in the environment. In the scripts, at the owner step, if a sign-in form appears, fill the password from the environment and continue; locally against backend/dev.mjs no form appears and nothing changes. Give each script a fresh customer context per viewport so runs do not see each other's requests. Update .forge/AGENTS.md's verification contract and hygiene note and .forge/conventions.md (which still says the audits run against vite preview) with the new command and the new counts; the numbers will differ from 36 / 26 / 8 and the new baseline is recorded, not the old one held. Prove the gate is real: open a PR with a deliberate one-line break in the submit path, watch the check fail at the audit step, then revert it in the same PR before it is merged, and say so in the PR body.",
       "milestoneId": "m9",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t31"
@@ -640,7 +640,7 @@
       "title": "Deploy through CI and prove the flow between two devices on the public site",
       "description": "Merge to main, let CI deploy, and confirm the post-deploy audit job passed on its own. Then the proof the phase exists for: on a real phone, submit a request at https://kmt.fly.dev for a tire in a scraped size; on a different device, sign in at /owner/quotes, see that request with its draft, and approve it; back on the phone, open /status, see it approved, pay, and reach /confirmation; then see it paid on the owner device. Also open the request by its link (/status?request=<id>) on the second device without the phone's key. Record each step as its own line with the device it was done on. Note in the PR body that requests previously stored in browsers' localStorage are gone by design. Close m9.",
       "milestoneId": "m9",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t32"
@@ -656,7 +656,7 @@
       "title": "The request carries a name and an email address, and optionally a mobile number",
       "description": "Add customerName (required), customerEmail (required, syntactically validated and stored lower-cased and trimmed) and customerPhone (optional; when given, a US number accepted the ways people type it and stored E.164, +1XXXXXXXXXX) to the request, validated server-side in backend/quotes.mjs the way other fields are. Collect them at the service-details step in src/components/RequestDetails.jsx / the customer route, under a short 'Where do we send your quote?' heading, with autoComplete name/email/tel so phones fill them in one tap, inline validation in the existing style, and one plain sentence under the email field: the quote is sent to this address. No checkbox. Show name, email (mailto: link) and phone (tel: link) on the owner's request card in the quote-review screen; the customer-facing endpoints return them only to the holder of that request's key or id. Update .forge/request-flow-check.mjs and the dead-end audit to fill the new fields, and record the new counts. Tests: a submit without name or email is refused with a field-specific message; a malformed email is refused; a phone typed as (617) 410-8319 is stored as +16174108319 and a missing phone is fine; the owner list shows the contact; another customer's key cannot read it.",
       "milestoneId": "m10",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t33"
@@ -673,7 +673,7 @@
       "title": "The owner adjusts the quote before sending, and the draft is kept",
       "description": "Backend: quotes gain an editable 'sent' version alongside the draft: lineItems (each with description, quantity, unitPrice), a customer note, and a total computed server-side from the lines, never trusted from the client. PUT /api/owner/quotes/:id {lineItems, note, version} under the session gate saves an adjustment on a draft (409 on a stale version; refused on anything but a draft). Approve & Send sends whatever the current lines are; the original draft lineItems and total are kept in their own columns and never overwritten. Frontend, /owner/quotes: each draft's lines become editable in place (unit price, quantity, remove), an 'Add line' with description and amount, and a note field; the total updates as they type; Approve & Send uses the adjusted numbers and the exception banner stays until sent. /status and /confirmation show the sent total and the note. src/pricing.js is unchanged: it still drafts; adjusting is a separate, owner-only operation. Tests: adjustment changes the sent total and not the draft; a total sent from the client is ignored in favour of the computed one; approving after adjusting sends the adjusted total to the customer endpoint; adjusting a sent or paid quote is refused.",
       "milestoneId": "m10",
-      "status": "in_progress",
+      "statusAtLastReconcile": "in_progress",
       "priority": "medium",
       "dependsOn": [
         "t34"
@@ -689,7 +689,7 @@
       "title": "A request has an end, and the owner list is usable with real requests in it",
       "description": "Statuses become: draft, sent (was approved), paid, done, rejected, cancelled. Owner endpoints: POST /api/owner/quotes/:id/done (only from paid) and /cancel (from draft or sent, with an optional reason the customer sees); customer endpoint: POST /api/requests/:id/cancel with the key, only before payment. Keep the old 'approved' value readable so nothing already stored breaks; write 'sent' from now on. Owner list, GET /api/owner/requests?view=open|attention|awaiting|paid|closed, default open (draft, sent, paid), newest first, with counts per view; the screen gets those filters in the existing style and shows open by default. The /status stepper gains the done state and shows rejected or cancelled plainly with the reason. Nothing is deleted. Tests for every transition, allowed and refused, and for the view filters.",
       "milestoneId": "m10",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t35"
@@ -706,7 +706,7 @@
       "title": "Email to the customer and the owner, through a provider behind a seam with an outbox",
       "description": "One module, backend/mail.mjs: send({to, subject, text, html}) that, when EMAIL_PROVIDER and its credential are set (start with one provider, e.g. EMAIL_PROVIDER=resend with EMAIL_API_KEY and EMAIL_FROM as 'Ken's Mobile Tire <quotes@domain>'), POSTs to the provider's send endpoint with fetch, no SDK; and when unset, writes the message to an outbox table with status 'unsent'. Every send, real or not, is recorded in the outbox (to, subject, body, status sent/failed/unsent, provider id, error, timestamp); a provider failure is recorded, logged, and never breaks the request that triggered it. Four messages, each plain text with a simple HTML version in the existing brand colours and each carrying one link built from KMT_PUBLIC_URL: (1) to the customer on submit, 'We received your request', restating vehicle, tire, size, location and preferred date, saying the shop will reply with a quote, with the /status?request=<id> link; (2) to the owner (KMT_OWNER_EMAIL) on submit, the same details plus the customer's name, email and phone, with the link to /owner/quotes; (3) to the customer when the quote is sent, the quote itself laid out as an invoice -- each line with description, quantity, unit price and amount, the total, the owner's note -- and the link to view and pay; (4) to the customer when payment is recorded, a receipt with the same lines marked paid and the request id as the reference. Owner screen: an 'Outbox' panel (session-gated GET /api/owner/outbox) listing recent messages with status and a way to open one and read it, so the flow is verifiable with no account and a failed send is visible. Document the variables in .forge/owner-backend.md's configuration table and README's environment table. Tests use the outbox only: each event produces exactly one message to the right address with the right subject and link; the quote email's lines and total equal the sent quote's; a failing provider marks the message failed and the triggering request still succeeds; nothing is sent to an address the request does not carry.",
       "milestoneId": "m10",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "medium",
       "dependsOn": [
         "t36"
@@ -723,7 +723,7 @@
       "title": "Deploy, configure the email provider, and prove the exchange between two inboxes",
       "description": "Merge to main, let CI deploy, and confirm the post-deploy audit job on its own. The client opens the email provider account, verifies the sending domain (SPF and DKIM records at the DNS host) and sets the secrets on Fly (fly secrets set, values never in the repo or the PR); until then, prove every step with the outbox on the live site. Then with the provider configured: from phone A, submit a request with inbox A's address; inbox A receives the acknowledgement and inbox B (owner) receives the alert; on device B open the link, sign in, adjust a line, add a note, send; inbox A receives the quote email with the right lines and total, open its link, pay; inbox A receives the receipt; on device B mark the job done; the owner list shows the request under closed. Check each email lands in the inbox and not spam, and say so. Record each step as its own line with the device or inbox. Close m10.",
       "milestoneId": "m10",
-      "status": "in_progress",
+      "statusAtLastReconcile": "in_progress",
       "priority": "medium",
       "dependsOn": [
         "t37"
@@ -740,7 +740,7 @@
       "title": "Supplier data leaves the public bundle",
       "description": "src/data/catalog.js stops importing scraped-tires.json; the static fallback is seed tires plus generated coverage; the backend alone reads the snapshot; the live catalog still composes through catalogFromLiveRows. A script under .forge/ fails if dist/ contains listPrice, sku: or giga-tires.com after the build; the repo agent wires it into the check job. Report bundle size before and after. Issue #61.",
       "milestoneId": "m11",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -754,7 +754,7 @@
       "title": "Invented tires route to owner review",
       "description": "In src/pricing.js a tire whose id does not start with giga- adds the exception reason \"Not a supplier-listed tire; owner review required\". The audits' clean path moves from the seed All-Weather Standard to a real supplier tire present in the seeded gate database; the off-road seed stays for the exception path; EXPECTED_CHECKS bumped where counts move. Tests for both branches. Issue #62.",
       "milestoneId": "m11",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t39"
@@ -770,7 +770,7 @@
       "title": "A job is quoted for the number of tires asked for, default four",
       "description": "The tire step asks how many (1, 2, 4; default 4); the payload carries quantity; cleanRequest validates it; calculateDraftQuote multiplies the tire line by quantity and keeps the mobile-service fee as one line; the set price on the tire step, the owner card and /status show quantity times unit price; audits fill the default and update expected totals. Tests: default 4, explicit 2, invalid refused, fee unmultiplied. Issue #93.",
       "milestoneId": "m11",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t40"
@@ -786,7 +786,7 @@
       "title": "The walk reads page one of every size the supplier lists",
       "description": "Breadth-first, one page per size, with #81 (empty versus block) fixed before the 19-24 and 12-14 inch bands, under the five approved rules; output stays outside the repository. Owner: DB ADMIN local_31eab57d, inside the user's optimise instruction.",
       "milestoneId": "m12",
-      "status": "in_progress",
+      "statusAtLastReconcile": "in_progress",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -800,7 +800,7 @@
       "title": "Stage-1 import and read-only verification of the live catalog",
       "description": "The breadth file imported without --complete by the user; /api/catalog row count, five per-band size samples, no supplier fields, deployed-site check green. Gate 1. Owner: the user runs it; DB ADMIN prepares; QA ENGINEER verifies.",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t42"
@@ -816,7 +816,7 @@
       "title": "Customer-facing request shape without contact details (#65)",
       "description": "get() and listForCustomer() drop customerName, customerEmail, customerPhone and locationNotes; listForOwner keeps the full row; a test per shape. Owner: LEAD BACKEND DEV.",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -830,7 +830,7 @@
       "title": "Rate limits on public endpoints, login throttling, logout invalidation (#63, #66, #98)",
       "description": "Per-IP and per-key limits on submit, pay and cancel; owner login throttled; logout invalidates the session; body-size and address validation; tests, with the gate audits staying under the limits. Owner: LEAD BACKEND DEV.",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t44"
@@ -846,7 +846,7 @@
       "title": "Security headers and the env-driven canonical host (#67, app half of #102)",
       "description": "Headers on every response, HSTS only over HTTPS; when KMT_CANONICAL_HOST is set every other host gets a 301 to it, /api/health exempt. Owner: LEAD BACKEND DEV; DEVSCOPS/AUDITOR reads.",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t45"
@@ -862,7 +862,7 @@
       "title": "Owner cookie SameSite=Lax and the /owner/quotes?request= deep link (#89)",
       "description": "Cookie half with a test; deep link opens the request card. Precondition of t37. Owner: LEAD BACKEND DEV (cookie), LEAD UI ENGINEER (deep link).",
       "milestoneId": "m12",
-      "status": "todo",
+      "statusAtLastReconcile": "todo",
       "priority": "high",
       "dependsOn": [
         "t44"
@@ -878,7 +878,7 @@
       "title": "Service area at submit, date and ZIP validation (#95, #70)",
       "description": "Configured ZIP allow-list or radius refused with a clear message and the phone number; date today or later; ZIP five digits. Waits on the user for the area. Owner: LEAD BACKEND DEV (validation), LEAD UI ENGINEER (message).",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t45"
@@ -894,7 +894,7 @@
       "title": "Production copy, sign-out, contrast, not-found (#72, #96, #85, #76)",
       "description": "Page title, stale owner-screen strings, formatted phone, a sign-out control, AA contrast at 375, unknown paths render not-found. Owner: LEAD UI ENGINEER, after #126.",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -908,7 +908,7 @@
       "title": "Privacy notice page and link (#100)",
       "description": "/privacy with what is collected, why, retention (R27 stated as policy), who sees it, how to ask for deletion; linked under the email field and in the footer. Text drafted by the lead, approved by the user or Ken before merge. Owner: LEAD UI ENGINEER.",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t49"
@@ -924,7 +924,7 @@
       "title": "Container as non-root, .dockerignore excludes secrets (#87, #68)",
       "description": "USER node with Chromium still launching under Xvfb; secrets/, .worktrees/, data/ and walk output ignored. Owner: DEV OPS/INFRASTRUCTURE after #123; DEVSCOPS/AUDITOR reads.",
       "milestoneId": "m12",
-      "status": "in_progress",
+      "statusAtLastReconcile": "in_progress",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -938,7 +938,7 @@
       "title": "Domain cutover runbook: DNS, certificate, allowed hosts, canonical flip, rollback (#102)",
       "description": "docs/operations.md: the steps in order, how each is verified, the rollback; plus the sending subdomain records (SPF, DKIM, DMARC) for stage 4. The user executes every flyctl and registrar step. Owner: DEV OPS/INFRASTRUCTURE writes; the user executes.",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t46"
@@ -954,7 +954,7 @@
       "title": "Workflow on the public URL variable, domain checks, docs-only merges skip deploy, scheduled uptime check (#103, #101)",
       "description": "One repository variable for the URL; three new deployed-site checks (canonical 200, kmt.fly.dev 301, /api/health 200) with EXPECTED_CHECKS moved in the same commit; docs-only merges do not redeploy; a ten-minute schedule reads /api/health and fails loudly. Owner: KMT-F REPO AGENT (workflow); QA ENGINEER or DEV OPS (check script).",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [
         "t46"
@@ -970,7 +970,7 @@
       "title": "Operations runbook: backups, restore drill, rotation, incidents (#99, #80)",
       "description": "Fly snapshot retention, a monthly off-Fly copy, a restore exercised once and recorded, rotation of the owner password and session secret, incident steps. Owner: DEV OPS/INFRASTRUCTURE writes; the user runs the drill.",
       "milestoneId": "m12",
-      "status": "in_progress",
+      "statusAtLastReconcile": "in_progress",
       "priority": "high",
       "dependsOn": [
         "t51"
@@ -986,7 +986,7 @@
       "title": "Gate coverage: #79 flake, #113 quantity audit, #78 cancel audit",
       "description": "Wait for the chip instead of a sleep; an audit step that picks quantity 2 and checks set price and total; cancel through an in-page confirm; counts bumped where they move. #79 waits on the user's word. Owner: QA ENGINEER once reopened in the repository.",
       "milestoneId": "m12",
-      "status": "todo",
+      "statusAtLastReconcile": "todo",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -1000,7 +1000,7 @@
       "title": "Cutover and live test on the domain",
       "description": "The user runs t52; QA ENGINEER drives the customer side on an emulated phone against the domain with a TEST request; the user drives the owner side; DEVSCOPS/AUDITOR reads the domain before and after. Recorded step by step in HANDOFF.md. Gate 3. Owner: the user, QA ENGINEER, DEVSCOPS/AUDITOR; the PM runs the checklist.",
       "milestoneId": "m12",
-      "status": "in_progress",
+      "statusAtLastReconcile": "in_progress",
       "priority": "high",
       "dependsOn": [
         "t52",
@@ -1023,7 +1023,7 @@
       "title": "The owner screen puts the tire list first and the controls in one collapsed panel",
       "description": "The first tire on /owner began 2,048 px below the top, behind two and a half screens of refresh, import and markup controls. Tire list first, shorter cards, first tire within one screen at 375 px.",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -1037,7 +1037,7 @@
       "title": "Brand assets served with validators and a day of cache, plus the web manifest",
       "description": "The wheel favicon and the rest of the brand assets, cached and validated, with brand-asset checks in the deployed-site check.",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -1051,7 +1051,7 @@
       "title": "The palette returns to black, white and red",
       "description": "Ken's call after seeing the navy overhaul: the original black, white and red come back; the rest of the overhaul stays.",
       "milestoneId": "m12",
-      "status": "done",
+      "statusAtLastReconcile": "done",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -1065,7 +1065,7 @@
       "title": "The site speaks as Ken, in the first person",
       "description": "First person where a person could truthfully say it; no pronoun where the speaker is a loading state, the browser or a server error. The privacy page stays third person. 32 sentences, approved line by line in .forge/t62-voice.md.",
       "milestoneId": "m12",
-      "status": "in_progress",
+      "statusAtLastReconcile": "in_progress",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -1079,7 +1079,7 @@
       "title": "Every customer-facing call control becomes a text control",
       "description": "Ken's call: text, not call. Customer-facing controls only -- the owner card's tel: link stays.",
       "milestoneId": "m12",
-      "status": "in_progress",
+      "statusAtLastReconcile": "in_progress",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -1093,7 +1093,7 @@
       "title": "A special-instructions field on the service step",
       "description": "customerNotes, 500 characters, shown on the owner card and in the email, redacted the way location notes are.",
       "milestoneId": "m12",
-      "status": "in_progress",
+      "statusAtLastReconcile": "in_progress",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -1107,7 +1107,7 @@
       "title": "\"Looking for more than just tires?\" with an inquiry form and an owner list",
       "description": "An inquiries table, a public form, an owner list, and \"Need it today? Text ... or message me on social\". Ken's line for the section is the user's to supply.",
       "milestoneId": "m12",
-      "status": "in_progress",
+      "statusAtLastReconcile": "in_progress",
       "priority": "high",
       "dependsOn": [],
       "notes": [
@@ -1121,7 +1121,7 @@
       "title": "Socials and testimonials from site-content.json, empty-safe until Ken's arrive",
       "description": "The handles and quotes render only when present, so the section is safe to ship before Ken supplies them.",
       "milestoneId": "m12",
-      "status": "todo",
+      "statusAtLastReconcile": "todo",
       "priority": "high",
       "dependsOn": [],
       "notes": [
