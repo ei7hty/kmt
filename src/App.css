@@ -775,8 +775,16 @@
 }
 
 /* Contact links on a request card were browser-default blue on near-black,
-   2.13:1. Brand red text reads at 5:1 on the panel. */
-.owner-request a { color: var(--accent-text); }
+   2.13:1. Brand red text reads at 5:1 on the panel.
+
+   `:not(.btn)` because this rule is (0,1,1) and `.btn-primary` is (0,1,0), so
+   without it a `<a class="btn btn-primary">` inside a request card takes
+   --accent-text on --accent-solid: red on red, 1.88:1, measured on /status.
+   A .btn brings its own colour and this rule was never aimed at one -- it is
+   for the contact links above. The same shape is why `.owner-details dd`
+   once painted a status note white (NOTES.md): a container rule outranks a
+   semantic class whatever the source order. */
+.owner-request a:not(.btn) { color: var(--accent-text); }
 
 .owner-request {
   display: grid;
