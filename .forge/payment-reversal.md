@@ -2,8 +2,11 @@
 
 Written by DB ADMIN (`local_adccdadc`) on 2026-09-07 at main `33dc038`, at the
 OWNER AGENT's instruction: design first, in a document, before any schema.
-The customer-facing question in here is theirs to rule on, not mine -- it is
-raised, not answered, and everything below it waits on that answer.
+**Ruled by the OWNER AGENT the same night: reverse `paid → sent`. No new
+status, no migration.** The question below is recorded as it was asked and
+answered, including the option this document leaned toward and did not get
+ruled -- the reasoning that overturned it is worth keeping, not just the
+verdict.
 
 ## What the gap actually is, read off the code rather than assumed
 
@@ -84,18 +87,87 @@ follow-up state). Not designed here because nothing so far suggests it is
 needed -- flagged only so the choice is stated as A vs. B vs. "no, actually,
 C" rather than assumed binary.
 
-**I have a lean, not a ruling, and I'm saying so rather than deciding it:**
-Option A. The false "you have not been charged" sentence is the kind of
-thing that, left in place, becomes the next scrutiny-agent finding -- the
-project has already paid once tonight for a status meaning two different
-things depending on who's asking (`isPlaceholder`). A `CHECK` widening is
-cheap; a status that lies to a customer is not. But this is explicitly the
-OWNER AGENT's call, not mine, and the honest cost of Option A is a real
-migration touching a table every quote lives in, which is exactly the kind
-of change `.forge/owner-backend.md` says to get right before it merges
-because there is no second chance on production's first boot.
+**My lean was Option A, and the ruling was Option D -- a fourth option
+neither A, B nor C named, and it is the right one.** Recording why, because
+the argument is sharper than anything above and the reasoning is worth
+keeping as much as the verdict.
 
-## What does NOT change, regardless of which option is chosen
+## The ruling: reverse `paid → sent`. Neither A nor B.
+
+**Option A's `refunded` has the same defect it was chosen to fix, pointed
+the other way.** `pay()` never moves real money -- so telling a customer
+their payment was *refunded* is exactly as false as telling them they were
+*never charged*. Both sentences describe a financial event that did not
+happen, in either direction, because there is no real payment underneath
+either one yet. Naming a new status does not avoid the lie the way it
+looked like it would; it relocates it.
+
+**And `cancelled` is wrong for a second, separate reason beyond its
+copy:** the request is not cancelled. It is still live, and still awaiting
+payment. Neither existing option, and no plausible new one shaped like
+them, describes that correctly.
+
+**`sent` already means exactly that.** `QUOTE_STATUSES` is `draft, sent,
+approved, rejected, paid, done, cancelled` -- and a quote whose payment was
+recorded in error has, factually, not been paid. That is what `sent`
+already asserts. No status is stretched to cover a second meaning; the
+existing one was simply the correct one, sitting one transition away.
+
+**No `CHECK` widening, no `migrate()`, no migration test.** The migration
+cost this document priced as real for Option A is avoided entirely, not
+paid at a discount.
+
+**History is not lost, because the status was never where it lived.**
+`moveTo` already records the version and, since #349 merged, the actor
+(`decided_by`, `COALESCE`'d so a later transition cannot overwrite an
+earlier one's). The status column is the current fact; the sequence of
+transitions is the history. A row that went `sent → paid → sent` says
+exactly that, with who reversed it and when, the same as any other
+transition this database already records.
+
+**The decisive argument is already sitting in `quotes.mjs`'s own comment**,
+on `cancelByCustomer`:
+
+> One consequence found in review, accepted with its bound stated rather
+> than left undiscovered: someone holding the shared link can call `pay()`
+> on a sent quote specifically to block the customer's own cancel (this
+> method refuses once `paid`) and trigger a false "payment received" email.
+
+**That is the induced case #328 exists for, and it names the actual harm
+precisely: an induced payment does not just record a false charge, it takes
+away the customer's ability to cancel**, because `cancelByCustomer` refuses
+once `paid` (`CANCELLABLE` excludes it). **A new terminal status does not
+restore that.** `refunded` or `reversed` would leave the customer exactly as
+stuck as the attack left them, with a tidier label on the state that stuck
+them there. **Reversing to `sent` gives the cancel button back**, which is
+the actual capability the induced-payment attack takes away. The fix has to
+restore something the customer can do, not just describe what happened to
+them more accurately.
+
+## What the customer sees
+
+**They see the quote awaiting payment again, which is true.** No "you have
+been refunded" -- nothing happened to refund. Copy is about the record being
+corrected, not about money moving: something to the effect that the payment
+record was corrected and the quote is open again. **MARKETING owns the
+actual sentence** (`t62-voice.md`: Ken's first person, no apology, the next
+move in the sentence, not a passive description of a state) -- the state
+this copy has to describe is settled here; the words are theirs.
+
+## The "not yet," written down so it does not get reused by accident
+
+**When real payments land (`roadmap.md`'s Later item), a genuine refund is
+a different fact from this bookkeeping correction, and it earns its own
+status then.** Money actually returning to a customer is not the same event
+as correcting a status that was never backed by a real charge. **`sent` is
+the right reversal target only while `pay()` remains fake.** The first
+person who implements real payment processing should not reach for `sent`
+to represent an actual refund on the strength of this precedent -- that
+would be exactly the "one status, two meanings" defect this document spent
+its whole first half trying to avoid, arriving by the road this ruling took
+to avoid it the first time.
+
+## What does NOT change, now that the target status is settled
 
 **This is an owner action, full stop.** No customer or link-holder can
 trigger it -- unlike `pay()` and the customer's own `cancel`, which #316
@@ -105,27 +177,22 @@ and does not inherit that relaxation. It should be built the way `decide`,
 `finish` and `cancel` are: through `moveTo`, with `audience: 'owner'`,
 gated by the same owner session every other `/api/owner/*` route requires.
 
-**A reason should probably be mandatory, not optional.** `cancel()`'s reason
-is optional because most cancellations are mundane (the customer changed
-their mind, availability didn't work out). A reversed payment is unusual
-enough on a system where `pay()` "always succeeds" that a paper trail is
-worth requiring rather than inviting silence -- but this is a smaller
-version of the same call OWNER AGENT is making above, not a separate one,
-and I'd rather they rule on both at once than have me guess at the second
-while waiting on the first.
+**A reason should probably be mandatory, not optional**, still unruled and
+worth a decision alongside implementation rather than left to whoever
+builds it. `cancel()`'s reason is optional because most cancellations are
+mundane. A reversal is unusual enough on a system where `pay()` "always
+succeeds" that a paper trail is worth requiring rather than inviting
+silence.
 
-**It should carry `decided_by` for free, not need its own actor column.**
-TECHNICAL ARCHITECT's `quote-decided-by` (#290's schema half, PR #349,
-open, not yet merged) adds an actor to every `moveTo` transition on the
-owner audience, `COALESCE`'d so a later transition doesn't overwrite an
-earlier one's actor. If reversal is built as a `moveTo` call the ordinary
-way, it inherits this the moment #349 merges, with no second actor column
-and no coordination cost beyond building on top of it rather than around
-it. **Sequencing note for whoever picks this up:** building reversal before
-#349 merges is fine -- `moveTo` already accepts an `actor` parameter per
-that PR's own description, unused until the sign-in half exists -- but the
-migration test (if Option A) should be written against whatever `moveTo`
-shape actually lands, not a snapshot of it taken here.
+**It carries `decided_by` for free, and this is no longer conditional on
+anything landing.** TECHNICAL ARCHITECT's `quote-decided-by` (#290's schema
+half) is merged (PR #349, `quotes.mjs:864-869`, verified directly rather
+than taken on the PR description): `moveTo` already writes
+`actor ?? SHARED_PASSWORD_ACTOR` to `decided_by` on any owner-audience
+transition, `COALESCE`'d so it is never overwritten once set. A `reverse()`
+built as an ordinary `moveTo({ to: 'sent', from: ['paid'], audience: 'owner', ... })`
+call gets this with no second actor column and no coordination cost beyond
+building on top of the mechanism that already exists.
 
 **Payment being "the fake step that always succeeds" is itself worth a
 second look**, but is out of scope for this document and this issue. If
@@ -169,20 +236,24 @@ flyctl ssh console -a kmt -C "sqlite3 -readonly /data/owner.sqlite \"SELECT id, 
 **Neither of these can prove a mistaken payment never happened** -- only
 that if one did and was handled the honest way available at the time, it
 might show up in the second query, and if it was handled by a raw edit it
-will show up nowhere. That limit is the reason this document does not lean
-on "it has never happened" as part of the case for either option: the data
+will show up nowhere. That limit is the reason this document never leaned
+on "it has never happened" as part of the case for any option: the data
 cannot actually tell us that, and building as if it had would be the same
 mistake as trusting `DEFAULT_MARKUP_SETTINGS.isPlaceholder` because nobody
-had gotten around to checking.
+had gotten around to checking. The OWNER AGENT has offered to run both
+queries directly (read-only, no credential needed); their results, when
+they land, belong in `.forge/HANDOFF.md` or a follow-up note here, not a
+silent edit to this section.
 
 ## What this document is not
 
-Not a schema. Not a route. Not JSX. If Option A is chosen, the next steps
-are exactly what `.forge/owner-backend.md`'s migration contract already
-specifies -- widen `QUOTE_STATUSES`, `migrate()`'s CHECK-rebuild, a
-migration test built from the old schema by hand, a `reverse()` method on
-`Quotes` beside `finish()`/`cancel()`, a route, and `/status` copy for the
-new status. If Option B is chosen, the schema step disappears and the work
-is the `reverse()` method plus the `/status` conditional. Either way, no
-code changes in this PR -- the point of asking first was to not write any
-of it twice.
+Not a schema. Not a route. Not JSX. **The ruling settles the schema
+question as "there isn't one":** no `CHECK` widening, no `migrate()`, no
+migration test -- `sent` already exists. What's left to build is a
+`reverse(id, version, reason)` method on `Quotes` beside `finish()` and
+`cancel()` (`moveTo({ to: 'sent', from: ['paid'], audience: 'owner', ... })`),
+a route under `/api/owner/`, and `/status` copy for a customer whose quote
+just returned to `sent` from `paid` -- distinguishable, if it matters later,
+from a quote that has simply never been paid yet, though nothing so far
+suggests the customer needs to be able to tell those apart. No code changes
+in this PR -- the point of asking first was to not write any of it twice.
