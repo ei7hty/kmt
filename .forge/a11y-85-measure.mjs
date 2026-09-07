@@ -128,7 +128,7 @@ try {
     await signInIfAsked(page)
     await page.waitForSelector('.owner-content, .oi-results, .oi-error, [role="tablist"]', { timeout: 15000 }).catch(() => {})
     results.push(await measure(page, '/owner inventory'))
-    await page.getByRole('button', { name: 'Quote requests' }).click()
+    await page.getByTestId('nav-quote-requests').click()
     await page.waitForURL('**/owner/quotes')
     await signInIfAsked(page)
     await page.waitForSelector('.owner-request, .panel', { timeout: 15000 })

@@ -386,7 +386,7 @@ function TireOffer({ tire, markup, onSaved }) {
       </p>}
       <label htmlFor={`notes-${tire.id}`}>Owner notes</label>
       <textarea id={`notes-${tire.id}`} value={notes} onChange={e => setNotes(e.target.value)} maxLength={2000} rows={1} placeholder="Why this tire, pricing notes…" disabled={saving} />
-      <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save offer'}</button>
+      <button type="submit" className="oi-button oi-primary" data-testid="oi-save-offer" disabled={saving}>{saving ? 'Saving…' : 'Save offer'}</button>
       {error && <p role="alert" className="oi-error">{error}</p>}
       {tire.offer.enabled && !isAvailable && <p className="oi-attention">Selected by KMT, but supplier availability needs review.</p>}
     </form>
