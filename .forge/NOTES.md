@@ -1915,35 +1915,39 @@ data cannot distinguish that from coincidence. Stated as the limit it is,
 not closed over.
 
 **So this is hygiene, not a customer-harm case, and it is worth exactly
-the design a hygiene problem deserves: none.** No new status, no
-migration. `outbox.status` already has `'failed'` as a legal value (its
-`CHECK` constraint: `queued/sent/failed/bounced`) and `Outbox.updateStatus`
-already exists (`backend/outbox.mjs:170`) to write it with an explanatory
-`error`. Marking these eight rows `'failed'` with a clear historical
-reason removes them from `'queued'` entirely, which is the only thing a
-future age-based detector actually looks at -- no permanent exception
-list, no schema awareness of "this row is different," because after the
-correction it simply is not in the set being watched. The existing
-failed-row watcher (#359, not yet merged) would report these eight once,
-correctly, with a reason a person can read and dismiss -- which is what
-that script exists for.
+the design a hygiene problem deserves: small.** ~~No new status, no
+migration.~~ **Revised, below -- the first version of this entry proposed
+marking these rows `'failed'` and was wrong on sequencing, caught by the
+OWNER AGENT before it ran.**
 
-Tested the exact `UPDATE` against a local fixture before writing it down
-(a queued row inside the window, one outside it, one already `sent` --
-confirmed only the in-window queued row was touched). Needs `flyctl`
-against production to actually run; read-only was the rule for every
-lookup tonight, this is the one write that follows the reversal design's
-same shape -- a decision made and verified locally, executed by the user
-whenever convenient, no urgency:
+> **DO NOT RUN THE COMMAND THAT WAS HERE. It is superseded and it is
+> unsafe on its own.** Marking these eight rows `'failed'` moves them into
+> the exact set `#359`'s failed-row watcher fires on -- and production
+> already holds seven real `'failed'` rows from a separate, already-closed
+> outage that watcher has no way to mark settled. Running the original
+> command before that mechanism exists would take the watcher's day-one
+> alert count from seven to fifteen, permanently, since nothing today
+> clears a `'failed'` row. **This correction now sequences behind `#359`
+> gaining a resolution-state mechanism** (in progress, coordinated between
+> DB ADMIN and JUNIOR BACKEND DEV) that both this outage's rows and that
+> one's route through. The reason the hold lives here, in the command's
+> own spot, rather than only in a message: a command that reads as
+> finished gets run, and a hold that lives in a chat thread does not
+> survive someone reading this file six hours later without it.
 
-```
-flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE outbox SET status='failed', error='Predates SMTP configuration (the 2026-09-06 outage window); the underlying request has since reached a terminal or advanced state independently -- see NOTES.md 2026-09-07.', updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE status='queued' AND created_at BETWEEN '2026-09-06T15:41:00' AND '2026-09-06T19:31:00';\""
-```
+Also revised: `'failed'` was never quite the honest word for these eight
+rows anyway. It means an attempt was made and the provider rejected it
+(`backend/mail.mjs` sets it specifically when `adapter.send()` throws);
+these eight were never attempted at all under the current adapter --
+queued, then orphaned when the adapter that would have sent them stopped
+existing. The eventual correction should say that, not borrow a word that
+implies something slightly different happened.
 
-Bounded by the exact outage window rather than by listing eight ids by
-hand, so it cannot touch a legitimately queued row written before or
-after it -- and it is a plain write, not `-readonly`, on purpose: this is
-the one correction in this whole thread that is meant to change something.
+The empirical finding above is unaffected by any of this -- the six
+requests still reached terminal or advanced states, nobody is still owed
+a response. Only the mechanics of marking the rows as no longer live
+changed, and they changed because a peer caught a sequencing problem
+before it shipped rather than after.
 
 Two habits carried forward from tonight rather than reinvented: caught my
 own query's `to_address IS NOT NULL` check as never having been able to
