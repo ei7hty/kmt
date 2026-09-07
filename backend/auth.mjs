@@ -18,6 +18,8 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { PUBLIC_BODY_LIMIT, clientIp, refuse } from './limits.mjs'
 
 const COOKIE = 'kmt_owner'
+/** The cookie name a caller needs to mint or recognise a session by hand (scripts/mint-session.mjs). */
+export const SESSION_COOKIE_NAME = COOKIE
 const DEFAULT_TTL_HOURS = 12
 
 /**
@@ -130,6 +132,52 @@ export function readAuthConfig(env = process.env) {
   }
 }
 
+/**
+ * The minimal config mintSession needs: a secret and a ttl, not a password.
+ *
+ * readAuthConfig refuses without KMT_OWNER_PASSWORD because it is the login
+ * config -- a server that will check a password must have one to check.
+ * Minting a session never checks a password, so requiring one here would be
+ * an incidental dependency inherited from that guard, not a real one -- and
+ * it is exactly the dependency that broke scripts/mint-session.mjs at the
+ * one moment it exists to work: after the password is retired for
+ * Google-only owner sign-in.
+ *
+ * KMT_SESSION_SECRET is required here, unlike in readAuthConfig, for the
+ * opposite reason readAuthConfig lets it default: a server signs and later
+ * verifies its own tokens in the same process, so a per-boot random secret
+ * is internally consistent even though it forgets sessions on restart.
+ * Minting runs in a separate process from the one that will verify the
+ * cookie. A generated secret here would sign with a value the running
+ * server never sees, producing a token that looks real and authenticates
+ * nothing -- the worst failure shape a recovery tool can have, because it
+ * looks like it worked. Refusing means whoever runs this without
+ * KMT_SESSION_SECRET set finds out immediately, not after handing Ken a
+ * dead cookie.
+ */
+export function readSessionSigningConfig(env = process.env) {
+  const secret = env.KMT_SESSION_SECRET || ''
+  if (!secret) {
+    throw new Error(
+      'KMT_SESSION_SECRET is not set. Minting happens in a different process from the ' +
+      'one that will verify the cookie, so both must sign with the same secret -- set ' +
+      'KMT_SESSION_SECRET to whatever the running server was started with.',
+    )
+  }
+
+  const hours = env.KMT_SESSION_HOURS === undefined || env.KMT_SESSION_HOURS === ''
+    ? DEFAULT_TTL_HOURS
+    : Number(env.KMT_SESSION_HOURS)
+  if (!Number.isFinite(hours) || hours <= 0) {
+    throw new Error(
+      `KMT_SESSION_HOURS must be a positive number of hours; got ${JSON.stringify(env.KMT_SESSION_HOURS)}. ` +
+      `Unset it for the default of ${DEFAULT_TTL_HOURS}.`,
+    )
+  }
+
+  return { secret, ttlMs: hours * 3600_000 }
+}
+
 const sign = (secret, value) => createHmac('sha256', secret).update(value).digest('base64url')
 
 /**
@@ -181,6 +229,26 @@ function verifySession(config, sessions, token) {
 export const IMPORT_TTL_MS = 2 * 3600_000
 export const createImportToken = (config) => issue(config, 'import', IMPORT_TTL_MS)
 export const verifyImportToken = (config, token) => verify(config, token, 'import')
+
+/**
+ * A session an operator creates directly, without a password check.
+ *
+ * The one deliberate way in that stays open once the login form is retired
+ * for Google-only owner sign-in: a human with database access -- `flyctl ssh`
+ * in production, a local file otherwise -- runs `scripts/mint-session.mjs`,
+ * which calls this and nothing else. It reaches no route and grants no
+ * capability that access does not already carry: anyone who can run this can
+ * already insert an `owner_sessions` row and sign a matching cookie by hand.
+ * This only does the arithmetic and the signing correctly, and records the
+ * row through the same `sessions.create` every login does, so a minted
+ * session logs out, expires and gets swept exactly like one issued by a
+ * password.
+ */
+export function mintSession(config, sessions, ttlMs = config.ttlMs) {
+  const expiresAt = Date.now() + ttlMs
+  const id = sessions.create(expiresAt)
+  return { name: COOKIE, value: issue(config, 'session', ttlMs, id), expiresAt }
+}
 
 const readCookie = (header, name) =>
   (header || '').split(';')
