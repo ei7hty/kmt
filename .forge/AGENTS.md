@@ -215,18 +215,21 @@ git worktree remove .worktrees/claim-tmp
   directory was recently your shell's cwd;** `rm -rf` it then `git worktree
   prune` — safe only because a plain tree has no junction to follow.
 - **Every command in this recipe is `git -C <path>`, never `cd <path> && git
-  ...`, and that is load-bearing, not a style choice.** A `cd` inside a longer
-  chain can fail silently and leave the shell in whatever directory it was
-  already in — and the next command in the chain then runs there instead,
-  under the assumption that the `cd` succeeded. That is exactly how one claim
-  push became a whole feature branch pushed straight to `main`: a `git push
-  origin HEAD:main` written for a throwaway claims worktree ran from a feature
-  worktree instead, because an earlier `cd` in the same chain had not landed
-  where it was supposed to, and nothing in the chain noticed. `git -C <path>`
-  cannot be redirected by a directory you did not actually enter — it names
-  the target explicitly, on every single command, so a broken chain fails
-  loud (wrong path, command errors) instead of quietly running somewhere
-  else. The same failure shape is not unique to `cd`: any `;`-joined chain
+  ...`, and that is load-bearing, not a style choice.** A failed `cd` does not
+  stop a `;`-joined chain — it may print an error you will not read while
+  scanning for the next command's output, and the following statements then
+  run from wherever the shell already was. That is exactly how one claim push
+  became a whole feature branch pushed straight to `main`: a `git push origin
+  HEAD:main` written for a throwaway claims worktree ran from a feature
+  worktree instead, because an earlier `cd` in the same sequence had not
+  landed where it was supposed to. The `cd` itself did not fail silently in
+  the sense of printing nothing — it is that the statements after it ran
+  anyway, from the wrong place, because nothing re-checked where the shell
+  actually was before trusting it. `git -C <path>` cannot be redirected by a
+  directory you did not actually enter — it names the target explicitly, on
+  every single command, so a wrong path fails that command specifically
+  rather than silently relocating a later, unrelated one. The same failure
+  shape is not unique to `cd`: any `;`-joined chain
   lets a failed step run its neighbour anyway, in a context the author no
   longer controls. Prefer `&&` so a failure stops the chain, and `git -C`
   wherever the target directory matters more than the current one.
