@@ -1,11 +1,11 @@
 # KMT Tire Quoting
 
 Automated draft quotes for Ken's Mobile Tire (KMT), a mobile tire service in
-the Everett, MA area. A customer picks a tire size and a tire, describes the
-vehicle and where it is parked, and gets a draft quote on the spot. The owner
-reviews the draft, approves or rejects it, and the customer pays. Behind that,
-a separate owner workspace lets the owner build KMT's tire offering from a
-supplier's live listings and set his own prices.
+Malden, MA and Greater Boston. A customer picks a tire size and a tire,
+describes the vehicle and where it is parked, and gets a draft quote on the
+spot. The owner reviews the draft, approves or rejects it, and the customer
+pays. Behind that, a separate owner workspace lets the owner build KMT's tire
+offering from a supplier's live listings and set his own prices.
 
 Live at **https://kensmobiletire.com** (Ken's own domain, on Fly.io; `kmt.fly.dev`
 and the older Vercel URL still answer and will redirect there).
@@ -381,6 +381,8 @@ The reasoning behind the product lives in `.forge/`, which the planning tool
 - [`state.json`](.forge/state.json): task status.
 
 Phases 1 to 3 are done: the clickable prototype, the visual refinement, and
-the owner's curated inventory reaching the customer. Phase 4, moving requests
-and quotes out of the browser into the backend so the owner reviews from any
-device, is planned in `.forge/` as milestone m9 and not yet started.
+the owner's curated inventory reaching the customer. Phase 4 is under way and
+its first milestone (m9) has shipped: requests and quotes live in the backend,
+so the owner reviews from any device and the customer pays from their own. For
+what is current, read [`state.json`](.forge/state.json) rather than this
+paragraph -- a milestone status restated here is one more copy to go stale.
