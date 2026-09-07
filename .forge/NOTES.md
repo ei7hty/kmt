@@ -790,6 +790,31 @@ a detector in principle. A misread has an editing discipline. **The third has
 neither** -- only somebody going and looking at whether the mechanism does what
 the sentence says, once, at the moment it is written.
 
+**A fourth shape, moved here from `AGENTS.md` because this is where it belongs
+and it was written before this taxonomy was found: work that outran its
+record.** It looks like the first shape -- the world moved, the record did
+not -- and is caught by nothing the first shape's detector catches. `state.json`
+and the tracker are wrong about a count of the *same thing* they describe, so
+re-measuring that thing catches them: read the file, count the audits, compare.
+This shape is wrong about an *absence* -- "nobody owns X," "X is not done" --
+and the only way to falsify an absence is to go and look somewhere else
+entirely, for work that may have already closed it. Seen three times in one
+repository: regression tests about to be rewritten that already existed, a
+copy defect recorded open and fixed hours earlier, an audit path assigned for
+conversion that had already been converted. Each finder was doing something
+else, because a review of the document itself would have found nothing wrong
+-- the document was true when written and stayed internally coherent, so
+re-reading it confirms it rather than catching it. One way it bites in
+particular: **searching for the old thing and reading its presence as the new
+thing's absence.** `audit-ui.mjs` still held `KMT_OWNER_PASSWORD` after the
+minted-session path shipped, so the conversion looked undone -- but that is
+the fallback the new path sits above, not evidence the old path is all there
+is. A grep for what you expect to be gone answers a different question than
+the one you asked; the question is *what does this code do now*, and only
+reading it answers that. Before assigning work a document says is open: read
+the code, not the document. When a document says a thing is missing: check
+whether it is actually there before believing the negative.
+
 **The four are one failure with two shapes.** In the first three the world
 moved and the record did not. In the fourth the record never moved and the
 reader drifted off it. Both are an assertion nobody re-measured; the only
