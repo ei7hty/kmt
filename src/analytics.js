@@ -32,7 +32,7 @@ const ANALYTICS_PATHS = new Set(['/', '/privacy'])
  * value itself is the one Ken's account expects, which nothing in this
  * repository can check.
  */
-export const GA_MEASUREMENT_ID = 'G-6VS1BEJ3TS'
+export const GA_MEASUREMENT_ID = 'G-M9PW70T8V3'
 
 if (!/^G-[A-Z0-9]{6,}$/.test(GA_MEASUREMENT_ID)) {
   console.error(`analytics.js: GA_MEASUREMENT_ID ${JSON.stringify(GA_MEASUREMENT_ID)} is not shaped like a GA4 measurement id (expected "G-" then letters/digits) -- analytics will silently do nothing`)

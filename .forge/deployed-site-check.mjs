@@ -51,7 +51,7 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 55;
+const EXPECTED_CHECKS = 56;
 
 let passed = 0;
 let failed = 0;
@@ -707,13 +707,27 @@ async function main() {
     fail(`the deployed site answers X-KMT-Service-Area as on or off — ${describeFetchError(error)}`);
   }
 
-  // GA4's measurement id, checked against the deployed bundle rather than
-  // trusted from source: a wrong id fails completely silently (GA accepts
-  // the hits, nothing errors, the audits pass, and the data lands in a
-  // property nobody is watching, discovered weeks later). This proves the
+  // The id the user confirmed live, 2026-09-07 ("the one i just sent is
+  // live"): G-6VS1BEJ3TS, which src/analytics.js shipped from #314 until
+  // this check existed, belonged to a different property, and nothing here
+  // could tell the two apart -- both are validly shaped, and a wrong one
+  // fails exactly as silently as no id at all. This is a literal, not an
+  // import of src/analytics.js's own value, on purpose: it exists to catch
+  // that exact file being changed to some other wrong id later, which an
+  // assertion built from the same constant it is checking could never
+  // notice. If this ever legitimately needs to change, change it here
+  // deliberately -- it is meant to require exactly that.
+  const CONFIRMED_GA_ID = 'G-M9PW70T8V3';
+  check(GA_MEASUREMENT_ID === CONFIRMED_GA_ID,
+    'src/analytics.js exports the GA4 id the user confirmed live',
+    `exports ${JSON.stringify(GA_MEASUREMENT_ID)}, confirmed id is ${JSON.stringify(CONFIRMED_GA_ID)}`);
+
+  // The deployed bundle, checked against source rather than trusted: a
+  // build or deploy that silently drops, stales or mangles the constant
+  // fails exactly as silently as a wrong value does. This proves the
   // constant src/analytics.js exports actually reached what was deployed --
-  // it cannot prove the value itself is the one Ken's own GA4 account
-  // expects, which nothing in this repository can check.
+  // it cannot prove the value itself is correct, which is what the check
+  // above is for.
   try {
     const homeHtml = await (await fetch(`${BASE}/`)).text();
     const scriptSrc = homeHtml.match(/<script\b[^>]*type=["']module["'][^>]*\bsrc=["']([^"']+)["']/i)?.[1];
