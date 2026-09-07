@@ -13,7 +13,7 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 72;
+const EXPECTED_CHECKS = 78;
 
 /**
  * Preferred dates, always ahead of today. The server refuses anything inside
@@ -521,6 +521,81 @@ async function main() {
       ok('/status: the owner\'s cancellation reason, typed in-page, actually reaches the customer\'s screen.');
     } else {
       fail('/status: the customer does not see the reason the owner typed when cancelling.');
+    }
+
+    // 7d. The link a customer actually gets is id-alone (#78, closed on the
+    //     premise that the in-page confirmation made cancel testable at
+    //     all -- this is the part that premise did not yet cover). 7b above
+    //     reaches /status through "My Quote", which only works because that
+    //     same browser context just submitted and so already holds a
+    //     customerKey; it has never proven the path a texted or emailed
+    //     link actually depends on -- a second device, with nothing in its
+    //     localStorage, opening /status?request=<id> directly.
+    //
+    //     Two more things the page's own text cannot prove, per the OWNER
+    //     AGENT's brief: that "Keep it" genuinely refuses (a cancelled
+    //     request looks the same on screen whether the confirmation gated
+    //     it or the button quietly cancelled on the first click -- the
+    //     same control-A-satisfied-by-control-B shape the GA route-gate
+    //     check found), and that "Yes, cancel" reached the server rather
+    //     than only this page's own state. Both are checked against a
+    //     direct GET of /api/requests/:id -- the same server truth the
+    //     owner's screen reads -- not the page's narration of itself.
+    await context.close();
+    ({ context, page } = await freshPage(browser, viewport));
+    await submitRequest(page, {
+      ...CLEAN_TIRE,
+      vehicle: '2016 Nissan Altima',
+      location: '555 Demo Path',
+      date: LATEST,
+    });
+    await page.click('button:has-text("Track this quote")');
+    await page.waitForURL('**/status?request=*');
+    const sharedLinkId = new URL(page.url()).searchParams.get('request');
+    const baselineQuote = (await fetch(`${BASE}/api/requests/${encodeURIComponent(sharedLinkId)}`).then(res => res.json()))?.quote;
+    await context.close();
+
+    // A second, unrelated context: it never visited '/', so nothing was
+    // ever written to its localStorage. The id in the URL is the only
+    // thing this "device" is handed -- exactly what a shared link gives it.
+    ({ context, page } = await freshPage(browser, viewport));
+    await page.goto(`${BASE}/status?request=${encodeURIComponent(sharedLinkId)}`);
+    await waitForStatus(page);
+    const sharedLinkLoaded = await page.locator('.owner-request-vehicle:has-text("Nissan Altima")').isVisible().catch(() => false);
+    if (sharedLinkLoaded) {
+      ok('/status?request=<id>: a browser with no prior visit and no localStorage key loads the request from the id alone -- the actual shape of a shared link, not the "My Quote" nav path.');
+    } else {
+      fail(`/status?request=<id>: a key-less browser did not load the request. Server baseline read as ${JSON.stringify(baselineQuote)}.`);
+    }
+
+    await page.click('button:has-text("Cancel this request")');
+    await page.click('button:has-text("Keep it")');
+    await page.waitForTimeout(200);
+    const keptCancelButtonBack = await page.locator('button:has-text("Cancel this request")').isVisible().catch(() => false);
+    const afterKeepIt = (await fetch(`${BASE}/api/requests/${encodeURIComponent(sharedLinkId)}`).then(res => res.json()))?.quote;
+    const keepItLeftServerUnchanged = afterKeepIt?.status === baselineQuote?.status && afterKeepIt?.version === baselineQuote?.version;
+    if (keptCancelButtonBack && keepItLeftServerUnchanged) {
+      ok('/status: declining the in-page confirmation ("Keep it") leaves the request exactly as it was on the server -- status and version both unchanged, not merely as the now-dismissed page happens to report it.');
+    } else {
+      fail(
+        `/status: "Keep it" should be a real refusal, not a decoration. Cancel button visible again: ${keptCancelButtonBack}. ` +
+          `Server before: ${JSON.stringify(baselineQuote)}, after: ${JSON.stringify(afterKeepIt)} -- these must match.`,
+      );
+    }
+
+    await page.click('button:has-text("Cancel this request")');
+    await page.click('button:has-text("Yes, cancel")');
+    await page.waitForTimeout(300);
+    const cancelledMsgVisible = await page.locator('text=This request was cancelled.').isVisible().catch(() => false);
+    const afterConfirm = (await fetch(`${BASE}/api/requests/${encodeURIComponent(sharedLinkId)}`).then(res => res.json()))?.quote;
+    const serverConfirmsCancelled = afterConfirm?.status === 'cancelled' && afterConfirm?.version === (baselineQuote?.version ?? 0) + 1;
+    if (cancelledMsgVisible && serverConfirmsCancelled) {
+      ok(`/status: confirming cancel is real, not just the page's own claim -- a direct GET independently shows status "cancelled" at version ${afterConfirm?.version}, exactly one past the baseline.`);
+    } else {
+      fail(
+        `/status: the page said cancelled (${cancelledMsgVisible}) but a direct GET disagreed or did not move as expected -- ` +
+          `baseline: ${JSON.stringify(baselineQuote)}, after confirm: ${JSON.stringify(afterConfirm)}.`,
+      );
     }
 
     // 8. Quantity control (#113): the tire line multiplies by quantity, the

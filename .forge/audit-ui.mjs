@@ -23,6 +23,17 @@
 const ownerPassword = () => process.env.KMT_OWNER_PASSWORD || ''
 
 /**
+ * A session minted by scripts/mint-session.mjs ("name=value"), read the same
+ * lazily-at-call-time way as the password above. Google-only owner sign-in
+ * cannot be driven by Playwright -- it needs a real account and interactive
+ * consent, and Google actively refuses automation -- so once the password
+ * form is gone this is how the gate still reaches the real owner screen.
+ * Unset, nothing here changes: the password path below is still what a
+ * developer's local run uses.
+ */
+const mintedSessionCookie = () => process.env.KMT_OWNER_SESSION_COOKIE || ''
+
+/**
  * Sign in if the server asks, and say nothing if it does not.
  *
  * A local server binds loopback and has no password, so no form appears. A
@@ -40,11 +51,26 @@ export async function signInIfAsked(page) {
 
   const form = page.locator('.oi-signin')
   if (!(await form.count())) return false
+
+  const minted = mintedSessionCookie()
+  if (minted) {
+    const separator = minted.indexOf('=')
+    if (separator < 1) throw new Error(`KMT_OWNER_SESSION_COOKIE must be "name=value"; got ${JSON.stringify(minted)}.`)
+    console.error('audit: using a minted session; the password sign-in path is not exercised')
+    await page.context().addCookies([{
+      name: minted.slice(0, separator), value: minted.slice(separator + 1), url: page.url(),
+    }])
+    await page.reload()
+    await page.waitForSelector('.oi-signin', { state: 'detached', timeout: 15000 })
+    return true
+  }
+
   const password = ownerPassword()
   if (!password) {
     throw new Error(
-      'The owner screen asked for a password and KMT_OWNER_PASSWORD is not set. ' +
-      'Start the server with one and pass it to the audit.',
+      'The owner screen asked for a password and neither KMT_OWNER_SESSION_COOKIE nor ' +
+      'KMT_OWNER_PASSWORD is set. Start the server with one and pass it to the audit, or ' +
+      'mint a session with scripts/mint-session.mjs and pass that instead.',
     )
   }
   await page.fill('#owner-password', password)

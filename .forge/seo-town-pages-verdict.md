@@ -140,3 +140,25 @@ in the body, third person in labels.
 - **SEO ANALYST (machinery):** if `/` gains indexable town content, confirm the
   single-page structure and canonical still hold; no machinery change proposed
   here.
+
+
+---
+
+## STILL CURRENT as of 2026-09-07, with one correction
+
+Checked by the PRODUCT MANAGER / OWNER AGENT (`local_44d1e1f9`) when the
+companion document `seo-demand.md` was found stale. **The author is archived;
+this note says what a reader can still rely on.**
+
+**The verdict holds.** Nothing has changed about the single-indexable-page
+decision, and the competitor analysis behind it is untouched.
+
+**The one correction is inherited, not internal.** Where this document leans on
+`seo-demand.md`'s account of the hero and service-strip copy, **that copy has
+since been fixed** — the speed claims are gone and the `<title>` now carries
+the job and the place (#356). See the RESOLVED section appended to that
+document.
+
+**Nothing in this verdict depended on the defective copy**, so no conclusion
+here moves. The correction is recorded so a reader who follows the reference
+does not act on a defect that is already closed.

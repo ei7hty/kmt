@@ -7,7 +7,7 @@ import { createServer, request as httpRequest } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { createApi, createCatalogApi, isPublicApiCall, readJsonBody } from './api.mjs'
-import { createAuth, createImportToken, createSessionStore, memorySessionStore, readAuthConfig, verifyImportToken } from './auth.mjs'
+import { createAuth, createImportToken, createSessionStore, memorySessionStore, mintSession, readAuthConfig, readSessionSigningConfig, SESSION_COOKIE_NAME, verifyImportToken } from './auth.mjs'
 import { LoginThrottle } from './limits.mjs'
 import { PageImporter } from './import.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
@@ -812,6 +812,99 @@ test('sessions kept in the database survive a new auth instance, the way a deplo
     { writeHead: () => {}, end: () => {} }, new URL('http://localhost/api/owner/logout'), readJsonBody)
   assert.equal(first.isAuthenticated({ headers: { cookie: token }, socket: {} }), false)
   assert.equal(inventory.db.prepare('SELECT COUNT(*) AS n FROM owner_sessions').get().n, 0, 'nothing left behind')
+})
+
+test('a minted session authenticates exactly like a password-issued one, and logs out the same way (scripts/mint-session.mjs)', async t => {
+  const env = { KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'mint-secret' }
+  const config = readAuthConfig(env)
+  const sessions = memorySessionStore()
+  const auth = createAuth(config, { sessions })
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (await auth.handle(request, response, url, readJsonBody)) return
+    response.writeHead(auth.isAuthenticated(request) ? 200 : 401).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${server.address().port}`
+
+  // No password was ever sent anywhere -- this is the whole point.
+  const minted = mintSession(config, sessions)
+  assert.equal(minted.name, SESSION_COOKIE_NAME)
+  const cookie = `${minted.name}=${minted.value}`
+
+  assert.equal((await fetch(`${base}/anything`)).status, 401, 'no cookie is still no access')
+  assert.equal((await fetch(`${base}/anything`, { headers: { cookie } })).status, 200, 'the minted cookie authenticates')
+  assert.equal(
+    (await (await fetch(`${base}/api/owner/session`, { headers: { cookie } })).json()).authenticated,
+    true,
+  )
+
+  // It logs out the same way a password-issued session does: the server
+  // forgets the row, not just the browser's copy (#66).
+  const out = await fetch(`${base}/api/owner/logout`, { method: 'POST', headers: { cookie } })
+  assert.equal(out.status, 200)
+  assert.equal((await fetch(`${base}/anything`, { headers: { cookie } })).status, 401, 'dead after logout, like any other session')
+})
+
+test('a minted session respects its own ttl and the store it was minted into', async t => {
+  const config = readAuthConfig({ KMT_OWNER_PASSWORD: 'a-long-enough-password', KMT_SESSION_SECRET: 'mint-secret-2' })
+  const sessions = memorySessionStore()
+
+  // Default ttl comes from config, the same one the server would issue.
+  const defaultTtl = mintSession(config, sessions)
+  assert.ok(defaultTtl.expiresAt > Date.now() + config.ttlMs - 1000)
+
+  // An explicit ttl overrides it -- the CLI's --hours flag.
+  const brief = mintSession(config, sessions, 1)
+  assert.equal(isAuthenticatedWith(config, sessions, brief), true)
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(isAuthenticatedWith(config, sessions, brief), false, 'a 1ms session expires')
+
+  // It is the same store a real Inventory database would give -- surviving a
+  // restart is createSessionStore's job, already proven above; this proves
+  // mintSession writes through whatever store it is handed, not its own.
+  const inventory = new Inventory(':memory:', [SIZE])
+  t.after(() => inventory.close())
+  const dbBacked = mintSession(config, createSessionStore(inventory.db))
+  assert.equal(inventory.db.prepare('SELECT COUNT(*) AS n FROM owner_sessions').get().n, 1)
+  assert.equal(isAuthenticatedWith(config, createSessionStore(inventory.db), dbBacked), true, 'a fresh store over the same db sees the row')
+
+  function isAuthenticatedWith(cfg, store, minted) {
+    return createAuth(cfg, { sessions: store }).isAuthenticated({
+      headers: { cookie: `${minted.name}=${minted.value}` }, socket: {},
+    })
+  }
+})
+
+test('minting works with KMT_OWNER_PASSWORD unset -- the one scenario the tool exists for', () => {
+  // Once Google-only sign-in replaces the password form, the server no
+  // longer sets (or needs) KMT_OWNER_PASSWORD at all. mintSession itself
+  // never reads config.password -- only config.secret and config.ttlMs --
+  // so requiring one here would be an incidental dependency inherited from
+  // readAuthConfig's login-time guard, not a real one. A config reader for
+  // minting must not carry that guard, or the tool throws at exactly the
+  // moment it exists to survive.
+  const config = readSessionSigningConfig({ KMT_SESSION_SECRET: 'mint-secret-3' })
+  const sessions = memorySessionStore()
+  const minted = mintSession(config, sessions)
+  assert.equal(
+    createAuth({ ...config, password: 'unused' }, { sessions }).isAuthenticated({
+      headers: { cookie: `${minted.name}=${minted.value}` }, socket: {},
+    }),
+    true,
+  )
+})
+
+test('minting refuses rather than mint a dead cookie when KMT_SESSION_SECRET is unset', () => {
+  // readAuthConfig generates a random per-boot secret when none is set,
+  // which is safe there because the same process signs and later verifies
+  // its own tokens. Minting happens in a separate process from the one
+  // that will check the cookie: a generated secret here would sign with a
+  // value the running server never sees, producing a token that looks
+  // real and authenticates nothing. That is the worst failure shape for a
+  // recovery tool, so this refuses instead of silently generating one.
+  assert.throws(() => readSessionSigningConfig({}), /KMT_SESSION_SECRET is not set/)
 })
 
 test('wrong passwords from one address are slowed, per address, and never lock the owner out', async t => {

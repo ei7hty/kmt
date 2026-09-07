@@ -70,6 +70,65 @@ nothing regardless of how it lands. One small commit, straight to `main`, is
 the whole mechanism — the same discipline as any other commit here (explicit
 paths, no `-A`, check the branch first), just without a PR wrapped around it.
 
+**Make that commit from a disposable worktree off `origin/main`, not the shared
+checkout.** `CLAIMS.md` is the busiest file here, and the shared checkout cannot
+safely hold its edits at this concurrency — in either direction, both seen in
+one night:
+
+- A `git reset` (even `--soft`), rebase, or amend run in the shared checkout by
+  any session unmakes another session's *committed but unpushed* claim. The
+  reflog is the recovery, and it worked the once — but the loss leaves nothing
+  in `CLAIMS.md` itself, so it is found only when someone asks where their row
+  went.
+- Worse: every session stages the same one path, so `git add .forge/CLAIMS.md`
+  — the explicit-path staging the rules above *require* — sweeps up another
+  session's *uncommitted* edit to that file from the shared working tree. Ride
+  it along and it is at least committed (caught once tonight, by attention not
+  process); a `git checkout -- .forge/CLAIMS.md` or `reset --hard` instead
+  discards it with no commit and no reflog entry, nothing anywhere to recover.
+  "Stage explicit paths, never `-A`" protects *across* files and has no force
+  *inside* the one file every session writes.
+
+A fresh worktree's `CLAIMS.md` holds your row and nothing else: no other
+session's edit to sweep up, discard, or reset over. That makes the collision
+structurally impossible rather than a matter of who notices. The recipe, every
+line earning its place because an earlier form of this rule failed at each:
+
+```bash
+git worktree add .worktrees/claim-tmp origin/main   # plain add, NOT scripts/worktree.mjs
+#   edit .forge/CLAIMS.md in that tree
+git -C .worktrees/claim-tmp add .forge/CLAIMS.md
+git -C .worktrees/claim-tmp commit -m "Claim <branch> (.forge/CLAIMS.md)"
+git -C .worktrees/claim-tmp fetch origin
+git -C .worktrees/claim-tmp rebase origin/main      # origin moves; re-sync first
+git -C .worktrees/claim-tmp push origin HEAD:main    # explicit refspec: HEAD is detached
+git worktree remove .worktrees/claim-tmp
+```
+
+- **Plain `git worktree add`, never `scripts/worktree.mjs`.** The script links
+  the shared `node_modules` junction; a claims tree needs no dependencies and a
+  plain tree has none — which is what makes `remove` safe without `--force`
+  (`--force` through that junction is what once deleted into the shared install).
+- **`origin/main` gives a detached `HEAD`, so a bare `git push` fails** ("not
+  currently on a branch"). Push the explicit refspec `HEAD:main`.
+- **Expect a `! [rejected]` when the board is busy — that is the rule working,
+  not failing.** `origin/main` can move in the seconds between commit and push,
+  so the race now surfaces as a loud push rejection instead of a silent sweep.
+  On rejection, `fetch`, `rebase origin/main`, and push again — **re-read the
+  table and re-apply your row to the new tip; do not replay your edit** (the same
+  stale-branch trap the rebase note records). Read a rejection as "someone
+  claimed in parallel," never as "I did this wrong" — the second reading is what
+  sends people back to the shared checkout this rule exists to empty.
+- **On Windows, `git worktree remove` can fail `Permission denied` if that
+  directory was recently your shell's cwd;** `rm -rf` it then `git worktree
+  prune` — safe only because a plain tree has no junction to follow.
+
+Use `.worktrees/` (`.gitignore` covers it), never a sibling that never gets
+cleaned up. The same holds for any direct-to-`main` commit: the shared `HEAD`
+and working tree are shared state, not yours alone to rewrite. A recipe that
+does not run is worse than none — it fails at the moment of use and the fallback
+is the unsafe path; this one is verified, not assumed.
+
 **A subagent has no row of its own.** Work you spawn as a subagent — not a new
 session — has no session id, cannot be messaged, and cannot hold a `CLAIMS.md`
 row in its own name. So the session that spawns it owns the subagent's claim
@@ -141,6 +200,15 @@ either side.
 
 - **Never `git add -A` or `git add .`.** Stage explicit paths. Another agent's
   work may already be staged and you will commit it under your message.
+- **Read what you staged before you commit it.** `git add <path>` stages the
+  file as it is on disk, including anything another session has already staged
+  into the shared index — so an explicit path is not by itself proof the change
+  is yours. Run `git diff --cached <path>` and confirm it holds only your edit.
+  This is not a rare collision on `CLAIMS.md`: that file is the one every agent
+  edits, so it is the expected case there. (On `CLAIMS.md` the surer fix is
+  committing from its own worktree off `origin/main`, which has no shared index
+  to inherit; `git diff --cached` is the guard for every other shared file, and
+  for `CLAIMS.md` until that habit lands.)
 - **Never commit a file you did not change**, even when it is staged.
 - **Check the branch before committing.** Do not assume `main`.
 - **Need another branch while someone is editing? Use `git worktree add`,** not
@@ -153,6 +221,31 @@ either side.
 - **An author does not merge their own pull request.** A second agent reads the
   diff and the audit counts in the check log, and merges. That has been the
   working rule all day; a green badge is not a review.
+- **A ship-scoped merge is a deploy — announce it before you merge, and check
+  the header after.** The insidious property first: a PR whose files match
+  `ship_paths` deploys `main` on merge, and the pipeline serialises per push and
+  supersedes pending runs — so when two ship-scoped PRs merge within seconds of
+  each other, one deploy cancels the other and **both read as merged and green
+  while only one reached production.** From the PR list, from `main`, from the
+  merge log, everything looks correct; production is behind and nothing
+  announces it. That is the shape to guard against, in two halves:
+  - *Prevent.* Before merging a `ship_paths` PR, say so to the other agent
+    working the queue, and hold if they have a ship-scoped merge in flight or a
+    deploy not yet green — then watch yours to green, one at a time. The
+    announcement point is the **merge**, not the deploy, because the merge is
+    the irreversible act and the deploy is only its consequence: serialising
+    deploys does nothing if two merges fire before the boundary is agreed.
+  - *Detect.* After any ship-scoped merge, compare the live release header to
+    `main` — `curl -sI https://kensmobiletire.com/api/health | grep
+    x-kmt-release` against `git log origin/main -1 --format=%h`. It is the only
+    thing that distinguishes "merged" from "running." The header legitimately
+    lags `main` by *docs* commits on top (they do not deploy), so what you are
+    looking for is the header sitting behind a **ship-scoped** commit — that is
+    the collision. And a green deploy *job* is not enough on its own: one of the
+    two collided deploys was cancelled and the other failed on a flaky audit;
+    the run's status tells you about the run, the header tells you about
+    production.
+  - Docs and path-ignored merges need no hold and run in parallel.
 
 ---
 
