@@ -2,6 +2,7 @@
 import { chromium } from 'playwright';
 import https from 'node:https';
 import { CATALOG_FIELDS } from './audit-ui.mjs';
+import { GA_MEASUREMENT_ID } from '../src/analytics.js';
 
 /**
  * What a deploy has to prove, without touching anything.
@@ -50,7 +51,7 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 54;
+const EXPECTED_CHECKS = 56;
 
 let passed = 0;
 let failed = 0;
@@ -704,6 +705,42 @@ async function main() {
     }
   } catch (error) {
     fail(`the deployed site answers X-KMT-Service-Area as on or off — ${describeFetchError(error)}`);
+  }
+
+  // The id the user confirmed live, 2026-09-07 ("the one i just sent is
+  // live"): G-6VS1BEJ3TS, which src/analytics.js shipped from #314 until
+  // this check existed, belonged to a different property, and nothing here
+  // could tell the two apart -- both are validly shaped, and a wrong one
+  // fails exactly as silently as no id at all. This is a literal, not an
+  // import of src/analytics.js's own value, on purpose: it exists to catch
+  // that exact file being changed to some other wrong id later, which an
+  // assertion built from the same constant it is checking could never
+  // notice. If this ever legitimately needs to change, change it here
+  // deliberately -- it is meant to require exactly that.
+  const CONFIRMED_GA_ID = 'G-M9PW70T8V3';
+  check(GA_MEASUREMENT_ID === CONFIRMED_GA_ID,
+    'src/analytics.js exports the GA4 id the user confirmed live',
+    `exports ${JSON.stringify(GA_MEASUREMENT_ID)}, confirmed id is ${JSON.stringify(CONFIRMED_GA_ID)}`);
+
+  // The deployed bundle, checked against source rather than trusted: a
+  // build or deploy that silently drops, stales or mangles the constant
+  // fails exactly as silently as a wrong value does. This proves the
+  // constant src/analytics.js exports actually reached what was deployed --
+  // it cannot prove the value itself is correct, which is what the check
+  // above is for.
+  try {
+    const homeHtml = await (await fetch(`${BASE}/`)).text();
+    const scriptSrc = homeHtml.match(/<script\b[^>]*type=["']module["'][^>]*\bsrc=["']([^"']+)["']/i)?.[1];
+    if (!scriptSrc) {
+      fail('the deployed bundle carries the GA4 measurement id src/analytics.js exports — no module script tag found on /');
+    } else {
+      const bundle = await (await fetch(new URL(scriptSrc, BASE).toString())).text();
+      const present = bundle.includes(GA_MEASUREMENT_ID);
+      check(present, 'the deployed bundle carries the GA4 measurement id src/analytics.js exports',
+        present ? '' : `${GA_MEASUREMENT_ID} not found in ${scriptSrc}`);
+    }
+  } catch (error) {
+    fail(`the deployed bundle carries the GA4 measurement id src/analytics.js exports — ${describeFetchError(error)}`);
   }
 
   reportCount();
