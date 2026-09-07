@@ -179,82 +179,98 @@ a seven-day tyre booking or a "I'll text you back" form. **Absence costs a
 customer who never knew; this presence costs a customer who believed the page —
 the worse of the two, because it is the one Ken hears about.**
 
-**This is a product question, not a copy note — routed to the OWNER AGENT.**
-Whether "roadside assistance" and "fast" describe what Ken actually does is not
-measurable from the repository. He may do roadside off-platform, quickly and for
-real, in which case the copy is accurate about the business and the gap is that
-the site cannot book it (a product gap); or he may not, in which case the copy
-promises what the business does not do (a copy gap). **I do not guess which.**
-The measurable fact is only that the page and the booking rule point in opposite
-directions on urgency.
+**The product question — now ANSWERED by the OWNER AGENT (2026-09-06).** It had
+two branches (roadside is real → product gap; roadside is not real → copy gap),
+and the repository could not decide between them. The OWNER AGENT answered it:
+**Ken does come out for roadside, off-platform.** So roadside is a real service
+and the copy is not promising something that does not exist. The defect is
+narrower and exact: **one speed claim spans two services with opposite
+timescales** — arguably true for roadside (he comes), false for the tyre booking
+the primary CTA leads to (a seven-day floor) — and the page does not
+disambiguate which service the "fast" applies to.
 
-**Which words are at issue (OWNER AGENT ruling, 2026-09-06), so the fix is not
-broader than the finding.** The load is carried by **"Roadside assistance"** and
-**"always on the move"** together — those imply *come now*, which the seven-day
-floor refuses. **"Quick response you can count on" (`:437`) is not at issue and
-survives**: a *response* is the answer, and the answer is genuinely quick
-(11m52s / 18m00s) — it is already on the honest side of the two-speed
-distinction. And the OWNER AGENT ruled that **nothing on the page changes until
-the user answers the roadside question**: a pre-emptive edit either deletes a
-real service or quietly keeps a false promise while looking handled, both worse
-than the current state.
+**Which words are at issue — REVERSED (OWNER AGENT, 2026-09-06).** Recorded as a
+reversal, not a silent correction, so MARKETING can see why the earlier narrowing
+was withdrawn. The earlier ruling was that "Quick response you can count on"
+survived and only "Roadside assistance" + "always on the move" carried the load.
+**That is withdrawn. "Quick response you can count on" (`:437`) is at issue too**,
+for a reason the first ruling missed: **in trades and roadside services
+"response time" conventionally means time to *arrive*** (ambulance, fire,
+breakdown cover — "response" is arrival, not reply). A person with a flat reads
+"quick response you can count on" as *he will come quickly*, and the strip's
+neighbours — **FAST & RELIABLE**, **Roadside assistance**, **always on the
+move** — all push toward arrival, not reply. The earlier reading was the reading
+of someone who knows the system; the customer does not have it. So the load is
+carried by **all three together**: "Roadside assistance", "always on the move",
+and "Quick response you can count on".
 
-**One recommendation that is safe under either branch** (OWNER AGENT invited it;
-wording is MARKETING's, placement is the PROJECT MANAGER's): wherever `/inquiry`
-is the destination, the page can say **what actually happens next** — *tell me
-what you need and I'll text you back* — rather than leaving the reader to infer
-immediate dispatch. True whether or not Ken does roadside, costs nothing, and
-converts a possible letdown into a stated process. This is a recommendation, not
-a finding, and not prescribed copy.
+**One recommendation that is safe regardless** (OWNER AGENT invited it; wording
+is MARKETING's, placement is the PROJECT MANAGER's): wherever `/inquiry` is the
+destination, the page can say **what actually happens next** — *tell me what you
+need and I'll text you back* — rather than leaving the reader to infer immediate
+dispatch. Costs nothing and converts a possible letdown into a stated process.
+A recommendation, not a finding, not prescribed copy.
 
-**The shape of it (resolution of this section).** The facts above have one
-structure: **the page conflates two different speeds.** "Quick response you can
-count on" / "FAST & RELIABLE" (`:437`) is a claim about **response** time; the
-seven-day floor (`quotes.mjs:25`) is **service** time; the copy does not
-distinguish them. The site is not lying — it is ambiguous in the one direction
-that costs trust: a reader takes it to mean *you will come quickly*, when what is
-fast is the reply. The ambiguity **resolves in the customer's favour in their
-head and against them in reality**, and they find the difference at the form.
+**The shape of it (resolution of this section).** The facts have one structure:
+**the page conflates two different speeds.** "Quick response" / "FAST & RELIABLE"
+(`:437`) reads as **response = arrival** time; the seven-day floor
+(`quotes.mjs:25`) is the tyre-booking **service** time; the copy does not say
+which service the speed belongs to. Because roadside is real, the line is not a
+lie — it is one claim spanning two services with opposite timescales, and it
+**resolves in the customer's favour in their head and against them in reality**
+when they arrive via the tyre CTA and hit the week's floor.
 
 **And it closes the loop with finding #1.** The one speed claim that is specific,
 true and measured — fast **replies** (11m52s / 18m00s) — appears **nowhere on the
 marketing search surface**: the title carries no speed term, the description and
 JSON-LD carry none. So the surface is **vague about speed on the page, where
 vagueness misleads**, and **silent about speed in the search surface, where the
-truth would help.** Both halves are presence/absence facts with references, and
-together they are the finding, not three facts side by side. (n=2 still bounds
-it: two responses are evidence Ken is fast, not a claim that survives a customer
-who waited three hours — response speed is sayable as a direction, not a number.)
+truth would help.** Both halves are presence/absence facts with references.
+(n=2 still bounds it: two responses are evidence Ken is fast, not a claim that
+survives a customer who waited three hours.)
 
-**One open point between the two leads, reported not resolved (per AGENTS.md).**
-They looked at the same line and diverge: the OWNER AGENT ruled (above) that
-**"Quick response you can count on" survives and is not at issue** — the load is
-on "Roadside assistance" + "always on the move" — because a *response* is the
-answer and the answer is genuinely quick. The PROJECT MANAGER reads
-**"FAST & RELIABLE / Quick response" as itself carrying the come-now ambiguity**
-that costs trust. Both are defensible; they differ on whether that one line is
-safe as-is or part of the problem. **Routed to the OWNER AGENT** (who owns the
-words ruling) with the PM's reading attached; not decided here.
+**The two-lead divergence is RESOLVED — the PM's reading won.** The OWNER AGENT
+reversed himself (above): the customer's reading is the correct test, and by it
+"FAST & RELIABLE / Quick response" carries the come-now ambiguity, as the PM
+read it. Recorded per AGENTS.md, which is why it was routed rather than resolved
+quietly — and the routing produced a better answer than either lead had alone.
+
+**Positioning ruling (OWNER AGENT, settled).** "Quick response"/speed is **not**
+the claim the business should make, for three reasons that survive any
+measurement: it is generic (every trades template claims fast/reliable, so it
+differentiates nothing); it is ambiguous in the expensive direction (above); and
+it is a promise made on behalf of one man who sleeps. **The claim is who, not how
+fast: *you deal with Ken — he quotes you himself and he shows up.*** True at
+every hour, structurally impossible for a multi-van competitor to say (their own
+plural-technician framing proves it), and it does not collide with the seven-day
+floor — it makes the speed a pleasant surprise, not an obligation. This is the
+same "say who, not how fast" ruling given for the title, now extended to the
+service strip. **Positioning is settled; wording is MARKETING's from here.**
 
 ## Where each finding routes
 
 - **To MARKETING (the words):** the title carries no job/place/speed term; the
   description and JSON-LD content omit every speed term and the word "flat", and
   omit the reachable-slice verbs ("install/installed/installation", "buy tires",
-  seasonal/spec-led terms) that separate servable from unservable intent. These
-  are facts about their surface; the wording is theirs.
+  seasonal/spec-led terms) that separate servable from unservable intent. And the
+  positioning is now **settled** (OWNER AGENT): say who, not how fast — the
+  service strip's speed claims ("Roadside assistance", "always on the move",
+  "Quick response you can count on") are all at issue, and the claim to make is
+  "you deal with Ken — he quotes you himself and shows up." Wording is MARKETING's
+  from here; these are facts about their surface and a settled positioning, not
+  prescribed copy.
 - **To SEO ANALYST (the machinery):** the sitemap/robots/canonical scope is
   correct for the current one-indexable-page shape; no machinery gap found in
   this pass. If the OWNER AGENT decides `/` should carry more indexable content,
   that has a machinery consequence worth a follow-up.
-- **To the OWNER AGENT (positioning + product):** the three questions above;
-  the page-vs-product one (does Ken do roadside assistance at all, and how does
-  it square with the seven-day floor? — product, not repo-measurable); the now-
-  answerable positioning one (**is "quick response" the claim the business wants
-  to make**, given it is the one speed claim that is true and measured? — only
-  once answered does wording become MARKETING's); and the open two-lead
-  divergence on whether "FAST & RELIABLE / Quick response" is safe or part of
-  the ambiguity. All product/positioning calls, not mine.
+- **To the OWNER AGENT (positioning + product) — now RESOLVED, kept for the
+  record:** the roadside product question is answered (Ken does roadside
+  off-platform; the defect is one speed claim spanning two services); the
+  positioning question is answered ("quick response"/speed is not the claim — say
+  who, not how fast); and the two-lead divergence resolved in the PM's favour by
+  the OWNER AGENT's reversal. The three earlier positioning questions
+  (emergency-vs-planned, one-page-vs-many, speed-in-copy) also sit here. Nothing
+  open to route back; positioning is settled and hands to MARKETING.
 
 ## The towns Ken really serves — derived, not guessed
 
