@@ -164,7 +164,7 @@ const REQUIRED = ['vehicleInfo', 'tireSelection', 'location', 'date', 'customerN
  * which is free text where people write where a key is hidden or what the
  * gate code is. The owner reads the full payload.
  */
-const CUSTOMER_REQUEST_FIELDS = ['vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip', 'disposeOldTires']
+const CUSTOMER_REQUEST_FIELDS = ['vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip', 'disposeOldTires', 'chosenLineIds']
 
 /**
  * What a customer-facing read of a quote carries, from inside `quotes.payload`.
@@ -232,6 +232,17 @@ function cleanDisposeOldTires(value) {
   if (value === undefined || value === null || value === '') return false
   if (typeof value !== 'boolean') throw new InputError('disposeOldTires must be true or false.')
   return value
+}
+
+function cleanChosenLineIds(value, disposeOldTires = false) {
+  if (value === undefined || value === null) return disposeOldTires ? ['disposal'] : []
+  if (!Array.isArray(value) || value.length > 25) throw new InputError('chosenLineIds must be a list of at most 25 catalogue line ids.')
+  const ids = value.map(id => {
+    if (typeof id !== 'string' || !id.trim() || id.trim().length > 100) throw new InputError('Each chosen catalogue line needs a valid id.')
+    return id.trim()
+  })
+  if (disposeOldTires && !ids.includes('disposal')) ids.push('disposal')
+  return [...new Set(ids)]
 }
 
 /**
@@ -327,6 +338,7 @@ function cleanRequest(input, today) {
   cleaned.customerPhone = cleanCustomerPhone(input.customerPhone)
   cleaned.quantity = cleanQuantity(input.quantity)
   cleaned.disposeOldTires = cleanDisposeOldTires(input.disposeOldTires)
+  cleaned.chosenLineIds = cleanChosenLineIds(input.chosenLineIds, cleaned.disposeOldTires)
 
   for (const field of REQUIRED) {
     if (!cleaned[field]) throw new InputError(field + ' is required.')
@@ -343,6 +355,22 @@ function cleanRequest(input, today) {
   if (!zip) throw new InputError('Enter the five-digit ZIP code where we will meet you.')
   cleaned.serviceZip = zip
   return cleaned
+}
+
+function cleanPreview(input) {
+  if (!input || typeof input !== 'object') throw new InputError('Send the pricing preview as an object.')
+  const tireSelection = typeof input.tireSelection === 'string' ? input.tireSelection.trim() : ''
+  if (!tireSelection || tireSelection.length > LIMITS.tireSelection) throw new InputError('Choose a tire to preview its price.')
+  const serviceZip = normalizeZip(input.serviceZip)
+  if (!serviceZip) throw new InputError('Enter the five-digit ZIP code where we will meet you.')
+  const disposeOldTires = cleanDisposeOldTires(input.disposeOldTires)
+  return {
+    tireSelection,
+    serviceZip,
+    quantity: cleanQuantity(input.quantity),
+    disposeOldTires,
+    chosenLineIds: cleanChosenLineIds(input.chosenLineIds, disposeOldTires),
+  }
 }
 
 /**
@@ -596,8 +624,7 @@ export class Quotes {
     // itself never special-cases "disposal" by id -- this line is gone
     // entirely once the wizard sends real choices for whatever optional
     // lines exist.
-    const chosenLineIds = request.disposeOldTires ? ['disposal'] : []
-    const draft = calculateDraftQuote({ ...request, id }, catalog, this.inventory.getPricingSettings(), this.inventory.getCatalogueLines(), chosenLineIds)
+    const draft = calculateDraftQuote({ ...request, id }, catalog, this.inventory.getPricingSettings(), this.inventory.getCatalogueLines(), request.chosenLineIds)
     if (area.reason === REASONS.REVIEW) {
       draft.exceptionReasons = [...draft.exceptionReasons, `Service address is ${area.message.replace(/^About/, 'about')}`]
       draft.exception = true
@@ -613,6 +640,49 @@ export class Quotes {
           JSON.stringify(draft.lineItems), Math.round(draft.total * 100), stamp, stamp)
       return this.get(id)
     })
+  }
+
+  /**
+   * Price a customer selection without storing a request or creating a charge.
+   * The result is a positive list of customer-safe fields: no supplier cost,
+   * shipping input, markup setting, stock metadata, or owner review detail.
+   */
+  preview(input) {
+    const request = cleanPreview(input)
+    const area = isServiceable(request.serviceZip, this.serviceArea)
+    if (!area.serviceable) throw new InputError(`${area.message} Text me at ${SHOP_PHONE} if you'd like to ask anyway.`)
+
+    const catalog = this.catalog()
+    if (!catalog.some(tire => tire.id === request.tireSelection)) {
+      throw new InputError("That tire isn't one I offer right now. Choose another.", 409)
+    }
+
+    const catalogueLines = this.inventory.getCatalogueLines()
+    const draft = calculateDraftQuote(request, catalog, this.inventory.getPricingSettings(), catalogueLines, request.chosenLineIds)
+    const applicableCatalogueLines = catalogueLines.filter(line => line && typeof line === 'object' && line.enabled &&
+      (line.mode === 'automatic' || (line.mode === 'optional' && request.chosenLineIds.includes(line.id))) &&
+      typeof line.label === 'string' && Number.isInteger(line.amountCents))
+    const mobileCatalogueIndex = applicableCatalogueLines.findIndex(line => line.id === 'mobile-service')
+    // A valid selected tire is always line zero; catalogue lines follow in
+    // their owner-authored order. Identify the mobile row by its stable id,
+    // never by customer-facing copy that could duplicate a tire or fee name.
+    const mobileLineIndex = mobileCatalogueIndex < 0 ? -1 : mobileCatalogueIndex + 1
+    return {
+      serviceZip: request.serviceZip,
+      lineItems: draft.lineItems.map((line, index) => {
+        const isMobileService = index === mobileLineIndex
+        return {
+          description: line.description,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          lineTotal: Math.round(line.quantity * line.unitPrice * 100) / 100,
+          ...(isMobileService ? { serviceZip: request.serviceZip } : {}),
+        }
+      }),
+      subtotal: draft.subtotal,
+      ...(draft.tax ? { tax: { rate: draft.tax.rate, amount: draft.tax.amount } } : {}),
+      total: draft.total,
+    }
   }
 
   /**

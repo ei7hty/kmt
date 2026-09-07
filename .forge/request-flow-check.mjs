@@ -27,7 +27,7 @@ const AUDIT_EMAIL = 'jamie+request-flow-check@example.com'
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 36
+const EXPECTED_CHECKS = 50
 
 const browser = await chromium.launch()
 let checks = 0
@@ -64,6 +64,27 @@ try {
     await page.locator('.step-panel').screenshot({ path: `.forge/shots/request-vehicle-${width}.png` })
     await page.getByTestId('continue-to-mobile-service').click()
     check(await page.locator('#serviceZip').inputValue() === '02149', 'earlier ZIP carries into service details')
+    await page.getByTestId('pricing-preview-total').waitFor()
+    check((await page.getByTestId('pricing-preview').innerText()).includes('ZIP 02149'), 'server-priced mobile service names the active ZIP')
+    await page.getByTestId('change-pricing-zip').click()
+    check(await page.locator('#fitmentZip').inputValue() === '02149', 'Change ZIP returns to the existing ZIP step with its active value')
+    await page.locator('#fitmentZip').fill('02148')
+    await page.getByTestId('continue-to-tires').click()
+    check(await page.getByTestId(`tire-option-${cleanTire.tireId}`).getAttribute('aria-pressed') === 'true' && (await page.locator('.vehicle-preview').innerText()).includes('2020 Toyota Corolla'), 'changing ZIP preserves the tire and vehicle selections')
+    let submittedWhileUnpriced = 0
+    page.on('request', request => {
+      if (request.method() === 'POST' && request.url() === `${base}/api/requests`) submittedWhileUnpriced++
+    })
+    await page.route('**/api/requests/preview', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Preview temporarily unavailable.' }) }), { times: 1 })
+    await page.getByTestId('continue-to-mobile-service').click()
+    await page.getByText('Something went wrong at the shop. Please try again in a moment.').waitFor()
+    check(await page.getByTestId('request-my-quote').isDisabled(), 'a server preview failure disables submission before charges are shown')
+    await page.getByTestId('request-my-quote').evaluate(button => button.click())
+    await page.waitForTimeout(100)
+    check(submittedWhileUnpriced === 0, 'a disabled unpriced form sends no request even when clicked programmatically')
+    await page.getByTestId('retry-pricing-preview').click()
+    await page.getByTestId('pricing-preview-total').waitFor()
+    check(await page.locator('#serviceZip').inputValue() === '02148' && (await page.getByTestId('pricing-preview').innerText()).includes('ZIP 02148'), 'the changed ZIP reaches the service form and refreshed server preview')
     await page.getByTestId('request-my-quote').click()
     check(await page.locator('#location').getAttribute('aria-invalid') === 'true' && await page.locator('#date').getAttribute('aria-invalid') === 'true', 'empty address and date get inline errors')
     check(await page.locator('#customerName').getAttribute('aria-invalid') === 'true' && await page.locator('#customerEmail').getAttribute('aria-invalid') === 'true', 'empty name and email get inline errors')
@@ -84,9 +105,11 @@ try {
     await page.locator('#customerEmail').fill(AUDIT_EMAIL)
     await page.locator('#customerPhone').fill('(617) 410-8319')
     await page.locator('.step-panel').screenshot({ path: `.forge/shots/request-service-${width}.png` })
+    const previewTotal = (await page.getByTestId('pricing-preview-total').textContent()).trim()
     await page.getByTestId('request-my-quote').click()
     await page.waitForSelector('.success-message')
     check(await page.locator('.success-message').isVisible(), 'submitting acknowledges the request on screen')
+    check((await page.locator('.success-message').innerText()).includes(`Draft quote total: ${previewTotal}`), 'submitted draft total agrees with the server preview shown before submit')
 
     // What the customer typed is checked where it matters -- on the owner's
     // screen. Reading it back out of the browser's own storage proved that a
@@ -95,7 +118,7 @@ try {
     await openOwnerQuotes(page)
     const ownerText = await page.locator('.owner-content').first().innerText()
     check(ownerText.includes('2020 Toyota Corolla'), 'owner sees the vehicle the customer entered')
-    check(ownerText.includes('02149'), 'owner sees the ZIP the customer entered')
+    check(ownerText.includes('02148'), 'owner sees the changed ZIP the customer entered')
     check(ownerText.includes('Blue sedan'), 'owner sees the access instructions the customer entered')
     const phoneLinkVisible = await page.locator('.owner-content a[href="tel:+16174108319"]').first().isVisible().catch(() => false)
     check(ownerText.includes('Jamie Rivera') && ownerText.includes(AUDIT_EMAIL) && phoneLinkVisible, 'owner sees the contact name, email and normalized phone the customer entered')

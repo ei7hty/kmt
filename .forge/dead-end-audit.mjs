@@ -112,7 +112,15 @@ async function submitRequest(page, { size, tireId, vehicle, location, date, zip 
     await page.fill('#date', date, step);
     await page.fill('#customerName', customerName, step);
     await page.fill('#customerEmail', customerEmail, step);
-    await page.click('button[type="submit"]', step);
+    // A serviceable ZIP resolves to itemised charges. An out-of-area ZIP is
+    // refused during preview, before submit is enabled.
+    await Promise.race([
+      page.getByTestId('pricing-preview-total').waitFor(step),
+      page.locator('.pricing-preview [role="alert"]').waitFor(step),
+    ]);
+    if (await page.getByTestId('pricing-preview-total').isVisible().catch(() => false)) {
+      await page.click('button[type="submit"]', step);
+    }
   } catch (error) {
     // This is exactly how the audit rotted the first time: the customer flow was
     // rewritten, the script could no longer drive it, and the failure read like
@@ -518,7 +526,7 @@ async function main() {
       date: SOON,
       zip: ZIP_OUT_OF_AREA,
     });
-    const refusal = await page.locator('.submit-failure').first();
+    const refusal = await page.locator('.pricing-preview [role="alert"]').first();
     const refusalText = (await refusal.textContent().catch(() => '')) || '';
     // t63 replaced every call control with a text one (src/contact.js):
     // the way out of a refusal is now an sms: link, not a tel: one. #228
@@ -781,6 +789,7 @@ async function main() {
     await page.fill('#date', LATEST, { timeout: 5000 });
     await page.fill('#customerName', 'Jamie Rivera', { timeout: 5000 });
     await page.fill('#customerEmail', AUDIT_EMAIL, { timeout: 5000 });
+    await page.getByTestId('pricing-preview-total').waitFor({ timeout: 5000 });
     await page.click('button[type="submit"]', { timeout: 5000 });
 
     const draftMsg = await page.locator('[role="status"]').first().textContent().catch(() => null);

@@ -79,7 +79,7 @@ export const logLabel = (rule, id) =>
  * whenever a scenario is added to any of the three gate scripts, the same
  * way the comment above once said to and nothing enforced.
  */
-export const AUDIT_BUDGET = { publicPosts: 24, submitsPerEmail: 22, loginFailures: 0 }
+export const AUDIT_BUDGET = { publicPosts: 24, previewPosts: 30, submitsPerEmail: 22, loginFailures: 0 }
 
 export const LIMITS = {
   /** Public POSTs (submit, pay, cancel) from one address. */
@@ -90,6 +90,13 @@ export const LIMITS = {
    * and cancels that browser's requests, so the log carries a hash of it, not it.
    */
   publicPerKey: { max: 20, windowMs: 15 * 60_000, private: true },
+  /**
+   * Price previews are read-like calculations but still spend server work.
+   * Keep them bounded separately so ordinary form refreshes cannot consume
+   * the smaller bucket reserved for submit, pay and cancel.
+   */
+  previewPerIp: { max: 80, windowMs: 15 * 60_000 },
+  previewPerKey: { max: 30, windowMs: 15 * 60_000, private: true },
   /**
    * Submissions naming one email address in a day: the cap that keeps the
    * mail seam from relaying. `private`: a customer's address is not ours to

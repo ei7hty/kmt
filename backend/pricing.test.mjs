@@ -193,6 +193,24 @@ test('a perTire catalogue line multiplies by quantity; a perJob line does not', 
   assert.equal(perJobLine.quantity, 1)
 })
 
+test('catalogue amounts resolve by SKU, then size, then site-wide without changing line order', () => {
+  const scoped = line({
+    amountCents: 1500,
+    amountOverrides: {
+      sizes: { '205/65R15': 2000, '225/50R17': 2100 },
+      skus: { a: 2750 },
+    },
+  })
+  const siteWide = calculateDraftQuote(request({ tireSelection: 'giga-ordinary' }), [tire({ id: 'giga-ordinary', size: '215/60R16' })], undefined, [scoped])
+  const bySize = calculateDraftQuote(request({ tireSelection: 'giga-ordinary' }), [tire({ id: 'giga-ordinary' })], undefined, [scoped])
+  const bySku = calculateDraftQuote(request(), [tire()], undefined, [scoped])
+
+  assert.equal(siteWide.lineItems[1].unitPrice, 15)
+  assert.equal(bySize.lineItems[1].unitPrice, 20)
+  assert.equal(bySku.lineItems[1].unitPrice, 27.5, 'SKU wins even when the tire also matches the size override')
+  assert.deepEqual(bySku.lineItems.map(item => item.description), ['Test Touring', 'Installation'])
+})
+
 test('subtotal + tax = total holds across every catalogue shape, not just the empty-catalogue no-op (#354, per review)', () => {
   // Stage 1 is inert until the catalogue has entries, which makes "nothing
   // changed" the easy half of testing it -- the fixture that never feeds a

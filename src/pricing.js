@@ -93,7 +93,18 @@ const taxableAs = (category, settings) =>
  * fail a customer's checkout over a malformed row already sitting in the
  * database from before this stage existed.
  */
-function catalogueLineItems(catalogueLines, chosenLineIds, quantity, settings) {
+function scopedAmountCents(entry, tire) {
+  const overrides = entry.amountOverrides
+  // Supplier tire ids are minted as `giga-${sku.toLowerCase()}` at import.
+  // Resolve from that already-public stable id so the pricing catalog never
+  // has to widen the customer tire shape with a raw supplier field.
+  const sku = tire?.id?.startsWith('giga-') ? tire.id.slice(5) : tire?.source?.sku?.toLowerCase()
+  if (sku && Number.isInteger(overrides?.skus?.[sku])) return overrides.skus[sku]
+  if (tire?.size && Number.isInteger(overrides?.sizes?.[tire.size])) return overrides.sizes[tire.size]
+  return entry.amountCents
+}
+
+function catalogueLineItems(catalogueLines, chosenLineIds, quantity, settings, tire) {
   return catalogueLines
     .filter(entry => entry && typeof entry === 'object' && entry.enabled &&
       (entry.mode === 'automatic' || (entry.mode === 'optional' && chosenLineIds.includes(entry.id))) &&
@@ -101,7 +112,11 @@ function catalogueLineItems(catalogueLines, chosenLineIds, quantity, settings) {
     .map(entry => ({
       description: entry.label,
       quantity: entry.basis === 'perTire' ? quantity : 1,
-      unitPrice: entry.amountCents / 100,
+      // Price specificity is independent of catalogue order: a deliberate
+      // SKU exception wins over its size, which wins over the site-wide
+      // parent amount. Reordering invoice lines can therefore never change
+      // what the customer is charged.
+      unitPrice: scopedAmountCents(entry, tire) / 100,
       // The owner's own flag, never inferred -- see computeQuoteTotals.
       taxable: Boolean(settings.tax) && entry.taxable === true,
     }))
@@ -157,7 +172,7 @@ export function calculateDraftQuote(request, catalog = null, pricingSettings = D
     // The visit costs the same whether it fits one tire or four: only the
     // tire line multiplies.
     ...(tire ? [{ description: tire.name, quantity, unitPrice: tire.price, taxable: taxableAs('goods', settings) }] : []),
-    ...catalogueLineItems(catalogueLines, chosenLineIds, quantity, settings),
+    ...catalogueLineItems(catalogueLines, chosenLineIds, quantity, settings, tire),
   ]
 
   const totals = computeQuoteTotals(lineItems, settings)
