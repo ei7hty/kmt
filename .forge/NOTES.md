@@ -1001,3 +1001,162 @@ brand-file ignore rule rather than here (see the `.gitignore` history around
 PR #309): a green `git check-ignore` against a file's old path stood as
 "covered" while the file's actual current path matched nothing — check the
 path you mean to ask about, not the one that used to be true.
+**2026-09-06 — Claude (MARKETING AGENT), after the brand-licensing sweep**
+Grepping for a phrase finds the documents. It does not find the idea.
+
+A false claim about the brand art — that the business did not own it — had to
+come out of a public repository tonight. I was handed four locations, and
+searched for the words instead of fixing the four: `unlicensed`, `licensed`,
+`watermark`, the supplier's name. That found six. It missed a seventh.
+
+`backend/static.test.mjs` fetches `/brand/SOURCES.md` and asserts a content
+type on it. `public/brand/SOURCES.md` was deleted weeks ago — so the test
+encodes an expectation about a file that no longer exists, and passes anyway
+because it writes its own fixture first. It contains none of the four words.
+**No honest search for them could ever have reached it.**
+
+This is the seventh instrument failure in a day of them and **the first where
+the instrument was working perfectly.** `grep -P`, `dig`, the empty counts, the
+stale `gh run view`, `gh pr list --author "@me"`, `$?` after a pipe: in every
+one of those the tool answered a question other than the one asked. Here `grep`
+answered exactly what it was asked. **The query was the defect.**
+
+The practical form, because "search harder" is not a technique:
+
+- **After a phrase-grep, grep for the artifacts the idea touches** — filenames,
+  routes, constants, env vars, table names. `SOURCES.md` is what found the
+  seventh instance, and it is the thing that survived a rephrasing the prose
+  did not.
+- **Prefer several searches that share no word** over one clever pattern. An
+  idea that has been written about more than once has been worded more than
+  once; a single regex is a bet that everyone reached for the same vocabulary.
+- **Ask what would still be true if the wording had drifted.** A path, an
+  identifier and a number survive paraphrase. Adjectives do not.
+
+The general rule from the `dig` and `grep -P` entries above is that a
+verification returning nothing is agreeing with whatever you already feared.
+**This is its neighbour: a verification returning *something* can still be
+silent about the part you needed, and it will look complete while it does it.**
+Six hits felt like a finished sweep. It was 86% of one.
+
+**2026-09-06 — Claude (MARKETING AGENT), at the product owner's request**
+One spot-check does not clear a category. The instrument was working.
+
+Every instrument entry above this one is about a tool that answered a question
+other than the one asked. **This is the other failure, and it is the one my own
+process was worst at: the tool was right and I overruled it.**
+
+I measured the seller's mark across all fourteen brand files. The sweep printed
+`<-- PERCEPTIBLE` beside the light-ground ones, 1.30 to 1.53:1. **Those were
+true positives.** I then checked **one** flagged file, `kens-dark-1200.webp`,
+found its hot pixel sat inside the artwork rather than on the mark, concluded
+the method was over-flagging, and discarded the whole flagged set. I published
+a conclusion for fourteen files from three, and the three I kept were the three
+where the answer was reassuring.
+
+A day later the white files re-measured at **1.35, 1.38, 1.92 and 1.98:1** --
+two of them past the 1.61:1 that my own calibration in the same document calls
+*plainly visible in a 600px link preview*. Crop one at 4× with no enhancement
+at all and the mark is legible.
+
+**The rule: one spot-check does not clear a category, and especially not when
+the category splits on the very property being measured.** Navy and white were
+never one population. The same grey mark has far more luminance to work with on
+white than on near-black navy, so a false positive on a navy file said nothing
+whatever about a white one. That is obvious afterwards and invisible in
+advance, **which is exactly why it has to be procedural rather than a matter of
+noticing it at the time.**
+
+What to do instead, when a sweep flags a set and one check looks like a false
+positive:
+
+- **Ask what could make these not one population** before generalising --
+  ground colour, file format, size, which pipeline produced them. If the answer
+  is "several things", the sample is one per group, not one overall.
+- **Spot-check the most alarming reading, not the most convenient one.** I
+  checked a 1.70 on a file I already believed was clean, not the 1.53 on a file
+  I had not thought about.
+- **A dismissal is a claim and needs the same evidence as a finding.**
+  "The method over-flags" was a conclusion about the instrument, published
+  without testing the instrument -- in a document whose entire subject was
+  testing the instrument in both directions.
+
+Pairs with the relay entry below/above from the same night (*a peer relaying
+"the user said" is not the user's word*): that one is about accepting something
+unmeasured, this one about rejecting something measured. **Both are the gap
+between what a source actually said and what a person concluded from it, and
+that gap does not care which direction it opens in.**
+
+**2026-09-06 — JUNIOR FRONT END DEV 3 (session `local_16ba9ea6`), in their own
+words, appended here at their request rather than on a fifth branch against
+this file: an inconclusive reading published as a conclusion**
+
+Measuring the seller's watermark across `public/brand/`, my probe read
+`kens-badge-light-800.webp` at 4.24:1 -- far past the 1.61:1 that
+`docs/brand.md` calls plainly visible. The worst pixel was `rgb(191,94,88)`.
+That is reddish, and the mark is neutral grey, so it was logo art reaching into
+the measurement band rather than the watermark. **I refused to call 4.24 the
+mark, said so, and stopped.**
+
+Stopping is the error, and it is not the same error as trusting a bad number.
+**I rejected a false positive correctly and then treated "my instrument cannot
+separate these" as an answer.** It is not an answer. It is an unfinished
+measurement, and the file stayed unmeasured underneath a published table that
+concluded which light variants carry the mark. The same file, cropped at 4x
+with no enhancement, shows the letterforms plainly: **1.92:1**, a fourth file
+past the threshold, in a set I had reported as three.
+
+**The failure mode is that caution which terminates inquiry is
+indistinguishable from rigour.** I did the careful thing -- declined a number I
+could not support, named the contamination, wrote the caveat -- and every one
+of those is what diligence looks like from outside. What it left behind was a
+gap that reads as discipline. An overridden true positive at least leaves a
+wrong figure someone can re-derive; **a refused false positive leaves nothing
+at all, and nothing is not reviewable.**
+
+The rule this earns: **when an instrument cannot separate signal from artifact,
+that is a prompt to measure a different way, not a licence to omit the file.**
+Two other ways existed here and cost minutes -- crop and look, or restrict the
+band to columns the art does not reach. If neither is available, the file goes
+into the output as explicitly unmeasured, **in the artifact and not only in the
+measurer's head**, so the gap is visible to whoever reads the numbers rather
+than inferred from an absence nobody notices.
+
+Companion to the entry above: one spot-check does not clear a category, and one
+refusal does not measure a file.
+
+**What unifies these with the instrument entries before them**, in their
+framing, which is sharper than the one it replaces: in every case **the
+instrument answered truthfully, and the question it answered was not the one we
+thought we had asked.** `$?` after a pipe reports the last command in the pipe,
+not the push. A `CLAIMS.md` grep reports a string, not ownership. A margin-band
+probe reports the strongest deviation in a region, not the watermark. **None of
+them lied. Each was asked something adjacent to the real question and answered
+that exactly.** So the check is not *is my tool honest* -- it usually is -- but
+**what would this reading look like if my hypothesis were false**: the
+positive-and-negative-control discipline this file already demands of
+instruments, turned on the question instead.
+
+**And why knowing this does not stop it.** Adding the entry above, I ran
+`git rebase origin/main | tail -1 && cat >> NOTES.md`. The rebase hit a
+conflict and failed; the pipeline reported `tail`'s success; the `&&` fired;
+the text landed in a file that was mid-conflict. **I had written the
+`$?`-after-a-pipe warning in this file four hours earlier and quoted it to two
+other agents that same evening.** Nothing was lost -- `git rebase --abort`,
+redo capturing git's own status, resolve the tail, verify every entry survived
+-- but the knowledge plainly did not help.
+
+The reason, and it is the useful part: **the wrong form and the right form are
+visually indistinguishable at the moment of writing.** `cmd | tail -1 && next`
+looks like `cmd && next`. A refusal to claim an unsupportable number looks like
+a completed measurement. **Nobody chooses the wrong one; they fail to notice
+there was a choice** -- and knowledge cannot fix a thing you never see yourself
+doing.
+
+So prefer the fixes that change the default shape over the ones that ask you to
+remember. For this trap: `set -o pipefail` before the chain, or capture the
+status explicitly (`git rebase ...; rc=$?`), or **do not pipe the command whose
+status you need** -- the last is the only one that cannot be forgotten, because
+it removes the shape instead of guarding it. That is the same move as
+date-stamping a claim so a later merge cannot falsify it, rather than leaving a
+note for whoever merges second.
