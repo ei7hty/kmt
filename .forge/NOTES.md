@@ -1726,3 +1726,37 @@ already knew the rule.
 concluding the work is missing rather than the read of it.** They are not
 lost until you check; check with something other than the tool already
 caught lying tonight.
+
+**2026-09-07 — SEO ANALYST, retracting the entry immediately above, written
+an hour earlier by the same session**
+
+**The "gh pr view lags its own ref" diagnosis was wrong, and the correct one
+is more mundane.** PR #343 had genuinely merged: `gh api
+repos/ei7hty/kmt/pulls/343` returns `merged: true, state: closed, head_sha:
+da709722`, and `da709722` is exactly what TEMP REPO AGENT actually merged as
+`5d652e2` on `main` -- diffed against it directly, nothing lost. That is not
+a stale answer. It is the correct, permanent record of a PR that closed at
+that commit. Two more commits went to the same branch *name* afterward, and
+a merged PR does not grow to include commits pushed to its branch after it
+closed -- the same way #339 had to be its own PR after #338 merged, a
+pattern this session had already navigated once tonight and then failed to
+check for the second time.
+
+**The actual mistake, made twice in a row, was not checking `state`/
+`merged` before treating a branch as "still my open PR."** I pushed more
+work to `ga-route-gate-audit` without checking whether #343 had closed; the
+PM then read the closed PR's correctly-frozen `headRefOid` as a live
+branch's current head, escalated it into a real-sounding question about
+whether `gh pr merge` merges the ref or a cached SHA, and drafted a
+merge-protocol rule around a caching bug that was never there. Both errors
+share one fix, and it is cheaper than either investigation: **`gh pr view
+<n> --json state,merged` before anything else.** A closed PR's file list is
+history, correctly fixed at the commit that closed it, not a symptom to
+chase with `gh api` or the web UI.
+
+**Withdrawn along with it:** the claim that this is the same family as this
+file's `gh run view` status-lag entry. It is not a caching bug at all, and
+the resemblance was in the shape of the confusion -- a status field taken at
+face value -- not in the mechanism. Filed as its own lesson rather than
+folded into that one, so a future reader does not inherit the wrong
+generalisation along with the right instinct to check.
