@@ -86,6 +86,23 @@ refuses to boot, naming the missing one. `_USER` and `_PASSWORD` must also be se
 together or neither. So a partial mail setup cannot start and quietly send from
 the wrong address; it stops, the way a missing owner password does.
 
+**A refusal is also evidence, which is not what it was built for.** Because the
+server will not start with SMTP configured and `KMT_MAIL_FROM` or
+`KMT_OWNER_EMAIL` empty, or with the port invalid, or with user and password
+set in a half-and-half state -- **a server that is running has already proved
+all of those are correct.** No secrets list needed, no credential read.
+
+That answered a live question on 2026-09-06. Google began rejecting the SMTP
+credential and the first thing anyone wanted to know was whether a secret had
+been mangled or the credential itself revoked. It was answered without touching
+Fly: the site was serving, so the configuration was structurally complete; and
+`535 Username and Password not accepted` is the response to a failed AUTH,
+which is only sent when a user is present -- so the username was set, the
+password was set, and Google was rejecting the credential rather than the setup.
+
+When you next need to know whether production is configured, ask what the
+running process has already proved before reaching for a command.
+
 ## What is already done
 
 DNS at Squarespace, and certificates issued for the apex, `www` and `order`:
