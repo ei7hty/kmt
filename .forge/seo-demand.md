@@ -94,3 +94,54 @@ These are demand observations, not copy. The call on each is the OWNER AGENT's.
   this pass. If the OWNER AGENT decides `/` should carry more indexable content,
   that has a machinery consequence worth a follow-up.
 - **To the OWNER AGENT (positioning):** the three questions above.
+
+## The towns Ken really serves — derived, not guessed
+
+At the OWNER AGENT's instruction (ruling #2: enrich `/` with a truthful towns
+list, no page-per-town), derived from the **same centroid table and haversine
+the production server uses** (`backend/service-area.mjs`, `distanceMiles` over
+`backend/zip-centroids.json`), base ZIP `02148`, module defaults. Town → its
+principal ZIP is a known fact; the **distance is computed**, so a mis-keyed ZIP
+would show a wrong distance. Spot-checked against reality: Cambridge 5.1 mi,
+Salem 11.9, Lowell 18.5, Worcester 39.7, Providence 45.8 — all correct.
+
+**The band structure the code actually enforces (this reconciles the 25-vs-100
+question the SEO ANALYST charter flags):**
+
+- **≤ 25 mi — covered, no review** (`KMT_SERVICE_REVIEW_MILES`, default 25).
+  This is "the places he really goes," and it is **exactly the JSON-LD
+  `areaServed`** (`geoRadius` 40234 m = 25.0 mi). The marketed area and the
+  silent-accept band are the same number — already correct, no machinery gap.
+- **25–100 mi — accepted but flagged for the owner** ("by arrangement").
+- **> 100 mi — refused** (`KMT_SERVICE_RADIUS_MILES`, default 100).
+
+So the towns list for the enriched `/` is the **≤ 25 mi band**, not the 100-mile
+refuse boundary. The OWNER AGENT's phrase was "the constraint that accepts or
+refuses" (100 mi); the honest "places he really goes" is the review band (25
+mi). Flagging the difference rather than taking 100 at face value.
+
+**Covered (≤ 25 mi), nearest first** — a derived list, not a copy selection
+(which towns to actually name is MARKETING's; naming all of them would stuff
+keywords, a demand fact, not a decision I make):
+
+Malden, Everett, Melrose, Medford, Chelsea, Revere, Charlestown, Saugus,
+Stoneham, Somerville, Winchester, Arlington, Cambridge, Boston, Wakefield,
+East Boston, Winthrop, Woburn, Lynn, Belmont, Nahant, Lynnfield, Watertown,
+Reading, Brookline, Swampscott, Newton, Peabody, Burlington, Lexington,
+Waltham, North Reading, Wilmington, Danvers, Marblehead, Salem, Milton,
+Quincy, Beverly, Wellesley, Dedham, Needham, Braintree, Andover, Weymouth,
+Randolph, Natick, Canton, Norwood, Lowell, Lawrence, Framingham, Ipswich,
+Gloucester, Brockton (24.3 mi, the far edge of the band).
+
+**By arrangement (25–100 mi):** Haverhill (25.4), Marlborough (25.5), Salem NH
+(26.1), Nashua NH (29.6), Derry NH (33.9), Worcester (39.7), Plymouth (43.7),
+Manchester NH (43.9), Providence RI (45.8).
+
+**One precision caveat (second-check honesty):** the distance is measured to a
+town's ZIP *centroid*. A geographically large town whose center sits near 25 mi
+(Lowell 18.5, Lawrence 19.9, Framingham 21, Brockton 24.3) has edge ZIPs that
+cross into the flagged band — the server measures the customer's actual ZIP, so
+a town on the "covered" list is not a promise every address in it clears 25 mi.
+This is a truthful-copy constraint for MARKETING, not an error in the list. The
+sample above is ~65 towns chosen to bracket the 25-mile line; it is
+representative of the band, not the exhaustive set of ZIPs within it.
