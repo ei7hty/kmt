@@ -176,3 +176,12 @@ test('the session endpoint reports which ways in this server has', async () => {
   assert.equal(body.password, false)
   assert.equal(body.authenticated, false)
 })
+
+test('the session endpoint reports password availability without changing authentication', async () => {
+  const config = readAuthConfig({ ...PASSWORD })
+  const auth = createAuth(config, { sessions: memorySessionStore(), google: null })
+  const out = recorder()
+  const request = { method: 'GET', headers: {}, socket: { encrypted: true } }
+  await auth.handle(request, out, new URL('https://kensmobiletire.com/api/owner/session'), async () => ({}))
+  assert.deepEqual(JSON.parse(out.sent.body), { authenticated: false, google: false, password: true })
+})
