@@ -454,7 +454,7 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
   }
 }
 
-export function createApi(inventory, refresher, importer = null, quotes = null, { mailer = null, inquiries = null } = {}) {
+export function createApi(inventory, refresher, importer = null, quotes = null, { mailer = null, inquiries = null, auth = null } = {}) {
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
     if (!url.pathname.startsWith('/api/owner/')) return false
@@ -532,16 +532,18 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
         send(200, quotes.adjust(decodeURIComponent(raw), await readJsonBody(request)))
       } else if (request.method === 'POST' && QUOTE_ACTION.test(url.pathname)) {
         if (!quotes) throw new InputError('Owner endpoint not found', 404)
+        const actor = auth?.actorFor(request)
+        if (!actor) throw new InputError('Sign in again before changing a quote.', 401)
         const [, raw, action] = url.pathname.match(QUOTE_ACTION)
         const id = decodeURIComponent(raw)
         const body = await readJsonBody(request)
         // One route per act, dispatched here rather than inside the store: the
         // store's methods say what each transition is allowed to do, and this
         // line only says which one the owner asked for.
-        if (action === 'done') send(200, quotes.finish(id, body?.version))
-        else if (action === 'cancel') send(200, quotes.cancel(id, body?.version, body?.reason))
+        if (action === 'done') send(200, quotes.finish(id, body?.version, actor))
+        else if (action === 'cancel') send(200, quotes.cancel(id, body?.version, body?.reason, actor))
         else {
-          const decided = quotes.decide(id, action === 'approve' ? 'sent' : 'rejected', body?.version, body?.reason)
+          const decided = quotes.decide(id, action === 'approve' ? 'sent' : 'rejected', body?.version, body?.reason, actor)
           send(200, decided)
           // The quote itself, itemised, once the owner has sent it (R25).
           if (mailer && decided?.quote?.status === 'sent') mailer.after('quote-sent', decided.request.id)

@@ -13,6 +13,10 @@ import { calculateDraftQuote } from '../src/pricing.js'
 const SIZE = '215/60R16'
 const KEY = 'a1b2c3d4e5f60718'
 const OTHER_KEY = '00112233445566ff'
+const ownerDecide = (quotes, id, decision, version, reason = null) =>
+  quotes.decide(id, decision, version, reason, SHARED_PASSWORD_ACTOR)
+const ownerFinish = (quotes, id, version) => quotes.finish(id, version, SHARED_PASSWORD_ACTOR)
+const ownerCancel = (quotes, id, version, reason) => quotes.cancel(id, version, reason, SHARED_PASSWORD_ACTOR)
 
 /** A preferred date that is always ahead of today, so the fixture never goes stale. */
 const daysAhead = days => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10)
@@ -238,7 +242,7 @@ test('approving after an adjustment sends the adjusted numbers', async t => {
     lineItems: [{ description: 'Complete job', quantity: 1, unitPrice: 275.5 }],
     note: 'Ready when you are.', version: original.quote.version,
   })
-  const sent = quotes.decide(original.request.id, 'sent', adjusted.quote.version)
+  const sent = ownerDecide(quotes, original.request.id, 'sent', adjusted.quote.version)
 
   assert.equal(sent.quote.status, 'sent')
   assert.equal(sent.quote.total, 275.5)
@@ -259,7 +263,7 @@ test('only a current draft can be adjusted', async t => {
   const adjusted = quotes.adjust(original.request.id, input)
 
   assert.throws(() => quotes.adjust(original.request.id, input), error => error.status === 409 && /changed in another window/.test(error.message))
-  const sent = quotes.decide(original.request.id, 'sent', adjusted.quote.version)
+  const sent = ownerDecide(quotes, original.request.id, 'sent', adjusted.quote.version)
   assert.throws(() => quotes.adjust(original.request.id, { ...input, version: sent.quote.version }), error => error.status === 409 && /already sent/.test(error.message))
   const paid = quotes.pay(original.request.id)
   assert.throws(() => quotes.adjust(original.request.id, { ...input, version: paid.quote.version }), error => error.status === 409 && /already paid/.test(error.message))
@@ -588,7 +592,7 @@ test('a request read by id is the customer shape: no name, email, phone or locat
 
   // Every customer-facing write answers the same shape: it all reads through get().
   for (const field of OWNER_ONLY) assert.equal(submitted.request[field], undefined, `submit: ${field}`)
-  quotes.decide(submitted.request.id, 'sent', 1)
+  ownerDecide(quotes, submitted.request.id, 'sent', 1)
   const paid = quotes.pay(submitted.request.id)
   for (const field of OWNER_ONLY) assert.equal(paid.request[field], undefined, `pay: ${field}`)
 })
@@ -618,9 +622,9 @@ test('the owner keeps the full row: contact and notes, on the list and after eve
   assert.equal(listed.locationNotes, 'Key under the mat, gate code 4411')
 
   // The owner's actions answer the owner's shape.
-  const sent = quotes.decide(request.id, 'sent', 1)
+  const sent = ownerDecide(quotes, request.id, 'sent', 1)
   assert.equal(sent.request.customerEmail, 'jamie@example.com', 'decide answers the owner')
-  const cancelled = quotes.cancel(request.id, 2, 'Out of stock')
+  const cancelled = ownerCancel(quotes, request.id, 2, 'Out of stock')
   assert.equal(cancelled.request.locationNotes, 'Key under the mat, gate code 4411', 'cancel answers the owner')
 })
 
@@ -668,7 +672,7 @@ test('#284: opening the emailed link on a device that never submitted can still 
   // never known to it.
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
-  quotes.decide(request.id, 'sent', quote.version)
+  ownerDecide(quotes, request.id, 'sent', quote.version)
 
   // Neither call is told any key at all -- the id from the link is the whole access.
   const paid = quotes.pay(request.id)
@@ -767,7 +771,7 @@ function serve(t, quotes, inventory, { limiter = null } = {}) {
   const requestsApi = createRequestsApi(quotes, { limiter })
   const catalogApi = createCatalogApi(inventory)
   const healthApi = createHealthApi(inventory)
-  const ownerApi = createApi(inventory, { start: () => ({}), cancel: () => ({}) }, null, quotes)
+  const ownerApi = createApi(inventory, { start: () => ({}), cancel: () => ({}) }, null, quotes, { auth })
 
   const server = createServer(async (request, response) => {
     // As server.mjs does: the collapsed path is the one every handler sees.
@@ -1026,7 +1030,7 @@ test('approving moves a draft, and the customer sees it from their own device', 
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
 
-  const decided = quotes.decide(request.id, 'sent', quote.version)
+  const decided = ownerDecide(quotes, request.id, 'sent', quote.version)
 
   assert.equal(decided.quote.status, 'sent')
   assert.equal(decided.quote.version, quote.version + 1, 'the version moves with the decision')
@@ -1039,7 +1043,7 @@ test('rejecting moves a draft the same way', async t => {
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
 
-  assert.equal(quotes.decide(request.id, 'rejected', quote.version).quote.status, 'rejected')
+  assert.equal(ownerDecide(quotes, request.id, 'rejected', quote.version).quote.status, 'rejected')
   assert.equal(quotes.get(request.id).quote.status, 'rejected')
 })
 
@@ -1047,23 +1051,23 @@ test('a decline carries the reason Ken typed (#78: decide() used to drop it sile
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
 
-  const decided = quotes.decide(request.id, 'rejected', quote.version, ' Out of stock by the time I checked ')
+  const decided = ownerDecide(quotes, request.id, 'rejected', quote.version, ' Out of stock by the time I checked ')
   assert.equal(decided.quote.reason, 'Out of stock by the time I checked', 'trimmed, and actually stored')
   assert.equal(quotes.get(request.id).quote.reason, 'Out of stock by the time I checked')
 
   // Blank is a choice to say nothing, not a gap to fill with a guess.
   const { request: blank, quote: blankQuote } = quotes.submit(form())
-  assert.equal(quotes.decide(blank.id, 'rejected', blankQuote.version, '   ').quote.reason, null)
+  assert.equal(ownerDecide(quotes, blank.id, 'rejected', blankQuote.version, '   ').quote.reason, null)
 
   // Approving never writes a reason, even if one somehow arrived with it.
   const { request: approved, quote: approvedQuote } = quotes.submit(form())
-  assert.equal(quotes.decide(approved.id, 'sent', approvedQuote.version, 'should never land').quote.reason, null)
+  assert.equal(ownerDecide(quotes, approved.id, 'sent', approvedQuote.version, 'should never land').quote.reason, null)
 })
 
 test('a decline reason over 500 characters is refused -- cleanReason\'s own limit, never exercised through decide()', async t => {
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
-  assert.throws(() => quotes.decide(request.id, 'rejected', quote.version, 'x'.repeat(501)), /reason is too long/)
+  assert.throws(() => ownerDecide(quotes, request.id, 'rejected', quote.version, 'x'.repeat(501)), /reason is too long/)
   assert.equal(quotes.get(request.id).quote.status, 'draft', 'the refused decision left the row untouched')
 })
 
@@ -1073,10 +1077,10 @@ test('a stale version is refused rather than overwriting the newer decision', as
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
 
-  quotes.decide(request.id, 'sent', quote.version)
+  ownerDecide(quotes, request.id, 'sent', quote.version)
 
   assert.throws(
-    () => quotes.decide(request.id, 'rejected', quote.version),
+    () => ownerDecide(quotes, request.id, 'rejected', quote.version),
     error => error.status === 409 && /changed in another window/.test(error.message),
   )
   assert.equal(quotes.get(request.id).quote.status, 'sent', 'the first decision stands')
@@ -1085,18 +1089,18 @@ test('a stale version is refused rather than overwriting the newer decision', as
 test('only a draft can be decided', async t => {
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
-  const sent = quotes.decide(request.id, 'sent', quote.version)
+  const sent = ownerDecide(quotes, request.id, 'sent', quote.version)
 
   // Right version, wrong state: already decided, and paid is further still.
   assert.throws(
-    () => quotes.decide(request.id, 'rejected', sent.quote.version),
+    () => ownerDecide(quotes, request.id, 'rejected', sent.quote.version),
     error => error.status === 409 && /already sent/.test(error.message),
   )
 
   quotes.pay(request.id)
   const paid = quotes.get(request.id)
   assert.throws(
-    () => quotes.decide(request.id, 'rejected', paid.quote.version),
+    () => ownerDecide(quotes, request.id, 'rejected', paid.quote.version),
     error => error.status === 409 && /already paid/.test(error.message),
   )
 })
@@ -1105,10 +1109,10 @@ test('a decision has to be a decision, and carry a version', async t => {
   const { quotes } = setup(t)
   const { request, quote } = quotes.submit(form())
 
-  assert.throws(() => quotes.decide(request.id, 'maybe', quote.version), /sent to the customer or rejected/)
-  assert.throws(() => quotes.decide(request.id, 'sent', undefined), /version you were shown/)
-  assert.throws(() => quotes.decide(request.id, 'sent', -1), /version you were shown/)
-  assert.throws(() => quotes.decide('0'.repeat(32), 'sent', 1), /No such request/)
+  assert.throws(() => ownerDecide(quotes, request.id, 'maybe', quote.version), /sent to the customer or rejected/)
+  assert.throws(() => ownerDecide(quotes, request.id, 'sent', undefined), /version you were shown/)
+  assert.throws(() => ownerDecide(quotes, request.id, 'sent', -1), /version you were shown/)
+  assert.throws(() => ownerDecide(quotes, '0'.repeat(32), 'sent', 1), /No such request/)
 })
 
 test('the owner endpoints need a session, and the customer endpoints are unchanged', async t => {
@@ -1147,7 +1151,10 @@ test('the owner endpoints need a session, and the customer endpoints are unchang
     method: 'POST', headers, body: JSON.stringify({ version: editedBody.quote.version }),
   })
   assert.equal(approved.status, 200)
-  assert.equal((await approved.json()).quote.status, 'sent')
+  const approvedBody = await approved.json()
+  assert.equal(approvedBody.quote.status, 'sent')
+  assert.equal(approvedBody.quote.decidedBy, SHARED_PASSWORD_ACTOR,
+    'the owner route resolves the password-session marker instead of inventing or dropping an actor')
 
   // t29's endpoints, from a customer with no session, still behave.
   const seen = await (await fetch(`${base}/api/requests/${request.id}`)).json()
@@ -1163,12 +1170,12 @@ test('the owner endpoints need a session, and the customer endpoints are unchang
 function walkTo(quotes, status, overrides = {}) {
   const { request, quote } = quotes.submit(form(overrides))
   if (status === 'draft') return quotes.get(request.id)
-  if (status === 'rejected') return quotes.decide(request.id, 'rejected', quote.version)
-  const sent = quotes.decide(request.id, 'sent', quote.version)
+  if (status === 'rejected') return ownerDecide(quotes, request.id, 'rejected', quote.version)
+  const sent = ownerDecide(quotes, request.id, 'sent', quote.version)
   if (status === 'sent') return sent
   const paid = quotes.pay(request.id)
   if (status === 'paid') return paid
-  if (status === 'done') return quotes.finish(request.id, paid.quote.version)
+  if (status === 'done') return ownerFinish(quotes, request.id, paid.quote.version)
   throw new Error(`walkTo does not know how to reach ${status}`)
 }
 
@@ -1176,21 +1183,21 @@ test('a paid request is closed by marking it done, and only from paid', async t 
   const { quotes } = setup(t)
 
   const paid = walkTo(quotes, 'paid')
-  const done = quotes.finish(paid.request.id, paid.quote.version)
+  const done = ownerFinish(quotes, paid.request.id, paid.quote.version)
   assert.equal(done.quote.status, 'done')
   assert.equal(done.quote.version, paid.quote.version + 1, 'the version moves with the transition')
   assert.equal(quotes.get(paid.request.id).quote.status, 'done', 'and the customer reads it too')
 
   // Twice is not twice as done.
   assert.throws(
-    () => quotes.finish(paid.request.id, done.quote.version),
+    () => ownerFinish(quotes, paid.request.id, done.quote.version),
     error => error.status === 409 && /already closed/.test(error.message),
   )
 
   for (const status of ['draft', 'sent', 'rejected']) {
     const row = walkTo(quotes, status)
     assert.throws(
-      () => quotes.finish(row.request.id, row.quote.version),
+      () => ownerFinish(quotes, row.request.id, row.quote.version),
       error => error.status === 409 && /only a paid request/.test(error.message),
       `${status} should not be markable done`,
     )
@@ -1201,10 +1208,10 @@ test('marking done takes the same version check as every other transition', asyn
   const { quotes } = setup(t)
   const paid = walkTo(quotes, 'paid')
 
-  assert.throws(() => quotes.finish(paid.request.id, paid.quote.version + 5),
+  assert.throws(() => ownerFinish(quotes, paid.request.id, paid.quote.version + 5),
     error => error.status === 409 && /changed in another window/.test(error.message))
-  assert.throws(() => quotes.finish(paid.request.id, undefined), /version you were shown/)
-  assert.throws(() => quotes.finish('0'.repeat(32), 1), error => error.status === 404)
+  assert.throws(() => ownerFinish(quotes, paid.request.id, undefined), /version you were shown/)
+  assert.throws(() => ownerFinish(quotes, '0'.repeat(32), 1), error => error.status === 404)
   assert.equal(quotes.get(paid.request.id).quote.status, 'paid', 'and none of that moved it')
 })
 
@@ -1213,7 +1220,7 @@ test('the owner can cancel before payment, with a reason, and not after', async 
 
   for (const status of ['draft', 'sent']) {
     const row = walkTo(quotes, status)
-    const cancelled = quotes.cancel(row.request.id, row.quote.version, ' out of stock ')
+    const cancelled = ownerCancel(quotes, row.request.id, row.quote.version, ' out of stock ')
     assert.equal(cancelled.quote.status, 'cancelled', `cancelling from ${status}`)
     assert.equal(cancelled.quote.reason, 'out of stock', 'trimmed, and kept with the row')
     assert.equal(quotes.get(row.request.id).quote.reason, 'out of stock', 'the customer is told why')
@@ -1221,25 +1228,25 @@ test('the owner can cancel before payment, with a reason, and not after', async 
 
   // A reason is optional, and nothing stands in for one.
   const bare = walkTo(quotes, 'draft')
-  assert.equal(quotes.cancel(bare.request.id, bare.quote.version).quote.reason, null)
+  assert.equal(ownerCancel(quotes, bare.request.id, bare.quote.version).quote.reason, null)
   const blank = walkTo(quotes, 'draft')
-  assert.equal(quotes.cancel(blank.request.id, blank.quote.version, '   ').quote.reason, null)
+  assert.equal(ownerCancel(quotes, blank.request.id, blank.quote.version, '   ').quote.reason, null)
 
   const paid = walkTo(quotes, 'paid')
   assert.throws(
-    () => quotes.cancel(paid.request.id, paid.quote.version),
+    () => ownerCancel(quotes, paid.request.id, paid.quote.version),
     error => error.status === 409 && /Mark it done/.test(error.message),
     'money has moved; the way out is done, not cancelled',
   )
   const done = walkTo(quotes, 'done')
-  assert.throws(() => quotes.cancel(done.request.id, done.quote.version),
+  assert.throws(() => ownerCancel(quotes, done.request.id, done.quote.version),
     error => error.status === 409 && /already done/.test(error.message))
 })
 
 test('nothing is deleted: a cancelled request is still there to read', async t => {
   const { quotes } = setup(t)
   const row = walkTo(quotes, 'sent')
-  quotes.cancel(row.request.id, row.quote.version, 'the van broke down')
+  ownerCancel(quotes, row.request.id, row.quote.version, 'the van broke down')
 
   const found = quotes.get(row.request.id)
   assert.equal(found.request.vehicleInfo, '2021 Honda Civic', 'the request it was made from')
@@ -1296,7 +1303,7 @@ test('a quote approved before this change is still payable and still readable', 
 
   const paid = quotes.pay(request.id)
   assert.equal(paid.quote.status, 'paid')
-  assert.equal(quotes.finish(request.id, paid.quote.version).quote.status, 'done',
+  assert.equal(ownerFinish(quotes, request.id, paid.quote.version).quote.status, 'done',
     'and it can be closed the day this lands')
 })
 
@@ -1308,7 +1315,7 @@ test('the owner list is filtered by view, and every view is counted', async t =>
   walkTo(quotes, 'done', { vehicleInfo: 'done one' })
   walkTo(quotes, 'rejected', { vehicleInfo: 'rejected one' })
   const toCancel = walkTo(quotes, 'draft', { vehicleInfo: 'cancelled one' })
-  quotes.cancel(toCancel.request.id, toCancel.quote.version, 'no van that day')
+  ownerCancel(quotes, toCancel.request.id, toCancel.quote.version, 'no van that day')
 
   const open = quotes.viewForOwner()
   assert.equal(open.view, 'open', 'no view asked for is the open one')
@@ -1486,20 +1493,12 @@ test('the Host guard refuses a strange host, and never the health check', async 
 
 /* ------------------------------------------------ who decided (#290, schema) --- */
 
-test('an owner decision records no actor until a caller establishes one', t => {
+test('an owner decision records the actor supplied by the authenticated caller', t => {
   const { quotes } = setup(t)
   const { request } = quotes.submit(form())
 
-  const sent = quotes.decide(request.id, 'sent', 1)
-  // `decide()` takes no actor yet -- threading `actorFor` in is #290's
-  // follow-up. Until it does, the honest record is that we did not capture
-  // who acted, NOT that the shared password did: that fallback was true
-  // while the password was the only way in and would go silently false the
-  // moment Google sign-in was configured.
-  assert.equal(sent.quote.decidedBy, null,
-    'null means "not recorded"; the sentinel would assert something no caller established')
-  assert.notEqual(sent.quote.decidedBy, SHARED_PASSWORD_ACTOR,
-    're-adding `?? SHARED_PASSWORD_ACTOR` in moveTo puts this back: it records a credential no caller established, and goes silently false once Google sign-in exists')
+  const sent = ownerDecide(quotes, request.id, 'sent', 1)
+  assert.equal(sent.quote.decidedBy, SHARED_PASSWORD_ACTOR)
 })
 
 test('a customer paying does not overwrite who sent the quote', t => {
@@ -1538,15 +1537,44 @@ test('a customer cancelling their own request does not write an owner actor', t 
     "the customer closed this, and recording them as the deciding owner would be false")
 })
 
-test('marking a paid job done records no actor either, for the same reason decide does not', t => {
+test('marking a paid job done preserves the first recorded owner actor', t => {
   const { quotes } = setup(t)
   const { request } = quotes.submit(form())
-  quotes.decide(request.id, 'sent', 1)
+  ownerDecide(quotes, request.id, 'sent', 1)
   quotes.pay(request.id)
 
-  const done = quotes.finish(request.id, quotes.get(request.id, 'owner').quote.version)
+  const done = ownerFinish(quotes, request.id, quotes.get(request.id, 'owner').quote.version)
   assert.equal(done.quote.status, 'done')
-  assert.equal(done.quote.decidedBy, null, 'finish() establishes no actor either, so it records none')
+  assert.equal(done.quote.decidedBy, SHARED_PASSWORD_ACTOR)
+})
+
+test('every owner transition refuses to move without an actor', t => {
+  const { quotes } = setup(t)
+  const draft = quotes.submit(form())
+  assert.throws(() => quotes.decide(draft.request.id, 'sent', draft.quote.version), /requires an authenticated actor/)
+  assert.throws(() => quotes.cancel(draft.request.id, draft.quote.version), /requires an authenticated actor/)
+
+  const paid = ownerDecide(quotes, draft.request.id, 'sent', draft.quote.version)
+  quotes.pay(draft.request.id)
+  assert.throws(() => quotes.finish(draft.request.id, paid.quote.version + 1), /requires an authenticated actor/)
+})
+
+test('the quote-action handler refuses a valid session whose stored actor is null', async t => {
+  const { inventory, quotes } = setup(t)
+  const { request, quote } = quotes.submit(form())
+  const api = createApi(inventory, null, null, quotes, { auth: { actorFor: () => null } })
+  const server = createServer(async (incoming, response) => {
+    if (!(await api(incoming, response))) response.writeHead(404).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/owner/quotes/${request.id}/approve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: quote.version }),
+  })
+  assert.equal(response.status, 401)
+  assert.match((await response.json()).error, /Sign in again/)
+  assert.equal(quotes.get(request.id).quote.status, 'draft', 'the actorless request did not reach storage')
 })
 
 /**
@@ -1572,7 +1600,7 @@ test('moveTo records a supplied actor instead of the fallback', t => {
 test('who operates the owner screen never reaches the customer shape', t => {
   const { quotes } = setup(t)
   const { request } = quotes.submit(form())
-  quotes.decide(request.id, 'sent', 1)
+  ownerDecide(quotes, request.id, 'sent', 1)
 
   // The quote payload is audience-partitioned (CUSTOMER_QUOTE_FIELDS, #246).
   // The columns spread beside it in shapeRow are not: `reason` goes to both
