@@ -1501,9 +1501,11 @@ test('who operates the owner screen never reaches the customer shape', t => {
   const { request } = quotes.submit(form())
   quotes.decide(request.id, 'sent', 1)
 
-  // The quote half of shapeRow is not audience-partitioned the way the
-  // request half is, so a field added plainly there reaches the shareable
-  // link (.forge/personal-data-removal.md, finding 1). This one is not.
+  // The quote payload is audience-partitioned (CUSTOMER_QUOTE_FIELDS, #246).
+  // The columns spread beside it in shapeRow are not: `reason` goes to both
+  // audiences on purpose, and anything added in that block follows it to the
+  // shareable link unless it says otherwise. decided_by is a column, so it
+  // needs its own check, and this asserts it has one.
   const customer = quotes.get(request.id)
   assert.equal('decidedBy' in customer.quote, false, 'not merely null -- absent')
   assert.equal(quotes.get(request.id, 'owner').quote.decidedBy, SHARED_PASSWORD_ACTOR)
