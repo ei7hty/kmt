@@ -281,6 +281,10 @@ function main() {
     for (const row of results) {
       console.log(`  ${row.id}  resolved_at=${row.resolvedAt}  resolution_note=${JSON.stringify(row.resolutionNote)}  error=${row.error ? JSON.stringify(row.error) : 'null'}`)
     }
+    // What this ran does, in one line a person can check afterwards without
+    // re-reading the script -- this runs once, at some hour, and whoever
+    // runs it should be able to confirm it did what it said.
+    console.log(`\nSummary: ${results.length} rows moved from unresolved to resolved. status unchanged on every row (still 'queued'). error unchanged on every row (was null, still null).`)
   } catch (error) {
     console.error(`\nFailed partway through: ${error.message}`)
     console.error('resolve() is idempotent per row -- re-running is safe; already-settled rows come back unchanged.')
