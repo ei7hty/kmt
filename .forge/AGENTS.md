@@ -214,6 +214,25 @@ git worktree remove .worktrees/claim-tmp
 - **On Windows, `git worktree remove` can fail `Permission denied` if that
   directory was recently your shell's cwd;** `rm -rf` it then `git worktree
   prune` — safe only because a plain tree has no junction to follow.
+- **Every command in this recipe is `git -C <path>`, never `cd <path> && git
+  ...`, and that is load-bearing, not a style choice.** A failed `cd` does not
+  stop a `;`-joined chain — it may print an error you will not read while
+  scanning for the next command's output, and the following statements then
+  run from wherever the shell already was. That is exactly how one claim push
+  became a whole feature branch pushed straight to `main`: a `git push origin
+  HEAD:main` written for a throwaway claims worktree ran from a feature
+  worktree instead, because an earlier `cd` in the same sequence had not
+  landed where it was supposed to. The `cd` itself did not fail silently in
+  the sense of printing nothing — it is that the statements after it ran
+  anyway, from the wrong place, because nothing re-checked where the shell
+  actually was before trusting it. `git -C <path>` cannot be redirected by a
+  directory you did not actually enter — it names the target explicitly, on
+  every single command, so a wrong path fails that command specifically
+  rather than silently relocating a later, unrelated one. The same failure
+  shape is not unique to `cd`: any `;`-joined chain
+  lets a failed step run its neighbour anyway, in a context the author no
+  longer controls. Prefer `&&` so a failure stops the chain, and `git -C`
+  wherever the target directory matters more than the current one.
 
 Use `.worktrees/` (`.gitignore` covers it), never a sibling that never gets
 cleaned up. The same holds for any direct-to-`main` commit: the shared `HEAD`
@@ -316,13 +335,31 @@ either side.
 - **Need another branch while someone is editing? Use `git worktree add`,** not
   `git switch`. Switching moves the checkout under whoever is writing.
 - **`node scripts/worktree.mjs add <name>` and `remove <name>`** do that with
-  the shared `node_modules` link handled in the safe order. Never
-  `git worktree remove --force` a tree whose `node_modules` is a link: it
-  deletes through the link into the install every worktree shares.
+  the shared `node_modules` link handled in the safe order. **Never
+  `git worktree remove --force`, and never a raw `rm -rf` on a worktree
+  directory either** — both follow that tree's `node_modules` link straight
+  into the one install every worktree shares, deleting it for every session
+  at once, not just the tree you meant to remove. `git worktree remove
+  --force` at least asks git to do the deleting, which is refusable; `rm -rf`
+  does not ask anyone. `scripts/worktree.mjs remove` unlinks first, then
+  removes — it is the one command that cannot take the install down with it.
+  Reach for it even when a plain removal feels faster; the paragraph you
+  would otherwise be relying on to remember this is not the one your hands
+  are in at the moment you type `rm -rf`, which is exactly why it is written
+  here too.
 - **Push promptly.** The divergence window is where this goes wrong.
 - **An author does not merge their own pull request.** A second agent reads the
   diff and the audit counts in the check log, and merges. That has been the
   working rule all day; a green badge is not a review.
+- **`gh pr view --json mergedBy` cannot tell you who actually merged anything
+  here.** Every session commits under the same shared account, so it always
+  reads back that one login regardless of which agent clicked merge — do not
+  spend time on it before discovering that, and do not infer a "rogue" or
+  unannounced merger from it alone. The only attribution that actually works
+  is a claim row plus an announcement in the peer channel; a PR with neither
+  is genuinely unattributable after the fact, which is exactly why a missing
+  claim row is worse than it looks and why a ship-scoped merge gets announced
+  before it happens, not reconstructed afterward.
 - **A ship-scoped merge is a deploy — announce it before you merge, and check
   the header after.** The insidious property first: a PR whose files match
   `ship_paths` deploys `main` on merge, and the pipeline serialises per push and
