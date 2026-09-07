@@ -104,7 +104,7 @@ test('tax ships absent by default and stays absent until a valid rate and applie
 // flag on the line, not something calculateDraftQuote recomputes from the
 // live appliesTo setting the way it still does for the tire -- these fixture
 // booleans are the seed's snapshot, not a live derivation.
-const seededMobileFee = (taxable) => ({ id: 'mobile-service', label: 'Mobile installation service', amountCents: 4999, basis: 'perJob', mode: 'automatic', taxable, enabled: true })
+const seededMobileFee = (taxable) => ({ id: 'mobile-service', label: 'Mobile service fee', amountCents: 4999, basis: 'perJob', mode: 'automatic', taxable, enabled: true })
 const seededDisposal = (taxable) => ({ id: 'disposal', label: 'Old tire disposal', amountCents: 1000, basis: 'perTire', mode: 'optional', taxable, enabled: true })
 
 test('tax applied to everything taxes the full subtotal, including catalogue lines seeded as taxable', () => {
@@ -139,12 +139,20 @@ test('the screen-verified scenario, taxed: an edited fee plus a new owner line s
   // checked directly rather than inferred from a tax-off walkthrough and a
   // tax-on unit test that never combine.
   const settings = normalizePricingSettings({ tax: { rate: 0.0625, appliesTo: 'goods' } })
-  const editedMobileFee = { id: 'mobile-service', label: 'Mobile installation service', amountCents: 6500, basis: 'perJob', mode: 'automatic', taxable: false, enabled: true }
-  const installation = { id: 'install', label: 'Tire installation', amountCents: 1500, basis: 'perJob', mode: 'automatic', taxable: true, enabled: true }
+  const editedMobileFee = { id: 'mobile-service', label: 'Mobile service fee', amountCents: 6500, basis: 'perJob', mode: 'automatic', taxable: false, enabled: true }
+  const installation = { id: 'install', label: 'Tire installation', amountCents: 1500, basis: 'perTire', mode: 'automatic', taxable: true, enabled: true }
   const quote = calculateDraftQuote(request({ quantity: 4 }), [tire({ price: 48.28 })], settings, [editedMobileFee, installation], [])
-  assert.equal(quote.subtotal, 273.12) // 4 x 48.28 + 65 + 15, the PR body's own total
-  assert.deepEqual(quote.tax, { rate: 0.0625, appliesTo: 'goods', amount: 13.01 }) // 6.25% of the taxable 193.12 + 15
-  assert.equal(quote.total, 286.13)
+  assert.deepEqual(
+    quote.lineItems.slice(1).map(({ description, quantity }) => ({ description, quantity })),
+    [
+      { description: 'Mobile service fee', quantity: 1 },
+      { description: 'Tire installation', quantity: 4 },
+    ],
+    'customer copy distinguishes the one-per-visit fee from per-tire labour',
+  )
+  assert.equal(quote.subtotal, 318.12) // 4 x 48.28 + 65 + (4 x 15)
+  assert.deepEqual(quote.tax, { rate: 0.0625, appliesTo: 'goods', amount: 15.82 })
+  assert.equal(quote.total, 333.94)
   assert.equal(quote.total, roundToCents(quote.subtotal + quote.tax.amount), 'subtotal + tax = total')
 })
 

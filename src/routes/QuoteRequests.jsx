@@ -275,7 +275,12 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
               // The tire line always carries how many, drafted once and never
               // recomputed here: reading it back is how the owner sees the
               // same quantity the quote was actually priced for.
-              const tireLine = quote?.lineItems?.find(item => item.description !== 'Mobile installation service')
+              // calculateDraftQuote always writes the selected tire first,
+              // followed by owner-configured catalogue lines. Do not identify
+              // it by excluding a mutable owner label: renaming the visit fee
+              // or adding a separate "Tire installation" line must not change
+              // the quantity shown beside the tire.
+              const tireLine = quote?.lineItems?.[0]
               return (
               <div key={request.id} id={`request-${request.id}`}
                 className={request.id === linkedId && linkedSearch === 'found' ? 'panel owner-request owner-request-linked' : 'panel owner-request'}>

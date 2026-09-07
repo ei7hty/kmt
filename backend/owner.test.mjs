@@ -534,6 +534,7 @@ test('the catalogue starts seeded with the mobile-service fee, not empty, and sa
   const seeded = db.getCatalogueLines()
   assert.equal(seeded.length, 1, 'seedCatalogueLines() ran at construction (#354 stage 2)')
   assert.equal(seeded[0].id, 'mobile-service')
+  assert.equal(seeded[0].label, 'Mobile service fee', 'the per-visit charge is not described as per-tire installation')
   assert.equal(seeded[0].isPlaceholder, true, 'the default fee is still a placeholder until Ken sets one')
 
   // saveCatalogueLines replaces the whole list, so keeping the seed while
@@ -643,13 +644,14 @@ test('the seed runs once at construction and never re-runs against an already-po
     // Ken edits the seeded fee -- exactly the action that would be silently
     // undone if construction re-seeded on every open rather than checking
     // whether the catalogue already holds something.
-    db.saveCatalogueLines([{ ...firstOpen[0], amountCents: 6000 }])
+    db.saveCatalogueLines([{ ...firstOpen[0], label: 'Ken’s call-out', amountCents: 6000 }])
     db.close()
 
     db = new Inventory(filename, [SIZE])
     const secondOpen = db.getCatalogueLines()
     assert.equal(secondOpen.length, 1, 'still one line -- a re-seed would have duplicated Ken\'s fee onto every quote')
     assert.equal(secondOpen[0].amountCents, 6000, 'his edit survived the reopen; a re-seed would have overwritten it back to the default')
+    assert.equal(secondOpen[0].label, 'Ken’s call-out', 'an existing owner-customized label is never rewritten to the new default')
   } finally {
     db?.close()
     rmSync(folder, { recursive: true, force: true })

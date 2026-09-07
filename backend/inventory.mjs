@@ -384,7 +384,7 @@ export class Inventory {
     const taxableAsServices = Boolean(pricing.tax) && (pricing.tax.appliesTo === 'all' || pricing.tax.appliesTo === 'services')
     const seeds = [
       {
-        id: 'mobile-service', label: 'Mobile installation service', amountCents: Math.round(pricing.mobileServiceFee * 100),
+        id: 'mobile-service', label: 'Mobile service fee', amountCents: Math.round(pricing.mobileServiceFee * 100),
         basis: 'perJob', mode: 'automatic', taxable: taxableAsServices, enabled: true,
         isPlaceholder: pricing.mobileServiceFeeIsPlaceholder,
       },
