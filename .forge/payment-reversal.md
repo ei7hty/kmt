@@ -386,3 +386,18 @@ just returned to `sent` from `paid` -- distinguishable, if it matters later,
 from a quote that has simply never been paid yet, though nothing so far
 suggests the customer needs to be able to tell those apart. No code changes
 in this PR -- the point of asking first was to not write any of it twice.
+
+**One implementation requirement carried forward from this doc rather than
+left to be rediscovered: the owner-facing/customer-facing warning above
+belongs in `Status.jsx` itself, not only here.** A landmine documented only
+in `.forge/` is a landmine -- whoever extends the `sent` view to explain
+why a quote is awaiting payment again will be standing in `Status.jsx`,
+copying the decline pattern that already renders `quote.reason`, not
+reading a merged design document about payment reversal. **Whoever builds
+`reverse()` should add a short comment at the point of use** -- beside the
+two existing gated `quote.reason` references (`rejected`, `cancelled`), or
+at wherever `sent`'s block ends up reading the field if a customer-facing
+note is ever added there -- saying plainly: *this field is owner-facing for
+`paid → sent`, customer-facing for decline; do not generalise the decline
+pattern to `sent`.* Two sentences, at the file the next reader will
+actually be looking at.
