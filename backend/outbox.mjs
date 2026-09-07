@@ -206,6 +206,14 @@ export class Outbox {
     // the row IS, and widening that CHECK means a table rebuild). A nullable
     // timestamp answers the question actually asked -- did this happen, and
     // when -- and nothing more. Same plain guarded ALTER as the two above it.
+    //
+    // IT KEEPS THE FIRST STAMP WHERE `attempted_at` KEEPS THE LATEST, and the
+    // inconsistency is the point rather than an oversight to tidy away:
+    // **`attempted_at` answers "could this have arrived", which is about the
+    // most recent attempt; `resent_at` answers "did we ever knowingly send a
+    // second copy", which does not become more true afterwards.** Two fields,
+    // two questions, two tense rules. Anyone making these consistent with each
+    // other will break one of them.
     if (!columns.has('resent_at')) this.db.exec('ALTER TABLE outbox ADD COLUMN resent_at TEXT')
 
     // And the watermark, which is the half that is easy to leave out.

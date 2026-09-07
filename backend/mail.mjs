@@ -48,11 +48,23 @@ export const AUTO_RETRY_TYPES = ['request-arrived']
  * absence. `sent` is deliberately here: see `resend()` for why, and do not
  * remove it on the strength of a `provider_id`.
  *
- * `bounced` is deliberately NOT here -- a bounce is the one status where the
- * receiving server actually said no, so sending the same message to the same
- * address again is the one case with a known answer. Nothing produces
- * `bounced` today; it is on the list of statuses, so it gets a decision rather
- * than a gap.
+ * `bounced` is deliberately NOT here, for two reasons and the second is the
+ * one that settles it. The receiving server actually said no, so the
+ * uncertainty the `sent` case turns on is absent. And more decisively: a
+ * resend REPLAYS THE STORED ROW, `to_address` included, so it necessarily
+ * goes back to the address that rejected it -- even if Ken has since learned
+ * the right one, this button cannot use it. A resent `sent` row *might* reach
+ * someone; a resent hard-bounced row *cannot*. Excluding it withholds nothing.
+ *
+ * THE ASSUMPTION, and it is written here rather than in a document because
+ * this array is what the person who invalidates it will be reading:
+ * **this assumes `bounced` means a PERMANENT refusal.** A hard bounce (no such
+ * mailbox) is permanent and the exclusion is right. A soft bounce (mailbox
+ * full, server briefly unavailable) is transient, and the same message to the
+ * same address would succeed an hour later -- so if soft bounces ever land in
+ * this status, THIS LIST IS WRONG and `bounced` needs splitting before it can
+ * be trusted here. Nothing produces `bounced` today, which is exactly why it
+ * gets a decision and a stated premise rather than a gap.
  */
 export const RESENDABLE_STATUSES = ['queued', 'failed', 'sent']
 
