@@ -1886,3 +1886,72 @@ say so and ask someone whose will. And never let a lookup failure become a
 finding: distinguish "asked and answered: nothing" from "could not ask", and
 make the second an undetermined result rather than an assertion about
 production. #348 does exactly that, which is why its worst case is a SKIP.
+
+**2026-09-07 -- DB ADMIN (local_adccdadc), on JUNIOR DB ADMIN's read via the OWNER AGENT**
+
+Eight `outbox` rows have sat at `status='queued'` since the two-hour SMTP
+outage on 2026-09-06 (15:41-19:30), written under the null adapter before a
+real provider was configured. They will never send: the adapter that would
+have sent them no longer exists, and nothing here retries. Left alone, the
+first age-based queued-row detector anyone builds reports all eight on its
+first run, which is exactly the kind of day-one false alarm that gets a new
+monitor switched off before it has proven itself (see the `false-alarm`
+entry above -- same failure, arriving by a different road).
+
+**The customer question came first, per the OWNER AGENT's instruction on
+#328, and the answer closes it rather than opening a remedy.** Joined each
+row's `request_id` against that request's current `quotes.status`: all six
+distinct requests behind the eight rows reached a terminal or advanced
+state -- three `done`, two `cancelled`, one `rejected`, and one reached by
+mail a second time, successfully, once SMTP was actually working (a
+`quote-sent` that sent at 21:26 the same night). **Nothing sits at `draft`
+with no action since the outage.** That was the specific shape being
+checked for -- a request submitted, acknowledged nowhere, and never
+touched again -- and it does not exist among these eight. **Nobody is
+owed a response.** The honest bound still applies: this shows the
+*requests* progressed, not that every customer was personally told
+anything -- Ken may have phoned or texted rather than emailed, and the
+data cannot distinguish that from coincidence. Stated as the limit it is,
+not closed over.
+
+**So this is hygiene, not a customer-harm case, and it is worth exactly
+the design a hygiene problem deserves: none.** No new status, no
+migration. `outbox.status` already has `'failed'` as a legal value (its
+`CHECK` constraint: `queued/sent/failed/bounced`) and `Outbox.updateStatus`
+already exists (`backend/outbox.mjs:170`) to write it with an explanatory
+`error`. Marking these eight rows `'failed'` with a clear historical
+reason removes them from `'queued'` entirely, which is the only thing a
+future age-based detector actually looks at -- no permanent exception
+list, no schema awareness of "this row is different," because after the
+correction it simply is not in the set being watched. The existing
+failed-row watcher (#359, not yet merged) would report these eight once,
+correctly, with a reason a person can read and dismiss -- which is what
+that script exists for.
+
+Tested the exact `UPDATE` against a local fixture before writing it down
+(a queued row inside the window, one outside it, one already `sent` --
+confirmed only the in-window queued row was touched). Needs `flyctl`
+against production to actually run; read-only was the rule for every
+lookup tonight, this is the one write that follows the reversal design's
+same shape -- a decision made and verified locally, executed by the user
+whenever convenient, no urgency:
+
+```
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE outbox SET status='failed', error='Predates SMTP configuration (the 2026-09-06 outage window); the underlying request has since reached a terminal or advanced state independently -- see NOTES.md 2026-09-07.', updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE status='queued' AND created_at BETWEEN '2026-09-06T15:41:00' AND '2026-09-06T19:31:00';\""
+```
+
+Bounded by the exact outage window rather than by listing eight ids by
+hand, so it cannot touch a legitimately queued row written before or
+after it -- and it is a plain write, not `-readonly`, on purpose: this is
+the one correction in this whole thread that is meant to change something.
+
+Two habits carried forward from tonight rather than reinvented: caught my
+own query's `to_address IS NOT NULL` check as never having been able to
+prove anything (`to_address` is `NOT NULL` by the table's own `CHECK`, so
+every row satisfies it trivially) -- said so rather than let a
+non-finding sit in a report as if it meant something. And corrected a
+schema description in the same relay that carried the actual data:
+`outbox` has real `to_address`/`to_name`/`data`/`template_version`
+columns, not `payload`/`version` as first described to me -- the query's
+*values* were sound regardless, so the read stands; only the prose about
+its shape needed fixing before it went in writing.
