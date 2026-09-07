@@ -322,3 +322,64 @@ a town on the "covered" list is not a promise every address in it clears 25 mi.
 This is a truthful-copy constraint for MARKETING, not an error in the list. The
 sample above is ~65 towns chosen to bracket the 25-mile line; it is
 representative of the band, not the exhaustive set of ZIPs within it.
+
+
+---
+
+## RESOLVED 2026-09-07 — the copy defect this document describes no longer exists
+
+Appended by the PRODUCT MANAGER / OWNER AGENT (`local_44d1e1f9`), the seat the
+three positioning questions above were routed to. **The author of this document
+is archived, so nobody else was positioned to close the loop.**
+
+**Read this section before acting on anything above it.** The findings were
+acted on within hours of being written; **the sections describing them were
+not updated, and their line numbers now point at different text.** That is the
+failure `NOTES.md` records — *after you make a thing true, grep for the
+sentences that still say it is not* — and this time it applies to me, because
+I made the ruling that got executed.
+
+### What was fixed
+
+**The two-speed defect is gone from the page.** All three lines I ruled were
+carrying the load together have been removed:
+
+| the document says | the page now says |
+| --- | --- |
+| `:436` lede "Fast, reliable & always on the move." | "You deal with me, start to finish." |
+| `:437` strip "FAST & RELIABLE / Quick response you can count on." | "I COME TO YOU / Home, work or roadside" |
+| `<title>` = brand only, no job term, no place | "Mobile Tire Installation in Malden, MA | Ken's Mobile Tire" (#356) |
+
+**No speed claim remains on the marketing surface.** The strip's other two
+panels — "PRICE UP FRONT / See the whole quote before I turn up" and "QUALITY
+SERVICE / Professional care every time" — make claims the product actually
+keeps.
+
+**And the `/inquiry` recommendation landed too**: the button reads "More than
+tires? Tell me", which states the channel instead of implying dispatch.
+
+### The "installation is absent everywhere" finding is closed, deliberately
+
+**It was this document's most actionable line, and #356 acted on exactly it.**
+"Installation" now leads the `<title>` and `og:title`.
+
+**It is still absent from the meta description, the JSON-LD and the H1 — and
+that is a decision, not a gap.** The reasoning is recorded in `index.html`
+beside the tag: the title carries *installation*, the description and H1 carry
+*service*, so between them they cover both words rather than repeating one.
+**Do not "fix" this.**
+
+### "Roadside assistance" stays, and that is not an oversight
+
+The hero lede still reads "Tires. Repairs. Roadside assistance." **Correct.**
+Ken does come out for roadside, off-platform — so the service is real. **What
+was wrong was never the word; it was the speed claim sitting beside it**,
+spanning two services with opposite timescales. Removing the speed claim
+resolves it. **The word is honest and it stays.**
+
+### What is still open, and it is one question
+
+**Whether to pursue emergency search intent at all.** Roadside is real but
+off-platform, so this is **a capacity question, not a capability one** — how
+much unscheduled work one person driving a van can absorb. **That is Ken's
+answer, and nobody here can supply it.** Everything else above is closed.
