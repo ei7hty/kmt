@@ -1,5 +1,6 @@
 import { InputError } from './inventory.mjs'
 import { PUBLIC_BODY_LIMIT, clientIp, refuse } from './limits.mjs'
+import { SITE_COPY_FIELDS, SiteCopy, siteCopyDefaults } from './site-copy.mjs'
 
 /**
  * Exported as `readJsonBody` so the auth routes parse request bodies the same
@@ -46,7 +47,7 @@ const IMPORT_ORIGINS = new Set(['https://www.giga-tires.com', 'https://giga-tire
  * -- so adding a route never quietly makes it reachable, and the set of things
  * the public can call is one line to read.
  */
-export const PUBLIC_API_PATHS = new Set(['/api/catalog', '/api/health'])
+export const PUBLIC_API_PATHS = new Set(['/api/catalog', '/api/health', '/api/site-copy'])
 
 /**
  * The mail-status route's own path, kept out of PUBLIC_API_PATHS: it is
@@ -170,6 +171,40 @@ export function createCatalogApi(inventory) {
       console.error(error)
       response.writeHead(500, { 'Content-Type': 'application/json' })
       response.end(JSON.stringify({ error: 'Could not load the catalog.' }))
+    }
+    return true
+  }
+}
+
+/**
+ * The site's own words, for the pages a visitor sees before signing in to
+ * anything -- which is all of them, since a customer never signs in.
+ *
+ * Answers the resolved copy: the shipped defaults with Ken's overrides on top,
+ * never the overrides alone. A caller can render from this response without
+ * knowing whether anything has been edited, and a database with no `siteCopy`
+ * row answers exactly the wording that ships in the bundle.
+ *
+ * Cached like the catalog rather than `no-store`. Copy changes a few times a
+ * year at most, and the cost of a stale minute is that Ken waits a moment to
+ * see his own edit -- against a request on the critical path of the landing
+ * page, on a phone, on a roadside connection.
+ */
+export function createSiteCopyApi(inventory) {
+  const siteCopy = new SiteCopy(inventory)
+  return async (request, response) => {
+    // Its own path, by exact match, for the same reason createCatalogApi says:
+    // asking `isPublicApiCall` here would make this handler answer every route
+    // later added to that allow-list.
+    if (request.method !== 'GET' || new URL(request.url, 'http://localhost').pathname !== '/api/site-copy') return false
+
+    try {
+      response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' })
+      response.end(JSON.stringify({ copy: siteCopy.resolved() }))
+    } catch (error) {
+      console.error(error)
+      response.writeHead(500, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ error: 'Could not load the site copy.' }))
     }
     return true
   }
@@ -421,6 +456,7 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
     if (!url.pathname.startsWith('/api/owner/')) return false
+    const siteCopy = new SiteCopy(inventory)
     const origin = request.headers.origin
 
     // The import endpoint is the one thing a giga-tires page may talk to, and
@@ -576,6 +612,35 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
       } else if (request.method === 'PUT' && url.pathname === '/api/owner/pricing-lines') {
         const body = await readJsonBody(request)
         send(200, { lines: inventory.saveCatalogueLines(body?.lines) })
+      } else if (request.method === 'GET' && url.pathname === '/api/owner/site-copy') {
+        // The editor's whole state in one response: what Ken has overridden,
+        // what ships by default, and the field list with its limits. The
+        // screen never hard-codes the fields, so adding one here makes it
+        // appear there without a second edit -- and never the other way round,
+        // which is how a screen offers a field the server will refuse.
+        send(200, { ...siteCopy.stored(), defaults: siteCopyDefaults(), fields: SITE_COPY_FIELDS })
+      } else if (request.method === 'PUT' && url.pathname === '/api/owner/site-copy') {
+        const body = await readJsonBody(request)
+        // `acknowledged` carries the terms Ken was shown and accepted. Checked
+        // in the store rather than only in the screen: a warning enforced in
+        // the UI is one any other client skips.
+        try {
+          send(200, siteCopy.save(body?.values, { acknowledged: body?.acknowledged }))
+        } catch (error) {
+          // The detail is the whole point of warning rather than blocking: Ken
+          // has to see which term and which constraint before he can decide he
+          // means it. The shared handler at the bottom answers `{ error }`
+          // alone, so this route answers its own 400 rather than widening that
+          // shape for every owner route in the file.
+          if (!error.conflicts && !error.composite) throw error
+          send(error.status || 400, {
+            error: error.message,
+            conflicts: error.conflicts ?? [],
+            composite: error.composite ?? null,
+          })
+        }
+      } else if (request.method === 'POST' && url.pathname === '/api/owner/site-copy/undo') {
+        send(200, siteCopy.undo())
       } else if (request.method === 'POST' && url.pathname === '/api/owner/refresh') {
         const input = await readJsonBody(request)
         send(202, refresher.start(input.sizes))

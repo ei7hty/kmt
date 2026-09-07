@@ -38,7 +38,7 @@ import { TIRE_CATALOG } from '../src/data/catalog.js'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
-import { MAIL_STATUS_PATH, createApi, createCatalogApi, createHealthApi, createMailStatusApi, createRequestsApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
+import { MAIL_STATUS_PATH, createApi, createCatalogApi, createHealthApi, createMailStatusApi, createRequestsApi, createSiteCopyApi, isHostAllowed, isKnownApiPath, isPublicApiCall, readJsonBody } from './api.mjs'
 import { Quotes } from './quotes.mjs'
 import { describeServiceArea, readServiceAreaConfig } from './service-area.mjs'
 import { createAuth, createSessionStore, isMonitorAuthorized, readAuthConfig, readMonitorConfig } from './auth.mjs'
@@ -142,6 +142,7 @@ const mailer = createMailer({
 })
 const api = createApi(inventory, refresher, importer, quotes, { mailer })
 const catalogApi = createCatalogApi(inventory)
+const siteCopyApi = createSiteCopyApi(inventory)
 // The platform's health check, mounted here too so the local server and the
 // hosted one answer the same routes.
 const healthApi = createHealthApi(inventory)
@@ -246,6 +247,7 @@ const server = createServer(async (request, response) => {
       if (await healthApi(request, response)) return
       if (await mailStatusApi(request, response)) return
       if (await catalogApi(request, response)) return
+      if (await siteCopyApi(request, response)) return
       if (await requestsApi(request, response)) return
       if (await inquiriesApi(request, response)) return
       if (await api(request, response)) return
