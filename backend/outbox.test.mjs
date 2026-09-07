@@ -152,11 +152,18 @@ test('the personal keys a redaction has to find are named, not guessed at call t
   )
 })
 
-test('the two bare columns a redaction blanks directly are named too, separately from the keys inside data', () => {
+test('the bare columns a redaction blanks directly are named too, separately from the keys inside data', () => {
   assert.deepEqual(
     OUTBOX_REDACTED_COLUMNS,
-    ['to_address', 'to_name'],
-    'if you change this list, update the UPDATE outbox statement in docs/operations.md',
+    ['to_address', 'to_name', 'error'],
+    'if you change this list, update the fallback UPDATE outbox statement in docs/operations.md',
+  )
+})
+
+test('error is in the redacted set because the provider, not this code, decides what goes in it', () => {
+  assert.ok(
+    OUTBOX_REDACTED_COLUMNS.includes('error'),
+    'mail.mjs writes String(error?.message) from the provider here; SMTP rejections name the mailbox. See .forge/personal-data-removal.md finding 2.',
   )
 })
 

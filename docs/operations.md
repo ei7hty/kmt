@@ -256,6 +256,12 @@ curl -s -o /dev/null -w 'bogus host -> %{http_code}\n' -H 'Host: nope.example.co
 
 Expected: `200` four times, then `403`.
 
+Note: this expects `200` because it runs **before Step 2**. After Step 2 (the
+flip), the three non-canonical names correctly answer **301** redirecting to
+the canonical host -- that is the working state, not a failure. If you are
+re-running this during a rollback or an incident, read `301` on
+www/order/kmt.fly.dev as healthy; only the canonical name should be `200`.
+
 **Measured 2026-09-06, before this step:** all four names `200`, and the bogus
 Host also `200` -- the guard is inert while `KMT_ALLOWED_HOSTS` is unset, which
 is the state this step changes. That bogus-Host line going from `200` to `403`
@@ -814,21 +820,30 @@ means Ken signs in again.
 assume -- a password that was set with the wrong quoting is a password nobody
 knows.
 
-## Manual data removal (until redaction is code)
+## Data removal
 
 `/privacy` promises this today, in these exact words: *"To ask for your name,
-contact details and address to be removed, call (617) 410-8319."* Nobody has
-written `redact()` yet -- not for `requests`, not for `outbox`, not for
-`inquiries`; `docs/data-policy.md` documents the mechanism for each and
-implements none of them. **So if that phone rings, this is what happens: a
-human, by hand, in the database.** That is a legitimate way to run this for a
-business this size, but only if it is written down -- the person doing it is
-the user, who has not read the schema, and a promise with no procedure behind
-it is discovered at the worst possible moment, not the best one.
+contact details and address to be removed, call (617) 410-8319."* **If that
+phone rings, run one command:** `scripts/redact.mjs`, which is the
+implementation `docs/data-policy.md` describes and this section used to
+stand in for (#286).
 
-This section is a checklist for that call, not a design document. Delete or
-rewrite it the day real `redact()` code exists for these tables -- at that
-point this procedure is the thing being replaced, not a reference for it.
+```bash
+flyctl ssh console -a kmt -C "node /app/scripts/redact.mjs --request <request-id>"
+```
+
+That prints exactly what it would change and **writes nothing**. Read it, then
+run it again with `--write`.
+
+The rest of this section is: how to find the id in the first place (step 1,
+unchanged and still needed), what the command does and how to check it (step
+2), and **the hand-written SQL, kept as a fallback** for the day the
+application code will not run -- a damaged database, a machine that boots far
+enough for `sqlite3` and no further. It is no longer the procedure. Prefer the
+command every time it will start, because the SQL is copied from four constant
+lists by hand and cannot stay in step with them; the command builds its
+statements from those lists directly, so adding a personal field changes what
+it redacts with no edit here.
 
 **Take a snapshot first.** Same rule as everywhere else in this document: it
 costs seconds, and it is the difference between one problem and two if a typed
@@ -839,26 +854,14 @@ merged, #206 wired `mail.mjs` to write outbox rows on submit, on quote-sent,
 and on payment -- the outbox is not empty the way it was when this section was
 first written). Everything below applies to those three unconditionally.
 
-**`inquiries` is not one of them yet, whatever the rest of this document
-implies.** The module and its tests are on main, but nothing imports them:
+`inquiries` is live too. Confirm the wiring rather than trusting this line:
 
 ```bash
 grep -n "Inquiries" backend/server.mjs backend/dev.mjs backend/api.mjs
 ```
 
-returns nothing today, so the table is never created and every command below
-that names `inquiries` answers `no such table` until t65 wires it up. Read
-that as this line being accurate, not as a broken database -- and note there
-is nothing to redact there either, because with no table there is nowhere for
-an inquiry to have been stored. Run the grep before you believe either way;
-a command that finds nothing looks identical to a command that did not run,
-so satisfy yourself it works by grepping `Quotes` the same way first, which
-must return lines.
-
-**When t65 lands, this paragraph is what needs deleting**: move `inquiries`
-back into the sentence above and remove this exception in the same pull
-request that wires the module up. A correction that outlives the thing it
-corrected is the failure this paragraph exists to fix.
+This must return the live imports and handlers; as a positive control,
+grepping `Quotes` the same files must return lines too.
 
 If a future schema change ever drops one of these tables, a query against it
 fails loudly with `no such table` rather than silently skipping -- that
@@ -905,6 +908,33 @@ search the same shape as above, against `inquiries` directly.
 
 ### 2. Redact exactly what `docs/data-policy.md` promises -- no more, no less
 
+**Run the command.** Everything after it in this step is the fallback SQL and
+the reasoning both share.
+
+```bash
+flyctl ssh console -a kmt -C "node /app/scripts/redact.mjs --request <request-id>"
+flyctl ssh console -a kmt -C "node /app/scripts/redact.mjs --request <request-id> --write"
+```
+
+An inquiry is not attached to a request, so it is redacted by its own id with
+`--inquiry <inquiry-id>` instead. The first form opens the database
+**read-only** and prints the fields, quotes and outbox rows it would touch; the
+second performs it in one transaction and then re-reads the request through the
+owner-audience API path to confirm nothing personal survived. Both are
+idempotent: running either twice is a no-op, and the command says so rather
+than leaving you guessing whether last month's call was acted on.
+
+Three things it does that the SQL below cannot. It **derives** its statements
+from `REQUEST_PERSONAL_DATA_KEYS`, `OUTBOX_PERSONAL_DATA_KEYS`,
+`OUTBOX_REDACTED_COLUMNS` and `INQUIRY_PERSONAL_FIELDS`, so a field added to any
+of those is redacted without anyone remembering this page. It is **atomic** --
+a request and its outbox messages are redacted together or not at all, where
+three separate `UPDATE`s at a prompt can leave a half-done removal if the
+connection drops between them. And it **needs no `sqlite3`**: it runs on
+`node:sqlite`, the same thing the server runs on, so it cannot fail the way
+three procedures in this document once failed when that package was missing
+from the image.
+
 **This is a deliberate, authorised exception to R27 ("nothing is deleted"),
 not a violation of it -- read closely, they say different things.** R27
 governs the *row*: a request or quote is never deleted, through every state
@@ -922,14 +952,30 @@ the lead rather than either DB ADMIN or DEV OPS deciding it in a doc.
 `customerPhone`, `location`, `locationNotes` and `customerNotes` (t64, "anything
 else I should know?" -- free text, and the field most likely to hold the
 actual thing someone wants gone) (`REQUEST_PERSONAL_DATA_KEYS` in
-`backend/quotes.mjs`); `outbox`'s `to_address` and `to_name`
+`backend/quotes.mjs`); `outbox`'s `to_address`, `to_name` and `error`
 (`OUTBOX_REDACTED_COLUMNS` in `backend/outbox.mjs`), and inside its `data` the
 same six personal keys (`OUTBOX_PERSONAL_DATA_KEYS` in `backend/outbox.mjs`);
 `inquiries`' `name` and `contact` (`INQUIRY_PERSONAL_FIELDS` in
-`backend/inquiries.mjs`).
+`backend/inquiries.mjs`); and **`quotes.reason`**, the free text a rejection
+or cancellation carries.
 
-**What survives, on every table, and must not be touched:** `quotes` in full
--- status, version, total, line items, both timestamps, all of it; on
+Two of those are newer than the rest and worth a line each, because both were
+found by the completeness audit in `.forge/personal-data-removal.md` rather
+than by anyone designing the list. **`outbox.error`** holds whatever the mail
+provider said when a send failed, and SMTP rejections conventionally name the
+mailbox -- it is unbounded text from a system KMT does not control, written
+into a row a removal is meant to clear. **`quotes.reason`** is free text
+written by the owner *and* by the customer through the public cancel endpoint,
+which makes it the field someone walking away is most likely to type a new
+phone number into. Redacting it costs the ledger nothing: the decision --
+status, version, total, line items, timestamps -- is what the record is, and
+the prose attached to that decision is not.
+
+**What survives, on every table, and must not be touched:** the quote ledger
+-- status, version, total, line items, both timestamps (`reason` is the one
+field on `quotes` that is redacted, for the reason given above; everything
+else on the row stays, and the proof that the owner approved a quote is
+untouched by any removal); on
 `requests`, `vehicleInfo`, `tireSelection`, `quantity`, `date`, `locationType`
 and `serviceZip`; on `outbox`, `type`, `template_version`, the business fields
 inside `data` (tire, size, quantity, price, the request id), `status`,
@@ -946,10 +992,17 @@ one of them.
 **The marker is the literal string `[redacted]`,** written into every blanked
 field, not an empty string and not a deleted key -- so a reader can tell "this
 was removed" apart from "this was never collected," which is exactly what
-`docs/data-policy.md` asks for and does not itself pick a value for. Whoever
-eventually codes `redact()` for these tables should use the same string, so a
-row fixed by hand and a row redacted by code are not distinguishable from each
-other afterward.
+`docs/data-policy.md` asks for and does not itself pick a value for. It is now
+picked in one place -- `REDACTED` in `backend/redaction.mjs`, which the command
+uses and a test pins -- so a row fixed by hand at this prompt and a row
+redacted by the command are indistinguishable afterward, which is what this
+paragraph previously could only ask for.
+
+**Everything from here to the end of this step is the fallback**, for when the
+command will not run. It is hand-copied from the constant lists and will drift
+from them; check it against `backend/redaction.mjs` before trusting it, and
+it now includes a statement for `quotes.reason` that earlier versions did not
+have, because that field was not in the removal set until #286.
 
 ```bash
 flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE requests SET payload = json_set(payload, '\$.customerName','[redacted]', '\$.customerEmail','[redacted]', '\$.customerPhone','[redacted]', '\$.location','[redacted]', '\$.locationNotes','[redacted]', '\$.customerNotes','[redacted]'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='<request-id>';\""
@@ -962,7 +1015,15 @@ under those exact names, matching `OUTBOX_PERSONAL_DATA_KEYS`), so this is
 not optional once `mail.mjs` has sent anything about the request:
 
 ```bash
-flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE outbox SET to_address='[redacted]', to_name='[redacted]', data = json_set(data, '\$.to_name','[redacted]', '\$.to_email','[redacted]', '\$.customerPhone','[redacted]', '\$.location','[redacted]', '\$.locationNotes','[redacted]', '\$.customerNotes','[redacted]'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE request_id='<request-id>';\""
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE outbox SET to_address='[redacted]', to_name='[redacted]', error='[redacted]', data = json_set(data, '\$.to_name','[redacted]', '\$.to_email','[redacted]', '\$.customerPhone','[redacted]', '\$.location','[redacted]', '\$.locationNotes','[redacted]', '\$.customerNotes','[redacted]'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE request_id='<request-id>';\""
+```
+
+Then the quote's reason text, which lives on `quotes` rather than on the
+request and so needs its own statement (added with #286; free text the owner
+or the customer typed, not part of the ledger):
+
+```bash
+flyctl ssh console -a kmt -C "sqlite3 /data/owner.sqlite \"UPDATE quotes SET reason='[redacted]', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE request_id='<request-id>' AND reason IS NOT NULL;\""
 ```
 
 And for an inquiry, by its own id:
@@ -1086,6 +1147,28 @@ drill above and compare, rather than repairing the live file in place.
 **The supplier is blocking the scraper.** Not an outage. The catalogue in the
 database is what customers see and it does not go away when a scrape fails; see
 `docs/supplier-refresh.md`.
+
+**A CI job failed and its log is gone.** `gh run view --log` returns `log not
+found` once a log has aged out or while a re-run is in flight. That is the
+absence of one instrument, not the absence of an answer -- the jobs API still
+holds each step's outcome:
+
+```bash
+gh api "repos/ei7hty/kmt/actions/runs/<run-id>/jobs" \
+  --jq '.jobs[] | select(.conclusion=="failure") | {name, steps_run: (.steps|length), failed: [.steps[]|select(.conclusion=="failure")|.name]}'
+```
+
+**Read `steps_run` first.** An empty steps array means the job failed before
+running anything -- a runner that never started -- and nothing in the job body
+can be responsible. A named failed step means the opposite. Those are different
+diagnoses and only one of them is ours, and distinguishing them costs one call
+rather than an evening of pattern-matching across runs.
+
+Three failures on 2026-09-06 looked like one story and were three: a job with
+zero steps (infrastructure), a verify job timing out at step 11 on a deploy that
+had actually succeeded (a real defect, since fixed), and both monitor jobs firing
+correctly during the restore drill's rogue machine. Only the middle one needed a
+change.
 
 **In every case, before acting: take a snapshot.** It costs seconds and
 kilobytes, and it is the difference between one problem and two.

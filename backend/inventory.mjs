@@ -82,12 +82,47 @@ export class Inventory {
    * fitment-range change) and pricing every tire by hand is not something
    * anyone finishes.
    *
-   * `isPlaceholder` stays true until someone saves a rate, so the customer
-   * catalog can mark those prices provisional instead of presenting a default
-   * as a decision that was made.
+   * `isPlaceholder` stays true until every part of the rule has actually been
+   * decided, so the customer catalog can mark those prices provisional
+   * instead of presenting a default as a decision that was made. It is the OR
+   * of two per-field flags (`rateIsPlaceholder`, `shippingPerTireIsPlaceholder`)
+   * rather than one flag for the whole object: `retailPrice` folds shipping
+   * into the rate's own multiplication, so a proposed price is only as
+   * decided as its least-decided input (#finding-3, the scrutiny agent's
+   * third pass -- a save of one field used to silently ratify the other,
+   * whichever it happened to be sitting at).
+   *
+   * A record saved before these two fields existed reads its old combined
+   * flag two different ways, and the difference is not academic -- it is the
+   * shape of a real row on the production database. `rateIsPlaceholder`
+   * falls back to the old flag: rate has always been required, so an old
+   * record's `isPlaceholder: false` really did mean the rate was chosen.
+   * `shippingPerTireIsPlaceholder` only does that when the record actually
+   * has a `shippingPerTire` key -- an old record with the key entirely
+   * absent (saved before shipping was a field at all, not merely before it
+   * was asked about) is read as still a placeholder regardless of what the
+   * combined flag said, because that flag was never asked the question. A
+   * fallback that ignored this distinction would read a pre-shipping row's
+   * `isPlaceholder: false` as "shipping decided too" -- the exact defect
+   * this method exists to close, reappearing at read time for any row this
+   * old.
    */
   getMarkup() {
-    return this.getMeta('markup') ?? { rate: DEFAULT_MARKUP_RATE, shippingPerTire: DEFAULT_SHIPPING_PER_TIRE, isPlaceholder: true, updatedAt: null }
+    const stored = this.getMeta('markup')
+    if (!stored) return {
+      rate: DEFAULT_MARKUP_RATE, shippingPerTire: DEFAULT_SHIPPING_PER_TIRE,
+      rateIsPlaceholder: true, shippingPerTireIsPlaceholder: true, isPlaceholder: true, updatedAt: null,
+    }
+    const hasShippingKey = Object.prototype.hasOwnProperty.call(stored, 'shippingPerTire')
+    const rateIsPlaceholder = stored.rateIsPlaceholder ?? stored.isPlaceholder
+    const shippingPerTireIsPlaceholder = stored.shippingPerTireIsPlaceholder ?? (hasShippingKey ? stored.isPlaceholder : true)
+    return {
+      ...stored,
+      shippingPerTire: stored.shippingPerTire ?? DEFAULT_SHIPPING_PER_TIRE,
+      rateIsPlaceholder,
+      shippingPerTireIsPlaceholder,
+      isPlaceholder: rateIsPlaceholder || shippingPerTireIsPlaceholder,
+    }
   }
 
   saveMarkup(input) {
@@ -101,18 +136,25 @@ export class Inventory {
     // is already stored, or the default, rather than refusing the whole save.
     // Zero is still a real, explicit answer (Ken absorbs shipping); a negative
     // number or anything past the guard rail is refused either way.
-    const shippingPerTire = input.shippingPerTire === undefined
-      ? (this.getMeta('markup')?.shippingPerTire ?? DEFAULT_SHIPPING_PER_TIRE)
-      : input.shippingPerTire
+    const shippingProvided = input.shippingPerTire !== undefined
+    const previous = this.getMarkup()
+    const shippingPerTire = shippingProvided ? input.shippingPerTire : previous.shippingPerTire
     if (!Number.isFinite(shippingPerTire) || shippingPerTire < 0 || shippingPerTire > 200) {
       throw new InputError('Enter a per-tire shipping cost between $0 and $200.')
     }
     const markup = {
       rate: Math.round(input.rate * 10000) / 10000,
       shippingPerTire: Math.round(shippingPerTire * 100) / 100,
-      isPlaceholder: false,
+      // rate is required and freshly validated on every call, so a
+      // successful save always decides it. shippingPerTire only stops being
+      // a placeholder on a call that actually named it -- an untouched
+      // fallback to the stored (or default) value is not Ken confirming it,
+      // it is this save simply not being about shipping.
+      rateIsPlaceholder: false,
+      shippingPerTireIsPlaceholder: shippingProvided ? false : previous.shippingPerTireIsPlaceholder,
       updatedAt: now(),
     }
+    markup.isPlaceholder = markup.rateIsPlaceholder || markup.shippingPerTireIsPlaceholder
     this.setMeta('markup', markup)
     return markup
   }
@@ -147,6 +189,9 @@ export class Inventory {
     if (input.disposalFee !== null && (!Number.isFinite(input.disposalFee) || input.disposalFee < 0 || input.disposalFee > 200)) {
       throw new InputError('Enter a disposal fee between $0 and $200, or leave it off.')
     }
+    // A stored fee's own placeholder flag, read before this save overwrites
+    // it -- see the note on disposalFeeIsPlaceholder below.
+    const previousDisposalIsPlaceholder = this.getMeta('pricing')?.disposalFeeIsPlaceholder ?? true
     let tax = null
     if (input.tax !== null && input.tax !== undefined) {
       // A rate is a fraction of the price, not a percentage typed as one: 6.25% is 0.0625.
@@ -161,9 +206,20 @@ export class Inventory {
     }
     const pricing = {
       mobileServiceFeeCents: Math.round(input.mobileServiceFee * 100),
+      // mobileServiceFee has no fallback path -- it is required and freshly
+      // validated on every call -- so a successful save always decides it.
       mobileServiceFeeIsPlaceholder: false,
       disposalFeeCents: input.disposalFee === null ? null : Math.round(input.disposalFee * 100),
-      disposalFeeIsPlaceholder: false,
+      // null is the disposal toggle's own default (off), not evidence Ken
+      // looked at it: the very first pricing save he ever makes, to set only
+      // the mobile fee, sends disposalFee: null because that is what the
+      // untouched form still holds, and that used to permanently record "no
+      // disposal" as a decision he never made (#finding-3). The flag only
+      // clears on a save that actually names a real fee; a null keeps
+      // whatever the field's placeholder status already was. Harmless while
+      // disposalFee stays null either way -- nothing reads this flag until a
+      // real fee exists to show a customer.
+      disposalFeeIsPlaceholder: input.disposalFee === null ? previousDisposalIsPlaceholder : false,
       tax,
       updatedAt: now(),
     }

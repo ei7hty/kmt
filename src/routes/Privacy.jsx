@@ -20,9 +20,9 @@ function Privacy({ navigate }) {
         <h1 className="owner-heading">How KMT handles your details</h1>
         <div className="panel privacy-panel">
           <h2>What Ken&apos;s Mobile Tire collects</h2>
-          <p>Your name, your email address, your mobile number if you give one, the address where the vehicle is, any notes on finding it, and the vehicle and tires you chose.</p>
+          <p>Your name, your email address, your mobile number if you give one, the address where the vehicle is, any notes on finding it, and the vehicle and tires you chose. If you send a more-than-tires inquiry, I collect your name, the phone number or email you leave, optional vehicle details and your message.</p>
           <h2>Why</h2>
-          <p>To draft your quote, to reach you about it, and to come to the right place with the right tires.</p>
+          <p>To draft your quote, to reach you about it, to come to the right place with the right tires, and to reply to a more-than-tires inquiry.</p>
           <h2>Who sees it</h2>
           <p>Ken does. The tire supplier never does; it only ever hears which sizes are wanted.</p>
           <h2>How long it is kept</h2>

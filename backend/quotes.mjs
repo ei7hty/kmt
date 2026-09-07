@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { InputError } from './inventory.mjs'
 import { REASONS, isServiceable, normalizeZip, readServiceAreaConfig } from './service-area.mjs'
 import { catalogFromLiveRows } from '../src/data/catalog.js'
-import { ALLOWED_QUANTITIES, calculateDraftQuote } from '../src/pricing.js'
+import { ALLOWED_QUANTITIES, calculateDraftQuote, computeQuoteTotals, normalizePricingSettings } from '../src/pricing.js'
 
 /** The number a refusal offers. The same one the wizard's call button dials. */
 const SHOP_PHONE = '(617) 410-8319'
@@ -273,8 +273,11 @@ function cleanQuoteAdjustment(input) {
   const trimmedNote = note.trim()
   if (trimmedNote.length > 1000) throw new InputError('The customer note is too long.')
 
-  const totalCents = lineItems.reduce((sum, item) => sum + item.quantity * Math.round(item.unitPrice * 100), 0)
-  return { lineItems, note: trimmedNote, total: totalCents / 100 }
+  // subtotal/tax/total are not this function's to compute -- adjust() derives
+  // them from these lineItems with computeQuoteTotals, the same function the
+  // initial draft uses, so an adjusted quote can never store a total that
+  // disagrees with its own subtotal and tax (finding 1, scrutiny pass 3).
+  return { lineItems, note: trimmedNote }
 }
 
 function cleanCustomerKey(value) {
@@ -290,7 +293,7 @@ function cleanCustomerKey(value) {
  * Optional: an empty value returns ''. Anything else must resolve to ten
  * digits (with or without a leading 1, spaces, dashes, dots or parens).
  */
-function cleanCustomerPhone(value) {
+export function cleanCustomerPhone(value) {
   if (value === undefined || value === null || value === '') return ''
   if (typeof value !== 'string') throw new InputError('customerPhone must be text.')
   const digits = value.replace(/\D/g, '')
@@ -711,13 +714,24 @@ export class Quotes {
     })
   }
 
-  /** Save the owner's current version without changing the immutable draft. */
+  /**
+   * Save the owner's current version without changing the immutable draft.
+   *
+   * subtotal/tax/total are recomputed from the adjusted lineItems with
+   * computeQuoteTotals -- the same function the initial draft uses -- rather
+   * than trusting anything the client sent or leaving the draft's stale
+   * numbers in place. `tax` is set explicitly (`undefined` when tax is off)
+   * so JSON.stringify drops it from the stored payload instead of leaving a
+   * pre-adjustment tax figure sitting beside a total that has moved on.
+   */
   adjust(id, input) {
     const version = input?.version
     if (!Number.isInteger(version) || version < 0) {
       throw new InputError('Send the version you were shown, so a stale screen cannot overwrite a newer adjustment.')
     }
     const adjustment = cleanQuoteAdjustment(input)
+    const settings = normalizePricingSettings(this.inventory.getPricingSettings())
+    const totals = computeQuoteTotals(adjustment.lineItems, settings)
 
     return this.transaction(() => {
       const found = this.get(id)
@@ -728,7 +742,7 @@ export class Quotes {
       if (found.quote.status !== 'draft') {
         throw new InputError(`This quote is already ${found.quote.status}, so it cannot be adjusted.`, 409)
       }
-      const payload = { ...found.quote, ...adjustment }
+      const payload = { ...found.quote, ...adjustment, subtotal: totals.subtotal, tax: totals.tax, total: totals.total }
       for (const field of ['id', 'requestId', 'status', 'version', 'reason', 'draftLineItems', 'draftTotal', 'createdAt', 'updatedAt']) delete payload[field]
       this.db.prepare('UPDATE quotes SET payload=?, version=version+1, updated_at=? WHERE id=?')
         .run(JSON.stringify(payload), now(), found.quote.id)
@@ -817,17 +831,35 @@ export class Quotes {
   /**
    * The customer calling their own request off, before they pay for it.
    *
-   * Keyed the way pay() is, and refused the same way: a wrong key is answered
-   * "no such request" rather than "not yours", because the second sentence
-   * confirms the request exists. No version either, for the same reason pay()
-   * takes none -- the customer has one screen showing one request of their own,
-   * and there is no second window of theirs for a stale view to come from.
+   * Authorised by `id` alone, the same as reading it (R19: holding the id is
+   * the access) -- not by a `customerKey` match. That match was a real
+   * write-side second factor, not nothing: the id is deliberately shareable
+   * (the /status link exists to be shown to people, R19), so the key is what
+   * separated "can read" from "can write" for a token designed to be
+   * forwarded. Removing it means anyone the customer forwards the link to can
+   * now pay or cancel on their behalf, and that is accepted deliberately, not
+   * because the id was ever a secret.
+   *
+   * The trade is bounded, not free: a browser with no key yet (a different
+   * device, a private window, or iOS's seven-day localStorage clear -- #97)
+   * generates a fresh one that was never going to match anything, so the
+   * check refused every legitimate customer opening the emailed link from a
+   * new device (#284) -- and the writes it now exposes are non-financial,
+   * idempotent, owner-gated, and (for cancel) reversible: paying charges
+   * nothing extra and cannot be repeated for a second charge; cancelling
+   * before payment deletes nothing and is reversible by texting Ken. No
+   * version either, for the same reason pay() takes none -- the customer has
+   * one screen showing one request of their own, and there is no second
+   * window of theirs for a stale view to come from.
+   *
+   * One consequence found in review, accepted with its bound stated rather
+   * than left undiscovered: someone holding the shared link can call pay()
+   * on a sent quote specifically to block the customer's own cancel (this
+   * method refuses once `paid`) and trigger a false "payment received"
+   * email. No money moves and nothing is deleted, so the bound holds; filed
+   * separately rather than fixed here.
    */
-  cancelByCustomer(id, customerKey, reason) {
-    const key = cleanCustomerKey(customerKey)
-    const stored = this.keyFor(id)
-    if (stored === null || stored !== key) throw new InputError('No such request.', 404)
-
+  cancelByCustomer(id, reason) {
     const found = this.get(id)
     if (!found?.quote) throw new InputError('No such request.', 404)
     if (found.quote.status === 'cancelled') return found
@@ -842,24 +874,27 @@ export class Quotes {
     })
   }
 
-  keyFor(id) {
-    return this.db.prepare('SELECT customer_key FROM requests WHERE id=?').get(id)?.customer_key ?? null
-  }
-
   /**
    * Mark an approved quote paid.
+   *
+   * Authorised by `id` alone, the same reasoning and the same bounded trade
+   * as `cancelByCustomer` above (#284, #97): the `customerKey` match was a
+   * real second factor for a deliberately shareable token, removed anyway
+   * because the amount is fixed and already quoted, so someone else paying
+   * it is not an attack worth guarding against.
+   *
+   * Unlike cancel, there is no reversal here at all, not even the owner's:
+   * `CANCELLABLE` excludes `paid`, and `paid` moves only to `done`. A mistaken
+   * or induced payment is not "text Ken and he sorts it out" the way a
+   * cancellation is -- it needs a manual database edit. That gap is real and
+   * is filed as its own issue rather than fixed in this change.
    *
    * Payment is still the fake step that always succeeds, but the result is
    * recorded here so both sides see it from their own devices. A draft cannot
    * be paid: that would be a customer paying a price the owner has not agreed
-   * to. A wrong key is answered "no such request" rather than "not yours",
-   * because the second sentence confirms the request exists.
+   * to.
    */
-  pay(id, customerKey) {
-    const key = cleanCustomerKey(customerKey)
-    const stored = this.keyFor(id)
-    if (stored === null || stored !== key) throw new InputError('No such request.', 404)
-
+  pay(id) {
     const found = this.get(id)
     if (!found?.quote) throw new InputError('No such request.', 404)
     if (found.quote.status === 'paid') return found

@@ -15,8 +15,14 @@
  * cancel repeatedly from one address on every pull request, and a limit that
  * is right for a stranger and wrong for the gate turns every PR red in a way
  * that reads as a flaky audit. AUDIT_BUDGET below is what one gate run does;
- * limits.test.mjs holds the limits above it, so the number is checked rather
- * than remembered.
+ * limits.test.mjs holds the real limits above it, so the *limits* are
+ * checked against the budget mechanically. The budget itself is not checked
+ * against what the gate actually does -- nothing here can run the three
+ * gate scripts and re-measure -- so it is remembered, not verified, and it
+ * has already sat wrong for a day once (see the comment on AUDIT_BUDGET).
+ * Every process boot starts every counter at zero (the in-memory note
+ * above): a gate run's own repeated CI jobs never share state with each
+ * other, only a long-lived local server across several manual runs does.
  */
 
 import { createHmac, randomBytes } from 'node:crypto'
@@ -44,15 +50,36 @@ export const logLabel = (rule, id) =>
   rule.private ? createHmac('sha256', LABEL_KEY).update(String(id)).digest('hex').slice(0, 8) : String(id)
 
 /**
- * What one gate run asks of the server, measured rather than estimated: the
- * three audits run in sequence against one server on 2026-09-06 left 14
- * requests in its database, every one from the same address with the same
- * email, 4 of them paid, and 12 owner sign-ins, none wrong. Rounded up, so a
- * script gaining a scenario does not put the gate on the line; when one does,
- * count again and raise these, and limits.test.mjs says whether the limits
- * still clear them.
+ * What one gate run asks of the server, measured rather than estimated. On
+ * 2026-09-06 the three audits run in sequence against one fresh server left
+ * 14 requests in its database, every one from the same address with the
+ * same email, 4 of them paid, and 12 owner sign-ins, none wrong.
+ *
+ * Re-measured 2026-09-06 (later the same night, after #264's cancel
+ * scenarios and t35's quote editor landed): one full run of the same three
+ * scripts against one fresh server left 22 requests, still every one from
+ * the same email -- read directly off the database afterward, not counted
+ * from a log. submitsPerEmail below moves from 20 to 22 for that reason.
+ * At 22, LIMITS.submitPerEmail.max (30) clears the +8 margin
+ * limits.test.mjs asserts with exactly zero left over: 30 >= 22 + 8 is
+ * true with nothing to spare. The margin the design reserved for a script
+ * gaining a scenario is now fully spent by the scenarios that already
+ * exist; the next one added to the gate needs this number raised again,
+ * or the real limit raised, or it silently fails the assertion below
+ * rather than merely tightening it.
+ *
+ * What limits.test.mjs actually checks is LIMITS against AUDIT_BUDGET --
+ * that the recorded limits still clear the recorded cost. It cannot check,
+ * and does not check, AUDIT_BUDGET against what a real gate run actually
+ * does today; that comparison has no mechanical form here; it is a person
+ * running the three scripts and reading the database, the way both
+ * measurements above were made. This constant sat at 20 for a day after
+ * it should have been 22, and the test suite was green the entire time --
+ * it was verifying a true fact about a false number. Recount by hand
+ * whenever a scenario is added to any of the three gate scripts, the same
+ * way the comment above once said to and nothing enforced.
  */
-export const AUDIT_BUDGET = { publicPosts: 24, submitsPerEmail: 20, loginFailures: 0 }
+export const AUDIT_BUDGET = { publicPosts: 24, submitsPerEmail: 22, loginFailures: 0 }
 
 export const LIMITS = {
   /** Public POSTs (submit, pay, cancel) from one address. */
@@ -69,6 +96,7 @@ export const LIMITS = {
    * write into a third-party log because they submitted twice too often.
    */
   submitPerEmail: { max: 30, windowMs: 24 * 3600_000, private: true },
+  inquiriesPerContact: { max: 10, windowMs: 24 * 3600_000, private: true },
   /**
    * Wrong passwords from one address before the delay starts, and how it grows.
    * Per address, never per account: a lock on the account would let anyone

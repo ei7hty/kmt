@@ -423,11 +423,48 @@ jobs:
         env:
           DEPLOY_URL: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
         run: |
-          for i in $(seq 1 30); do
-            if curl -fsS -o /dev/null "$DEPLOY_URL/"; then exit 0; fi
+          # Ten minutes, not 150 seconds, and the reason the old number was
+          # right until it was not: it was sized for a code deploy, where Fly
+          # replaces a machine from a cached image in well under a minute, and
+          # it was correct for every deploy this repository made until #288
+          # changed the Dockerfile's apt layer. That is a full base-image
+          # rebuild, the slowest deploy this repo produces, and the verify job
+          # failed on a deploy that had SUCCEEDED -- production was serving the
+          # new release while this loop was still calling it down. A limit that
+          # was adequate until the first base-layer rebuild is an assumption
+          # that finally got tested, not carelessness; do not "simplify" it back
+          # on the grounds that deploys normally take four minutes. They do.
+          #
+          # The ceiling is one number rather than one per deploy shape. The loop
+          # exits the moment the site answers, so a larger ceiling costs nothing
+          # on a fast deploy -- it is only ever paid when the site genuinely does
+          # not come back, and in that case the extra minutes buy a correct
+          # answer rather than a premature one. QA measured real deploys at 4-8
+          # minutes end to end, worst case under queue contention.
+          #
+          # 3xx counts as answered. The app is up if it redirects: after the
+          # canonical flip a Fly-name base answers 301, and a check that reads
+          # that as "not up" would fail for the one reason we know is fine.
+          deadline=$(( SECONDS + 600 ))
+          last=''
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            # curl -w prints 000 itself when the connection never opens, so a
+            # `|| echo 000` fallback would append a SECOND 000 and report
+            # "000000". Found by exercising the failure path rather than the
+            # happy one.
+            last="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$DEPLOY_URL/" 2>/dev/null || true)"
+            last="${last:-000}"
+            case "$last" in
+              2*|3*) echo "$DEPLOY_URL answered $last after ${SECONDS}s"; exit 0 ;;
+            esac
             sleep 5
           done
-          echo "$DEPLOY_URL did not respond within 150s"; exit 1
+          # The last status, not just the timeout: 000 is a connection that never
+          # opened, 502 is a rollover that never finished, 404 is a different
+          # problem entirely. Without it the next person re-runs the job to find
+          # out what this one already knew.
+          echo "FAIL: $DEPLOY_URL did not answer in 600s; last status $last"
+          exit 1
       # What this run proves is the deploy, not the flow.
       #
       # The three flow audits perform the journey -- submit, approve, pay --

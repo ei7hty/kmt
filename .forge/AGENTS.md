@@ -46,6 +46,15 @@ genuinely overlap, the row wins and you wait, and if the two sides disagree
 about anything once you've looked, that disagreement is a finding to report,
 not something to resolve quietly.
 
+**A row guards edits, not designs.** It tells you whether two changes will
+clobber each other's lines. It cannot tell you whether two changes that merge
+cleanly are compatible. t35 and the cancel work sat forty lines apart in one
+component, merged without a marker, and rendered two textareas at once — a live
+price editor beneath a cancel confirmation. A clean region check means no lost
+edit, not a coherent screen. Two people building in one file still owe each
+other a look at what the other is building, which no claim row can do for them:
+the row is a collision guard, not a design review.
+
 **When you finish.** Remove your row from `CLAIMS.md`. If you learned something
 the next agent would otherwise rediscover the hard way, append it to
 [`.forge/NOTES.md`](NOTES.md). Update `.forge/state.json` if you closed a task,
@@ -60,6 +69,17 @@ nor `ship_paths` in `fly-deploy.yml`, so a claim commit runs the gate and ships
 nothing regardless of how it lands. One small commit, straight to `main`, is
 the whole mechanism — the same discipline as any other commit here (explicit
 paths, no `-A`, check the branch first), just without a PR wrapped around it.
+
+**A subagent has no row of its own.** Work you spawn as a subagent — not a new
+session — has no session id, cannot be messaged, and cannot hold a `CLAIMS.md`
+row in its own name. So the session that spawns it owns the subagent's claim
+and owns its report: keep the row under your name for as long as the subagent
+runs, and speak for its result when it finishes. A subagent holding its own row
+would be the GitHub-only agents' problem again — work in flight that nothing in
+this repo can address, on a claim nobody can release — with none of the
+compensating protocol. The user's instruction to prefer subagents over new
+sessions is why this needs saying: the cheaper the spawn, the easier the
+orphaned claim.
 
 ---
 

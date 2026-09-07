@@ -126,19 +126,7 @@ export function calculateDraftQuote(request, catalog = null, pricingSettings = D
       : []),
   ]
 
-  const lineTotal = (line) => roundCurrency(line.quantity * line.unitPrice)
-  const subtotal = roundCurrency(lineItems.reduce((sum, line) => sum + lineTotal(line), 0))
-
-  let tax
-  let total = subtotal
-  if (settings.tax) {
-    const taxable = settings.tax.appliesTo === 'all'
-      ? subtotal
-      : roundCurrency(lineItems.filter(line => line.taxClass === settings.tax.appliesTo).reduce((sum, line) => sum + lineTotal(line), 0))
-    const amount = roundCurrency(taxable * settings.tax.rate)
-    tax = { rate: settings.tax.rate, appliesTo: settings.tax.appliesTo, amount }
-    total = roundCurrency(subtotal + amount)
-  }
+  const totals = computeQuoteTotals(lineItems, settings)
 
   return {
     requestId: request?.id || null,
@@ -147,10 +135,50 @@ export function calculateDraftQuote(request, catalog = null, pricingSettings = D
     // owner editor, the invoice renderer, the audits) expects exactly
     // description/quantity/unitPrice and nothing else.
     lineItems: lineItems.map(line => ({ description: line.description, quantity: line.quantity, unitPrice: line.unitPrice })),
-    subtotal,
-    ...(tax ? { tax } : {}),
-    total,
+    ...totals,
     exception: exceptionReasons.length > 0,
     exceptionReasons
   }
+}
+
+/**
+ * `subtotal`/`tax`/`total` from a set of line items, and nothing else --
+ * the one computation both the initial draft and a later owner adjustment
+ * use, so a quote can never carry a total that disagrees with its own lines.
+ *
+ * Before this, `backend/quotes.mjs`'s `adjust()` re-added the lines by hand
+ * to get `total` and left whatever `subtotal`/`tax` the draft had computed
+ * sitting on the row unchanged -- correct only because tax has never been
+ * turned on in production. The moment it is, an adjusted quote would store a
+ * `total` that included tax while `subtotal` and `tax.amount` still named
+ * the pre-adjustment numbers: a receipt that contradicts itself.
+ *
+ * `settings` is expected already normalized (`normalizePricingSettings`) --
+ * `calculateDraftQuote` does this once and passes the result on, rather than
+ * every caller normalizing again.
+ *
+ * A line with no `taxClass` (every line an owner adjustment produces: the
+ * goods/services split is `calculateDraftQuote`'s own bookkeeping and is
+ * never stored, so an edited quote's lines have no class to recover) is
+ * taxed under `appliesTo: 'all'` and excluded from the taxable subset under
+ * `'goods'` or `'services'` -- it matches neither. The quote still carries a
+ * `tax` object naming the configured rate and `appliesTo` (an amount of $0
+ * if nothing on it matched), never a total that silently omits tax nobody
+ * can tell is missing. That is the same "an absent number is correctable, a
+ * wrong one is not" principle pricing-settings.md rules by: an adjusted
+ * quote under a goods/services split undertaxes rather than risks charging
+ * a customer for a class nobody assigned.
+ */
+export function computeQuoteTotals(lineItems, settings) {
+  const lineTotal = (line) => roundCurrency(line.quantity * line.unitPrice)
+  const subtotal = roundCurrency(lineItems.reduce((sum, line) => sum + lineTotal(line), 0))
+
+  if (!settings.tax) return { subtotal, total: subtotal }
+
+  const taxable = settings.tax.appliesTo === 'all'
+    ? subtotal
+    : roundCurrency(lineItems.filter(line => line.taxClass === settings.tax.appliesTo).reduce((sum, line) => sum + lineTotal(line), 0))
+  const amount = roundCurrency(taxable * settings.tax.rate)
+  const total = roundCurrency(subtotal + amount)
+  return { subtotal, tax: { rate: settings.tax.rate, appliesTo: settings.tax.appliesTo, amount }, total }
 }
