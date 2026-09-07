@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 import { DEFAULT_PRICING_SETTINGS, normalizePricingSettings } from '../src/pricing.js'
 import { deriveBrand } from '../src/data/brand.js'
+import { cleanCatalogDescription } from './catalog-description.mjs'
 
 const DEFAULT_MARKUP_RATE = DEFAULT_MARKUP_SETTINGS.rate
 const DEFAULT_SHIPPING_PER_TIRE = DEFAULT_MARKUP_SETTINGS.shippingPerTire
@@ -418,9 +419,10 @@ export class Inventory {
     }
     const bySize = new Map()
     for (const tire of snapshot.tires) {
-      validateTire(tire, tire?.size)
-      if (!bySize.has(tire.size)) bySize.set(tire.size, [])
-      bySize.get(tire.size).push(tire)
+      const normalized = { ...tire, description: cleanCatalogDescription(tire?.description) }
+      validateTire(normalized, normalized.size)
+      if (!bySize.has(normalized.size)) bySize.set(normalized.size, [])
+      bySize.get(normalized.size).push(normalized)
     }
     for (const size of bySize.keys()) {
       if (!this.sizes.includes(size)) throw new InputError('Snapshot contains unsupported sizes')
@@ -509,9 +511,10 @@ export class Inventory {
     const insert = this.db.prepare(`INSERT INTO supplier VALUES (?, ?, ?, ?, 1)
       ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, last_seen=excluded.last_seen, active=1`)
     for (const tire of tires) {
+      const normalized = { ...tire, description: cleanCatalogDescription(tire.description) }
       const old = this.db.prepare('SELECT size FROM supplier WHERE id=?').get(tire.id)
       if (old && old.size !== size) throw new InputError('Supplier SKU changed size; refresh rejected')
-      insert.run(tire.id, size, JSON.stringify(tire), timestamp)
+      insert.run(normalized.id, size, JSON.stringify(normalized), timestamp)
     }
     this.db.prepare(`INSERT INTO coverage VALUES (?, ?, ?, NULL, ?)
       ON CONFLICT(size) DO UPDATE SET last_success=excluded.last_success,
@@ -719,7 +722,9 @@ export class Inventory {
         // json_extract answers a JSON boolean as 0/1, not true/false.
         inStock: !!row.active && !!row.inStock,
         category: row.category,
-        description: row.description,
+        // Normalize at the customer boundary as well as ingress: historical
+        // payloads are corrected immediately without rewriting production data.
+        description: cleanCatalogDescription(row.description),
       })
     }
     return tires
