@@ -1,5 +1,6 @@
 /* global document */ // used inside page.evaluate, which runs in the browser
 import { chromium } from 'playwright';
+import http from 'node:http';
 import https from 'node:https';
 import { promises as dns } from 'node:dns';
 import { CATALOG_FIELDS } from './audit-ui.mjs';
@@ -52,7 +53,9 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 67;
+const EXPECTED_CHECKS = 69;
+const CATALOG_CACHE_CONTROL = 'public, max-age=300';
+const CATALOG_TRANSFER_BUDGET_BYTES = 200 * 1024;
 
 let passed = 0;
 let failed = 0;
@@ -368,6 +371,36 @@ function traceRequest(url) {
   });
 }
 
+/**
+ * Fetch the bytes a browser actually receives on the wire. Node fetch()
+ * helpfully decompresses for callers, which is exactly wrong for #84's
+ * customer-cost question: the budget is about the transfer after Fly's edge
+ * encoding, not the JSON size after the client inflates it.
+ */
+function rawGet(url, { headers = {} } = {}, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const client = target.protocol === 'http:' ? http : https;
+    const req = client.request(target, { method: 'GET', headers }, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects < 5) {
+        res.resume();
+        res.on('end', () => rawGet(new URL(res.headers.location, target).href, { headers }, redirects + 1).then(resolve, reject));
+        return;
+      }
+
+      let bytes = 0;
+      res.on('data', chunk => { bytes += chunk.length; });
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, bytes, url: target.href }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+function formatBytes(bytes) {
+  return `${bytes.toLocaleString('en-US')} bytes`;
+}
+
 /** Anything sticking out past the viewport, which is what a phone shows as a sideways scroll. */
 async function overflow(page) {
   return page.evaluate(() => ({
@@ -414,6 +447,11 @@ async function main() {
   const type = catalogResponse.headers.get('content-type') || '';
   check(type.includes('application/json'), 'GET /api/catalog answers JSON', `content-type: ${type || 'none'}`);
 
+  const catalogCacheControl = catalogResponse.headers.get('cache-control') || '';
+  check(catalogCacheControl === CATALOG_CACHE_CONTROL,
+    'GET /api/catalog is cacheable for five minutes',
+    `cache-control: ${catalogCacheControl || 'none'}`);
+
   const catalog = await catalogResponse.json().catch(() => null);
   const tires = catalog?.tires;
   check(Array.isArray(tires) && tires.length > 0, 'the catalog is a non-empty list of tires',
@@ -429,6 +467,23 @@ async function main() {
     check(wrongShape.length === 0,
       `every catalog row carries exactly the seven customer fields (${tires.length} rows)`,
       wrongShape.length ? `first offender: ${JSON.stringify(Object.keys(wrongShape[0]))}` : '');
+  }
+
+  try {
+    const transfer = await rawGet(`${BASE}/api/catalog`, {
+      headers: { Accept: 'application/json', 'Accept-Encoding': 'br, gzip' },
+    });
+    const encoding = transfer.headers['content-encoding'] || 'identity';
+    check(
+      transfer.status === 200 &&
+        ['br', 'gzip'].includes(encoding) &&
+        transfer.bytes > 0 &&
+        transfer.bytes <= CATALOG_TRANSFER_BUDGET_BYTES,
+      `GET /api/catalog compressed transfer stays under ${formatBytes(CATALOG_TRANSFER_BUDGET_BYTES)}`,
+      `status ${transfer.status}, encoding ${encoding}, ${formatBytes(transfer.bytes)} from ${transfer.url}`,
+    );
+  } catch (error) {
+    fail(`GET /api/catalog compressed transfer stays under ${formatBytes(CATALOG_TRANSFER_BUDGET_BYTES)} — ${describeFetchError(error)}`);
   }
 
   // 2. The machine says it can reach its own database, and says so to anyone:
