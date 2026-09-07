@@ -22,17 +22,31 @@ asset.
 
 ## Future provider wiring
 
-`mirrorRemoteImages()` is intentionally adapter-only. A caller must inject:
+`mirrorRemoteImages()` is intentionally adapter-only. A caller must inject an
+explicit exact-host `allowedHosts` list as well as:
 
-- a `fetcher(url)` that performs one request and returns a status, headers, and
-  byte array;
+- a `fetcher(url, { maxBytes })` that performs one request and returns a status,
+  headers, final URL, and either a capped byte array or an incremental stream;
 - an `inspectImage(bytes, context)` implementation that returns positive
   `width`, `height`, and `format` values;
 - a repository with `recordStored(id, asset)` and `recordFailure(id, failure)`;
+  `recordStored` must return `stored` or `approved-conflict` and commit only
+  while the row is still unapproved;
 - durable storage with `findByHash(sha256)` and `put({ bytes, contentType,
-  sha256, width, height, format })` returning `storageKey` and `storageUrl`.
+  sha256, width, height, format, storageKey })` returning that same
+  content-addressed `storageKey` and a `storageUrl`.
 
-The engine is serial and has no retries. It rejects non-image content,
+The authoritative key is `images/<sha256>.<canonical-format>`, where the only
+canonical formats are `gif`, `jpeg`, `png`, and `webp`. The repository owns the
+cross-run `sha256` lookup and transactionally maps each key to one hash; a
+conflicting key/hash association fails without changing either asset row.
+
+The engine validates the original and adapter-reported final URL before reading
+the body, rejects credentials, non-HTTPS, private/local, and non-allowlisted
+destinations, and treats a refused redirect as a global stop. Declared
+`Content-Length` is checked before reading; streams are capped incrementally,
+and byte-array adapters receive the cap before allocation. It is serial and
+has no retries. It rejects non-image content, MIME/decoded-format mismatches,
 oversize bytes, invalid dimensions, and missing storage metadata. A 403, 429,
 robots refusal, challenge, or denial page stops the whole run. Stored records
 remain `candidate` until a separate owner-controlled approval step changes

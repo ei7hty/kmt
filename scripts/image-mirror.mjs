@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { sha256Bytes } from '../backend/image-assets.mjs'
+import { assertAllowedImageUrl, IMAGE_ASSET_FORMATS, IMAGE_ASSET_MIME_FORMATS, imageStorageKey, sha256Bytes } from '../backend/image-assets.mjs'
 
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 const DEFAULT_MAX_WIDTH = 10_000
@@ -47,10 +47,58 @@ function bytesOf(body) {
   throw new ImageMirrorError('The image fetcher returned no byte array', 'invalid-body')
 }
 
-async function responseBytes(response) {
-  if (response?.bytes !== undefined) return bytesOf(response.bytes)
-  if (response?.body !== undefined && typeof response.body !== 'function') return bytesOf(response.body)
-  if (typeof response?.arrayBuffer === 'function') return bytesOf(await response.arrayBuffer())
+function oversize(size, maxBytes) {
+  return new ImageMirrorError(`Image exceeds the ${maxBytes}-byte limit`, 'oversize')
+}
+
+async function responseBytes(response, maxBytes) {
+  if (response?.bytes !== undefined) {
+    const bytes = bytesOf(response.bytes)
+    if (bytes.byteLength > maxBytes) throw oversize(bytes.byteLength, maxBytes)
+    return bytes
+  }
+  const body = response?.body
+  if (body && typeof body.getReader === 'function') {
+    const reader = body.getReader()
+    const chunks = []
+    let total = 0
+    try {
+      while (true) {
+        const part = await reader.read()
+        if (part.done) break
+        const bytes = bytesOf(part.value)
+        total += bytes.byteLength
+        if (total > maxBytes) {
+          await reader.cancel('image exceeds configured byte limit')
+          throw oversize(total, maxBytes)
+        }
+        chunks.push(bytes)
+      }
+    } finally { reader.releaseLock?.() }
+    const result = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength }
+    return result
+  }
+  if (body && typeof body[Symbol.asyncIterator] === 'function') {
+    const chunks = []
+    let total = 0
+    for await (const part of body) {
+      const bytes = bytesOf(part)
+      total += bytes.byteLength
+      if (total > maxBytes) throw oversize(total, maxBytes)
+      chunks.push(bytes)
+    }
+    const result = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength }
+    return result
+  }
+  if (typeof response?.arrayBuffer === 'function') {
+    // A bare arrayBuffer response cannot be bounded while reading. Its
+    // adapter must prove the declared length first and pass the cap at fetch.
+    throw new ImageMirrorError('The image fetcher must expose a bounded byte array or stream', 'unbounded-body')
+  }
   throw new ImageMirrorError('The image fetcher returned no response body', 'invalid-body')
 }
 
@@ -59,6 +107,12 @@ function selectedCandidates(records) {
   return records.filter(record =>
     record && record.remoteImagePresent === true && typeof record.originalUrl === 'string' &&
     record.originalUrl && record.usageStatus !== 'approved')
+}
+
+function finalUrl(response) {
+  const value = response?.finalUrl ?? response?.url
+  if (typeof value !== 'string' || !value) throw new ImageMirrorError('The image fetcher must expose its final URL', 'missing-final-url')
+  return value
 }
 
 function failureFor(error) {
@@ -85,7 +139,7 @@ function validateContentType(contentType) {
   if (!IMAGE_TYPES.has(mediaType)) {
     throw new ImageMirrorError(`Unsupported image content type: ${contentType || 'missing'}`, 'wrong-content-type')
   }
-  return mediaType
+  return { mediaType, format: IMAGE_ASSET_MIME_FORMATS[mediaType] }
 }
 
 function validateDimensions(details, { maxWidth, maxHeight }) {
@@ -99,7 +153,11 @@ function validateDimensions(details, { maxWidth, maxHeight }) {
   if (typeof details.format !== 'string' || !details.format.trim()) {
     throw new ImageMirrorError('Image format is missing', 'invalid-format')
   }
-  return { width: details.width, height: details.height, format: details.format.toLowerCase() }
+  const format = details.format.toLowerCase().trim().replace(/^image\//, '')
+  if (!IMAGE_ASSET_FORMATS.includes(format) || /[\\/:.]/.test(format)) {
+    throw new ImageMirrorError(`Image format is not canonical: ${details.format}`, 'invalid-format')
+  }
+  return { width: details.width, height: details.height, format }
 }
 
 /**
@@ -120,6 +178,7 @@ export async function mirrorRemoteImages(records, {
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
   now = () => new Date().toISOString(),
   provenance = 'supplier-product-page',
+  allowedHosts = [],
 } = {}) {
   const candidates = selectedCandidates(records)
   if (dryRun) return { dryRun: true, selected: candidates.map(record => record.id), attempted: 0, stored: 0, deduped: 0, failures: [], stoppedOnRefusal: false }
@@ -130,32 +189,41 @@ export async function mirrorRemoteImages(records, {
   }
   if (!Number.isInteger(maxBytes) || maxBytes < 1) throw new TypeError('maxBytes must be a positive integer')
 
-  const result = { dryRun: false, selected: candidates.map(record => record.id), attempted: 0, stored: 0, deduped: 0, failures: [], stoppedOnRefusal: false }
+  const result = { dryRun: false, selected: candidates.map(record => record.id), attempted: 0, stored: 0, deduped: 0, conflicts: 0, failures: [], stoppedOnRefusal: false }
   for (const [index, record] of candidates.entries()) {
     if (index > 0 && delayMs > 0) await sleep(delayMs)
     result.attempted++
     try {
-      const response = await fetcher(record.originalUrl)
+      let originalUrl
+      try { originalUrl = assertAllowedImageUrl(record.originalUrl, allowedHosts) }
+      catch (error) { throw new ImageMirrorError(error.message, 'invalid-destination') }
+      const response = await fetcher(originalUrl, { maxBytes })
       const preview = typeof response?.body === 'string' ? response.body : ''
       assertResponseAllowed(response, preview)
-      const contentType = validateContentType(header(response, 'content-type'))
-      const bytes = await responseBytes(response)
+      const resolvedUrl = finalUrl(response)
+      try { assertAllowedImageUrl(resolvedUrl, allowedHosts) } catch (error) {
+        throw new ImageMirrorError(`Provider redirect refused: ${error.message}`, 'provider-refusal', { refusal: true })
+      }
+      const { mediaType, format: mimeFormat } = validateContentType(header(response, 'content-type'))
+      const declaredLength = Number(header(response, 'content-length'))
+      if (Number.isFinite(declaredLength) && declaredLength > maxBytes) throw oversize(declaredLength, maxBytes)
+      const bytes = await responseBytes(response, maxBytes)
       if (refusalText(new TextDecoder().decode(bytes.slice(0, 8192)))) {
         throw new ImageMirrorError('Provider refusal or challenge detected; stopping image mirroring', 'provider-refusal', { refusal: true })
       }
       if (bytes.byteLength > maxBytes) throw new ImageMirrorError(`Image is ${bytes.byteLength} bytes; maximum is ${maxBytes}`, 'oversize')
-      const details = validateDimensions(await inspectImage(bytes, { contentType, url: record.originalUrl }), { maxWidth, maxHeight })
+      const details = validateDimensions(await inspectImage(bytes, { contentType: mediaType, url: resolvedUrl }), { maxWidth, maxHeight })
+      if (details.format !== mimeFormat) throw new ImageMirrorError(`MIME ${mediaType} does not match decoded ${details.format}`, 'format-mismatch')
       const sha256 = sha256Bytes(bytes)
       const existing = await storage.findByHash(sha256)
       let stored = existing
-      if (existing) result.deduped++
-      else {
-        stored = await storage.put({ bytes, contentType, sha256, width: details.width, height: details.height, format: details.format })
-        result.stored++
+      if (!existing) {
+        const storageKey = imageStorageKey(sha256, details.format)
+        stored = await storage.put({ bytes, contentType: mediaType, sha256, width: details.width, height: details.height, format: details.format, storageKey })
       }
-      if (!stored?.storageKey || !stored?.storageUrl) throw new ImageMirrorError('Storage adapter did not return a durable key and URL', 'storage-error')
+      if (!stored?.storageKey || !stored?.storageUrl || stored.storageKey !== imageStorageKey(sha256, details.format)) throw new ImageMirrorError('Storage adapter returned an untrusted content-addressed key', 'storage-error')
       const fetchedAt = now()
-      repository.recordStored(record.id, {
+      const commit = await repository.recordStored(record.id, {
         originalUrl: record.originalUrl,
         storageKey: stored.storageKey,
         storageUrl: stored.storageUrl,
@@ -169,6 +237,10 @@ export async function mirrorRemoteImages(records, {
         provenance,
         usageStatus: 'candidate',
       })
+      if (commit?.status === 'approved-conflict') { result.conflicts = (result.conflicts ?? 0) + 1; continue }
+      if (commit?.status !== 'stored') throw new ImageMirrorError('Repository did not confirm the stored asset', 'repository-error')
+      if (existing) result.deduped++
+      else result.stored++
     } catch (error) {
       const failure = failureFor(error)
       repository.recordFailure(record.id, { state: failure.state, message: failure.message, at: now() })

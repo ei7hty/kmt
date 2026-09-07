@@ -2,6 +2,21 @@ import { createHash } from 'node:crypto'
 
 export const IMAGE_ASSET_USAGE_STATUSES = ['candidate', 'approved', 'rejected']
 export const IMAGE_ASSET_PROVENANCE = 'supplier-product-page'
+export const IMAGE_ASSET_FORMATS = ['gif', 'jpeg', 'png', 'webp']
+export const IMAGE_ASSET_MIME_FORMATS = Object.freeze({
+  'image/gif': 'gif', 'image/jpeg': 'jpeg', 'image/png': 'png', 'image/webp': 'webp',
+})
+
+export class ImageAssetStorageConflictError extends Error {
+  constructor(message) { super(message); this.name = 'ImageAssetStorageConflictError'; this.state = 'storage-conflict' }
+}
+
+export function imageStorageKey(sha256, format) {
+  if (!/^[a-f0-9]{64}$/.test(sha256) || !IMAGE_ASSET_FORMATS.includes(format)) {
+    throw new ImageAssetStorageConflictError('Content-addressed storage keys require a SHA-256 hash and canonical format')
+  }
+  return `images/${sha256}.${format}`
+}
 
 const now = () => new Date().toISOString()
 
@@ -47,22 +62,62 @@ export function ensureImageAssetSchema(inventoryOrDb) {
       updated_at TEXT NOT NULL,
       UNIQUE(supplier_id, identity_key)
     );
+    CREATE TABLE IF NOT EXISTS image_storage (
+      storage_key TEXT PRIMARY KEY,
+      sha256 TEXT NOT NULL UNIQUE,
+      storage_url TEXT NOT NULL,
+      format TEXT NOT NULL CHECK(format IN ('gif', 'jpeg', 'png', 'webp')),
+      created_at TEXT NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS image_assets_supplier ON image_assets(supplier_id);
     CREATE INDEX IF NOT EXISTS image_assets_hash ON image_assets(sha256);
   `)
   return db
 }
 
-function stableRow(tire) {
+function normalizedHosts(allowedHosts) {
+  if (!Array.isArray(allowedHosts)) throw new TypeError('allowedHosts must be an explicit hostname allowlist')
+  return new Set(allowedHosts.map(host => String(host).trim().toLowerCase()).filter(Boolean))
+}
+
+function isPrivateHost(hostname) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') ||
+      host === '::1' || host === '0.0.0.0' || host === '127.0.0.1' || host === '[::1]') return true
+  if (/^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host) ||
+      /^fc[0-9a-f]{2}:/i.test(host) || /^fe8[0-9a-f]:/i.test(host)) return true
+  const ipv4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (!ipv4) return false
+  const octets = ipv4.slice(1).map(Number)
+  return octets[0] === 127 || octets[0] === 0 || octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127 ||
+    octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31
+}
+
+export function assertAllowedImageUrl(value, allowedHosts) {
+  const hosts = normalizedHosts(allowedHosts)
+  if (typeof value !== 'string' || !value.trim()) throw new TypeError('Image URL is required')
+  let parsed
+  try { parsed = new URL(value) } catch { throw new TypeError('Image URL is malformed') }
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '')
+  if (parsed.protocol !== 'https:') throw new TypeError('Image URL must use HTTPS')
+  if (parsed.username || parsed.password) throw new TypeError('Image URL cannot contain credentials')
+  if (isPrivateHost(hostname)) throw new TypeError('Image URL points to a private or local destination')
+  if (!hosts.has(hostname)) throw new TypeError(`Image URL host ${hostname} is not allowlisted`)
+  return parsed.toString()
+}
+
+function stableRow(tire, allowedHosts) {
   const supplierId = tire?.id
   const source = tire?.source
   if (typeof supplierId !== 'string' || !supplierId.trim() ||
       typeof source?.sku !== 'string' || !source.sku.trim()) {
     throw new TypeError('Image reconciliation requires a stable supplier id and SKU')
   }
-  const productUrl = typeof source.url === 'string' && source.url.trim() ? source.url.trim() : null
+  const productUrl = typeof source.url === 'string' && source.url.trim()
+    ? assertAllowedImageUrl(source.url, allowedHosts) : null
   const remoteUrls = [...new Set((Array.isArray(tire.imageUrls) ? tire.imageUrls : [])
-    .filter(url => typeof url === 'string' && /^https?:\/\//i.test(url)))]
+    .filter(url => typeof url === 'string' && url.trim())
+    .map(url => assertAllowedImageUrl(url, allowedHosts)))]
   const sourceMetadataPresent = Boolean(productUrl && source.sku.trim())
   return {
     supplierId,
@@ -78,10 +133,10 @@ function stableRow(tire) {
  * supplier id plus image URL (or a stable no-image sentinel), not by a title
  * that can change between supplier snapshots.
  */
-export function reconcileImageCandidates(inventoryOrDb, tires, { at = now() } = {}) {
+export function reconcileImageCandidates(inventoryOrDb, tires, { at = now(), allowedHosts = [] } = {}) {
   const db = ensureImageAssetSchema(inventoryOrDb)
   if (!Array.isArray(tires)) throw new TypeError('Image reconciliation requires an array of tires')
-  const rows = tires.map(stableRow)
+  const rows = tires.map(tire => stableRow(tire, allowedHosts))
   const supplierIds = new Set(db.prepare('SELECT id FROM supplier').all().map(row => row.id))
   for (const row of rows) {
     if (!supplierIds.has(row.supplierId)) throw new Error(`Supplier tire ${row.supplierId} is not in inventory`)
@@ -152,20 +207,46 @@ export function createImageAssetRepository(inventoryOrDb) {
   return {
     list: () => listImageCandidates(db),
     findByHash: sha256 => {
-      const row = db.prepare(`SELECT * FROM image_assets
-        WHERE sha256=? AND storage_key IS NOT NULL AND storage_url IS NOT NULL
-        ORDER BY usage_status='approved' DESC, id LIMIT 1`).get(sha256)
-      return row ? candidateFromRow(row) : null
+      const row = db.prepare(`SELECT s.storage_key, s.storage_url, s.sha256, s.format
+        FROM image_storage s WHERE s.sha256=? LIMIT 1`).get(sha256)
+      return row ? { storageKey: row.storage_key, storageUrl: row.storage_url, sha256: row.sha256, format: row.format } : null
     },
     recordStored: (id, asset) => {
-      db.prepare(`UPDATE image_assets SET
-        storage_key=?, storage_url=?, sha256=?, bytes=?, width=?, height=?, format=?,
-        fetched_at=?, stored_at=?, provenance=?, usage_status=?, failure_state=NULL,
-        failure_message=NULL, updated_at=? WHERE id=?`).run(
-        asset.storageKey, asset.storageUrl, asset.sha256, asset.bytes, asset.width, asset.height,
-        asset.format, asset.fetchedAt ?? null, asset.storedAt ?? null, asset.provenance ?? IMAGE_ASSET_PROVENANCE,
-        asset.usageStatus ?? 'candidate', asset.storedAt ?? now(), id,
-      )
+      ensureImageAssetSchema(db)
+      const expectedKey = imageStorageKey(asset.sha256, asset.format)
+      if (asset.storageKey !== expectedKey) throw new ImageAssetStorageConflictError(`Storage key must be ${expectedKey}`)
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        const target = db.prepare('SELECT usage_status FROM image_assets WHERE id=?').get(id)
+        if (!target) throw new Error(`Image asset ${id} was not found`)
+        if (target.usage_status === 'approved') {
+          db.exec('COMMIT')
+          return { status: 'approved-conflict' }
+        }
+        const existing = db.prepare('SELECT sha256, storage_url FROM image_storage WHERE storage_key=?').get(asset.storageKey)
+        if (existing && (existing.sha256 !== asset.sha256 || existing.format !== asset.format)) throw new ImageAssetStorageConflictError(`Storage key ${asset.storageKey} already maps to another hash or format`)
+        const storedAt = asset.storedAt ?? now()
+        if (!existing) db.prepare('INSERT INTO image_storage(storage_key, sha256, storage_url, format, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(asset.storageKey, asset.sha256, asset.storageUrl, asset.format, storedAt)
+        const storageUrl = existing?.storage_url ?? asset.storageUrl
+        const changed = db.prepare(`UPDATE image_assets SET
+          storage_key=?, storage_url=?, sha256=?, bytes=?, width=?, height=?, format=?,
+          fetched_at=?, stored_at=?, provenance=?, usage_status=?, failure_state=NULL,
+          failure_message=NULL, updated_at=? WHERE id=? AND usage_status <> 'approved'`).run(
+          asset.storageKey, storageUrl, asset.sha256, asset.bytes, asset.width, asset.height,
+          asset.format, asset.fetchedAt ?? null, storedAt, asset.provenance ?? IMAGE_ASSET_PROVENANCE,
+          asset.usageStatus ?? 'candidate', storedAt, id,
+        )
+        if (changed.changes !== 1) {
+          db.exec('ROLLBACK')
+          return { status: 'approved-conflict' }
+        }
+        db.exec('COMMIT')
+        return { status: 'stored', storageKey: asset.storageKey, storageUrl }
+      } catch (error) {
+        try { db.exec('ROLLBACK') } catch { /* transaction already closed */ }
+        throw error
+      }
     },
     recordFailure: (id, failure) => {
       db.prepare(`UPDATE image_assets SET failure_state=?, failure_message=?, updated_at=? WHERE id=?`)
