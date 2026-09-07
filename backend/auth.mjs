@@ -59,7 +59,7 @@ const DEFAULT_TTL_HOURS = 12
  * moving it now would fight #349 over one export. Whoever lands #290's
  * identity resolution should do that move and delete this duplicate.
  */
-const PASSWORD_SESSION_ACTOR = 'owner:shared-password'
+export const PASSWORD_SESSION_ACTOR = 'owner:shared-password'
 
 /**
  * The minted-session idiom (#354... #362's follow-up): a session `create()`d

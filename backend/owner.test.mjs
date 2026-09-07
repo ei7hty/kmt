@@ -7,8 +7,9 @@ import { createServer, request as httpRequest } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { Refresher } from './refresh.mjs'
 import { createApi, createCatalogApi, isPublicApiCall, readJsonBody } from './api.mjs'
-import { createAuth, createImportToken, createSessionStore, isMonitorAuthorized, memorySessionStore, MINTED_SESSION_ACTOR, mintSession, readAuthConfig, readMonitorConfig, readSessionSigningConfig, SESSION_COOKIE_NAME, verifyImportToken } from './auth.mjs'
+import { createAuth, createImportToken, createSessionStore, isMonitorAuthorized, memorySessionStore, MINTED_SESSION_ACTOR, mintSession, PASSWORD_SESSION_ACTOR, readAuthConfig, readMonitorConfig, readSessionSigningConfig, SESSION_COOKIE_NAME, verifyImportToken } from './auth.mjs'
 import { LoginThrottle } from './limits.mjs'
+import { SHARED_PASSWORD_ACTOR } from './quotes.mjs'
 import { PageImporter } from './import.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 
@@ -1136,6 +1137,22 @@ test('a database whose owner_sessions predates the actor column still signs sess
 
   // Reopening a second time must not fail on "duplicate column".
   assert.doesNotThrow(() => createSessionStore(inventory.db))
+})
+
+test('auth.mjs and quotes.mjs agree on the password-era actor string -- pinned, not assumed', () => {
+  // Two independent literals for the same fact (TECHNICAL ARCHITECT's read of
+  // #374): auth.mjs writes PASSWORD_SESSION_ACTOR onto a login session,
+  // quotes.mjs's moveTo falls back to SHARED_PASSWORD_ACTOR when no actor was
+  // recorded. They are not the same export -- reconciling that is left for
+  // whoever lands #290's identity resolution, since moving the constant now
+  // would fight #349 over one export -- so nothing stops them drifting apart
+  // silently. If they ever do, a password-era decision resolves to one value
+  // through actorFor and defaults to the other through moveTo, and the three
+  // eras quietly become four with no test failing except this one.
+  assert.equal(
+    PASSWORD_SESSION_ACTOR, SHARED_PASSWORD_ACTOR,
+    'the password era has one name; auth writes it on the session and quotes falls back to it',
+  )
 })
 
 function extractSessionId(tokenValue) {
