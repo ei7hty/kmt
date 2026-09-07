@@ -15,11 +15,14 @@ test('the limits sit above what one gate run does, with room', () => {
   // budget: a script may gain a scenario before anyone revisits this.
   assert.ok(LIMITS.publicPerIp.max >= 2 * AUDIT_BUDGET.publicPosts,
     `per-address limit ${LIMITS.publicPerIp.max} must be at least twice the gate's ${AUDIT_BUDGET.publicPosts} public POSTs`)
+  assert.ok(LIMITS.previewPerIp.max >= 2 * AUDIT_BUDGET.previewPosts,
+    `preview address limit ${LIMITS.previewPerIp.max} must be at least twice the gate's ${AUDIT_BUDGET.previewPosts} previews`)
   assert.ok(LIMITS.submitPerEmail.max >= AUDIT_BUDGET.submitsPerEmail + 8,
     `per-email cap ${LIMITS.submitPerEmail.max} must clear the gate's ${AUDIT_BUDGET.submitsPerEmail} submissions with one address`)
   // Every gate run opens a fresh browser context per scenario, so a key never
   // carries more than a few calls; the per-key limit only has to clear one.
   assert.ok(LIMITS.publicPerKey.max >= 4)
+  assert.ok(LIMITS.previewPerKey.max >= 4)
   // The gate never guesses wrong, and the free failures cover a person's typos.
   assert.equal(AUDIT_BUDGET.loginFailures, 0)
   assert.ok(LIMITS.loginFailures.free >= 3)

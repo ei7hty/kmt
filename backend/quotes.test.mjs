@@ -726,6 +726,8 @@ test('#284: opening the emailed link on a device that never submitted can still 
 const smallRules = {
   publicPerIp: { max: 4, windowMs: 60_000 },
   publicPerKey: { max: 2, windowMs: 60_000 },
+  previewPerIp: { max: 4, windowMs: 60_000 },
+  previewPerKey: { max: 2, windowMs: 60_000 },
   submitPerEmail: { max: 3, windowMs: 60_000 },
 }
 
@@ -781,7 +783,7 @@ test('one browser key and one email address have limits of their own', async t =
   assert.equal((await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'other@example.com' }))).status, 201, 'the key itself is fine')
 })
 
-test('pricing previews share the public address and browser limits without consuming the email submission cap', async t => {
+test('pricing previews have bounded address and browser limits without consuming submission capacity', async t => {
   const { inventory, quotes } = setup(t)
   const limiter = new RateLimiter({ rules: { ...smallRules, publicPerIp: { max: 100, windowMs: 60_000 } }, log: () => {} })
   const base = await serve(t, quotes, inventory, { limiter })
@@ -793,6 +795,8 @@ test('pricing previews share the public address and browser limits without consu
   assert.equal(refused.status, 429)
   assert.match((await refused.json()).error, /this browser/)
   assert.equal(quotes.listForOwner().length, 0)
+  assert.equal((await post(base, '/api/requests', form())).status, 201,
+    'preview refreshes do not consume the submit, pay and cancel buckets')
 })
 
 test('a public body past the ceiling is refused before it is parsed, and the health check is never counted', async t => {

@@ -354,7 +354,7 @@ export function createMailStatusApi(mailer, monitorConfig, { isAuthorized } = {}
  * that does not match is answered exactly as a request that does not exist,
  * because "not yours" tells the asker the request is real.
  *
- * The three POSTs are the only public writes, so they are the ones limited
+ * The three writes and the calculation-only preview are public, so they are limited
  * (#63): per address before the body is read, per browser key once it is, and
  * a submission per email address in a day, which is the cap that matters the
  * day the email seam sends. A refusal is a 429 with the wait named, before
@@ -392,7 +392,8 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
 
     try {
       if (request.method === 'POST' && isPublicApiCall('POST', url.pathname)) {
-        if (over(response, 'publicPerIp', clientIp(request), TOO_MANY)) return true
+        const rule = url.pathname === '/api/requests/preview' ? 'previewPerIp' : 'publicPerIp'
+        if (over(response, rule, clientIp(request), TOO_MANY)) return true
       }
 
       if (request.method === 'POST' && url.pathname === '/api/requests') {
@@ -413,7 +414,7 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
 
       if (request.method === 'POST' && url.pathname === '/api/requests/preview') {
         const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
-        if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
+        if (over(response, 'previewPerKey', keyOf(body), TOO_MANY_KEY)) return true
         send(200, { preview: quotes.preview(body) })
         return true
       }
