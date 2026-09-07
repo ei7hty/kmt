@@ -2898,17 +2898,31 @@ instrumented.
 so `loginFailures: 0` would become *accidentally* true, silently retiring the evidence for a defect
 found the same night, by a change that was itself correct.
 
-**Cross-reference, so this is not read as a fourth instance of the entries above rather than the one real
-bug among them:** this file's port-4173 entry and an earlier one both teach that `login: wrong password`
-means a port collision -- another session's server, answering on the port you picked. This finding
-produces the identical log line from an unrelated cause. `login: wrong password` has two causes. A
-foreign server on your port is one -- see the entries above. The other is the audit's own submission to
-its own correctly-configured server, which is what a run showing `83 of 83` demonstrates, since a
-matching count rules out a foreign tree by construction -- the log itself only shows a password that did
-not match, not that the field was empty or that a fill had failed to commit. **The mechanism is
-unconfirmed** -- the fill/click race (the form submitting before `page.fill('#owner-password', ...)` has
-committed, plausibly a re-render clobbering it) is the hypothesis consistent with both observations, not
-a proven cause; other paths through `signInIfAsked` have not been enumerated or excluded.
+**Retraction: it is a third instance of the port hazard, not a separate bug, and the correction above was
+wrong.** This file's port-4173 entry originally read this exact symptom as a collision. GATE ENGINEER
+argued a second, unrelated cause -- the audit submitting its own empty password to its own
+correctly-configured server -- and that argument stood for several exchanges before a control disproved
+it.
+
+**The mechanism was never possible.** `src/owner/SignIn.jsx`'s submit button is `disabled={busy ||
+!password}` -- React will not let the form submit while the password field is empty, so there was no
+path to the log line that did not go through another server. Confirmed with a matched pair on an
+uncontended port: the same tree, the same command, with and without the proposed fix, both runs clean at
+`83 of 83`. Only the shared port had ever produced the failure.
+
+**What actually happened: a foreign audit doesn't corrupt your count, but a foreign *sign-in* still
+reaches your log.** Another session's audit, aimed at the port you also picked, sends its own
+(correctly-typed, for its own server) password to yours -- your server sees a real mismatch and logs it
+honestly, while your own `EXPECTED_CHECKS` count stays perfect because your own audit never touched the
+foreign process at all. `83 of 83` proves your run reached your server end to end; it says nothing about
+who else's request also arrived there. A discriminator that answers "was my run clean" cannot answer "was
+I alone."
+
+**The generalisable part, since the retraction is worth more than the instance:** a plausible mechanism,
+defended confidently and correctly-reasoned-sounding, survived several rounds of argument and fell to two
+runs of an actual test. The fix for a confident wrong theory is not a better argument for it -- it is
+building the control that could have disproven it from the start, which nobody did until after the theory
+had already been written down twice.
 
 **2026-09-07 — GATE ENGINEER, with the OWNER AGENT, on a specification's scope against a measurement's**
 `a11y-85-measure.mjs` found one AA contrast failure: `/status (draft)`'s text-Ken button, 1.88:1 against
