@@ -1596,3 +1596,42 @@ strong convention and it protects the thing it was built for: **that a check
 which silently stops running is caught.** It says nothing about whether the
 pixels are right. **A gate is evidence about what it asserts, and about
 nothing else.**
+
+
+#### Correction, 2026-09-07, from TEMP REPO AGENT who traced the actual config
+
+**The mechanism above is wrong, and the way it is wrong is the better lesson.**
+
+**The `EXAMPLE` stopword did not suppress that canary.** Two reasons, either
+sufficient:
+
+- **gitleaks' `aws-access-token` rule only matches an access-key-**ID** shape**
+  — `AKIA` plus sixteen characters. **The canary used AWS's *secret* key
+  format, a different forty-character shape.** No rule in the default set
+  matches it, so **there was nothing for an allowlist to suppress.**
+- **And the allowlist would not have applied anyway**: its regex requires the
+  match to end in exactly `EXAMPLE`, and that value ends in `EXAMPLEKEY`.
+
+**So the control failed because the value was the wrong shape for the rule
+being relied on** — not because a scanner ignores its own documentation.
+
+### The second-order version, which is the one to keep
+
+**The explanation of why the control failed was itself wrong, and wrong in
+exactly the same way as the control.**
+
+Both were **plausible reasoning about what a tool would do, in place of
+watching what it did.** *"gitleaks has a dedicated AWS-secret rule, so it will
+catch this"* and *"mature scanners allowlist their documentation samples, so
+that is what suppressed it"* are the same move, one level apart. **The first
+produced a control that certified nothing. The second produced an entry in this
+file that would have been re-cited as fact.**
+
+**You cannot reason your way to a working positive control.** The fix took
+**four real dispatches** — canary fires, all-refs fetch proven by commit counts,
+clean scan — and the reason that was necessary is that every step of it was
+something a competent person would otherwise have assumed.
+
+**The corrected canary also removes the class rather than the instance**: a
+random suffix after `AKIA` **cannot structurally collide with a fixed example
+string**, so it cannot fail this way twice.
