@@ -62,6 +62,13 @@
 .date-section { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; margin-top: 28px; padding-top: 26px; border-top: 1px solid #303033; }
 .date-shortcuts { display: flex; align-items: end; gap: 8px; }
 .date-section > .detail-help { grid-column: 1 / -1; margin-top: 0; }
+
+/* The way out when a week is not soon enough: the line above states the floor,
+   this one says what to do about it and gives one tap to do it. Written as
+   `.date-section > .date-sooner` and not a bare `.date-sooner`, because the
+   rule above is (0,2,0) and zeroes the margin -- a (0,1,0) selector loses to
+   it whatever the source order, silently. */
+.date-section > .date-sooner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
 .request-details input[type="date"] { color-scheme: dark; }
 .quote-reassurance { margin-top: 28px; font-size: 12px; color: #a3a3ab; text-align: center; }
 .order-section .order-summary-line { flex-direction: column; gap: 6px; padding: 18px 20px; border: 1px solid #303033; border-radius: 10px; background: #171717; overflow-wrap: anywhere; }
