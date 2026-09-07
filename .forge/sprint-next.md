@@ -69,8 +69,20 @@ watcher of failed rows sees nothing while nothing is being attempted.
 morning triggers it.** The failure we actually had is **silence that looks like
 calm**, and only something that exercises the seam distinguishes those.
 
-**The probe must not send mail to a person.** An SMTP connection and `AUTH`,
-with no `DATA` phase, proves the credential without delivering anything.
+**The probe must not send mail to a person, and it does not have to.**
+
+`SmtpAdapter.transport()` (`mail.mjs:129`) already builds a nodemailer
+transporter lazily, and **`transporter.verify()` opens the connection, performs
+`AUTH`, and disconnects — no message, no recipient, no quota consumed.**
+
+**That is exactly the failure tonight had: the credential was dead and the
+transport was fine.** So the probe is *get the transporter, verify, report* —
+cheap enough to run on a timer, and it distinguishes **"nothing is being
+attempted"** from **"attempts would fail."**
+
+**A probe that sent real mail would raise two problems it does not need to
+have** — where the message goes, and quota consumed against limits sized for a
+one-man business.
 
 ### What must not be built
 
@@ -165,8 +177,18 @@ https://kensmobiletire.com/api/owner/session/google/callback
 ### The precondition, which is not optional
 
 **Removing the password breaks the pre-merge gate's ability to prove the owner
-half of the flow.** `signInIfAsked` is imported by **`dead-end-audit.mjs`,
-`request-flow-check.mjs` and `a11y-85-measure.mjs`** — three audits, not two.
+half of the flow.** `signInIfAsked` is imported by **five audit scripts**,
+measured rather than recalled:
+
+```
+a11y-85-measure.mjs   dead-end-audit.mjs   owner-inventory-audit.mjs
+request-flow-check.mjs   responsive-check.mjs
+```
+
+**I have twice said three.** That number came from the first two importers
+anyone happened to notice; **the architect swept every importer and the
+PROJECT MANAGER re-measured it.** The precondition argument rests on the size
+of what breaks, so the number matters more than most.
 
 **`AGENTS.md` says the gate exists to prove that a customer submits, the owner
 approves and the customer pays.** Removing password auth deletes the only way it
