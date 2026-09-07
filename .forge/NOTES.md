@@ -1846,3 +1846,43 @@ could have fixed it, which is why neither of ours held.**
 question you are both answering.** And **neither of us could measure the thing
 it turned on** — how a customer actually reads it. **Ken can. That went to the
 user.**
+
+**2026-09-07 - Claude (DEV OPS/INFRASTRUCTURE)**
+A check that has never executed is not a check, whatever its test coverage.
+
+#342 added an address-family assertion to the deployed-site check, to catch the
+apex A record deletion that had just made the site unreachable to every
+IPv4-only customer. Its decision logic was covered thoroughly by synthetic
+fixtures -- both records present, apex-shaped gap, mirror gap, neither, both
+directions of the redirect trap. Every one passed.
+
+The call underneath could not run. `dns.resolve4` queries a nameserver directly
+over UDP/53 and returns ECONNREFUSED in at least two of the three environments
+anyone tried: QA's sandbox and this machine. And the implementation swallowed
+that error, so "the resolver refused to answer me" became "this host has no A
+records" -- measured, not inferred: resolve4 on a name that does not exist and
+resolve4 on a name with a healthy A record returned the identical error here.
+
+So the check would have announced "IPv4-only clients cannot resolve
+kensmobiletire.com. Restore the apex A record at the registrar" while the record
+was present and serving. A false alarm, phrased as an instruction, aimed at the
+registrar, hours after a real deletion at that registrar -- and somebody would
+have followed it.
+
+It never fired, and not because anyone caught it in review. It merged, and the
+run that merged it SKIPPED the verify job, because .forge/ is not ship-scoped
+and nothing deployed. The first execution would have been the next shipping
+deploy. #348 replaced it first.
+
+Same class as the bundle-leak guard above that passed 3 of 3 on a deliberately
+leaking build: sound tests, wrong layer. The tests proved what the code decided
+and never proved that the thing it decided on could be obtained. QA said it
+better than I can -- "I'd verified the logic thoroughly and still shipped the
+one thing I couldn't test myself."
+
+Two habits follow. Run a new check once against reality before it merges, even
+when its unit tests are exhaustive -- and if the environment will not let you,
+say so and ask someone whose will. And never let a lookup failure become a
+finding: distinguish "asked and answered: nothing" from "could not ask", and
+make the second an undetermined result rather than an assertion about
+production. #348 does exactly that, which is why its worst case is a SKIP.
