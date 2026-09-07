@@ -903,3 +903,33 @@ test('#285: drainMail returns as soon as the mail is done, and does not hold the
   assert.ok(exitedAfter < 1000,
     `the process exited ${exitedAfter}ms after draining -- a ref'd loser would hold it for the full 4000ms bound`)
 })
+
+test('#285: a failed resend stays honestly failed and carries the NEW reason', async t => {
+  // Ken is looking at this row precisely because the first attempt did not
+  // work, so "failed again, same 535" and "failed again, different error"
+  // have to lead him somewhere different. A resend that silently re-queued,
+  // or that left the first attempt's error in place, would collapse them.
+  let failWith = new Error('535 5.7.8 BadCredentials')
+  const adapter = { name: 'smtp', async send() { throw failWith } }
+  const world = durableWorld(t, adapter)
+  const request = world.quotes.submit(form()).request
+  const row = world.outbox.record({
+    requestId: request.id, type: 'request-arrived', templateVersion: 1,
+    data: dataFor(world, request.id, 'request-arrived', CONFIG.ownerEmail, CONFIG.ownerName),
+    to: CONFIG.ownerEmail, toName: CONFIG.ownerName,
+  })
+
+  await world.mailer.resend(row.id)
+  const first = world.outbox.get(row.id)
+  assert.equal(first.status, 'failed')
+  assert.match(first.error, /535 5\.7\.8/)
+
+  failWith = new Error('421 4.7.0 Try again later')
+  await world.mailer.resend(row.id)
+  const second = world.outbox.get(row.id)
+
+  assert.equal(second.status, 'failed', 'still failed -- never silently back to queued, which would read as "owed and untried"')
+  assert.match(second.error, /421 4\.7\.0/, 'and carries the second attempt\'s reason')
+  assert.doesNotMatch(second.error, /535/, 'not the first attempt\'s, which is no longer what is wrong')
+  assert.equal(second.attemptedAt, first.attemptedAt, 'the record of when this was first tried is not rewritten')
+})
