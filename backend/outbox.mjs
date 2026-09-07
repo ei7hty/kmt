@@ -118,6 +118,23 @@ const OUTBOX_COLUMNS = `
 
 const now = () => new Date().toISOString()
 
+/**
+ * The optional sentence Ken types when he resolves a row -- the same
+ * contract `quotes.mjs`'s `cleanReason` already holds a cancellation
+ * reason to (nothing is a valid note; a non-string is refused, not
+ * coerced; 500 characters, rejected rather than silently truncated, since
+ * this is typed by a person through a form, not an internally-constructed
+ * diagnostic string the way `error` is).
+ */
+function cleanNote(value) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') throw new InputError('A resolution note must be text.')
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (trimmed.length > 500) throw new InputError('That note is too long.')
+  return trimmed
+}
+
 export class Outbox {
   /**
    * `db` is the same `node:sqlite` handle everything else here shares --
@@ -254,14 +271,24 @@ export class Outbox {
    * Idempotent: resolving an already-resolved row returns it unchanged
    * rather than erroring or overwriting `resolved_at`, so a correction
    * script can be re-run safely.
+   *
+   * `note` is cleaned the same way a cancellation reason is
+   * (`cleanNote`/`cleanReason`, the same 500-character, text-only
+   * contract): unlike `error`, which is always built internally from a
+   * real `Error` and can be trusted to be a bounded string, `note`
+   * reaches here from an HTTP body -- unvalidated, it would let `{ note:
+   * 12345 }` land a number in a TEXT column and `{ note: {...} }` throw
+   * inside `node:sqlite` as an unhandled 500, on the one route Ken
+   * reaches for after something has already gone wrong.
    */
   resolve(id, note = null) {
+    const cleaned = cleanNote(note)
     const found = this.get(id)
     if (!found) throw new InputError('No such outbox message.', 404)
     if (found.resolvedAt) return found
 
     this.db.prepare('UPDATE outbox SET resolved_at=?, resolution_note=?, updated_at=? WHERE id=?')
-      .run(now(), note, now(), id)
+      .run(now(), cleaned, now(), id)
     return this.get(id)
   }
 

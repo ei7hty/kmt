@@ -634,3 +634,27 @@ test('POST /api/owner/outbox/:id/resolve works on a queued row too, and never fi
   assert.equal(resolved.resolutionNote, 'never attempted; no adapter was configured when this was recorded')
   assert.equal(resolved.error, null, 'error stays null, not the resolution note')
 })
+
+test('POST /api/owner/outbox/:id/resolve answers 400, not 500, on a note that is not text', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+  const { request } = quotes.submit(form())
+  const message = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'x' }, to: 'a@b.c', toName: 'A' })
+
+  // { note: 12345 } would otherwise land a number in a TEXT column; { note:
+  // {...} } would otherwise throw inside node:sqlite as an unhandled 500 --
+  // exactly the worst moment for one, since this is the route Ken reaches
+  // for after something has already gone wrong.
+  const number = await fetch(`${base}/api/owner/outbox/${message.id}/resolve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note: 12345 }),
+  })
+  assert.equal(number.status, 400)
+
+  const object = await fetch(`${base}/api/owner/outbox/${message.id}/resolve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note: { nested: true } }),
+  })
+  assert.equal(object.status, 400)
+
+  assert.equal(outbox.get(message.id).resolvedAt, null, 'neither refused call left the row half-resolved')
+})

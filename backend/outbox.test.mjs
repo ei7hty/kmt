@@ -337,6 +337,32 @@ test('resolve() on a message that does not exist is refused, the same as updateS
   assert.throws(() => outbox.resolve('0'.repeat(32)), /No such outbox message/)
 })
 
+test('resolve() refuses a non-string note rather than letting it reach SQLite', t => {
+  const { outbox, requestId } = setup(t)
+  const message = outbox.record({ requestId, type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' })
+  assert.throws(() => outbox.resolve(message.id, 12345), /A resolution note must be text/,
+    'a number must not silently land in a TEXT column')
+  assert.throws(() => outbox.resolve(message.id, { note: 'x' }), /A resolution note must be text/,
+    'an object must be refused with a real error, not thrown as an unhandled node:sqlite binding failure')
+  assert.equal(outbox.get(message.id).resolvedAt, null, 'a refused note must not partially resolve the row')
+})
+
+test('resolve() rejects a note over 500 characters, the same bound cleanReason holds cancellations to', t => {
+  const { outbox, requestId } = setup(t)
+  const message = outbox.record({ requestId, type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' })
+  assert.throws(() => outbox.resolve(message.id, 'x'.repeat(501)), /too long/)
+  const resolved = outbox.resolve(message.id, 'x'.repeat(500))
+  assert.equal(resolved.resolutionNote.length, 500, 'exactly the bound is accepted')
+})
+
+test('resolve() treats an empty or whitespace-only note the same as no note at all', t => {
+  const { outbox, requestId } = setup(t)
+  const message = outbox.record({ requestId, type: 'request_received', data: renderData(), to: 'a@example.com', toName: 'A' })
+  const resolved = outbox.resolve(message.id, '   ')
+  assert.equal(resolved.resolutionNote, null)
+  assert.ok(resolved.resolvedAt, 'the row is still resolved -- a blank note is not a refused one')
+})
+
 test('unresolvedFailures answers only failed rows nobody has settled, newest first', t => {
   const { outbox, requestId } = setup(t)
   outbox.record({ requestId, type: 'request_received', data: renderData(), to: 'q@example.com', toName: 'Q' })
