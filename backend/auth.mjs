@@ -178,14 +178,20 @@ export function equals(a, b) {
  */
 export function readAuthConfig(env = process.env) {
   const password = env.KMT_OWNER_PASSWORD || ''
-  if (!password) {
+  // The guard moves rather than disappears. It used to be "a password or refuse
+  // to boot"; it is now "a way in, or refuse to boot" -- which is the same
+  // property once Google is a way in, and is what makes unsetting the password
+  // survivable. Read the message on the throw below for why that matters more
+  // than it sounds.
+  const google = readGoogleConfig(env)
+  if (!password && !google) {
     throw new Error(
-      'KMT_OWNER_PASSWORD is not set. The owner workspace exposes supplier costs ' +
-      'and lets anyone change prices, so this server refuses to start without a ' +
-      'password. Set one in the environment and redeploy.',
+      'KMT_OWNER_PASSWORD is not set and no Google client is configured, so nobody ' +
+      'could sign in to the owner workspace. Set KMT_GOOGLE_CLIENT_ID and ' +
+      'KMT_GOOGLE_CLIENT_SECRET, or set KMT_OWNER_PASSWORD, and redeploy.',
     )
   }
-  if (password.length < 12) {
+  if (password && password.length < 12) {
     throw new Error('KMT_OWNER_PASSWORD must be at least 12 characters.')
   }
 
@@ -472,10 +478,30 @@ export function createAuth(config, {
         // `google` says whether this server has an OAuth client, so the
         // sign-in screen can offer the button only where pressing it would
         // work. Additive: `authenticated` keeps its meaning and its shape.
-        return json(200, { authenticated: signedIn(request), google: Boolean(google) })
+        return json(200, { authenticated: signedIn(request), google: Boolean(google), password: Boolean(config.password) })
       }
 
       if (url.pathname === '/api/owner/login' && request.method === 'POST') {
+        // Refused before the throttle, before the body, and above all before
+        // any comparison: with no password configured, `equals('', '')` is
+        // TRUE -- a constant-time compare of two empty buffers succeeds -- so
+        // falling through here would sign in anyone who posts an empty
+        // password. That is the whole hazard of making the password optional.
+        //
+        // Derived from `config.password` itself rather than from a separate
+        // `passwordEnabled` flag, which is how this was first written. A flag
+        // is a parallel contract: every caller that builds a config by hand
+        // rather than through `readAuthConfig` -- and this repository has
+        // several, including test helpers that mirror the server -- would have
+        // silently lost password sign-in by omitting it. The full suite caught
+        // exactly that. One source of truth cannot drift from itself.
+        //
+        // 404 rather than 401, for the same reason the Google routes answer
+        // 404 when unconfigured: the way in does not exist on this server,
+        // which is a different statement from "those credentials were wrong".
+        if (!config.password) {
+          return json(404, { error: 'Password sign-in is not available on this server.' })
+        }
         // A slowed address is answered before its body is read: the guess is
         // not even looked at until the wait has passed.
         const ip = clientIp(request)
