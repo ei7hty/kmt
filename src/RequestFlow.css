@@ -71,6 +71,22 @@
 .date-section > .date-sooner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
 .request-details input[type="date"] { color-scheme: dark; }
 .quote-reassurance { margin-top: 28px; font-size: 12px; color: #a3a3ab; text-align: center; }
+.pricing-preview { margin-top: 30px; padding: 22px; border: 1px solid #3e3e42; border-radius: 10px; background: #171717; }
+.pricing-preview-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.pricing-preview-heading .panel-kicker { margin: 0 0 5px; }
+.pricing-preview-heading h4 { margin: 0; color: #f5f5f7; font-size: 20px; }
+.pricing-preview-heading .link-action { flex-shrink: 0; min-height: 44px; color: var(--accent-text); }
+.pricing-preview-status { margin: 20px 0 0; color: #c4c4ca; line-height: 1.5; }
+.pricing-preview-status p { margin: 0 0 8px; }
+.pricing-preview-lines { display: grid; gap: 0; margin-top: 18px; border-top: 1px solid #303033; }
+.pricing-preview-line, .pricing-preview-totals p { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 0; padding: 13px 0; }
+.pricing-preview-line { border-bottom: 1px solid #303033; }
+.pricing-preview-line span { min-width: 0; color: #dedee3; overflow-wrap: anywhere; }
+.pricing-preview-line small { display: block; margin-top: 4px; color: #a3a3ab; font-size: 11px; }
+.pricing-preview-line b, .pricing-preview-totals b { flex-shrink: 0; color: #f5f5f7; font-variant-numeric: tabular-nums; }
+.pricing-preview-totals { padding-top: 8px; }
+.pricing-preview-totals p { padding: 7px 0; color: #c4c4ca; }
+.pricing-preview-totals .pricing-preview-total { margin-top: 5px; padding-top: 14px; border-top: 1px solid #4b4b50; color: #f5f5f7; font-size: 17px; font-weight: 700; }
 .order-section .order-summary-line { flex-direction: column; gap: 6px; padding: 18px 20px; border: 1px solid #303033; border-radius: 10px; background: #171717; overflow-wrap: anywhere; }
 .order-section .order-summary-line b { order: -1; font-size: 16px; }
 .order-section .fitment-modal { border-radius: 14px; }
@@ -98,4 +114,6 @@
   .order-section .tire-art { width: 34px; height: 34px; border-width: 5px; }
   .order-section .tire-option > b { grid-column: 2; justify-self: start; text-align: left; }
   .order-section .fitment-footer .primary-action { width: 100%; }
+  .pricing-preview { padding: 18px 16px; }
+  .pricing-preview-heading { align-items: center; }
 }

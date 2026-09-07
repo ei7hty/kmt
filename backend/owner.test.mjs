@@ -614,11 +614,22 @@ test('saveCatalogueLines validates every field, and a rejected save leaves the s
   assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), mode: 'sometimes' }]), /mode of automatic or optional/)
   assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), taxable: 'yes' }]), /taxable to be true or false/)
   assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), enabled: 'yes' }]), /enabled to be true or false/)
+  assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), amountOverrides: { sizes: [] } }]), /sizes overrides must be an object/)
+  assert.throws(() => db.saveCatalogueLines([{ ...catalogueLine(), amountOverrides: { skus: { ABC: 19.5 } } }]), /invalid skus override/)
   assert.throws(() => db.saveCatalogueLines([catalogueLine(), catalogueLine()].map(l => ({ ...l, id: 'dup' }))), /repeats an id/)
   assert.throws(() => db.saveCatalogueLines(Array.from({ length: 26 }, () => catalogueLine())), /at most 25 lines/)
 
   assert.equal(db.getCatalogueLines().length, 1, 'none of the rejected saves touched the stored catalogue')
   assert.equal(db.getCatalogueLines()[0].label, 'Installation')
+})
+
+test('catalogue amount overrides round-trip as whole cents for size and SKU targets', t => {
+  const db = setup(t)
+  const [saved] = db.saveCatalogueLines([catalogueLine({
+    amountOverrides: { sizes: { [SIZE]: 2200 }, skus: { ABC123: 2750 } },
+  })])
+  assert.deepEqual(saved.amountOverrides, { sizes: { [SIZE]: 2200 }, skus: { abc123: 2750 } }, 'SKU keys normalize the same way supplier ids do')
+  assert.deepEqual(db.getCatalogueLines()[0].amountOverrides, saved.amountOverrides)
 })
 
 test('the seed runs once at construction and never re-runs against an already-populated database', () => {

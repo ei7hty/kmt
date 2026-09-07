@@ -77,13 +77,14 @@ const PUBLIC_REQUEST_PREFIX = '/api/requests'
 const PUBLIC_INQUIRIES_PATH = '/api/inquiries'
 const PUBLIC_POST_PATHS = [
   /^\/api\/requests$/,
+  /^\/api\/requests\/preview$/,
   /^\/api\/requests\/[^/]+\/pay$/,
   /^\/api\/requests\/[^/]+\/cancel$/,
   /^\/api\/inquiries$/,
 ]
 
 /** The action suffixes a GET must not answer, whatever else the prefix allows. */
-const REQUEST_ACTIONS = ['/pay', '/cancel']
+const REQUEST_ACTIONS = ['/pay', '/cancel', '/preview']
 
 /**
  * Whether an `/api/` path is one the server has any handler for.
@@ -407,6 +408,13 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
           mailer.after('request-received', submitted.request.id)
           mailer.after('request-arrived', submitted.request.id)
         }
+        return true
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/requests/preview') {
+        const body = await readJsonBody(request, PUBLIC_BODY_LIMIT)
+        if (over(response, 'publicPerKey', keyOf(body), TOO_MANY_KEY)) return true
+        send(200, { preview: quotes.preview(body) })
         return true
       }
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { getAllTires } from '../data/catalog'
 import { loadCatalogForSize } from '../data/liveCatalog'
 import { FITMENT_DIAMETERS, FITMENT_RATIOS, FITMENT_WIDTHS } from '../data/fitment'
-import { submitRequest } from '../store'
+import { previewRequestPrice, submitRequest } from '../store'
 import { VehicleDetails, ServiceDetails } from '../components/RequestDetails'
 import { MIN_LEAD_DAYS, serviceDay } from '../components/serviceDay'
 import { TEXT_HREF, TEXT_LABEL, URGENT_TEXT_HREF } from '../contact.js'
@@ -106,6 +106,7 @@ function readSizeQuery(text) {
 /** Offered at the tire step. A full set by default -- most jobs are. */
 const QUANTITY_OPTIONS = [1, 2, 4]
 const DEFAULT_QUANTITY = 4
+const money = amount => `$${Number(amount).toFixed(2)}`
 
 function CustomerRequest({ navigate }) {
   const [formData, setFormData] = useState({
@@ -134,6 +135,7 @@ function CustomerRequest({ navigate }) {
   const [fitmentSearch, setFitmentSearch] = useState('')
   // Pages of the tire list revealed past the preview, reset when the size changes.
   const [tirePages, setTirePages] = useState(0)
+  const [pricingPreviewState, setPricingPreviewState] = useState({ key: '', preview: null, error: '', status: 0 })
 
   // The static catalog is the starting value rather than an empty list, so the
   // first paint is a working selector, and it is all the size step needs: the
@@ -188,6 +190,31 @@ function CustomerRequest({ navigate }) {
     return () => { live = false; controller.abort(); clearTimeout(timer) }
   }, [chosenSize])
   const shownList = tireList.size === chosenSize ? tireList : NO_TIRE_LIST
+  const pricingPreviewKey = [formData.tireSelection, formData.quantity, formData.serviceZip.trim(), formData.disposeOldTires].join('|')
+  const canPreviewPrice = orderStep === 3 && Boolean(formData.tireSelection) && /^\d{5}(-\d{4})?$/.test(formData.serviceZip.trim())
+  const pricingPreview = canPreviewPrice && pricingPreviewState.key === pricingPreviewKey ? pricingPreviewState.preview : null
+  const pricingPreviewError = canPreviewPrice && pricingPreviewState.key === pricingPreviewKey ? pricingPreviewState.error : ''
+  const pricingPreviewErrorStatus = canPreviewPrice && pricingPreviewState.key === pricingPreviewKey ? pricingPreviewState.status : 0
+  const pricingPreviewLoading = canPreviewPrice && pricingPreviewState.key !== pricingPreviewKey
+
+  // Every number shown before submit comes back from the same server method
+  // that creates the stored draft. A late answer for an earlier ZIP, tire or
+  // option is ignored so the card never labels stale arithmetic as current.
+  useEffect(() => {
+    if (!canPreviewPrice) return
+    let current = true
+    previewRequestPrice({
+      tireSelection: formData.tireSelection,
+      quantity: formData.quantity,
+      serviceZip: formData.serviceZip,
+      disposeOldTires: formData.disposeOldTires,
+    }).then(preview => {
+      if (current) setPricingPreviewState({ key: pricingPreviewKey, preview, error: '', status: 0 })
+    }).catch(error => {
+      if (current) setPricingPreviewState({ key: pricingPreviewKey, preview: null, error: error.message, status: error.status || 0 })
+    })
+    return () => { current = false }
+  }, [canPreviewPrice, pricingPreviewKey, formData.tireSelection, formData.quantity, formData.serviceZip, formData.disposeOldTires])
 
   const tires = catalog.tires
   // Each stage offers only choices that lead somewhere. The catalog is generated
@@ -341,7 +368,7 @@ function CustomerRequest({ navigate }) {
       return
     }
     setStepError('')
-    setFormData(previous => ({ ...previous, serviceZip: previous.serviceZip || fitment.zip }))
+    setFormData(previous => ({ ...previous, serviceZip: fitment.zip || previous.serviceZip }))
     setOrderStep(2)
   }
 
@@ -362,6 +389,14 @@ function CustomerRequest({ navigate }) {
     setOrderStep(3)
   }
 
+  const changeServiceZip = () => {
+    setFitment(previous => ({ ...previous, zip: formData.serviceZip }))
+    setFitmentStage('zip')
+    setFitmentSearch('')
+    setStepError('')
+    setOrderStep(1)
+  }
+
   const handleFormSubmit = async (event) => {
     event.preventDefault()
     const errors = {}
@@ -376,6 +411,7 @@ function CustomerRequest({ navigate }) {
     if (!formData.customerName.trim()) errors.customerName = 'Your name is required'
     if (!formData.customerEmail.trim()) errors.customerEmail = 'An email address is required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail.trim())) errors.customerEmail = 'Enter a valid email address'
+    if (pricingPreviewLoading || pricingPreviewErrorStatus === 409) errors.pricingPreview = pricingPreviewError || 'Wait for the current price total before submitting.'
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors)
@@ -452,7 +488,7 @@ function CustomerRequest({ navigate }) {
         <form noValidate onSubmit={handleFormSubmit} className="order-form">
           {orderStep === 1 && <div className="fitment-modal"><div className="fitment-heading"><span className="fitment-wheel">◉</span><h3>Select your tire size</h3></div><div className="fitment-progress"><div className={fitmentStage === 'width' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Width</b><span /></div><div className={fitmentStage === 'ratio' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Ratio</b><span /></div><div className={fitmentStage === 'diameter' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Diameter</b><span /></div><div className={fitmentStage === 'zip' ? 'fitment-progress-item active' : 'fitment-progress-item'}><b>Zip code</b><span /></div></div><div className="fitment-visual"><img className="fitment-guide" src={(FITMENT_GUIDES[fitmentStage] ?? FITMENT_GUIDES.width).src} alt={(FITMENT_GUIDES[fitmentStage] ?? FITMENT_GUIDES.width).alt} /></div><button type="button" className="fitment-back" onClick={goBackFitment} disabled={fitmentStage === 'width'}>← Back</button><div className="fitment-controls">{fitmentStage === 'zip' ? <div className="fitment-zip"><label htmlFor="fitmentZip">Where do you need me?</label><input id="fitmentZip" value={fitment.zip} onChange={event => setFitment(previous => ({ ...previous, zip: event.target.value }))} placeholder="ZIP code, like 02149" inputMode="numeric" /></div> : <><div className="fitment-search"><span>⌕</span><input value={fitmentSearch} onChange={event => searchSize(event.target.value)} onKeyDown={searchKey} placeholder="Search, or type the whole size" aria-label="Search tire size" inputMode="numeric" autoComplete="off" /></div><div className="fitment-options">{shownSizeOptions.map(value => <button type="button" className="fitment-option" data-testid={`fitment-option-${value}`} key={value} onClick={() => selectFitmentPart(fitmentStage, value)}>{value}</button>)}</div>{sizeQuery && shownSizeOptions.length === 0 && <div className="fitment-empty" role="status"><p>{typedWholeSize ? `${typedWholeSize} isn't a size I list here.` : `No sizes match “${sizeQuery}”.`} {typedWholeSize ? (widthOptions.includes(typedSize.width) ? 'Try the width on its own, like ' + typedSize.width + ', and pick from there.' : 'Check the width on the sidewall; it is the first number, like 225.') : 'Sizes read width, ratio, rim, like 225/35R19.'}</p><button type="button" className="fitment-clear" onClick={() => setFitmentSearch('')}>Clear search</button></div>}</>}</div><div className="fitment-footer"><span>{formData.tireSize ? `Selected: ${formData.tireSize}` : 'Select width, ratio, and diameter'}</span><button type="button" className="primary-action" data-testid="continue-to-tires" disabled={!formData.tireSize} onClick={continueFromSize}>Continue to tires <span>→</span></button></div></div>}
           {orderStep === 2 && <div className="step-panel"><button type="button" className="back-action" onClick={() => setOrderStep(1)}>← Change size</button><p className="panel-kicker">STEP 02 / YOUR TIRES</p><h3>Your tires. Your vehicle.</h3><p className="panel-note">Choose from tires in size <strong>{formData.tireSize}</strong>, then tell me what you drive.</p><VehicleDetails vehicle={vehicle} onVehicleChange={handleVehicleChange} value={formData.vehicleInfo} onChange={handleFormChange} /><h4 className="tire-list-heading">Choose your tire</h4>{shownList.tires === null ? <div className="tire-loading" role="status"><span className="tire-loading-mark" aria-hidden="true" /><p>Checking today&apos;s prices for <strong>{formData.tireSize}</strong>…</p></div> : matchingTires.length === 0 ? <div className="tire-empty"><p className="tire-empty-title">I don&apos;t sell {formData.tireSize} online yet.</p><p className="tire-empty-body">I can still get it. Text me and I&apos;ll sort it out, or pick a different size.</p><div className="tire-empty-actions"><a className="btn btn-primary" href={TEXT_HREF}>{TEXT_LABEL}</a><button type="button" className="btn btn-neutral" onClick={() => { setOrderStep(1); setFitmentStage('width'); setFitment({ width: '', ratio: '', diameter: '', zip: '' }); setFormData(previous => ({ ...previous, tireSize: '', tireSelection: '' })); setStepError('') }}>Choose another size</button></div></div> : <>{shownList.source === 'standard' && <p className="tire-list-note" role="status">Showing my standard list; today&apos;s stock and prices are confirmed when I review your request.</p>}{shownList.pending && <button type="button" className="btn btn-neutral tire-refresh" onClick={refreshTireList}>Today&apos;s prices are in. Refresh the list</button>}<div className="tire-options" data-source={shownList.source}>{visibleTires.map(tire => <button type="button" className={formData.tireSelection === tire.id ? 'tire-option selected' : 'tire-option'} data-testid={`tire-option-${tire.id}`} aria-pressed={formData.tireSelection === tire.id} onClick={() => chooseTire(tire)} key={tire.id} disabled={!tire.inStock}><span className="tire-art" aria-hidden="true" /><span className="tire-info"><strong>{tire.name}</strong><small>{tire.description}</small><small>{tire.inStock ? 'In stock' : 'Currently unavailable'}</small></span><b>${tire.price.toFixed(2)}<i>per tire</i></b></button>)}</div></>}{listNote && <p className={listNote.outcome === 'cleared' ? 'tire-reselect-note status-note-bad' : 'tire-reselect-note'} role="status" data-outcome={listNote.outcome}>{listNote.text}</p>}{hiddenTireCount > 0 && <button type="button" className="btn btn-neutral tire-show-more" data-remaining={hiddenTireCount} onClick={() => setTirePages(pages => pages + 1)}>Show {nextPageCount} more<small>{hiddenTireCount} of {orderedTires.length} not shown</small></button>}{matchingTires.length > 0 && <div className="tire-quantity"><span className="tire-quantity-label">How many tires?</span><div className="quantity-options">{QUANTITY_OPTIONS.map(value => <button type="button" key={value} className={formData.quantity === value ? 'quantity-option selected' : 'quantity-option'} data-testid={`quantity-option-${value}`} aria-pressed={formData.quantity === value} onClick={() => setFormData(previous => ({ ...previous, quantity: value }))}>{value}</button>)}</div>{selectedTire && <p className="tire-quantity-total">{formData.quantity} × ${selectedTire.price.toFixed(2)} = <b>${(selectedTire.price * formData.quantity).toFixed(2)}</b></p>}</div>}<button type="button" className="primary-action" data-testid="continue-to-mobile-service" onClick={continueFromVehicle} disabled={mustChooseAgain}>Continue to mobile service <span>→</span></button></div>}
-          {orderStep === 3 && <div className="step-panel"><button type="button" className="back-action" data-testid="back-to-tire-selection" onClick={() => setOrderStep(2)}>← Back to tire selection</button><p className="panel-kicker">STEP 03 / I COME TO YOU</p><h3>Let’s bring the shop to you.</h3><p className="panel-note">Tell me where to find your vehicle and when you’d prefer service.</p><div className="order-summary-line"><span>{formData.quantity} × {selectedTire?.name} · {formData.tireSize}</span><b>{formData.vehicleInfo}</b></div><ServiceDetails formData={formData} onChange={handleFormChange} errors={validationErrors} disposalFee={catalog.disposalFee} /><p className="quote-reassurance">No payment now. Ken reviews your request before you pay.</p><button type="submit" className="primary-action" data-testid="request-my-quote" disabled={submitting}>{submitting ? 'Sending…' : <>Request my quote <span>→</span></>}</button></div>}
+          {orderStep === 3 && <div className="step-panel"><button type="button" className="back-action" data-testid="back-to-tire-selection" onClick={() => setOrderStep(2)}>← Back to tire selection</button><p className="panel-kicker">STEP 03 / I COME TO YOU</p><h3>Let’s bring the shop to you.</h3><p className="panel-note">Tell me where to find your vehicle and when you’d prefer service.</p><div className="order-summary-line"><span>{formData.quantity} × {selectedTire?.name} · {formData.tireSize}</span><b>{formData.vehicleInfo}</b></div><ServiceDetails formData={formData} onChange={handleFormChange} errors={validationErrors} disposalFee={catalog.disposalFee} /><section className="pricing-preview" aria-labelledby="pricing-preview-heading" data-testid="pricing-preview"><div className="pricing-preview-heading"><div><p className="panel-kicker">YOUR ESTIMATED CHARGES</p><h4 id="pricing-preview-heading">Everything included</h4></div><button type="button" className="link-action" data-testid="change-pricing-zip" onClick={changeServiceZip}>Change ZIP</button></div>{pricingPreviewLoading && <p className="pricing-preview-status" role="status">Calculating the current total…</p>}{pricingPreviewError && <div className="pricing-preview-status status-note-bad" role="alert"><p>{pricingPreviewError}</p>{pricingPreviewErrorStatus === 409 && <button type="button" className="link-action" onClick={() => setOrderStep(2)}>Choose another tire</button>}</div>}{pricingPreview && <><div className="pricing-preview-lines">{pricingPreview.lineItems.map((line, index) => <div className="pricing-preview-line" key={`${line.description}-${index}`}><span>{line.description}{line.serviceZip && <small>ZIP {line.serviceZip}</small>}<small>{line.quantity} × {money(line.unitPrice)}</small></span><b>{money(line.lineTotal)}</b></div>)}</div><div className="pricing-preview-totals"><p><span>Subtotal</span><b>{money(pricingPreview.subtotal)}</b></p>{pricingPreview.tax && <p><span>Tax ({(pricingPreview.tax.rate * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}%)</span><b>{money(pricingPreview.tax.amount)}</b></p>}<p className="pricing-preview-total"><span>Estimated total</span><b data-testid="pricing-preview-total">{money(pricingPreview.total)}</b></p></div></>}</section><p className="quote-reassurance">No payment now. Ken reviews your request before you pay.</p><button type="submit" className="primary-action" data-testid="request-my-quote" disabled={submitting || pricingPreviewLoading || pricingPreviewErrorStatus === 409}>{submitting ? 'Sending…' : <>Request my quote <span>→</span></>}</button></div>}
           {stepError && <p className="step-error" role="alert">{stepError}</p>}
         </form>
         {submissionMessage && <div className="success-message" role="status">

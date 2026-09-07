@@ -113,6 +113,43 @@ test('with tax off (the default everywhere), a request never carries a tax key a
   assert.equal('tax' in quotes.get(request.id, 'owner').quote, false)
 })
 
+test('a preview is customer-safe, stores nothing, and agrees exactly with the submitted draft', t => {
+  const { inventory, quotes } = setup(t)
+  inventory.savePricingSettings({ tax: { rate: 0.0625, appliesTo: 'all' } })
+  const [mobile] = inventory.getCatalogueLines()
+  inventory.saveCatalogueLines([
+    { ...mobile, amountCents: 6000, taxable: true },
+    { id: 'install', label: 'Tire installation', amountCents: 1500, basis: 'perTire', mode: 'automatic', taxable: true, enabled: true,
+      amountOverrides: { sizes: { [SIZE]: 2000 }, skus: { a: 2500 } } },
+    { id: 'disposal', label: 'Old tire disposal', amountCents: 700, basis: 'perTire', mode: 'optional', taxable: true, enabled: true },
+  ])
+
+  const selection = { tireSelection: 'giga-a', quantity: 2, serviceZip: '02149', disposeOldTires: true }
+  const before = quotes.listForOwner().length
+  const preview = quotes.preview(selection)
+  assert.equal(quotes.listForOwner().length, before, 'preview creates neither a request nor a quote')
+  assert.deepEqual(Object.keys(preview).sort(), ['lineItems', 'serviceZip', 'subtotal', 'tax', 'total'])
+  assert.ok(preview.lineItems.some(line => line.description === 'Tire installation' && line.unitPrice === 25), 'SKU amount wins over size amount')
+  assert.ok(preview.lineItems.some(line => line.description === 'Old tire disposal' && line.quantity === 2))
+  assert.equal(preview.lineItems.find(line => line.description === 'Mobile installation service').serviceZip, '02149')
+  assert.deepEqual(Object.keys(preview.tax).sort(), ['amount', 'rate'], 'the internal tax applicability rule is not public')
+  for (const leak of ['supplierPrice', 'shipping', 'markup', 'sku', 'stock', 'exceptionReasons']) {
+    assert.equal(JSON.stringify(preview).includes(leak), false, `${leak} is not in the preview`)
+  }
+
+  const submitted = quotes.submit(form({ ...selection }))
+  assert.deepEqual(preview.lineItems.map(({ description, quantity, unitPrice }) => ({ description, quantity, unitPrice })), submitted.quote.lineItems)
+  assert.equal(preview.subtotal, submitted.quote.subtotal)
+  assert.equal(preview.tax.amount, submitted.quote.tax.amount)
+  assert.equal(preview.total, submitted.quote.total)
+})
+
+test('a stale tire selection cannot produce a preview', t => {
+  const { quotes } = setup(t)
+  assert.throws(() => quotes.preview({ tireSelection: 'giga-gone', quantity: 4, serviceZip: '02149' }), /isn't one I offer right now/)
+  assert.equal(quotes.listForOwner().length, 0)
+})
+
 test('an owner adjustment changes the current quote and keeps the original draft', async t => {
   const { quotes } = setup(t)
   const original = quotes.submit(form())
@@ -574,7 +611,7 @@ test('a request stored before contact fields existed renders without error, cont
 /* ------------------------------------------------- who reads what (t44, #65) */
 
 /** The fields a customer read may carry, and the ones it never may. */
-const CUSTOMER_FIELDS = ['id', 'vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip', 'disposeOldTires', 'createdAt', 'updatedAt']
+const CUSTOMER_FIELDS = ['id', 'vehicleInfo', 'tireSelection', 'quantity', 'date', 'locationType', 'serviceZip', 'disposeOldTires', 'chosenLineIds', 'createdAt', 'updatedAt']
 const OWNER_ONLY = ['customerName', 'customerEmail', 'customerPhone', 'location', 'locationNotes']
 
 test('a request read by id is the customer shape: no name, email, phone or location notes', async t => {
@@ -744,6 +781,20 @@ test('one browser key and one email address have limits of their own', async t =
   assert.equal((await post(base, '/api/requests', form({ customerKey: keys[3], customerEmail: 'other@example.com' }))).status, 201, 'the key itself is fine')
 })
 
+test('pricing previews share the public address and browser limits without consuming the email submission cap', async t => {
+  const { inventory, quotes } = setup(t)
+  const limiter = new RateLimiter({ rules: { ...smallRules, publicPerIp: { max: 100, windowMs: 60_000 } }, log: () => {} })
+  const base = await serve(t, quotes, inventory, { limiter })
+  const body = { customerKey: KEY, tireSelection: 'giga-a', quantity: 4, serviceZip: '02149' }
+
+  assert.equal((await post(base, '/api/requests/preview', body)).status, 200)
+  assert.equal((await post(base, '/api/requests/preview', body)).status, 200)
+  const refused = await post(base, '/api/requests/preview', body)
+  assert.equal(refused.status, 429)
+  assert.match((await refused.json()).error, /this browser/)
+  assert.equal(quotes.listForOwner().length, 0)
+})
+
 test('a public body past the ceiling is refused before it is parsed, and the health check is never counted', async t => {
   const { inventory, quotes } = setup(t)
   const base = await serve(t, quotes, inventory, { limiter: new RateLimiter({ rules: smallRules, log: () => {} }) })
@@ -814,6 +865,13 @@ test('a customer with no session can submit, read and pay; the owner API still c
   const { inventory, quotes } = setup(t)
   const base = await serve(t, quotes, inventory)
 
+  const previewed = await post(base, '/api/requests/preview', {
+    customerKey: KEY, tireSelection: 'giga-a', quantity: 4, serviceZip: '02149', disposeOldTires: false,
+  })
+  assert.equal(previewed.status, 200, 'pricing preview is public without an owner session')
+  assert.equal((await previewed.json()).preview.total, quotes.preview(form()).total)
+  assert.equal(quotes.listForOwner().length, 0, 'the preview did not submit anything')
+
   const created = await post(base, '/api/requests', form())
   assert.equal(created.status, 201, 'no cookie, and the customer is still served')
   const { request, quote } = await created.json()
@@ -855,6 +913,7 @@ test('the public rule opens the customer paths and nothing else', async () => {
   assert.equal(isPublicApiCall('GET', '/api/catalog'), true)
   assert.equal(isPublicApiCall('GET', '/api/health'), true)
   assert.equal(isPublicApiCall('POST', '/api/requests'), true)
+  assert.equal(isPublicApiCall('POST', '/api/requests/preview'), true)
   assert.equal(isPublicApiCall('GET', '/api/requests'), true)
   assert.equal(isPublicApiCall('GET', '/api/requests/abc123'), true)
   assert.equal(isPublicApiCall('POST', '/api/requests/abc123/pay'), true)
@@ -867,6 +926,7 @@ test('the public rule opens the customer paths and nothing else', async () => {
   assert.equal(isPublicApiCall('GET', '/api/owner/health'), false)
   assert.equal(isPublicApiCall('DELETE', '/api/requests/abc123'), false)
   assert.equal(isPublicApiCall('POST', '/api/requests/abc123'), false)
+  assert.equal(isPublicApiCall('GET', '/api/requests/preview'), false)
   assert.equal(isPublicApiCall('POST', '/api/requests/abc123/approve'), false)
   assert.equal(isPublicApiCall('GET', '/api/owner/inventory'), false)
   assert.equal(isPublicApiCall('GET', '/api/requests/abc/pay'), false)

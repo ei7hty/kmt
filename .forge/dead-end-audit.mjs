@@ -112,6 +112,14 @@ async function submitRequest(page, { size, tireId, vehicle, location, date, zip 
     await page.fill('#date', date, step);
     await page.fill('#customerName', customerName, step);
     await page.fill('#customerEmail', customerEmail, step);
+    // A serviceable ZIP resolves to itemised charges; an out-of-area ZIP
+    // resolves to the server refusal the submit path will repeat. Either is a
+    // completed preview response, so do not wait forever for a total that the
+    // server correctly declined to calculate.
+    await Promise.race([
+      page.getByTestId('pricing-preview-total').waitFor(step),
+      page.locator('.pricing-preview [role="alert"]').waitFor(step),
+    ]);
     await page.click('button[type="submit"]', step);
   } catch (error) {
     // This is exactly how the audit rotted the first time: the customer flow was
@@ -781,6 +789,7 @@ async function main() {
     await page.fill('#date', LATEST, { timeout: 5000 });
     await page.fill('#customerName', 'Jamie Rivera', { timeout: 5000 });
     await page.fill('#customerEmail', AUDIT_EMAIL, { timeout: 5000 });
+    await page.getByTestId('pricing-preview-total').waitFor({ timeout: 5000 });
     await page.click('button[type="submit"]', { timeout: 5000 });
 
     const draftMsg = await page.locator('[role="status"]').first().textContent().catch(() => null);

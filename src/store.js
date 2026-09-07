@@ -83,6 +83,7 @@ async function call(path, options = {}) {
     // show -- which term conflicts with which constraint -- and a message
     // alone cannot say that.
     failure.data = data
+    failure.status = response.status
     throw failure
   }
   return data
@@ -96,6 +97,15 @@ export async function submitRequest(request) {
     method: 'POST',
     body: JSON.stringify({ ...request, customerKey: customerKey() }),
   })
+}
+
+/** Server-authoritative pricing only; it stores nothing and never charges. */
+export async function previewRequestPrice(request) {
+  const data = await call('/api/requests/preview', {
+    method: 'POST',
+    body: JSON.stringify({ ...request, customerKey: customerKey() }),
+  })
+  return data.preview
 }
 
 /** A non-tire service message is deliberately separate from a quote request. */

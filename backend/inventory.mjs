@@ -304,6 +304,20 @@ export class Inventory {
       if (typeof line.taxable !== 'boolean') throw new InputError(`Line ${index + 1} needs taxable to be true or false.`)
       if (typeof line.enabled !== 'boolean') throw new InputError(`Line ${index + 1} needs enabled to be true or false.`)
 
+      const amountOverrides = { sizes: {}, skus: {} }
+      for (const scope of ['sizes', 'skus']) {
+        const values = line.amountOverrides?.[scope] ?? {}
+        if (!values || typeof values !== 'object' || Array.isArray(values)) {
+          throw new InputError(`Line ${index + 1} ${scope} overrides must be an object.`)
+        }
+        for (const [target, amountCents] of Object.entries(values)) {
+          if (!target.trim() || !Number.isInteger(amountCents) || amountCents < 0 || amountCents > 10_000_000) {
+            throw new InputError(`Line ${index + 1} has an invalid ${scope} override.`)
+          }
+          amountOverrides[scope][scope === 'skus' ? target.trim().toLowerCase() : target.trim()] = amountCents
+        }
+      }
+
       // A new line (from the owner screen's "add line") arrives with no id;
       // an existing one keeps the id it was given here on its first save.
       const id = typeof line.id === 'string' && line.id.trim() ? line.id.trim() : randomBytes(8).toString('hex')
@@ -311,6 +325,7 @@ export class Inventory {
       seenIds.add(id)
 
       const shaped = { id, label, amountCents: line.amountCents, basis: line.basis, mode: line.mode, taxable: line.taxable, enabled: line.enabled }
+      if (Object.keys(amountOverrides.sizes).length || Object.keys(amountOverrides.skus).length) shaped.amountOverrides = amountOverrides
 
       const existing = previous.get(id)
       if (existing && 'isPlaceholder' in existing) {
