@@ -138,16 +138,36 @@ export function readMailConfig(env = process.env) {
   const host = (env.KMT_MAIL_SMTP_HOST || '').trim()
   const user = (env.KMT_MAIL_SMTP_USER || '').trim()
   const password = env.KMT_MAIL_SMTP_PASSWORD || ''
+  // A Google service account with domain-wide delegation, impersonating the
+  // KMT_MAIL_SMTP_USER mailbox. The server signs its own assertions, so unlike
+  // an App Password there is nothing an unrelated account event can revoke,
+  // and unlike a refresh token there is nothing to expire.
+  const serviceClient = (env.KMT_MAIL_SERVICE_CLIENT || '').trim()
+  // Fly secrets are awkward with multi-line values, so a PEM arrives either
+  // with real newlines or with an escaped backslash-n in their place. Both
+  // are accepted: a key differing only in how its newlines survived transit
+  // is the same key, and rejecting one of them fails authentication with a
+  // cause that is invisible from the error text.
+  const privateKey = (env.KMT_MAIL_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim()
   const port = Number(env.KMT_MAIL_SMTP_PORT || 587)
   const from = (env.KMT_MAIL_FROM || '').trim()
   const ownerEmail = (env.KMT_OWNER_EMAIL || '').trim()
   const ownerName = (env.KMT_OWNER_NAME || 'Ken\'s Mobile Tire').trim()
-  const configured = Boolean(host || user || password)
+  const serviceAccount = Boolean(serviceClient || privateKey)
+  const configured = Boolean(host || user || password || serviceAccount)
   if (configured) {
     if (!from) throw new Error('SMTP is configured but KMT_MAIL_FROM is not. Set it to a mailbox that authenticates on the sending server (for Gmail, the KMT_MAIL_SMTP_USER mailbox). Until the domain has SPF and DKIM, a domain address sent through another provider fails authentication silently: filed as spam while the outbox says sent.')
     if (!ownerEmail) throw new Error('SMTP is configured but KMT_OWNER_EMAIL is not. Set the address the owner reads and customers reply to.')
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`KMT_MAIL_SMTP_PORT must be a port number, got ${JSON.stringify(env.KMT_MAIL_SMTP_PORT)}.`)
-    if ((user && !password) || (!user && password)) throw new Error('KMT_MAIL_SMTP_USER and KMT_MAIL_SMTP_PASSWORD go together: set both for an authenticated mailbox or relay, or neither for an IP-allowlisted relay.')
+    // Each half of a credential is required only once its other half appears:
+    // a partially-set credential is a misconfiguration, an entirely absent one
+    // is a different supported mode.
+    if (serviceClient && !privateKey) throw new Error('KMT_MAIL_SERVICE_CLIENT is set but KMT_MAIL_PRIVATE_KEY is not. Both come from the service account key file; set both or neither.')
+    if (privateKey && !serviceClient) throw new Error('KMT_MAIL_PRIVATE_KEY is set but KMT_MAIL_SERVICE_CLIENT is not. Both come from the service account key file; set both or neither.')
+    if (serviceAccount && !user) throw new Error('A service account needs KMT_MAIL_SMTP_USER: domain-wide delegation authenticates BY impersonating a real mailbox, so this is the mailbox it acts as, not an optional label.')
+    // Only enforced when no service account is present. With one, the App
+    // Password half is free to be absent -- that is the point of the cutover.
+    if (!serviceAccount && ((user && !password) || (!user && password))) throw new Error('KMT_MAIL_SMTP_USER and KMT_MAIL_SMTP_PASSWORD go together: set both for an authenticated mailbox or relay, or neither for an IP-allowlisted relay.')
   }
   // The site's own domain, for two facts the operator confirms at boot. An
   // interim sender is a from-address not on it: the user's stopgap while the
@@ -164,9 +184,26 @@ export function readMailConfig(env = process.env) {
   if (configured && user && domainOf(from) && domainOf(user) && domainOf(from) !== domainOf(user)) {
     warnings.push(`KMT_MAIL_FROM is on ${domainOf(from)} but the authenticating mailbox KMT_MAIL_SMTP_USER is on ${domainOf(user)}. ${domainOf(from)}'s SPF and DKIM must authorise this server, or mail is filed as spam while the outbox records it sent.`)
   }
+  // Both credentials set is a cutover in progress, not an error. The service
+  // account wins and the boot line says so.
+  //
+  // Deliberately NOT a refusal, and the reason is a failure this repository
+  // has already met from the other side: `readAuthConfig` throwing on boot
+  // does not cause a mail outage, it stops the server starting -- taking the
+  // customer wizard, quotes and /status down with it. Refusing an ambiguous
+  // mail credential would turn a safe intermediate state, which is exactly
+  // what a two-changes-not-one cutover produces, into a total outage. So the
+  // ambiguity resolves loudly instead: precedence here, and `describeMail`
+  // prints which one is live before anyone trusts a send.
+  const auth = serviceAccount ? 'service-account' : (user && password ? 'password' : 'none')
+  if (serviceAccount && password) {
+    warnings.push('Both a service account and an App Password are configured. The service account is being used; KMT_MAIL_SMTP_PASSWORD is ignored and can be unset once a send has been confirmed.')
+  }
   return {
     provider: configured ? 'smtp' : 'none',
+    auth,
     host: host || 'smtp-relay.gmail.com', port, user, password,
+    serviceClient, privateKey,
     from, ownerEmail, ownerName,
     interim, warnings,
   }
@@ -176,7 +213,15 @@ export function readMailConfig(env = process.env) {
 export function describeMail(config) {
   const lines = []
   if (config.provider === 'none') lines.push('Mail: no SMTP configured; every message is recorded in the outbox as queued and nothing is sent.')
-  else lines.push(`Mail: SMTP via ${config.host}:${config.port}${config.user ? ' (authenticated mailbox)' : ' (relay, no auth)'}${config.interim ? ' -- INTERIM sender, not on the site domain; a stopgap, not the end state' : ''}.`)
+  else {
+    // Which credential is live, named at boot, because "SMTP is configured" is
+    // no longer one thing. During a cutover both may be set and only this line
+    // says which one a send will actually use.
+    const how = config.auth === 'service-account'
+      ? `service account impersonating ${config.user}, no credential to expire`
+      : config.auth === 'password' ? 'authenticated mailbox (App Password)' : 'relay, no auth'
+    lines.push(`Mail: SMTP via ${config.host}:${config.port} (${how})${config.interim ? ' -- INTERIM sender, not on the site domain; a stopgap, not the end state' : ''}.`)
+  }
   for (const warning of config.warnings) lines.push(`WARNING: ${warning}`)
   return lines
 }
@@ -185,6 +230,29 @@ export function describeMail(config) {
 export class NullAdapter {
   name = 'none'
   async send() { return { providerId: null, sent: false } }
+}
+
+/**
+ * The three ways this server may authenticate to SMTP, as one place rather
+ * than a ternary inside the options object. Order matters: a service account
+ * wins over an App Password, which `readMailConfig` also decides and warns
+ * about, so a cutover with both set is unambiguous in both places.
+ *
+ * `type: 'OAuth2'` with `serviceClient`/`privateKey` is nodemailer's
+ * domain-wide-delegation form: it signs a JWT assertion for `user` and
+ * exchanges it for an access token itself, per send, with no token stored
+ * anywhere and nothing to expire. `user` is not a label here -- delegation
+ * authenticates BY impersonating that mailbox, so it is load-bearing.
+ *
+ * The empty case is an IP-allowlisted relay, which authenticates by source
+ * address and must send no AUTH at all.
+ */
+function authOptions({ user, password, serviceClient, privateKey }) {
+  if (serviceClient && privateKey) {
+    return { auth: { type: 'OAuth2', user, serviceClient, privateKey } }
+  }
+  if (user) return { auth: { user, pass: password } }
+  return {}
 }
 
 /**
@@ -199,12 +267,12 @@ export class NullAdapter {
  */
 export class SmtpAdapter {
   name = 'smtp'
-  constructor({ host, port = 587, user = '', password = '', transporter = null }) {
+  constructor({ host, port = 587, user = '', password = '', serviceClient = '', privateKey = '', transporter = null }) {
     if (!host) throw new Error('The SMTP adapter needs a host.')
     this.options = {
       host, port,
       secure: port === 465,
-      ...(user ? { auth: { user, pass: password } } : {}),
+      ...authOptions({ user, password, serviceClient, privateKey }),
       connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 30000,
     }
     this.transporter = transporter
@@ -549,7 +617,10 @@ export class Mailer {
 export function createMailer({ outbox, quotes, env = process.env, origin, log = console.log }) {
   const config = readMailConfig(env)
   const adapter = config.provider === 'smtp'
-    ? new SmtpAdapter({ host: config.host, port: config.port, user: config.user, password: config.password })
+    ? new SmtpAdapter({
+      host: config.host, port: config.port, user: config.user, password: config.password,
+      serviceClient: config.serviceClient, privateKey: config.privateKey,
+    })
     : new NullAdapter()
   return new Mailer({ outbox, quotes, adapter, config, origin, log })
 }

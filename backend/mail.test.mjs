@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { Inventory } from './inventory.mjs'
 import { Quotes } from './quotes.mjs'
 import { Outbox, OUTBOX_PERSONAL_DATA_KEYS } from './outbox.mjs'
-import { AUTO_RETRY_TYPES, Mailer, drainMail, NullAdapter, SmtpAdapter, addressLabel, describeMail, readMailConfig } from './mail.mjs'
+import { AUTO_RETRY_TYPES, Mailer, drainMail, NullAdapter, SmtpAdapter, addressLabel, describeMail, readMailConfig , createMailer } from './mail.mjs'
 import { MAIL_TYPES, TEMPLATES } from './mail-templates.mjs'
 import { createApi, createMailStatusApi, createRequestsApi } from './api.mjs'
 import { isMonitorAuthorized, readMonitorConfig } from './auth.mjs'
@@ -1148,4 +1148,116 @@ test('#407: the route answers 409 rather than 500 when a resend is refused', asy
   const response = await fetch(`${base}/api/owner/outbox/${row.id}/resend`, { method: 'POST' })
   assert.equal(response.status, 409, 'a refused resend is a conflict the owner screen can render, not a server error')
   assert.match((await response.json()).error, /bounced/)
+})
+
+/* ------------------------------------------- service account auth (#285) */
+
+const SA_BASE = {
+  KMT_MAIL_SMTP_HOST: 'smtp.gmail.com',
+  KMT_MAIL_SMTP_USER: 'quotes@kensmobiletire.com',
+  KMT_MAIL_FROM: 'quotes@kensmobiletire.com',
+  KMT_OWNER_EMAIL: 'ken@kensmobiletire.com',
+}
+const SA_KEY = '-----BEGIN PRIVATE KEY-----\nMIIBVQIBADAN\n-----END PRIVATE KEY-----\n'
+
+test('a service account is its own auth mode: no App Password needed, and the mailbox is required', () => {
+  const config = readMailConfig({ ...SA_BASE, KMT_MAIL_SERVICE_CLIENT: '1234567890', KMT_MAIL_PRIVATE_KEY: SA_KEY })
+  assert.equal(config.provider, 'smtp')
+  assert.equal(config.auth, 'service-account')
+  assert.equal(config.serviceClient, '1234567890')
+  assert.equal(config.privateKey, SA_KEY.trim())
+  assert.equal(config.password, '', 'and no App Password is involved')
+  assert.deepEqual(config.warnings, [])
+
+  // Delegation authenticates BY impersonating a mailbox, so the user is not an
+  // optional label here the way it is for a relay.
+  assert.throws(
+    () => readMailConfig({ ...SA_BASE, KMT_MAIL_SMTP_USER: '', KMT_MAIL_SERVICE_CLIENT: '1', KMT_MAIL_PRIVATE_KEY: SA_KEY }),
+    /service account needs KMT_MAIL_SMTP_USER/,
+  )
+})
+
+test('each half of the service account credential is required once the other appears', () => {
+  // The absent case, not the wrong one: half a credential is a
+  // misconfiguration, none of it is a different supported mode.
+  assert.throws(() => readMailConfig({ ...SA_BASE, KMT_MAIL_SERVICE_CLIENT: '1' }), /KMT_MAIL_PRIVATE_KEY is not/)
+  assert.throws(() => readMailConfig({ ...SA_BASE, KMT_MAIL_PRIVATE_KEY: SA_KEY }), /KMT_MAIL_SERVICE_CLIENT is not/)
+
+  // And neither half set is still the App Password mode, unbroken.
+  const password = readMailConfig({ ...SA_BASE, KMT_MAIL_SMTP_PASSWORD: 'app-password' })
+  assert.equal(password.auth, 'password')
+  assert.equal(password.serviceClient, '')
+})
+
+test('a PEM survives Fly secrets in either newline form, and both give the same key', () => {
+  const escaped = SA_KEY.replace(/\n/g, String.raw`\n`)
+  assert.notEqual(escaped, SA_KEY, 'the two forms really are different strings before normalising')
+
+  const real = readMailConfig({ ...SA_BASE, KMT_MAIL_SERVICE_CLIENT: '1', KMT_MAIL_PRIVATE_KEY: SA_KEY })
+  const literal = readMailConfig({ ...SA_BASE, KMT_MAIL_SERVICE_CLIENT: '1', KMT_MAIL_PRIVATE_KEY: escaped })
+  assert.equal(literal.privateKey, real.privateKey,
+    'a key differing only in how its newlines survived transit is the same key')
+  assert.match(literal.privateKey, /^-----BEGIN PRIVATE KEY-----\n/)
+})
+
+test('both credentials set is a cutover, not an error: the service account wins and says so', () => {
+  // Deliberately NOT a boot refusal. readAuthConfig throwing on boot does not
+  // cause a mail outage, it stops the server starting -- so refusing an
+  // ambiguous mail credential would turn the safe intermediate state of a
+  // two-changes-not-one cutover into a total outage.
+  const config = readMailConfig({
+    ...SA_BASE,
+    KMT_MAIL_SMTP_PASSWORD: 'the-old-app-password',
+    KMT_MAIL_SERVICE_CLIENT: '1234567890',
+    KMT_MAIL_PRIVATE_KEY: SA_KEY,
+  })
+  assert.equal(config.auth, 'service-account', 'the service account is what a send will use')
+  assert.equal(config.warnings.length, 1)
+  assert.match(config.warnings[0], /service account is being used/)
+  assert.match(config.warnings[0], /can be unset once a send has been confirmed/)
+})
+
+test('the boot line names which credential is live, because "SMTP is configured" is no longer one thing', () => {
+  const sa = describeMail(readMailConfig({ ...SA_BASE, KMT_MAIL_SERVICE_CLIENT: '1', KMT_MAIL_PRIVATE_KEY: SA_KEY }))
+  assert.match(sa[0], /service account impersonating quotes@kensmobiletire\.com/)
+  assert.match(sa[0], /no credential to expire/)
+
+  const password = describeMail(readMailConfig({ ...SA_BASE, KMT_MAIL_SMTP_PASSWORD: 'app' }))
+  assert.match(password[0], /authenticated mailbox \(App Password\)/)
+
+  const relay = describeMail(readMailConfig({
+    KMT_MAIL_SMTP_HOST: 'smtp-relay.gmail.com', KMT_MAIL_FROM: 'q@x.com', KMT_OWNER_EMAIL: 'o@x.com',
+  }))
+  assert.match(relay[0], /relay, no auth/)
+})
+
+test('the adapter builds nodemailer OAuth2 options from a service account, and plain auth without one', () => {
+  const sa = new SmtpAdapter({ host: 'smtp.gmail.com', user: 'quotes@kensmobiletire.com', serviceClient: '123', privateKey: SA_KEY })
+  assert.deepEqual(sa.options.auth, {
+    type: 'OAuth2', user: 'quotes@kensmobiletire.com', serviceClient: '123', privateKey: SA_KEY,
+  }, 'nodemailer signs its own assertion per send: nothing stored, nothing to expire')
+
+  const password = new SmtpAdapter({ host: 'smtp.gmail.com', user: 'q@x.com', password: 'app' })
+  assert.deepEqual(password.options.auth, { user: 'q@x.com', pass: 'app' }, 'the App Password path is untouched')
+
+  const relay = new SmtpAdapter({ host: 'smtp-relay.gmail.com' })
+  assert.equal(relay.options.auth, undefined, 'an IP-allowlisted relay must send no AUTH at all')
+
+  // Precedence matches readMailConfig's, so a cutover is unambiguous in both.
+  const both = new SmtpAdapter({ host: 'smtp.gmail.com', user: 'q@x.com', password: 'app', serviceClient: '123', privateKey: SA_KEY })
+  assert.equal(both.options.auth.type, 'OAuth2')
+  assert.equal(both.options.auth.pass, undefined)
+})
+
+test('createMailer hands the service account through to the adapter it builds', t => {
+  const { inventory, quotes, outbox } = world(t, { adapter: new NullAdapter() })
+  void inventory
+  const mailer = createMailer({
+    outbox, quotes, origin: 'https://x',
+    env: { ...SA_BASE, KMT_MAIL_SERVICE_CLIENT: '1234567890', KMT_MAIL_PRIVATE_KEY: SA_KEY },
+    log: () => {},
+  })
+  assert.equal(mailer.adapter.name, 'smtp', 'still SMTP -- the transport did not change, only how it authenticates')
+  assert.equal(mailer.adapter.options.auth.type, 'OAuth2')
+  assert.equal(mailer.adapter.options.auth.serviceClient, '1234567890')
 })
