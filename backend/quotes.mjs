@@ -371,6 +371,23 @@ function cleanRequest(input, today) {
  *
  * `moveTo` takes an `actor` so the sign-in work has a seam to fill; until then
  * every owner decision falls back to this.
+ *
+ * ## One column keeps the latest decision, not a history -- and when that stops
+ * ## being good enough
+ *
+ * A quote goes draft -> sent -> paid -> done, so marking a job done overwrites
+ * who sent it. With one owner those are the same person and nothing is lost.
+ *
+ * **The trigger is a second Workspace account, not the sign-in change.**
+ * Domain-only sign-in with exactly one `@kensmobiletire.com` account is still
+ * one decider and this column stays honest; the history only starts being lost
+ * when two people can decide, and from that moment it is lost silently and
+ * immediately. That is a condition somebody can check -- count the accounts --
+ * rather than a judgement about whether a project is far enough along.
+ *
+ * So an append-only events table is a **precondition of the second account**,
+ * not a follow-up to #290. Its place is here. It is deliberately not built,
+ * because today there is no accumulating loss to get ahead of.
  */
 export const SHARED_PASSWORD_ACTOR = 'owner:shared-password'
 
