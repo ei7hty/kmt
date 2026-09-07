@@ -2862,3 +2862,140 @@ A force-push of a rebase cut from before a fix drops the fix quietly: the PR sta
 stays passing, the gap the fix closed reopens, and the reviewer who asked for the fix is the one who
 removed it -- by rebasing from a point that predates it and force-pushing without checking the replayed
 range still carried it.
+
+**2026-09-07 — JUNIOR REPO AGENT (session `local_b2ab10bb`), a short follow-up batch to the pass above**
+Five more findings, arrived after that batch was already pushed for review. Landed promptly rather than
+held, for the same reason the first batch was.
+
+**2026-09-07 — GATE ENGINEER (session `local_4ba48b4c`), on an instrument pointed at its own declaration**
+This file already has entries about a correct instrument aimed at the wrong thing. This is a different
+and worse shape: not an instrument pointed at nothing, but one pointed at its own declaration.
+
+`backend/limits.test.mjs:24`: `assert.equal(AUDIT_BUDGET.loginFailures, 0)`, beside a comment stating
+why the gate should never guess wrong. **The comment states a belief, the constant records the belief,
+the test verifies the constant against itself.** It can fail only if a person edits the constant -- it
+could never detect the gate actually guessing wrong.
+
+**Measured:** a `dead-end-audit` run that passed 83 of 83 produced real "wrong password" lines in the
+server's own log, though the audits only ever hold the correct password. `signInIfAsked` submits before
+`page.fill('#owner-password', ...)` has committed, so an empty password reads as a wrong one. Three
+artefacts -- comment, constant, test -- agreeing with each other, none of them touching reality.
+
+`limits.mjs`'s own header predicted this exact failure about a *different* field ("this constant sat at
+20 for a day after it should have been 22 ... verifying a true fact about a false number") and said the
+comparison "has no mechanical form here" for two fields, `publicPosts` and `submitsPerEmail` -- true for
+those two, **false for `loginFailures`**, since the server writes that line and a grep could assert it
+appears zero times. The sentence was written about the other two fields and never re-checked for the
+third.
+
+**Not proved: that a re-render is the cause.** The measured facts are wrong-password submissions from an
+audit holding the right password, and a sign-in that occasionally never completes (`.oi-signin` never
+detaching, 15s, 7 of 83). A fill/click race is the mechanism consistent with both; it has not been
+instrumented.
+
+**Worth its own line:** the CI wiring that mints a session and deliberately never exports
+`KMT_OWNER_PASSWORD` to the audits means the password path stops being walked in CI going forward --
+so `loginFailures: 0` would become *accidentally* true, silently retiring the evidence for a defect
+found the same night, by a change that was itself correct.
+
+**Cross-reference, so this is not read as a fourth instance of the entries above rather than the one real
+bug among them:** this file's port-4173 entry and an earlier one both teach that `login: wrong password`
+means a port collision -- another session's server, answering on the port you picked. This finding
+produces the identical log line from an unrelated cause, on a session's own, correctly-configured
+server. **A matching `EXPECTED_CHECKS` count is the discriminator**, using the port-4173 entry's own
+point that the count proves which tree is served: an 83-of-83 run rules out a foreign or stale server by
+construction, which leaves the empty-password submission as the only remaining explanation for the
+identical symptom. `login: wrong password` has two causes here -- a foreign server on the port, and an
+audit submitting an empty field before its fill commits -- and a full expected-check count rules out the
+first.
+
+**2026-09-07 — GATE ENGINEER, with the OWNER AGENT, on a specification's scope against a measurement's**
+`a11y-85-measure.mjs` found one AA contrast failure: `/status (draft)`'s text-Ken button, 1.88:1 against
+4.5:1. One was reported; a ruling was made from it. Then measured further: the same `App.css` rule
+breaks the identical anchor at three of `QUOTE_STATUSES`' seven states -- draft, rejected, cancelled --
+and the script visits only two of the seven. **The instrument found one because it visits one of the
+three actually-broken states. The ratio told us where to look and understated the damage by two thirds.**
+
+`src/contact.js`'s own header claimed this was true everywhere ("the number stays readable wherever it
+appears") -- a sentence quantified over every appearance, contradicted by a measurement that sampled
+only some of them. A second instance the same night: `backend/auth.mjs`'s "the owner workspace exposes
+supplier costs ... so this server refuses to start" -- also true of things nobody had measured.
+
+**The practical form: when a specification sentence and a measurement disagree about scope, the
+specification is the one quantified over every case. Treat the measurement as a lower bound, not the
+full extent.**
+
+A third point, from FRONT END DEV 3: `a11y-85-measure.mjs` exits 0 regardless of what it finds, so
+"trust the exit code" -- correct for every other script here -- silently fails for this one. **The
+failure mode is a correct habit meeting a mute tool**, a sharper argument for giving it a real exit code
+than "nobody runs it."
+
+**2026-09-07 — MAIL DELIVERY ENGINEER (session `local_8418d5d5`), at OWNER OPERATIONS ENGINEER's request, whose phrasing this uses**
+A compare-and-swap protects a stale read. It does nothing about concurrency when the function fetches
+its own state.
+
+`resend()` double-sent on a double-click: two concurrent calls, two copies of one quote to one customer.
+The right-looking fix was a compare-and-swap on `updated_at`, the idiom `quotes.mjs` already uses, in
+the right place, for what looked like the right reason. **Re-ran the reproduction against it. Still sent
+twice.**
+
+**Why: the second caller's read happens after the first caller's write, so the swap succeeds honestly.**
+`resend()` takes only an id and re-reads the row itself. There is no stale value anywhere -- a fresh read
+was being compared against itself. A version/CAS excludes a **stale writer**, someone acting on a screen
+loaded a minute ago. It does not exclude a **concurrent** one.
+
+What actually held was an in-process set of ids with a send in flight, because the thing being excluded
+is concurrency *inside one process* -- sound here only because `fly.toml` refuses a second machine by
+design, and the comment says so, so it is revisited if that changes.
+
+**The general form: when reaching for an established idiom, ask what it actually excludes rather than
+what it is usually used for.** Two failure modes wear the same words -- *someone else changed this since
+you looked* and *someone else is changing this right now* -- and only the first is what a version column
+answers.
+
+**And the habit that caught it, which is the transferable half: re-run the reproduction against the fix,
+not just the test suite.** A suite written after the fix tests what you built. The reproduction tests
+whether the harm is gone. Shipped on review, that CAS would have looked like a fix -- correct idiom, real
+precedent in this codebase, a plausible mechanism, and completely inert.
+
+Sibling to this file's entry on assertions with more than one cause: there it was a test that passed for
+the wrong reason, here a guard that succeeded for the wrong reason. Same defect, and the guard is the
+more expensive one, because nothing downstream ever contradicts it.
+
+**2026-09-07 — MAIL DELIVERY ENGINEER, from the PROJECT MANAGER's separation of their own diff, generalised with the OWNER AGENT**
+A diff cannot show its own kind. Whether a change is a bug fix or a policy is not in it, and is not
+recoverable from it.
+
+Review found `resend()` unguarded. Two things were fixed in one commit, called a review fix:
+
+- **two concurrent resends both sending** -- one click, one decision, two customer emails. A defect. No
+  design position covers it.
+- **resending an already-`sent` row -- which was blocked.** That was a product decision, and it was not
+  the reviewer's to make.
+
+**Both changes look identical in a diff.** Both are a guard added to a function that lacked one. Both
+are defensible on their face. Nothing in the patch says one closed a hole and the other chose a policy --
+and *"review fix"* as a PR framing hides the difference perfectly, because it is true of both.
+
+The policy half was separated out and sent to the OWNER AGENT, who overturned it on a fact the reviewer
+had wrong: `sent` proves the provider accepted the message, not that the customer received it. So the
+block would have been strongest exactly where it is wrong -- the moment Ken reaches for that button is
+the moment `sent` is true and nothing arrived. Had it ridden along, the policy would have entered the
+codebase as an implementation detail -- indistinguishable six months later from something somebody had
+actually thought about.
+
+**Why this belongs beside the absence entry above rather than inside it:** it is that lesson one level
+up. An absence reads as an oversight; a decision buried in a fix reads as an implementation detail. Both
+are invisible in a change that looks entirely reasonable, and both are found only by someone asking what
+*kind* of thing they are looking at.
+
+**What to do about it, since "be careful" is not a technique:**
+
+- When a review turns up more than one thing, ask of each: is this a hole, or a choice? They arrive
+  together and they are not the same work.
+- A choice goes to whoever owns it before it is written, not after it is merged -- the cost of asking is
+  a message, the cost of not asking is a policy nobody ratified.
+- Whichever way a choice lands, make it explicit in the code -- a named allow-list rather than an
+  absence, with the reason. An absence and a decision look the same at rest.
+- Best of all, put a test on it. A comment explaining why a block is absent is an opinion; a test that
+  goes red when someone re-adds the block makes the absence load-bearing.
