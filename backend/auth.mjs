@@ -16,10 +16,23 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 import { PUBLIC_BODY_LIMIT, clientIp, refuse } from './limits.mjs'
+import { exchangeCodeForIdToken, fetchGoogleClaims, googleAuthUrl, readGoogleConfig, verifyGoogleClaims } from './google-auth.mjs'
 
 const COOKIE = 'kmt_owner'
 /** The cookie name a caller needs to mint or recognise a session by hand (scripts/mint-session.mjs). */
 export const SESSION_COOKIE_NAME = COOKIE
+/**
+ * Carries the OAuth `state` between the redirect out and the callback back.
+ *
+ * A cookie rather than a server-side table because it is one short-lived value
+ * per sign-in attempt and the signing machinery already exists. It has to be
+ * SameSite=Lax for the same reason the session cookie is: the callback is a
+ * top-level cross-site GET navigation, and Strict withholds the cookie on
+ * exactly that -- which would fail every sign-in, looking like Google's fault.
+ */
+const OAUTH_STATE_COOKIE = 'kmt_oauth_state'
+/** Long enough to choose an account and type a password, short enough not to linger. */
+const OAUTH_STATE_TTL_MS = 10 * 60_000
 const DEFAULT_TTL_HOURS = 12
 
 /**
@@ -316,7 +329,16 @@ const readCookie = (header, name) =>
  * server, memory by default). `throttle` slows wrong passwords per address
  * (#66); without one, as in most tests, guesses are not counted.
  */
-export function createAuth(config, { sessions = memorySessionStore(), throttle = null } = {}) {
+export function createAuth(config, {
+  sessions = memorySessionStore(),
+  throttle = null,
+  google = readGoogleConfig(),
+  // Injectable so the callback route can be tested end to end without a
+  // browser, a consent screen or a real Google account. The claim checks are
+  // tested directly against the verifier (google-auth.test.mjs); this seam is
+  // what lets the route around them be tested too, rather than assumed.
+  googleFetch = fetch,
+} = {}) {
   const isSecure = (request) =>
     (request.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https' ||
     Boolean(request.socket.encrypted)
@@ -332,6 +354,16 @@ export function createAuth(config, { sessions = memorySessionStore(), throttle =
     // on cross-site POST, which is the attack Strict was chosen against; the
     // import endpoint keeps its bearer token for the same reason.
     'SameSite=Lax',
+    isSecure(request) ? 'Secure' : '',
+    `Max-Age=${maxAgeSeconds}`,
+  ].filter(Boolean).join('; ')
+
+  // Same flags as the session cookie and for the same reasons, except the
+  // name and the lifetime: it exists only between the redirect out and the
+  // callback back, and is cleared on both outcomes.
+  const stateCookie = (request, value, maxAgeSeconds) => [
+    `${OAUTH_STATE_COOKIE}=${value}`,
+    'Path=/', 'HttpOnly', 'SameSite=Lax',
     isSecure(request) ? 'Secure' : '',
     `Max-Age=${maxAgeSeconds}`,
   ].filter(Boolean).join('; ')
@@ -367,7 +399,10 @@ export function createAuth(config, { sessions = memorySessionStore(), throttle =
       }
 
       if (url.pathname === '/api/owner/session' && request.method === 'GET') {
-        return json(200, { authenticated: signedIn(request) })
+        // `google` says whether this server has an OAuth client, so the
+        // sign-in screen can offer the button only where pressing it would
+        // work. Additive: `authenticated` keeps its meaning and its shape.
+        return json(200, { authenticated: signedIn(request), google: Boolean(google) })
       }
 
       if (url.pathname === '/api/owner/login' && request.method === 'POST') {
@@ -416,6 +451,110 @@ export function createAuth(config, { sessions = memorySessionStore(), throttle =
           return json(401, { error: 'Sign in to use the owner workspace.' })
         }
         return json(200, { token: createImportToken(config), expiresInMs: IMPORT_TTL_MS })
+      }
+
+      // --- Google sign-in ------------------------------------------------
+      //
+      // These live here, in auth.handle, and not in api.mjs -- and that is a
+      // requirement rather than a preference. server.mjs calls auth.handle
+      // (:189) BEFORE the /api/ session gate (:191), which answers 401 to
+      // anything under /api/owner/ without a session. A callback implemented
+      // in api.mjs would be refused before it could create the session it
+      // exists to create: a failure at the very last step, after the owner has
+      // already been sent to Google and back, looking exactly like Google's
+      // fault.
+      //
+      // Both are GET, because both are browser navigations rather than calls.
+
+      // Start: remember a nonce in a signed short-lived cookie, send the owner
+      // to Google carrying the same nonce as `state`, and require the two to
+      // match on the way back. That binds the callback to the browser that
+      // began the sign-in, which is what makes a replayed or forged callback
+      // useless.
+      if (url.pathname === '/api/owner/session/google/start' && request.method === 'GET') {
+        if (!google) return json(404, { error: 'Google sign-in is not configured on this server.' })
+        const nonce = randomBytes(16).toString('hex')
+        response.writeHead(302, {
+          Location: googleAuthUrl(google, nonce),
+          'Cache-Control': 'no-store',
+          'Set-Cookie': stateCookie(request, issue(config, 'oauth-state', OAUTH_STATE_TTL_MS, nonce), Math.floor(OAUTH_STATE_TTL_MS / 1000)),
+        })
+        response.end()
+        return true
+      }
+
+      if (url.pathname === '/api/owner/session/google/callback' && request.method === 'GET') {
+        if (!google) return json(404, { error: 'Google sign-in is not configured on this server.' })
+
+        // One exit for every refusal. Whoever was turned away is told nothing
+        // beyond "that did not work": a wrong domain, an unverified address, a
+        // token minted for another application and a replayed callback are the
+        // same answer to the person holding them. The reason is logged, so a
+        // refusal can still be diagnosed -- the audits and the owner's own
+        // support call both need that, and neither needs it in the browser.
+        const refuseSignIn = (reason) => {
+          console.error(`owner google sign-in refused: ${reason}`)
+          response.writeHead(302, {
+            Location: '/owner?signin=refused',
+            'Cache-Control': 'no-store',
+            'Set-Cookie': stateCookie(request, '', 0),
+          })
+          response.end()
+          return true
+        }
+
+        const opened = open(config, readCookie(request.headers.cookie, OAUTH_STATE_COOKIE))
+        const state = url.searchParams.get('state')
+        // Required equality on present values, the same rule as every claim
+        // check: an absent cookie, an absent `state`, or a token of the wrong
+        // purpose is a refusal, never a skip.
+        if (opened?.purpose !== 'oauth-state' || !opened.id || !state || !equals(opened.id, state)) {
+          return refuseSignIn('state did not match the cookie issued at the start of the flow')
+        }
+        // Google reports its own refusals here rather than by failing to
+        // arrive -- the user closing the account chooser, most often.
+        if (url.searchParams.get('error')) return refuseSignIn(`Google returned error=${url.searchParams.get('error')}`)
+        const code = url.searchParams.get('code')
+        if (!code) return refuseSignIn('no authorization code in the callback')
+
+        let claims
+        try {
+          claims = await fetchGoogleClaims(await exchangeCodeForIdToken(google, code, googleFetch), googleFetch)
+        } catch (error) {
+          // A network failure or a refused exchange. Not the owner's fault and
+          // not something they can act on, so it reads the same as any other
+          // refusal to them and carries detail only in the log.
+          return refuseSignIn(`could not verify the token with Google: ${error.message}`)
+        }
+
+        const decision = verifyGoogleClaims(claims, google)
+        if (!decision.ok) return refuseSignIn(decision.reason)
+
+        // Verified. From here the session mechanism that already exists takes
+        // over unchanged: the same signed cookie, the same expiry, the same
+        // row that logout deletes and the sweep collects.
+        //
+        // The verified address is not recorded on the session yet. That is
+        // owner_sessions.actor, BUG FIXER's #374, still open at the time of
+        // writing -- `create` takes only an expiry on main. When it lands, the
+        // actor argument is added here and NOWHERE else: this is the one place
+        // a real identity enters the system, and the chain it feeds is
+        // session.actor -> the auth layer surfacing it -> the decide handler
+        // threading it into moveTo's `actor` -> quotes.decided_by. Storing it
+        // without wiring that chain leaves decided_by null, which collapses
+        // back into exactly the unattributable era this work exists to end.
+        const expiresAt = Date.now() + config.ttlMs
+        const id = sessions.create(expiresAt)
+        response.writeHead(302, {
+          Location: '/owner',
+          'Cache-Control': 'no-store',
+          'Set-Cookie': [
+            setCookie(request, issue(config, 'session', config.ttlMs, id), Math.floor(config.ttlMs / 1000)),
+            stateCookie(request, '', 0),
+          ],
+        })
+        response.end()
+        return true
       }
 
       // Logging out forgets the session on the server, so the cookie is dead
