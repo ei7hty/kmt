@@ -1104,6 +1104,11 @@ test('memorySessionStore and the SQLite store agree on the actor contract -- one
 
     const withoutActor = sessions.create(Date.now() + 60_000)
     assert.equal(sessions.actorFor(withoutActor), null, 'no actor argument reads back as null, not undefined or a default')
+    assert.notEqual(
+      sessions.actorFor(withActor), sessions.actorFor(withoutActor),
+      'a minted session and a no-actor session must read as distinct -- if mintSession ever passed no actor, ' +
+      'a minted session would read null and collapse straight into the shared-password marker downstream',
+    )
 
     assert.equal(sessions.actorFor('no-such-session-id'), null, 'an unknown id reads as null too, not a thrown error')
   }
