@@ -153,18 +153,31 @@ either side.
 - **An author does not merge their own pull request.** A second agent reads the
   diff and the audit counts in the check log, and merges. That has been the
   working rule all day; a green badge is not a review.
-- **A ship-scoped merge is a deploy — announce it before you merge, not before
-  the deploy.** A PR whose files match `ship_paths` deploys `main` on merge, and
-  the pipeline serialises per push and supersedes pending runs. So two
-  ship-scoped PRs merged within seconds of each other collide: one deploy
-  cancels the other, and neither reaches production while both PRs read as
-  merged and green. Before merging a ship-scoped PR, say so to the other agent
-  working the queue and hold if they have a ship-scoped merge in flight or a
-  deploy not yet green — then watch yours to green one at a time. The
-  announcement point is the **merge**, because the merge is the irreversible act
-  and the deploy is only its consequence: serialising deploys does nothing if
-  two merges fire before the boundary is agreed. Docs and path-ignored merges
-  need no hold and run in parallel.
+- **A ship-scoped merge is a deploy — announce it before you merge, and check
+  the header after.** The insidious property first: a PR whose files match
+  `ship_paths` deploys `main` on merge, and the pipeline serialises per push and
+  supersedes pending runs — so when two ship-scoped PRs merge within seconds of
+  each other, one deploy cancels the other and **both read as merged and green
+  while only one reached production.** From the PR list, from `main`, from the
+  merge log, everything looks correct; production is behind and nothing
+  announces it. That is the shape to guard against, in two halves:
+  - *Prevent.* Before merging a `ship_paths` PR, say so to the other agent
+    working the queue, and hold if they have a ship-scoped merge in flight or a
+    deploy not yet green — then watch yours to green, one at a time. The
+    announcement point is the **merge**, not the deploy, because the merge is
+    the irreversible act and the deploy is only its consequence: serialising
+    deploys does nothing if two merges fire before the boundary is agreed.
+  - *Detect.* After any ship-scoped merge, compare the live release header to
+    `main` — `curl -sI https://kensmobiletire.com/api/health | grep
+    x-kmt-release` against `git log origin/main -1 --format=%h`. It is the only
+    thing that distinguishes "merged" from "running." The header legitimately
+    lags `main` by *docs* commits on top (they do not deploy), so what you are
+    looking for is the header sitting behind a **ship-scoped** commit — that is
+    the collision. And a green deploy *job* is not enough on its own: one of the
+    two collided deploys was cancelled and the other failed on a flaky audit;
+    the run's status tells you about the run, the header tells you about
+    production.
+  - Docs and path-ignored merges need no hold and run in parallel.
 
 ---
 
