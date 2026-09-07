@@ -9,7 +9,7 @@ import { Refresher } from './refresh.mjs'
 import { PageImporter } from './import.mjs'
 import { createApi, createCatalogApi, createHealthApi, createMailStatusApi, createRequestsApi, createSiteCopyApi } from './api.mjs'
 import { isMonitorAuthorized, readMonitorConfig } from './auth.mjs'
-import { Quotes } from './quotes.mjs'
+import { Quotes, SHARED_PASSWORD_ACTOR } from './quotes.mjs'
 import { Outbox } from './outbox.mjs'
 import { createMailer, describeMail, drainMail } from './mail.mjs'
 import { RateLimiter } from './limits.mjs'
@@ -31,7 +31,9 @@ const quotes = new Quotes(inventory, { serviceArea })
 const outbox = new Outbox(inventory.db)
 const mailer = createMailer({ outbox, quotes, origin: `http://127.0.0.1:${process.env.KMT_OWNER_PORT || 4180}` })
 const inquiries = new Inquiries(inventory.db)
-const api = createApi(inventory, refresher, new PageImporter(inventory), quotes, { mailer, inquiries })
+const api = createApi(inventory, refresher, new PageImporter(inventory), quotes, {
+  mailer, inquiries, auth: { actorFor: () => SHARED_PASSWORD_ACTOR },
+})
 // The customer catalog, served here too so the local flow matches the hosted one.
 const catalogApi = createCatalogApi(inventory)
 const siteCopyApi = createSiteCopyApi(inventory)

@@ -793,7 +793,7 @@ export class Quotes {
    * nothing to explain, and `moveTo`'s COALESCE would otherwise let a stray
    * value overwrite whatever a later close wrote.
    */
-  decide(id, decision, version, reason = null) {
+  decide(id, decision, version, reason = null, actor = null) {
     if (decision !== 'sent' && decision !== 'rejected') {
       throw new InputError('A quote is either sent to the customer or rejected.')
     }
@@ -803,6 +803,7 @@ export class Quotes {
       reason: decision === 'rejected' ? cleanReason(reason) : null,
       refused: status => `This quote is already ${status}, so there is nothing to decide.`,
       audience: 'owner',
+      actor,
     })
   }
 
@@ -872,6 +873,10 @@ export class Quotes {
       throw new InputError('Send the version you were shown, so a stale screen cannot overwrite a newer decision.')
     }
 
+    if (audience === 'owner' && !actor) {
+      throw new Error('An owner transition requires an authenticated actor.')
+    }
+
     return this.transaction(() => {
       const found = this.get(id)
       if (!found?.quote) throw new InputError('No such request.', 404)
@@ -906,7 +911,7 @@ export class Quotes {
       // absence". Null means we did not record it; the constant means we
       // recorded that it *was* the shared credential, and only a caller that
       // can establish the session's identity may say so.
-      const decidedBy = audience === 'owner' ? (actor ?? null) : null
+      const decidedBy = audience === 'owner' ? actor : null
       this.db.prepare(`UPDATE quotes
           SET status=?, reason=COALESCE(?, reason), decided_by=COALESCE(?, decided_by),
               version=version+1, updated_at=?
@@ -923,7 +928,7 @@ export class Quotes {
    * the fake step that always succeeds, but the row it writes stands for money
    * having changed hands, and nothing here can undo that -- see the roadmap.
    */
-  finish(id, version) {
+  finish(id, version, actor = null) {
     return this.moveTo(id, version, {
       to: 'done',
       from: ['paid'],
@@ -931,6 +936,7 @@ export class Quotes {
         ? 'This request is already closed.'
         : `This request is ${status}, and only a paid request can be marked done.`,
       audience: 'owner',
+      actor,
     })
   }
 
@@ -941,7 +947,7 @@ export class Quotes {
    * their link and finds it cancelled should be told why rather than left to
    * guess. Nothing is deleted: the request stays, in the closed view.
    */
-  cancel(id, version, reason) {
+  cancel(id, version, reason, actor = null) {
     return this.moveTo(id, version, {
       to: 'cancelled',
       from: CANCELLABLE,
@@ -950,6 +956,7 @@ export class Quotes {
         ? 'This request has been paid, so it cannot be cancelled. Mark it done when the work is finished.'
         : `This request is already ${status}.`,
       audience: 'owner',
+      actor,
     })
   }
 

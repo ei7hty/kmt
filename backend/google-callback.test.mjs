@@ -161,6 +161,9 @@ test('a verified owner on the domain is signed in and sent to the workspace', as
   assert.match(cookies[1], /^kmt_signin_state=; .*Max-Age=0/, 'the state cookie does not outlive the flow')
 
   const token = cookies[0].split(';')[0].slice('kmt_owner='.length)
+  const [payload] = token.split('.')
+  const [, , sessionId] = Buffer.from(payload, 'base64url').toString().split(':')
+  assert.equal(sessions.actorFor(sessionId), 'ken@kensmobiletire.com', 'the verified email is carried by the session')
   assert.equal(sessions.size ?? undefined, undefined) // memory store exposes no size; check by use
   assert.equal(createAuth(config, { sessions, google }).isAuthenticated({ headers: { cookie: `kmt_owner=${token}` } }), true,
     'the cookie it set is one the server will actually accept')

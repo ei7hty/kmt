@@ -142,7 +142,7 @@ const mailer = createMailer({
     (canonicalHost ? `https://${canonicalHost}` : `http://localhost:${process.env.PORT || 8080}`),
 })
 const inquiries = new Inquiries(inventory.db)
-const api = createApi(inventory, refresher, importer, quotes, { mailer, inquiries })
+const api = createApi(inventory, refresher, importer, quotes, { mailer, inquiries, auth })
 const catalogApi = createCatalogApi(inventory)
 const siteCopyStore = new SiteCopy(inventory)
 const siteCopyApi = createSiteCopyApi(inventory)

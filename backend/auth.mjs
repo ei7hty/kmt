@@ -433,8 +433,15 @@ export function createAuth(config, {
 
   const signedIn = (request) => verifySession(config, sessions, readCookie(request.headers.cookie, COOKIE))
 
+  const sessionActor = (request) => {
+    const opened = open(config, readCookie(request.headers.cookie, COOKIE))
+    if (opened?.purpose !== 'session' || !opened.id || !sessions.has(opened.id)) return null
+    return sessions.actorFor(opened.id)
+  }
+
   return {
     isAuthenticated: signedIn,
+    actorFor: sessionActor,
 
     /**
      * Bearer authorisation for posting supplier pages back.
@@ -607,7 +614,7 @@ export function createAuth(config, {
         // without wiring that chain leaves decided_by null, which collapses
         // back into exactly the unattributable era this work exists to end.
         const expiresAt = Date.now() + config.ttlMs
-        const id = sessions.create(expiresAt)
+        const id = sessions.create(expiresAt, decision.email)
         response.writeHead(302, {
           Location: '/owner',
           'Cache-Control': 'no-store',

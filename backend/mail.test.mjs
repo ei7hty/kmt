@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { tmpdir } from 'node:os'
 import { Inventory } from './inventory.mjs'
-import { Quotes } from './quotes.mjs'
+import { Quotes, SHARED_PASSWORD_ACTOR } from './quotes.mjs'
 import { Outbox, OUTBOX_PERSONAL_DATA_KEYS } from './outbox.mjs'
 import { AUTO_RETRY_TYPES, Mailer, drainMail, NullAdapter, SmtpAdapter, addressLabel, describeMail, readMailConfig , createMailer } from './mail.mjs'
 import { MAIL_TYPES, TEMPLATES } from './mail-templates.mjs'
@@ -15,6 +15,7 @@ import { createApi, createMailStatusApi, createRequestsApi } from './api.mjs'
 import { isMonitorAuthorized, readMonitorConfig } from './auth.mjs'
 
 const SIZE = '215/60R16'
+const ownerAuth = { actorFor: () => SHARED_PASSWORD_ACTOR }
 const tire = (id = 'giga-a') => ({ id, name: 'Test Touring', size: SIZE, price: 50, inStock: true, category: 'all-season', description: '95H BSW',
   source: { sku: id.slice(5), stock: 12, listPrice: 60, segment: 'Passenger', url: 'https://www.giga-tires.com/tires/test' } })
 const snapshot = tires => ({ source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE], tires })
@@ -266,7 +267,7 @@ test('a message about a request that does not exist, or a type nobody defined, r
 test('the API sends after it answers: submit records two messages, sending the quote records one, paying records one', async t => {
   const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
   const requestsApi = createRequestsApi(quotes, { mailer })
-  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer })
+  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer, auth: ownerAuth })
   const server = createServer(async (req, res) => { if (await requestsApi(req, res)) return; if (await ownerApi(req, res)) return; res.writeHead(404); res.end() })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => new Promise(resolve => server.close(resolve)))
@@ -318,7 +319,7 @@ test('the API sends after it answers: submit records two messages, sending the q
 test('rejecting a draft records a quote-declined message, the sibling of quote-sent', async t => {
   const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
   const requestsApi = createRequestsApi(quotes, { mailer })
-  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer })
+  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer, auth: ownerAuth })
   const server = createServer(async (req, res) => { if (await requestsApi(req, res)) return; if (await ownerApi(req, res)) return; res.writeHead(404); res.end() })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => new Promise(resolve => server.close(resolve)))
@@ -339,7 +340,7 @@ test('rejecting a draft records a quote-declined message, the sibling of quote-s
 test('a decline reason typed through the API actually reaches the customer email (#78: the reason box was dead code without this)', async t => {
   const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
   const requestsApi = createRequestsApi(quotes, { mailer })
-  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer })
+  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer, auth: ownerAuth })
   const server = createServer(async (req, res) => { if (await requestsApi(req, res)) return; if (await ownerApi(req, res)) return; res.writeHead(404); res.end() })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => new Promise(resolve => server.close(resolve)))
@@ -541,7 +542,7 @@ test('the mail-status route does not exist at all when no token is configured', 
 /* ------------------------------------------------ unresolved-failures route */
 
 function ownerApiServer(t, { quotes, mailer }) {
-  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer })
+  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer, auth: ownerAuth })
   const server = createServer(async (req, res) => { if (await ownerApi(req, res)) return; res.writeHead(404); res.end() })
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({
     base: `http://127.0.0.1:${server.address().port}`,
