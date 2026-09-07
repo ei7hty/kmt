@@ -18,6 +18,69 @@
 
 const ORIGIN = 'https://www.giga-tires.com'
 
+export const USER_AGENT = 'KMT-catalog-updater/0.1 (manual catalog sync; +https://github.com/kmt)'
+
+/** A supplier refusal is run-global: never turn it into a per-page failure. */
+export class ProviderRefusalError extends Error {
+  constructor(message, { status = null, reason = 'provider-refusal', retryAfter = null } = {}) {
+    super(message)
+    this.name = 'ProviderRefusalError'
+    this.status = status
+    this.reason = reason
+    this.retryAfter = retryAfter
+  }
+}
+
+const REFUSAL_MARKERS = [
+  ['access denied', /access denied/i],
+  ['request could not be satisfied', /request could not be satisfied/i],
+  ['forbidden', /\bforbidden\b/i],
+  ['too many requests', /too many requests/i],
+  ['temporarily blocked', /temporarily blocked/i],
+  ['captcha', /\bcaptcha\b/i],
+  ['verify you are human', /verify (?:that )?you are human/i],
+  ['robot check', /robot check|automated access/i],
+  ['disallowed by robots', /disallow(?:ed)?\s+by\s+robots(?:\.txt)?/i],
+]
+
+export function refusalReason(html) {
+  const match = REFUSAL_MARKERS.find(([, pattern]) => pattern.test(String(html || '')))
+  return match?.[0] || null
+}
+
+export function assertProviderResponse(url, response, html) {
+  const status = typeof response?.status === 'function' ? response.status() : response?.status ?? null
+  const headers = typeof response?.headers === 'function' ? response.headers() : response?.headers
+  if (status === 403 || status === 429) {
+    throw new ProviderRefusalError(`${status} from ${url}`, {
+      status,
+      reason: status === 429 ? 'rate-limit' : 'forbidden',
+      retryAfter: headers?.get?.('retry-after') ?? headers?.['retry-after'] ?? null,
+    })
+  }
+  const reason = refusalReason(html)
+  if (reason) {
+    throw new ProviderRefusalError(`Provider refusal from ${url}: ${reason}`, { status, reason })
+  }
+}
+
+export function assertExpectedPage(url, html, kind) {
+  const expected = kind === 'product'
+    ? html.includes('application/ld+json') || html.includes('tirecode')
+    : html.includes('window.productPrices') || html.includes('plp-list__item-container') || html.includes('is not available at this time')
+  if (!expected) throw new ProviderRefusalError(`Blocked or unexpected ${kind} page from ${url}`, { reason: 'unexpected-provider-page' })
+}
+
+export function productUrl(value) {
+  let url
+  try { url = new URL(value, ORIGIN) } catch { throw new Error(`Not a product URL: ${value}`) }
+  if (url.origin !== ORIGIN || !url.pathname.startsWith('/tires/') || !url.pathname.includes('/tirecode/')) {
+    throw new Error(`Not a giga-tires product URL: ${value}`)
+  }
+  url.hash = ''
+  return url.toString()
+}
+
 /** Accepts 215/60R16 and 215-60-16, returns the parts or null. */
 export function parseSize(size) {
   const match = String(size).trim().match(/^(\d{3})[/-](\d{2})[R-](\d{2})$/i)
@@ -231,6 +294,121 @@ export function parseListingPage(html, requestedSize) {
   return { rows, skipped, totalPages: readTotalPages(html) }
 }
 
+const asText = value => typeof value === 'string' && value.trim() ? decode(value) : null
+const asStringArray = value => [...new Set((Array.isArray(value) ? value : [value]).map(asText).filter(Boolean))]
+
+function productJsonLd(html) {
+  for (const match of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      const decoded = JSON.parse(match[1])
+      const nodes = Array.isArray(decoded) ? decoded : decoded?.['@graph'] || [decoded]
+      const product = nodes.find(node => {
+        const types = Array.isArray(node?.['@type']) ? node['@type'] : [node?.['@type']]
+        return types.includes('Product')
+      })
+      if (product) return product
+    } catch { /* A malformed analytics block must not discard the page. */ }
+  }
+  return null
+}
+
+function stripRawTextElements(html, tag) {
+  const lower = html.toLowerCase()
+  let cursor = 0, output = ''
+  while (cursor < html.length) {
+    const open = lower.indexOf(`<${tag}`, cursor)
+    if (open === -1) return output + html.slice(cursor)
+    output += html.slice(cursor, open)
+    const close = lower.indexOf(`</${tag}`, open + tag.length + 1)
+    if (close === -1) return output
+    const end = lower.indexOf('>', close + tag.length + 2)
+    if (end === -1) return output
+    cursor = end + 1
+  }
+  return output
+}
+
+const labelValue = (html, labels) => {
+  const withoutRawText = stripRawTextElements(stripRawTextElements(html, 'script'), 'style')
+  const plain = decode(withoutRawText.replace(/<[^>]*>/g, '\n'))
+  for (const label of labels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const found = plain.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*[:\\n]\\s*([^\\n]+)`, 'i'))
+    if (found) return decode(found[1])
+  }
+  return null
+}
+
+const explicitBoolean = value => {
+  if (typeof value === 'boolean') return value
+  if (typeof value !== 'string') return undefined
+  if (/^(yes|true|run[- ]?flat)$/i.test(value.trim())) return true
+  if (/^(no|false|not run[- ]?flat)$/i.test(value.trim())) return false
+  return undefined
+}
+
+/** Parse durable product details without inventing values for fields the page omits. */
+export function parseProductPage(html, { url, fallback = {}, fetchedAt = new Date().toISOString() } = {}) {
+  const product = productJsonLd(html) || {}
+  const properties = Object.fromEntries((Array.isArray(product.additionalProperty) ? product.additionalProperty : [])
+    .filter(item => asText(item?.name) && item?.value !== undefined)
+    .map(item => [decode(item.name).toLowerCase(), item.value]))
+  const field = (names, labels = names) => {
+    for (const name of names) if (properties[name.toLowerCase()] !== undefined) return asText(properties[name.toLowerCase()])
+    return labelValue(html, labels)
+  }
+  const name = asText(product.name) || asText(fallback.name)
+  const size = canonicalSize(field(['tire size', 'size']) || name?.match(/\d{3}[/-]\d{2}R?[-/]?\d{2}/i)?.[0]) || fallback.size || null
+  const sku = asText(product.sku) || asText(product.mpn) || asText(fallback.source?.sku)
+  const brand = asText(typeof product.brand === 'object' ? product.brand?.name : product.brand) || field(['brand'])
+  const model = field(['model', 'model name']) || (brand && name?.toLowerCase().startsWith(brand.toLowerCase()) ? name.slice(brand.length).trim() : null)
+  const offers = Array.isArray(product.offers) ? product.offers[0] : product.offers
+  const price = Number(offers?.price)
+  const availability = asText(offers?.availability)
+  const runFlatText = field(['run flat', 'run-flat', 'runflat'])
+  const runFlat = explicitBoolean(runFlatText)
+  const imageUrls = asStringArray(product.image).map(value => new URL(value, url || ORIGIN).toString())
+  const productId = asText(product.productID) || asText(product['@id']) || sku
+  const details = {
+    brand, model, imageUrls,
+    description: asText(product.description) || field(['description']),
+    season: field(['season']),
+    productCategory: field(['category', 'vehicle type']),
+    loadIndex: field(['load index', 'load rating']),
+    speedRating: field(['speed rating', 'speed index']),
+    sidewall: field(['sidewall', 'sidewall description']),
+    treadwear: field(['treadwear']),
+    utqg: field(['utqg', 'utqg rating']),
+    warranty: field(['warranty', 'mileage warranty']),
+    ...(runFlat === undefined ? {} : { runFlat }),
+  }
+  const compactDetails = Object.fromEntries(Object.entries(details).filter(([, value]) => value !== null && value !== undefined && (!Array.isArray(value) || value.length)))
+  const row = {
+    ...fallback,
+    ...(name ? { name } : {}),
+    ...(size ? { size } : {}),
+    ...(Number.isFinite(price) && price > 0 ? { price: Math.round(price * 100) / 100 } : {}),
+    ...(availability ? { inStock: !/outofstock|soldout|discontinued/i.test(availability) } : {}),
+    ...compactDetails,
+    source: {
+      ...(fallback.source || {}),
+      ...(sku ? { sku } : {}),
+      ...(productId ? { productId } : {}),
+      ...(compactDetails.productCategory ? { productCategory: compactDetails.productCategory } : {}),
+      url: productUrl(url || fallback.source?.url),
+      fetchedAt,
+      // Keep unrecognised structured fields so a later importer can recover
+      // them without another supplier request. JSON payload storage preserves it.
+      raw: product,
+    },
+  }
+  if (!row.id && sku) row.id = `giga-${sku.toLowerCase()}`
+  delete row.productCategory
+  if (!row.category) row.category = toCategory(compactDetails.productCategory || compactDetails.season, name)
+  if (!row.description) row.description = compactDetails.description || [compactDetails.season, compactDetails.loadIndex, compactDetails.speedRating].filter(Boolean).join(' · ')
+  return row
+}
+
 /**
  * Highest ?page= in the pager, so a caller knows when to stop.
  *
@@ -261,7 +439,7 @@ export function sizeUrl(size, page = 1) {
  * is the cheapest path if that ever changes, and it is what --plain-fetch runs.
  */
 export async function fetchSizePage(size, page = 1, options = {}) {
-  const { fetchImpl = fetch, userAgent } = options
+  const { fetchImpl = fetch, userAgent = USER_AGENT } = options
   const url = sizeUrl(size, page)
   const response = await fetchImpl(url, {
     headers: {
@@ -270,8 +448,22 @@ export async function fetchSizePage(size, page = 1, options = {}) {
       'User-Agent': userAgent,
     },
   })
-  if (!response.ok) {
-    throw new Error(`GET ${url} -> ${response.status} ${response.statusText}`)
-  }
-  return { html: await response.text(), url }
+  const html = await response.text()
+  assertProviderResponse(url, response, html)
+  if (!response.ok) throw new Error(`GET ${url} -> ${response.status} ${response.statusText}`)
+  assertExpectedPage(url, html, 'listing')
+  return { html, url }
+}
+
+export async function fetchProductPage(input, options = {}) {
+  const { fetchImpl = fetch, userAgent = USER_AGENT } = options
+  const url = productUrl(input)
+  const response = await fetchImpl(url, { headers: {
+    Accept: 'text/html,application/xhtml+xml', 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': userAgent,
+  } })
+  const html = await response.text()
+  assertProviderResponse(url, response, html)
+  if (!response.ok) throw new Error(`GET ${url} -> ${response.status} ${response.statusText}`)
+  assertExpectedPage(url, html, 'product')
+  return { html, url }
 }

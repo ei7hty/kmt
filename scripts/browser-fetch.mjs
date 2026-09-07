@@ -17,7 +17,7 @@
  * watches; a scraper you cannot see is a scraper you cannot tell has gone wrong.
  */
 
-import { sizeUrl } from './giga-tires.mjs'
+import { assertExpectedPage, assertProviderResponse, productUrl, ProviderRefusalError, sizeUrl, USER_AGENT } from './giga-tires.mjs'
 
 const READY_SELECTOR = '.plp-list__item-container'
 
@@ -36,11 +36,10 @@ const EMPTY_TEXT = 'is not available at this time'
  * means one thing: stop the whole run, do not retry, do not continue past
  * it. See docs/supplier-refresh.md.
  */
-export class RateLimitedError extends Error {
+export class RateLimitedError extends ProviderRefusalError {
   constructor(message, retryAfter = null) {
-    super(message)
+    super(message, { status: 429, reason: 'rate-limit', retryAfter })
     this.name = 'RateLimitedError'
-    this.retryAfter = retryAfter
   }
 }
 
@@ -51,7 +50,7 @@ export class RateLimitedError extends Error {
  * up on the first page carries over, so later pages load without re-challenging.
  */
 export async function createBrowserFetcher(options = {}) {
-  const { headless = false, timeout = 60000 } = options
+  const { headless = false, timeout = 60000, userAgent = USER_AGENT } = options
 
   const { chromium } = await import('playwright')
 
@@ -68,7 +67,7 @@ export async function createBrowserFetcher(options = {}) {
     : []
 
   const browser = await chromium.launch({ headless, executablePath, args })
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, userAgent })
   const page = await context.newPage()
 
   // Images and fonts are most of the bytes on a listing page and none of the
@@ -90,6 +89,10 @@ export async function createBrowserFetcher(options = {}) {
         throw new RateLimitedError(`429 from ${url}`, retryAfter)
       }
 
+      // Check the response before waiting on any success selector: a refusal
+      // page must stop immediately, not spend the selector timeout on it.
+      assertProviderResponse(url, response, await page.content())
+
       // Neither the grid nor the "not available" message is present at
       // domcontentloaded -- both render client-side, at about the same
       // speed (measured: ~1.7s for either). Racing them means a genuinely
@@ -103,12 +106,34 @@ export async function createBrowserFetcher(options = {}) {
       ])
 
       const html = await page.content()
+      assertProviderResponse(url, response, html)
       if (html.includes(EMPTY_TEXT)) return { html, url }
-      if (!html.includes('window.productPrices') && !html.includes(READY_SELECTOR)) {
-        const title = await page.title()
-        throw new Error(`Blocked or unexpected page (title: ${title || 'none'})`)
-      }
+      assertExpectedPage(url, html, 'listing')
       return { html, url }
+    },
+
+    async fetchProductPage(input) {
+      const url = productUrl(input)
+      // A separate page per product makes explicitly bounded concurrency safe;
+      // the listing page above stays dedicated to its sequential pagination.
+      const productPage = await context.newPage()
+      try {
+        const response = await productPage.goto(url, { waitUntil: 'domcontentloaded', timeout })
+        if (response?.status() === 429) {
+          throw new RateLimitedError(`429 from ${url}`, response.headers()['retry-after'] ?? null)
+        }
+        if (!response) throw new Error(`GET ${url} -> no response`)
+        // A refusal page should not wait for product JSON-LD to appear.
+        assertProviderResponse(url, response, await productPage.content())
+        await productPage.locator('script[type="application/ld+json"]').first().waitFor({ timeout: 20000 }).catch(() => {})
+        const html = await productPage.content()
+        assertProviderResponse(url, response, html)
+        if (response.status() >= 400) throw new Error(`GET ${url} -> ${response.status()}`)
+        assertExpectedPage(url, html, 'product')
+        return { html, url }
+      } finally {
+        await productPage.close()
+      }
     },
 
     async close() {
