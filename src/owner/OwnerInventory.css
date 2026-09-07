@@ -116,7 +116,10 @@
 /* Separator between the two ways in. Not a rule across the card: at 375px a
    hairline with text over it is the kind of decoration that collides with the
    tap targets either side of it. */
-.oi-signin-or { margin: 10px 0 2px; color: #a3a3ab; font-size: 12px; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
+.oi-signin-or { margin: 12px 0 2px; color: #a3a3ab; font-size: 12px; text-align: center; }
+/* Sentence case, not the uppercase letter-spacing the kicker uses: this is a
+   sentence rather than a label, and at 375px the shouty treatment wrapped it
+   across two lines between the two ways in. */
 .oi-signin-hint { font-size: 12px; text-align: center; }
 
 /* Browser-import section: the bookmarklet is a link the owner drags, so it has

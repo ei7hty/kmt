@@ -83,28 +83,34 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace', 
         <p className="oi-kicker">OWNER ONLY</p>
         <h1>Sign in</h1>
         <p className="oi-muted">{what}</p>
-        <label htmlFor="owner-password">Password</label>
-        <input id="owner-password" data-testid="owner-password" type="password" autoComplete="current-password"
-          value={password} onChange={e => setPassword(e.target.value)} disabled={busy} />
-        <button type="submit" data-testid="owner-signin-submit" className="oi-button oi-primary" disabled={busy || !password}>
-          {busy ? 'Checking…' : 'Sign in'}
-        </button>
-        {error && <p role="alert" className="oi-error">{error}</p>}
-        {refused && <p role="alert" className="oi-error">That account cannot open this workspace. Try the password, or ask Ken.</p>}
+        {refused && <p role="alert" className="oi-error">That account cannot open this workspace. Ask Ken.</p>}
         {googleOffered && <>
-          {/* Second, not primary, and deliberately so. Brand red marks the one
-              primary action on a screen, and during this transition that is
-              still the password: it is the path that works today and the only
-              one proven to sign this owner in. Google is promoted to primary
-              when the password is removed, which does not happen until a real
-              sign-in has actually carried a login. Offering two red buttons
-              would break the brand rule and overstate what is proven. */}
-          <p className="oi-signin-or">or</p>
-          <a className="oi-button oi-signin-google" href="/api/owner/session/google/start" data-testid="owner-signin-google">
+          {/* Primary, on the user's instruction: "PUSH GOOGLE LOGIN RETIRE
+              BUILT IN PASSWORD IT IS INSECURE." A shared password proves only
+              that someone knew a string -- no per-person identity, no
+              revocation for one person, and no honest answer to "who approved
+              this quote", which quotes.decided_by is about to start recording.
+              So Google is the way in and the password is the fallback until
+              the secret is unset. */}
+          <a className="oi-button oi-primary oi-signin-google" href="/api/owner/session/google/start" data-testid="owner-signin-google">
             Sign in with Google
           </a>
           <p className="oi-muted oi-signin-hint">Use your @kensmobiletire.com account.</p>
+          <p className="oi-signin-or">or use the password until it is switched off</p>
         </>}
+        <label htmlFor="owner-password">Password</label>
+        <input id="owner-password" data-testid="owner-password" type="password" autoComplete="current-password"
+          value={password} onChange={e => setPassword(e.target.value)} disabled={busy} />
+        {/* Red marks the one primary action on a screen. Where Google is
+            configured that is Google; where it is not -- every environment
+            today, and every gate run -- the password is the only way in and
+            stays primary. The conditional is what keeps this screen honest in
+            both states rather than demoting the only door on offer. */}
+        <button type="submit" data-testid="owner-signin-submit" disabled={busy || !password}
+          className={googleOffered ? 'oi-button' : 'oi-button oi-primary'}>
+          {busy ? 'Checking…' : 'Sign in'}
+        </button>
+        {error && <p role="alert" className="oi-error">{error}</p>}
       </form>
     </main>
     <PrivacyFooter navigate={navigate} />
