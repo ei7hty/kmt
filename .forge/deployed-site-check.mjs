@@ -707,16 +707,21 @@ async function main() {
     fail(`the deployed site answers X-KMT-Service-Area as on or off — ${describeFetchError(error)}`);
   }
 
-  // The id the user confirmed live, 2026-09-07 ("the one i just sent is
-  // live"): G-6VS1BEJ3TS, which src/analytics.js shipped from #314 until
-  // this check existed, belonged to a different property, and nothing here
-  // could tell the two apart -- both are validly shaped, and a wrong one
-  // fails exactly as silently as no id at all. This is a literal, not an
-  // import of src/analytics.js's own value, on purpose: it exists to catch
-  // that exact file being changed to some other wrong id later, which an
-  // assertion built from the same constant it is checking could never
-  // notice. If this ever legitimately needs to change, change it here
-  // deliberately -- it is meant to require exactly that.
+  // Confirmed by the user directly, in-session, 2026-09-07 ("the one i just
+  // sent is live"): G-M9PW70T8V3. The id it replaced, G-6VS1BEJ3TS, was
+  // wrong in .forge/analytics.md before src/analytics.js even existed, and
+  // nothing marked it as unconfirmed -- it shipped in #314, was validly
+  // shaped, and every check passed. This literal is deliberately a second
+  // copy, typed here by a separate act from the one that set
+  // GA_MEASUREMENT_ID, not an import of it: it is what makes changing the
+  // id require touching two places on purpose, so a wrong value can no
+  // longer arrive as a one-character slip or a stale spec copy. It does
+  // NOT prove the id is correct -- nothing in this repository can, without
+  // Ken's own GA4 account -- only that two independent people meant the
+  // same value. If this is ever "cleaned up" into
+  // `src/analytics.js`'s own GA_MEASUREMENT_ID, the assertion below starts
+  // passing for every value including a wrong one, and becomes decorative.
+  // Change it here, deliberately, the same way it was set.
   const CONFIRMED_GA_ID = 'G-M9PW70T8V3';
   check(GA_MEASUREMENT_ID === CONFIRMED_GA_ID,
     'src/analytics.js exports the GA4 id the user confirmed live',
