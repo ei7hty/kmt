@@ -75,7 +75,35 @@ export async function signInIfAsked(page) {
   }
   await page.fill('#owner-password', password)
   await page.click('button:has-text("Sign in")')
-  await page.waitForSelector('.oi-signin', { state: 'detached', timeout: 15000 })
+
+  // A form still on screen is a named failure, not a locator timeout.
+  //
+  // Unguarded, this reported `Timeout 15000ms exceeded ... waiting for
+  // locator('.oi-signin') to be detached`, which reads as the browser hanging.
+  // It is not: it is a sign-in that did not complete, and the screen usually
+  // says why. Costing what the wrong reading costs is not hypothetical -- that
+  // message sent an investigation two hours into the audit's own fill/click
+  // handling, when the actual cause was another session's audit signing in
+  // against this server on a shared port and being refused. The right first
+  // question was "what did the server say", and the message did not prompt it.
+  //
+  // So: say what failed, rule out the thing a reader will assume first, and
+  // quote the form. The form carries the server's own refusal text, which is
+  // the fastest route to whether this was a bad password, a throttle delay,
+  // or a request that never arrived.
+  try {
+    await page.waitForSelector('.oi-signin', { state: 'detached', timeout: 15000 })
+  } catch {
+    const shown = (await page.locator('.oi-signin').innerText().catch(() => ''))
+      .replace(/\s+/g, ' ').trim().slice(0, 300)
+    throw new Error(
+      'Owner sign-in did not complete: the form was still on screen 15s after Sign in. ' +
+      'This is the sign-in being refused or never submitted, not the browser hanging. ' +
+      'Check the server log for `login: wrong password` -- and note that on a shared ' +
+      'audit port those can be another session signing in against this server. ' +
+      `Form text: ${JSON.stringify(shown)}`,
+    )
+  }
   return true
 }
 
