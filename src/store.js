@@ -169,6 +169,18 @@ export async function ownerOutbox() {
   return { provider: data.provider ?? 'none', messages: data.messages ?? [] }
 }
 
+/**
+ * Ken accounting for a message: settling a failed send (or, rarely, an
+ * abandoned queued one) as looked at. `note` is optional and never touches
+ * `error` -- the server keeps them in separate columns on purpose.
+ */
+export async function resolveOutboxMessage(id, note) {
+  return call(`/api/owner/outbox/${encodeURIComponent(id)}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ note: note || null }),
+  })
+}
+
 /** Save editable draft lines and the customer-facing note before sending. */
 export async function adjustQuote(requestId, lineItems, note, version) {
   return call(`/api/owner/quotes/${encodeURIComponent(requestId)}`, {
