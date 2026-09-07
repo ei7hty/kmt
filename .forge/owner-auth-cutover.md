@@ -203,6 +203,68 @@ and a suite that has only ever seen well-formed Workspace tokens cannot fail
 for this reason. That is the same defect as a fixture carrying a key production
 never produces.
 
+### And each test must exercise the verifier directly, never a real sign-in
+
+**This requirement is SEO ANALYST's, found in a different subsystem, and it is
+the one that makes the tests above worth writing.**
+
+They wrote a gate check asserting GA does not load on `/status`, then broke the
+frontend route gate to prove the check could fail. **It passed anyway**:
+`backend/site.mjs`'s separate `ANALYTICS_PATHS` blocked the request by CSP
+before their network interception saw an attempt. A network assertion aimed at
+control A was silently satisfied by control B doing A's job.
+
+**The general form: defence in depth defeats the testing of either layer,
+unless the test observes that layer's own behaviour rather than the outcome
+both layers produce.** Two independent controls are exactly what is wanted in
+production and exactly what makes each one unverifiable from outside — the
+outcome is identical whether one holds or both do.
+
+**This design has that structure on purpose.** Google's `Internal` consent
+screen and our `hd` check are two independent domain restrictions, and the
+whole value is that they fail independently. So **a test that drives a real
+sign-in and asserts a Gmail user cannot reach `/owner` is green whether or not
+our `hd` check works** — Google refused them before our code ran. The check
+could be absent, or written in the conditional form that admits every consumer
+account, and that test would never say so.
+
+> **Every test of the claim checks feeds constructed claims straight to the
+> verification function and asserts the decision. No browser, no Google, no
+> consent screen in the path.**
+
+**This constrains the design, not only the tests.** Verification cannot be
+inlined in the callback branch of `auth.handle`: it has to be a separate
+function taking claims and returning a decision, or there is no seam to feed a
+constructed token into and the requirement above is unsatisfiable. The
+token-info route in [`owner-google-signin.md`](owner-google-signin.md) already
+produces claims as data, which is exactly the shape this needs — **keep the
+fetch and the judgement in separate functions.**
+
+**So each control gets its own kind of evidence, and neither is proved by
+outcome:** `hd` by a direct test against the verifier; `Internal` by a human
+reading the consent screen in the console, which is why it appears in the
+user's table below as something to verify rather than something to click.
+
+### After this change, nothing in the browser audits tests authentication
+
+Worth stating plainly for whoever picks up the audits, because it is a real
+reduction in coverage and it should be a decision rather than a surprise.
+
+Today the audits type a password into the real sign-in form, so they exercise
+the actual login path in passing. **Once they hold a minted session cookie,
+they bypass authentication entirely** — by design, since that is the whole
+point of `mint-session.mjs`. What the audits prove afterwards is the *owner
+flow*: that a request reaches the owner's screen, that Approve & Send works,
+that no click path dead-ends. They no longer prove that anybody is stopped at
+the door.
+
+**That coverage has to exist somewhere, and after this change the only place it
+can exist is the backend suite** — the direct verifier tests above, plus the
+existing session and 401 assertions. `deployed-site-check.mjs` remains the one
+thing that observes the closed door from outside, and its
+"the owner API refuses without a session" assertion becomes correspondingly
+more load-bearing than it is today.
+
 ---
 
 ## Preconditions already true, verified at `c68408c`
