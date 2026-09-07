@@ -2901,13 +2901,13 @@ found the same night, by a change that was itself correct.
 **Cross-reference, so this is not read as a fourth instance of the entries above rather than the one real
 bug among them:** this file's port-4173 entry and an earlier one both teach that `login: wrong password`
 means a port collision -- another session's server, answering on the port you picked. This finding
-produces the identical log line from an unrelated cause, on a session's own, correctly-configured
-server. **A matching `EXPECTED_CHECKS` count is the discriminator**, using the port-4173 entry's own
-point that the count proves which tree is served: an 83-of-83 run rules out a foreign or stale server by
-construction, which leaves the empty-password submission as the only remaining explanation for the
-identical symptom. `login: wrong password` has two causes here -- a foreign server on the port, and an
-audit submitting an empty field before its fill commits -- and a full expected-check count rules out the
-first.
+produces the identical log line from an unrelated cause. `login: wrong password` has two causes. A
+foreign server on your port is one -- see the entries above. The other is the audit submitting an empty
+field to its own correctly-configured server, which is what a run showing `83 of 83` demonstrates, since
+a matching count rules out a foreign tree by construction. **The mechanism behind the empty field is
+unconfirmed** -- the fill/click race (the form submitting before `page.fill('#owner-password', ...)` has
+committed, plausibly a re-render clobbering it) is the hypothesis consistent with both observations, not
+a proven cause; other paths through `signInIfAsked` have not been enumerated or excluded.
 
 **2026-09-07 — GATE ENGINEER, with the OWNER AGENT, on a specification's scope against a measurement's**
 `a11y-85-measure.mjs` found one AA contrast failure: `/status (draft)`'s text-Ken button, 1.88:1 against
