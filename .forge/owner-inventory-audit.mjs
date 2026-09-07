@@ -51,8 +51,15 @@ function reportCounted() {
  * session; backend/dev.mjs has no login route at all and answers 404 to the
  * attempt. Either way the calls below have to work, because they read the
  * first tire before the run and put its offer back after.
+ *
+ * This is a second, independent authentication from signInIfAsked's -- a
+ * plain fetch, not a browser session -- so it needs its own minted-session
+ * fallback rather than inheriting the one in audit-ui.mjs. Checked first:
+ * once Google-only sign-in is live there is no password to send here at all.
  */
 const session = await (async () => {
+  const minted = process.env.KMT_OWNER_SESSION_COOKIE || ''
+  if (minted) return minted
   const password = process.env.KMT_OWNER_PASSWORD || ''
   if (!password) return ''
   const response = await fetch(base + '/api/owner/login', {
