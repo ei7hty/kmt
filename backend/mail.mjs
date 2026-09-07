@@ -44,6 +44,19 @@ const PRIVATE = { private: true }
 export const AUTO_RETRY_TYPES = ['request-arrived']
 
 /**
+ * The row states a manual resend may send from, named rather than left as an
+ * absence. `sent` is deliberately here: see `resend()` for why, and do not
+ * remove it on the strength of a `provider_id`.
+ *
+ * `bounced` is deliberately NOT here -- a bounce is the one status where the
+ * receiving server actually said no, so sending the same message to the same
+ * address again is the one case with a known answer. Nothing produces
+ * `bounced` today; it is on the list of statuses, so it gets a decision rather
+ * than a gap.
+ */
+export const RESENDABLE_STATUSES = ['queued', 'failed', 'sent']
+
+/**
  * How long shutdown waits for in-flight mail before giving up on it.
  *
  * Derived, not picked: 16 sends recorded `sent` in production on 2026-09-06/07
@@ -383,8 +396,26 @@ export class Mailer {
     if (row.templateVersion !== template.version) {
       throw new InputError(`Outbox message ${id} was composed for ${row.type} v${row.templateVersion}; the template is now v${template.version}.`)
     }
-    if (row.status === 'sent') {
-      throw new InputError('That message was already sent, so sending it again would be a duplicate rather than a retry.', 409)
+    // An allowed-status list rather than an absence, so the permissiveness is
+    // a decision on the record. Before review there was no status check at
+    // all, and an absence reads identically to an oversight -- which is
+    // exactly how the missing concurrency guard beside it was found.
+    //
+    // `sent` IS on this list, ruled by the OWNER AGENT, and the sentence that
+    // should stop anyone re-adding a block in six months is this one:
+    // **`sent` means the provider accepted the message, not that the customer
+    // read it.** Spam filtering, a silent drop, an address the provider
+    // happily accepted and nobody reads -- none of those bounce, and all of
+    // them leave the row `sent`. So a resend is a guaranteed duplicate *at the
+    // provider*, which is not the thing that matters, and unknown for the
+    // customer -- and the moment Ken reaches for this button is precisely the
+    // moment `sent` is true and nothing arrived. A block would have been
+    // strongest exactly where it is wrong.
+    //
+    // The asymmetry decides it: a wrong `allow` costs a conversation; a wrong
+    // `block` leaves him with no path and nobody to ask at 7am.
+    if (!RESENDABLE_STATUSES.includes(row.status)) {
+      throw new InputError(`That message is ${row.status}, which is not a state this can send from.`, 409)
     }
 
     // One send per row at a time. A double-click is enough to break this
@@ -414,6 +445,14 @@ export class Mailer {
     }
     this.resending.add(id)
     try {
+      // Recorded before the send, and only for the case that needs explaining:
+      // a message that had already reached the provider being sent again. Six
+      // months later, when somebody asks why one customer has two quote
+      // emails, the row itself answers instead of a log line that rotated away.
+      // Not a counter -- that was ruled over-building for a one-man business
+      // with rare failures -- and not a new status, which would mean a CHECK
+      // rebuild for something orthogonal to what the row is.
+      if (row.status === 'sent') this.outbox.markResent(id)
       return await this.deliver(row, template.render(row.data))
     } finally {
       this.resending.delete(id)

@@ -1069,7 +1069,7 @@ test('#407: two concurrent resends of one row send exactly once', async t => {
   assert.equal(world.outbox.get(row.id).status, 'sent')
 })
 
-test('#407: a row that already went is refused, because that is a duplicate not a retry', async t => {
+test('#407: a row that already went CAN be sent again, and the outbox records that it was', async t => {
   const sent = []
   const adapter = { name: 'smtp', async send(message) { sent.push(message.to); return { providerId: '<p@x>', sent: true } } }
   const world = durableWorld(t, adapter)
@@ -1081,13 +1081,22 @@ test('#407: a row that already went is refused, because that is a duplicate not 
   })
   await world.mailer.resend(row.id)
   assert.equal(sent.length, 1)
+  assert.equal(world.outbox.get(row.id).status, 'sent')
+  assert.equal(world.outbox.get(row.id).resentAt, null, 'a first send is not a resend')
 
-  await assert.rejects(() => world.mailer.resend(row.id), error => {
-    assert.equal(error.status, 409)
-    assert.match(error.message, /already sent/)
-    return true
-  })
-  assert.equal(sent.length, 1, 'and nothing left the building on the second attempt')
+  // Ruled by the OWNER AGENT: `sent` means the provider accepted it, not that
+  // the customer read it. Spam filtering and silent drops leave a row `sent`
+  // and nothing in the inbox -- which is exactly when Ken reaches for this.
+  await world.mailer.resend(row.id)
+  assert.equal(sent.length, 2, 'the second copy went, because only Ken knows the first never arrived')
+
+  const after = world.outbox.get(row.id)
+  assert.notEqual(after.resentAt, null,
+    'and the row records that a knowing second copy was sent -- the story six months later')
+  assert.equal(after.status, 'sent')
+
+  const third = await world.mailer.resend(row.id)
+  assert.equal(third.resentAt, after.resentAt, 'the first such stamp is kept: it does not become more true')
 })
 
 test('#407: the guard is released when a send fails, or one failure would freeze the row forever', async t => {
@@ -1131,9 +1140,12 @@ test('#407: the route answers 409 rather than 500 when a resend is refused', asy
     requestId: request.id, type: 'request-arrived', templateVersion: 1,
     data: { any: 'thing' }, to: CONFIG.ownerEmail, toName: CONFIG.ownerName,
   })
-  outbox.updateStatus(row.id, { status: 'sent', providerId: '<already@x>' })
+  // `bounced` is the one status not on RESENDABLE_STATUSES: it is the only
+  // case where the receiving server actually said no, so the same message to
+  // the same address has a known answer.
+  outbox.updateStatus(row.id, { status: 'bounced', error: '550 5.1.1 no such user' })
 
   const response = await fetch(`${base}/api/owner/outbox/${row.id}/resend`, { method: 'POST' })
   assert.equal(response.status, 409, 'a refused resend is a conflict the owner screen can render, not a server error')
-  assert.match((await response.json()).error, /already sent/)
+  assert.match((await response.json()).error, /bounced/)
 })

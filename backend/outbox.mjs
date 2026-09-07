@@ -194,6 +194,19 @@ export class Outbox {
     if (!columns.has('resolved_at')) this.db.exec('ALTER TABLE outbox ADD COLUMN resolved_at TEXT')
     if (!columns.has('resolution_note')) this.db.exec('ALTER TABLE outbox ADD COLUMN resolution_note TEXT')
     if (!columns.has('attempted_at')) this.db.exec('ALTER TABLE outbox ADD COLUMN attempted_at TEXT')
+    // `resent_at` records the one case that needs explaining later: a message
+    // that had already reached the provider being sent again, by hand, because
+    // Ken judged that the customer never got the first one. `sent` means the
+    // provider accepted it, not that anyone read it -- so this is a legitimate
+    // action, and six months on it is the row rather than a rotated log line
+    // that answers "why does this customer have two quote emails".
+    //
+    // Deliberately not a counter (ruled over-building for a one-man business
+    // with rare failures) and deliberately not a status (orthogonal to what
+    // the row IS, and widening that CHECK means a table rebuild). A nullable
+    // timestamp answers the question actually asked -- did this happen, and
+    // when -- and nothing more. Same plain guarded ALTER as the two above it.
+    if (!columns.has('resent_at')) this.db.exec('ALTER TABLE outbox ADD COLUMN resent_at TEXT')
 
     // And the watermark, which is the half that is easy to leave out.
     //
@@ -310,6 +323,7 @@ export class Outbox {
       resolvedAt: row.resolved_at ?? null, resolutionNote: row.resolution_note ?? null,
       attemptedAt: row.attempted_at ?? null,
       deliveryRisk: row.attempted_at ? 'possible-duplicate' : 'none',
+      resentAt: row.resent_at ?? null,
     }
   }
 
@@ -453,6 +467,29 @@ export class Outbox {
           AND created_at >= ? AND type = ?
         ORDER BY created_at ASC, rowid ASC LIMIT ?`)
       .all(watermark, type.trim(), limit).map(row => this.shapeRow(row))
+  }
+
+  /**
+   * Stamp that an already-sent message was sent again by hand.
+   *
+   * Only ever called for a row that was `sent` -- a resend of a `queued` or
+   * `failed` row is an ordinary retry and needs no explaining. Keeps the FIRST
+   * such stamp rather than the latest, unlike `attempted_at`: `attempted_at`
+   * answers "could this have arrived", which is about the most recent attempt,
+   * while this answers "did we ever knowingly send a second copy", which is
+   * about the first time it happened and does not become more true afterwards.
+   *
+   * Leaves `updated_at` alone for the same reason `markAttempted` does: that
+   * column is how long a send took, and the status write that follows this
+   * moves it anyway.
+   */
+  markResent(id) {
+    const found = this.get(id)
+    if (!found) throw new InputError('No such outbox message.', 404)
+    if (found.resentAt) return found
+
+    this.db.prepare('UPDATE outbox SET resent_at=? WHERE id=?').run(now(), id)
+    return this.get(id)
   }
 
   /**
