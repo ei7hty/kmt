@@ -1886,3 +1886,43 @@ say so and ask someone whose will. And never let a lookup failure become a
 finding: distinguish "asked and answered: nothing" from "could not ask", and
 make the second an undetermined result rather than an assertion about
 production. #348 does exactly that, which is why its worst case is a SKIP.
+
+**2026-09-07 - Claude (DEV OPS/INFRASTRUCTURE)**
+The monitor is shaped like CI; the things worth monitoring are shaped like the
+server.
+
+Twice in one night a detection task was assigned as "the health monitor, that is
+your file", and twice it could not be built there -- not because the design was
+wrong but because the data lives somewhere the monitor cannot reach.
+
+The stranded-outbox detector needed rows behind the owner session. The SMTP
+probe needs `transporter.verify()`, which performs AUTH and therefore needs the
+mail credential. Both live on the server as Fly secrets. The health monitor is a
+GitHub Actions workflow whose entire environment is DEPLOY_URL. Neither task was
+five minutes from working; both were structurally impossible in that file.
+
+The assignment was reasonable each time. `.github/workflows/health-monitor.yml`
+IS the monitoring file, and "monitoring goes in the monitor" is the obvious
+placement. The mismatch is that our monitor runs OUTSIDE the application, with a
+credential-free environment, while almost everything worth watching -- outbox
+rows, mail auth, anything behind a session -- is INSIDE it.
+
+So before accepting a monitoring task, ask one question first: where does the
+data live, and what credential does reaching it require? If the answer is "on the
+server, behind a secret", the probe belongs in the server and the only question
+left is how its result gets out. That question is the actual design work, and it
+is worth separating from the probe, which is usually trivial.
+
+Getting the result out has three shapes and we ruled on them: an unauthenticated
+status path, a scoped read-only token in CI, or server log plus owner screen. The
+ruling was the token, and the deciding argument was not disclosure -- both leak
+the same one bit -- but REVERSIBILITY. A token can be revoked; a public endpoint
+cannot be taken back once a bookmark, a script or an uptime service depends on
+it, and its removal becomes a breaking change rather than a decision.
+
+I recommended the unauthenticated path and was overruled with a better argument.
+Worth recording that too: I flagged my own recommendation as an exception to a
+rule I had argued all night, and that flag is what let someone else check the
+reasoning rather than rubber-stamp it. When you notice you are arguing against
+your own principle, say so out loud -- the principle usually wins, and the person
+best placed to see that is not you.
