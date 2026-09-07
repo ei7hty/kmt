@@ -2,6 +2,7 @@
 import { chromium } from 'playwright';
 import https from 'node:https';
 import { CATALOG_FIELDS } from './audit-ui.mjs';
+import { GA_MEASUREMENT_ID } from '../src/analytics.js';
 
 /**
  * What a deploy has to prove, without touching anything.
@@ -50,7 +51,7 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 54;
+const EXPECTED_CHECKS = 55;
 
 let passed = 0;
 let failed = 0;
@@ -704,6 +705,28 @@ async function main() {
     }
   } catch (error) {
     fail(`the deployed site answers X-KMT-Service-Area as on or off — ${describeFetchError(error)}`);
+  }
+
+  // GA4's measurement id, checked against the deployed bundle rather than
+  // trusted from source: a wrong id fails completely silently (GA accepts
+  // the hits, nothing errors, the audits pass, and the data lands in a
+  // property nobody is watching, discovered weeks later). This proves the
+  // constant src/analytics.js exports actually reached what was deployed --
+  // it cannot prove the value itself is the one Ken's own GA4 account
+  // expects, which nothing in this repository can check.
+  try {
+    const homeHtml = await (await fetch(`${BASE}/`)).text();
+    const scriptSrc = homeHtml.match(/<script\b[^>]*type=["']module["'][^>]*\bsrc=["']([^"']+)["']/i)?.[1];
+    if (!scriptSrc) {
+      fail('the deployed bundle carries the GA4 measurement id src/analytics.js exports — no module script tag found on /');
+    } else {
+      const bundle = await (await fetch(new URL(scriptSrc, BASE).toString())).text();
+      const present = bundle.includes(GA_MEASUREMENT_ID);
+      check(present, 'the deployed bundle carries the GA4 measurement id src/analytics.js exports',
+        present ? '' : `${GA_MEASUREMENT_ID} not found in ${scriptSrc}`);
+    }
+  } catch (error) {
+    fail(`the deployed bundle carries the GA4 measurement id src/analytics.js exports — ${describeFetchError(error)}`);
   }
 
   reportCount();

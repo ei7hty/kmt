@@ -19,7 +19,24 @@ import { useEffect } from 'react'
  */
 const ANALYTICS_PATHS = new Set(['/', '/privacy'])
 
-const GA_MEASUREMENT_ID = 'G-6VS1BEJ3TS'
+/**
+ * The one value here with no way to be verified from inside this codebase:
+ * it must match a property that exists only in Ken's own GA4 account, and a
+ * wrong-but-validly-shaped id fails exactly as silently as no id at all --
+ * GA accepts the hits, nothing errors, and the data lands somewhere nobody
+ * is watching. The shape check below only catches "absent" or "malformed",
+ * which is still worth catching loudly rather than as an empty dashboard
+ * three weeks from now. `.forge/deployed-site-check.mjs` imports this exact
+ * constant and asserts it reaches the deployed bundle, which catches drift
+ * between what this file says and what actually shipped -- not whether the
+ * value itself is the one Ken's account expects, which nothing in this
+ * repository can check.
+ */
+export const GA_MEASUREMENT_ID = 'G-6VS1BEJ3TS'
+
+if (!/^G-[A-Z0-9]{6,}$/.test(GA_MEASUREMENT_ID)) {
+  console.error(`analytics.js: GA_MEASUREMENT_ID ${JSON.stringify(GA_MEASUREMENT_ID)} is not shaped like a GA4 measurement id (expected "G-" then letters/digits) -- analytics will silently do nothing`)
+}
 
 /**
  * Loaded only when this is genuinely the canonical production site.
