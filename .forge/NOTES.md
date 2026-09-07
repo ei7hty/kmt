@@ -1760,3 +1760,89 @@ the resemblance was in the shape of the confusion -- a status field taken at
 face value -- not in the mechanism. Filed as its own lesson rather than
 folded into that one, so a future reader does not inherit the wrong
 generalisation along with the right instinct to check.
+
+
+**2026-09-07 — PRODUCT MANAGER / OWNER AGENT (session local_44d1e1f9), at TEMP
+REPO AGENT's suggestion, who agreed the second-order cost outranked the bug**
+A check that false-alarms does not stay neutral. It trains people to read
+around it.
+
+**The bug**: DNS address-family checks used `.catch(() => [])`, which makes *"I
+could not reach a resolver"* indistinguishable from *"no record exists"* — so a
+transient failure reports a false alarm on a host that is fine. **Never
+deployed; `.forge/` is not in `ship_paths`.**
+
+**The cost that outlives it**: a false alarm does not merely waste one
+investigation. **It teaches everyone that this check lies, and the workaround
+becomes reflex.**
+
+**That already happened, the same night, within hours.** Verifying a deploy,
+the repo agent read the **job-level** result rather than the overall run —
+because the run's audit step was false-failing on an unrelated IPv6 issue.
+**They were right to do it, and it is exactly the habit a false-alarming check
+produces.** One more and *"the overall status lies, check the job"* is the
+norm, at which point a real failure in that step reaches nobody.
+
+**So fix a false alarm with the urgency of a real failure.** The damage is not
+to the day's work; **it is to the instrument's standing, and that does not
+recover on its own.** A check nobody trusts has stopped existing while still
+occupying a slot in the gate.
+
+
+**2026-09-07 — PRODUCT MANAGER / OWNER AGENT (session local_44d1e1f9), the
+PROJECT MANAGER's wording, after the user overturned a ruling of mine** The
+code is authoritative about the product and says nothing about the business.
+
+**What happened.** `backend/quotes.mjs:25` sets `MIN_LEAD_DAYS = 7` and
+enforces it. Real, current, correctly read. **From it the conclusion was drawn
+that Ken cannot serve urgent work — so ranking for emergency intent would
+generate requests he refuses. I adopted that as a positioning ruling.**
+
+**The user: *"He does it, off-platform."***
+
+**The floor constrains the booking form. It does not describe Ken.** He does
+that work by phone, and no artifact in this repository could have said so.
+
+## Why this is not one of the failures already recorded here
+
+**Not a stale record** — the code was current and still is. **Not a broken
+instrument** — the reading was accurate. **A correct measurement of one domain,
+generalised into another where it has no authority.**
+
+**The tell is the shape of the conclusion, not the quality of the evidence.**
+It was a claim about *the business* — what Ken does, which customers he can
+serve — resting entirely on the repository. **A repository can testify about
+what the software does. It cannot testify about what the owner does when the
+software is not involved.**
+
+**Sibling to the relay entry above**: there, intent could only come from the
+person. **Here, operations could only come from the owner** — and the evidence
+looked stronger because it was real code, correctly read.
+
+
+**2026-09-07 — PRODUCT MANAGER / OWNER AGENT (session local_44d1e1f9), with the
+PROJECT MANAGER, who supplied the diagnostic** Two people arguing in good
+faith, each persuaded by the other, can converge on a swap rather than an
+answer.
+
+**We disagreed on whether *"Quick response you can count on"* reads as *fast
+reply* or *comes quickly*.** I ruled it safe. They read it as ambiguous.
+
+**Then I reversed to their position and they conceded to mine — both messages
+sent before the other arrived.** We had exchanged sides and settled nothing.
+
+**The diagnostic, theirs: a disagreement that survives two good-faith
+concessions is usually not about the thing being argued.** Both sides had
+evidence and neither could dislodge the other — **that is the shape of a
+question posed at the wrong level, not of a close call.**
+
+**And it was.** No single line was wrong; **the composite was.** *Roadside
+assistance*, *always on the move*, *I come to you*, *fast*, *quick response* —
+each defensible alone, stacked above a booking form with a seven-day floor,
+composing into immediacy for anyone reading at a glance. **No line-level ruling
+could have fixed it, which is why neither of ours held.**
+
+**When the argument will not settle, stop arguing the point and ask what
+question you are both answering.** And **neither of us could measure the thing
+it turned on** — how a customer actually reads it. **Ken can. That went to the
+user.**
