@@ -33,6 +33,7 @@ const SNAPSHOT_BODY_LIMIT = 8 * 1024 * 1024
 const QUOTE_ACTION = /^\/api\/owner\/quotes\/([^/]+)\/(approve|reject|done|cancel)$/
 const QUOTE_EDIT = /^\/api\/owner\/quotes\/([^/]+)$/
 const OUTBOX_RESOLVE = /^\/api\/owner\/outbox\/([^/]+)\/resolve$/
+const OUTBOX_RESEND = /^\/api\/owner\/outbox\/([^/]+)\/resend$/
 
 /** The only origins allowed to post pages back. Nothing else gets CORS at all. */
 const IMPORT_ORIGINS = new Set(['https://www.giga-tires.com', 'https://giga-tires.com'])
@@ -528,6 +529,28 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
         const [, raw] = url.pathname.match(OUTBOX_RESOLVE)
         const body = await readJsonBody(request)
         send(200, mailer.outbox.resolve(decodeURIComponent(raw), body?.note ?? null))
+      } else if (request.method === 'POST' && OUTBOX_RESEND.test(url.pathname)) {
+        // Ken's other action on a stuck message, and the counterpart to
+        // resolve above rather than a peer of it: resend means "try again",
+        // resolve means "give up on this one, deliberately".
+        //
+        // Only Ken's own `request-arrived` alert is ever re-sent without
+        // asking (backend/mail.mjs's AUTO_RETRY_TYPES). Everything a customer
+        // receives reaches a provider again only through this route, because
+        // the decision is his: a duplicate quote costs a conversation and
+        // possibly a pricing dispute, and the row's `deliveryRisk` tells him
+        // which kind of resend he is authorising -- `none` risks nothing,
+        // `possible-duplicate` may already have arrived.
+        //
+        // Answers the updated row, the same shape the listing gives, so the
+        // owner screen re-renders from the response rather than reloading:
+        // on success `sent` with the provider's id, which drops it out of
+        // `unresolvedFailures()` with no separate resolve step; on failure
+        // `failed` carrying the NEW provider reason, never silently back to
+        // `queued` and never the previous attempt's error under a fresh one.
+        if (!mailer) throw new InputError('Owner endpoint not found', 404)
+        const [, raw] = url.pathname.match(OUTBOX_RESEND)
+        send(200, await mailer.resend(decodeURIComponent(raw)))
       } else if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
         send(200, { ...inventory.list(Object.fromEntries(url.searchParams)), summary: inventory.summary() })
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/by-brand/')) {
