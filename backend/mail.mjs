@@ -44,6 +44,31 @@ const PRIVATE = { private: true }
 export const AUTO_RETRY_TYPES = ['request-arrived']
 
 /**
+ * The row states a manual resend may send from, named rather than left as an
+ * absence. `sent` is deliberately here: see `resend()` for why, and do not
+ * remove it on the strength of a `provider_id`.
+ *
+ * `bounced` is deliberately NOT here, for two reasons and the second is the
+ * one that settles it. The receiving server actually said no, so the
+ * uncertainty the `sent` case turns on is absent. And more decisively: a
+ * resend REPLAYS THE STORED ROW, `to_address` included, so it necessarily
+ * goes back to the address that rejected it -- even if Ken has since learned
+ * the right one, this button cannot use it. A resent `sent` row *might* reach
+ * someone; a resent hard-bounced row *cannot*. Excluding it withholds nothing.
+ *
+ * THE ASSUMPTION, and it is written here rather than in a document because
+ * this array is what the person who invalidates it will be reading:
+ * **this assumes `bounced` means a PERMANENT refusal.** A hard bounce (no such
+ * mailbox) is permanent and the exclusion is right. A soft bounce (mailbox
+ * full, server briefly unavailable) is transient, and the same message to the
+ * same address would succeed an hour later -- so if soft bounces ever land in
+ * this status, THIS LIST IS WRONG and `bounced` needs splitting before it can
+ * be trusted here. Nothing produces `bounced` today, which is exactly why it
+ * gets a decision and a stated premise rather than a gap.
+ */
+export const RESENDABLE_STATUSES = ['queued', 'failed', 'sent']
+
+/**
  * How long shutdown waits for in-flight mail before giving up on it.
  *
  * Derived, not picked: 16 sends recorded `sent` in production on 2026-09-06/07
@@ -220,6 +245,8 @@ export class Mailer {
     this.templates = templates
     this.log = log
     this.inFlight = new Set()
+    // Rows with a manual resend in flight; see resend().
+    this.resending = new Set()
     // The active probe's last result (#285's sibling): unlike the outbox,
     // this asks whether the seam is alive even when nothing is being sent --
     // the case that hid the 2026-09-06 outage for two hours, because every
@@ -381,7 +408,67 @@ export class Mailer {
     if (row.templateVersion !== template.version) {
       throw new InputError(`Outbox message ${id} was composed for ${row.type} v${row.templateVersion}; the template is now v${template.version}.`)
     }
-    return this.deliver(row, template.render(row.data))
+    // An allowed-status list rather than an absence, so the permissiveness is
+    // a decision on the record. Before review there was no status check at
+    // all, and an absence reads identically to an oversight -- which is
+    // exactly how the missing concurrency guard beside it was found.
+    //
+    // `sent` IS on this list, ruled by the OWNER AGENT, and the sentence that
+    // should stop anyone re-adding a block in six months is this one:
+    // **`sent` means the provider accepted the message, not that the customer
+    // read it.** Spam filtering, a silent drop, an address the provider
+    // happily accepted and nobody reads -- none of those bounce, and all of
+    // them leave the row `sent`. So a resend is a guaranteed duplicate *at the
+    // provider*, which is not the thing that matters, and unknown for the
+    // customer -- and the moment Ken reaches for this button is precisely the
+    // moment `sent` is true and nothing arrived. A block would have been
+    // strongest exactly where it is wrong.
+    //
+    // The asymmetry decides it: a wrong `allow` costs a conversation; a wrong
+    // `block` leaves him with no path and nobody to ask at 7am.
+    if (!RESENDABLE_STATUSES.includes(row.status)) {
+      throw new InputError(`That message is ${row.status}, which is not a state this can send from.`, 409)
+    }
+
+    // One send per row at a time. A double-click is enough to break this
+    // without it: measured on the unguarded version, two concurrent calls both
+    // reached the provider and one customer got two copies of the same quote
+    // -- the exact harm this whole change exists to prevent, arriving through
+    // the manual door after being shut on the automatic one.
+    //
+    // In process rather than in the database, and that is not a shortcut. A
+    // compare-and-swap on `updated_at` was written first and guarded nothing:
+    // `resend()` re-reads the row itself, so the second caller reads the value
+    // the first just wrote and its swap succeeds honestly. Measured -- the
+    // repro still sent twice with the CAS in place. The thing being excluded
+    // is *concurrency inside one process*, and only a marker taken and
+    // released inside that process can see it.
+    //
+    // Safe because this is a single-machine design and says so: `fly.toml`
+    // refuses a second machine, since a Fly volume attaches to one and two
+    // would silently diverge. If that ever changes, this needs a real lock in
+    // the row and so does everything else here.
+    //
+    // The check and the add sit together with no await between them, so no
+    // second caller can interleave; `finally` releases it even when the
+    // provider throws, or a row could never be sent again after one failure.
+    if (this.resending.has(id)) {
+      throw new InputError('That message is already being sent. Give it a moment rather than sending a second copy.', 409)
+    }
+    this.resending.add(id)
+    try {
+      // Recorded before the send, and only for the case that needs explaining:
+      // a message that had already reached the provider being sent again. Six
+      // months later, when somebody asks why one customer has two quote
+      // emails, the row itself answers instead of a log line that rotated away.
+      // Not a counter -- that was ruled over-building for a one-man business
+      // with rare failures -- and not a new status, which would mean a CHECK
+      // rebuild for something orthogonal to what the row is.
+      if (row.status === 'sent') this.outbox.markResent(id)
+      return await this.deliver(row, template.render(row.data))
+    } finally {
+      this.resending.delete(id)
+    }
   }
 
   /**
