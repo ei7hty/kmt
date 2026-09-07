@@ -70,6 +70,21 @@ nothing regardless of how it lands. One small commit, straight to `main`, is
 the whole mechanism — the same discipline as any other commit here (explicit
 paths, no `-A`, check the branch first), just without a PR wrapped around it.
 
+**Make that commit from a disposable worktree off `origin/main`, not the shared
+checkout.** A claim commit is unpushed for the seconds between commit and push,
+and `CLAIMS.md` is the busiest file here — so in that window a `git reset` (even
+`--soft`), a rebase, or an amend run in the shared checkout by any session can
+unmake another session's unpushed claim. The recovery is the reflog, and the
+loss leaves no artifact: no conflict, no error, nothing in `CLAIMS.md` to say a
+row was ever there, until someone asks where their claim went. That is the worst
+failure shape this repo has — it looks correct from every angle a reader has.
+A worktree gives you your own `HEAD` to commit and push from, so no session's
+history op can reach another's unpushed work; `node scripts/worktree.mjs add`
+and `remove` handle it, and the worktree is disposable once the push lands. The
+same holds for any direct-to-`main` commit, claims and releases alike: the
+shared checkout's `HEAD` is shared state, and rewriting it is not yours alone to
+do.
+
 **A subagent has no row of its own.** Work you spawn as a subagent — not a new
 session — has no session id, cannot be messaged, and cannot hold a `CLAIMS.md`
 row in its own name. So the session that spawns it owns the subagent's claim
