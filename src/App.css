@@ -627,6 +627,36 @@
   flex-wrap: wrap;
 }
 
+/* A small alert, not a nav button: red because it names a real problem
+   (matching .status-note-bad's family), a pill so it reads as a count
+   rather than another destination. Renders in both nav layouts
+   (.internal-nav-links and .oi-nav), which is why it does not lean on
+   either one's own spacing rules beyond the flex/gap both already provide. */
+.mail-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #ef7a80;
+  border-radius: 999px;
+  background: rgba(239, 122, 128, 0.12);
+  color: #ef7a80;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* The check itself failed, not the outbox -- amber (status-note-wait's
+   colour), the codebase's own vocabulary for "uncertain," never the red
+   above, which means "confirmed problem." Silence and a false "clean"
+   already fail toward the same wrong answer; this must not fail toward it
+   a second time by reading as another shade of the same red badge. */
+.mail-alert-unknown {
+  border-color: #d9a441;
+  background: rgba(217, 164, 65, 0.12);
+  color: #d9a441;
+}
+
 /* Card panel: dark gradient card with a subtle border, the same
    language as the customer flow's .max-w-2xl / .step-panel cards. */
 .panel {
