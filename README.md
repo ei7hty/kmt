@@ -184,6 +184,23 @@ URL replaces that product in the snapshot while preserving every other tire,
 including other tires of the same size. No image is downloaded or hotlinked by
 this command.
 
+The owner can run a separate, read-only provider validation against exactly
+five reproducibly seeded product pages from the existing snapshot. It is
+always serial, uses the identifiable KMT User-Agent, waits a randomized
+2–5-second interval between starts, never retries, and stops the whole run on
+an HTTP 403/429 or an equivalent provider/robots denial. It never writes the
+snapshot or imports anything. This is an owner-run check, not an agent or CI
+operation:
+
+```powershell
+# OWNER RUN ONLY — run from the repository checkout after reviewing the seed.
+npm run scrape-tires -- --validate-products --validation-seed 20260907
+```
+
+Use a different integer seed when you want a different reproducible sample;
+record the seed and the result with the owner's refresh notes. If the
+snapshot has fewer than five valid product URLs, validation refuses to start.
+
 ```bash
 npm run scrape-tires -- --help
 ```

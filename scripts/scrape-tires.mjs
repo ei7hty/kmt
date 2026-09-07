@@ -21,14 +21,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createBrowserFetcher, RateLimitedError } from './browser-fetch.mjs'
-import { canonicalSize, fetchProductPage, fetchSizePage, parseListingPage, parseProductPage, parseSize, productUrl } from './giga-tires.mjs'
+import { canonicalSize, fetchProductPage, fetchSizePage, parseListingPage, parseProductPage, parseSize, productUrl, ProviderRefusalError, USER_AGENT } from './giga-tires.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DEFAULT_OUT = path.join(ROOT, 'src', 'data', 'scraped-tires.json')
-
-// Identifies the tool rather than pretending to be a browser. If giga-tires
-// ever wants to rate-limit or block this, they should be able to.
-const USER_AGENT = 'KMT-catalog-updater/0.1 (manual catalog sync; +https://github.com/kmt)'
 
 const HELP = `
 Pull tires from giga-tires.com into a reviewable JSON snapshot.
@@ -52,6 +48,11 @@ Options:
                      maximum 50). Required bounding applies across all URLs.
   --concurrency N    Product-page workers (default 1, maximum 4).
   --product-delay MS Minimum delay between product-page starts (default 1500).
+  --validate-products Validate exactly five seeded random product pages from
+                     the existing snapshot; read-only, serial and fail-closed.
+  --validation-seed N Required integer seed for reproducible page selection.
+  --validation-jitter-min MS  Lower bound for validation pacing (default 2000).
+  --validation-jitter-max MS  Upper bound for validation pacing (default 5000).
   --min-interval MS  Minimum time between one size's request and the next,
                      regardless of outcome -- empty, full or error alike
                      (default 10000). See docs/supplier-refresh.md for why
@@ -86,6 +87,10 @@ function parseArgs(argv) {
     enrichLimit: 8,
     concurrency: 1,
     productDelay: 1500,
+    validateProducts: false,
+    validationSeed: null,
+    validationJitterMin: 2000,
+    validationJitterMax: 5000,
     minInterval: 10000,
     out: DEFAULT_OUT,
     dryRun: false,
@@ -110,6 +115,10 @@ function parseArgs(argv) {
     else if (arg === '--enrich-limit') options.enrichLimit = Number(value())
     else if (arg === '--concurrency') options.concurrency = Number(value())
     else if (arg === '--product-delay') options.productDelay = Number(value())
+    else if (arg === '--validate-products') options.validateProducts = true
+    else if (arg === '--validation-seed') options.validationSeed = Number(value())
+    else if (arg === '--validation-jitter-min') options.validationJitterMin = Number(value())
+    else if (arg === '--validation-jitter-max') options.validationJitterMax = Number(value())
     else if (arg === '--limit') options.limit = Number(value())
     else if (arg === '--pages') options.pages = Number(value())
     else if (arg === '--delay') options.delay = Number(value())
@@ -132,9 +141,54 @@ function validateEnrichmentOptions(options) {
   if (!Number.isFinite(options.productDelay) || options.productDelay < 0) throw new Error('--product-delay must be zero or greater')
 }
 
+function validateValidationOptions(options) {
+  if (!Number.isInteger(options.validationSeed)) throw new Error('--validation-seed must be an integer')
+  if (!Number.isFinite(options.validationJitterMin) || options.validationJitterMin < 0 ||
+      !Number.isFinite(options.validationJitterMax) || options.validationJitterMax < options.validationJitterMin) {
+    throw new Error('--validation-jitter-min/max must be non-negative, with max at least min')
+  }
+  if (options.sizes.length || options.fromCatalog || options.enrichProducts || options.productUrls.length || options.replace) {
+    throw new Error('--validate-products is standalone; do not combine it with size, enrichment, or replacement options')
+  }
+}
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 const money = (amount) => `$${amount.toFixed(2)}`
+
+function seededRandom(seed) {
+  let state = seed >>> 0
+  return () => {
+    state = (state + 0x6D2B79F5) >>> 0
+    let value = Math.imul(state ^ (state >>> 15), 1 | state)
+    value ^= value + Math.imul(value ^ (value >>> 7), 61 | value)
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/** Pick a stable, bounded set from the snapshot without making a network call. */
+export function selectValidationUrls(rows, seed, count = 5) {
+  const candidates = [...new Set(rows.map(row => row.source?.url).filter(Boolean).map(productUrl))]
+  if (candidates.length < count) throw new Error(`Validation needs ${count} valid product URLs; snapshot has ${candidates.length}`)
+  const random = seededRandom(seed)
+  for (let index = candidates.length - 1; index > 0; index--) {
+    const swap = Math.floor(random() * (index + 1))
+    ;[candidates[index], candidates[swap]] = [candidates[swap], candidates[index]]
+  }
+  return candidates.slice(0, count)
+}
+
+export function createValidationOptions(options) {
+  validateValidationOptions(options)
+  const random = seededRandom(options.validationSeed ^ 0x9E3779B9)
+  return {
+    ...options,
+    enrichLimit: 5,
+    concurrency: 1,
+    productDelay: 0,
+    delayForNext: () => options.validationJitterMin + Math.floor(random() * (options.validationJitterMax - options.validationJitterMin + 1)),
+  }
+}
 
 async function sizesFromCatalog() {
   const { TIRE_CATALOG } = await import('../src/data/catalog.js')
@@ -302,6 +356,7 @@ export async function scrapeAll(sizes, options, fetcher) {
   const scrapedAt = new Date().toISOString()
   let totalSkipped = 0
   let stoppedOnRateLimit = null
+  let stoppedOnRefusal = null
   let lastStart = 0
 
   for (const [index, size] of sizes.entries()) {
@@ -327,8 +382,11 @@ export async function scrapeAll(sizes, options, fetcher) {
         (coverage[size].complete ? ', complete' : `, partial (page ${result.pagesRead} of ${result.totalPages}${options.limit ? `, limit ${options.limit}` : ''})`)
       )
     } catch (error) {
-      if (error instanceof RateLimitedError) {
-        stoppedOnRateLimit = { size, retryAfter: error.retryAfter }
+      if (error instanceof ProviderRefusalError) {
+        stoppedOnRefusal = { size, status: error.status, reason: error.reason, message: error.message }
+        if (error instanceof RateLimitedError || error.status === 429) {
+          stoppedOnRateLimit = { size, retryAfter: error.retryAfter }
+        }
         break
       }
       failures.push({ size, message: error.message })
@@ -336,7 +394,7 @@ export async function scrapeAll(sizes, options, fetcher) {
     }
   }
 
-  return { tires, failures, coverage, totalSkipped, scrapedAt, stoppedOnRateLimit }
+  return { tires, failures, coverage, totalSkipped, scrapedAt, stoppedOnRateLimit, stoppedOnRefusal }
 }
 
 /** Bounded product-page work queue, exported so fixtures can prove pacing and preservation. */
@@ -346,22 +404,27 @@ export async function enrichRows(rows, urls, options, fetcher) {
   const targets = [...new Set(urls.map(productUrl))].slice(0, options.enrichLimit)
   const enriched = new Map(rows.map(row => [row.id, row]))
   const failures = []
+  let stoppedOnRefusal = null
   let cursor = 0
   let lastStart = 0
   let pace = Promise.resolve()
 
   const nextTarget = () => cursor < targets.length ? targets[cursor++] : null
+  const now = options.now || Date.now
+  const wait = options.sleep || sleep
+  const delayForNext = options.delayForNext || (() => options.productDelay)
   const waitForTurn = () => {
     const turn = pace.then(async () => {
-      const wait = options.productDelay - (Date.now() - lastStart)
-      if (lastStart && wait > 0) await sleep(wait)
-      lastStart = Date.now()
+      const remaining = delayForNext() - (now() - lastStart)
+      if (lastStart && remaining > 0) await wait(remaining)
+      lastStart = now()
     })
     pace = turn.catch(() => {})
     return turn
   }
   const worker = async () => {
     for (let url; (url = nextTarget());) {
+      if (stoppedOnRefusal) return
       await waitForTurn()
       try {
         const fetched = await fetcher(url)
@@ -369,12 +432,16 @@ export async function enrichRows(rows, urls, options, fetcher) {
         if (!row.id || !row.size || !Number.isFinite(row.price)) throw new Error('Product page did not contain an importable SKU, size, and price')
         enriched.set(row.id, row)
       } catch (error) {
+        if (error instanceof ProviderRefusalError) {
+          stoppedOnRefusal = { url, status: error.status, reason: error.reason, message: error.message }
+          throw error
+        }
         failures.push({ url, message: error.message })
       }
     }
   }
   await Promise.all(Array.from({ length: Math.min(options.concurrency, targets.length) }, worker))
-  return { rows: [...enriched.values()], failures, attempted: targets.length }
+  return { rows: [...enriched.values()], failures, attempted: targets.length, stoppedOnRefusal }
 }
 
 async function main() {
@@ -382,6 +449,29 @@ async function main() {
 
   if (options.help) {
     console.log(HELP)
+    return
+  }
+
+  if (options.validateProducts) {
+    const validationOptions = createValidationOptions(options)
+    const snapshot = JSON.parse(await readFile(DEFAULT_OUT, 'utf8'))
+    const urls = selectValidationUrls(snapshot.tires || [], options.validationSeed)
+    console.log(`Validating exactly ${urls.length} seeded product pages (seed ${options.validationSeed}); read-only, serial, no retries.`)
+    console.log(`Validation pacing: randomized ${options.validationJitterMin}-${options.validationJitterMax}ms between starts.`)
+    console.log(options.plainFetch ? 'Using plain HTTP.\n' : 'Opening a browser window.\n')
+    const browser = options.plainFetch
+      ? null
+      : await createBrowserFetcher({ headless: options.headless, userAgent: USER_AGENT })
+    const productFetcher = browser
+      ? url => browser.fetchProductPage(url)
+      : url => fetchProductPage(url, { userAgent: USER_AGENT })
+    try {
+      const result = await enrichRows([], urls, validationOptions, productFetcher)
+      console.log(`Validation complete: ${result.attempted - result.failures.length} passed, ${result.failures.length} failed.`)
+      if (result.failures.length) process.exitCode = 1
+    } finally {
+      if (browser) await browser.close()
+    }
     return
   }
 
@@ -413,7 +503,7 @@ async function main() {
 
   const browser = options.plainFetch
     ? null
-    : await createBrowserFetcher({ headless: options.headless })
+    : await createBrowserFetcher({ headless: options.headless, userAgent: USER_AGENT })
   const fetcher = browser
     ? (size, page) => browser.fetchSizePage(size, page)
     : (size, page) => fetchSizePage(size, page, { userAgent: USER_AGENT })
@@ -425,7 +515,7 @@ async function main() {
   try {
     result = sizes.length
       ? await scrapeAll(sizes, options, fetcher)
-      : { tires: [], failures: [], coverage: {}, totalSkipped: 0, scrapedAt: new Date().toISOString(), stoppedOnRateLimit: null }
+      : { tires: [], failures: [], coverage: {}, totalSkipped: 0, scrapedAt: new Date().toISOString(), stoppedOnRateLimit: null, stoppedOnRefusal: null }
     const requestedUrls = [
       ...options.productUrls,
       ...(options.enrichProducts ? result.tires.map(tire => tire.source?.url).filter(Boolean) : []),
@@ -440,7 +530,7 @@ async function main() {
     if (browser) await browser.close()
   }
   let { tires, coverage } = result
-  const { failures, totalSkipped, scrapedAt, stoppedOnRateLimit } = result
+  const { failures, totalSkipped, scrapedAt, stoppedOnRateLimit, stoppedOnRefusal } = result
 
   if (stoppedOnRateLimit) {
     const { size, retryAfter } = stoppedOnRateLimit
@@ -449,6 +539,12 @@ async function main() {
       'Stopped -- a 429 is a stop, not a backoff. See docs/supplier-refresh.md.'
     )
     process.exitCode = 1
+  }
+
+  if (stoppedOnRefusal) {
+    console.error(`\n${stoppedOnRefusal.message}. Stopped -- provider refusal is a run-global stop; no snapshot was written.`)
+    process.exitCode = 1
+    return
   }
 
   // Zero tires is not the same claim as zero progress: a run of genuinely

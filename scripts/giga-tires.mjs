@@ -18,6 +18,59 @@
 
 const ORIGIN = 'https://www.giga-tires.com'
 
+export const USER_AGENT = 'KMT-catalog-updater/0.1 (manual catalog sync; +https://github.com/kmt)'
+
+/** A supplier refusal is run-global: never turn it into a per-page failure. */
+export class ProviderRefusalError extends Error {
+  constructor(message, { status = null, reason = 'provider-refusal', retryAfter = null } = {}) {
+    super(message)
+    this.name = 'ProviderRefusalError'
+    this.status = status
+    this.reason = reason
+    this.retryAfter = retryAfter
+  }
+}
+
+const REFUSAL_MARKERS = [
+  ['access denied', /access denied/i],
+  ['request could not be satisfied', /request could not be satisfied/i],
+  ['forbidden', /\bforbidden\b/i],
+  ['too many requests', /too many requests/i],
+  ['temporarily blocked', /temporarily blocked/i],
+  ['captcha', /\bcaptcha\b/i],
+  ['verify you are human', /verify (?:that )?you are human/i],
+  ['robot check', /robot check|automated access/i],
+  ['disallowed by robots', /disallow(?:ed)?\s+by\s+robots(?:\.txt)?/i],
+]
+
+export function refusalReason(html) {
+  const match = REFUSAL_MARKERS.find(([, pattern]) => pattern.test(String(html || '')))
+  return match?.[0] || null
+}
+
+export function assertProviderResponse(url, response, html) {
+  const status = typeof response?.status === 'function' ? response.status() : response?.status ?? null
+  const headers = typeof response?.headers === 'function' ? response.headers() : response?.headers
+  if (status === 403 || status === 429) {
+    throw new ProviderRefusalError(`${status} from ${url}`, {
+      status,
+      reason: status === 429 ? 'rate-limit' : 'forbidden',
+      retryAfter: headers?.get?.('retry-after') ?? headers?.['retry-after'] ?? null,
+    })
+  }
+  const reason = refusalReason(html)
+  if (reason) {
+    throw new ProviderRefusalError(`Provider refusal from ${url}: ${reason}`, { status, reason })
+  }
+}
+
+export function assertExpectedPage(url, html, kind) {
+  const expected = kind === 'product'
+    ? html.includes('application/ld+json') || html.includes('tirecode')
+    : html.includes('window.productPrices') || html.includes('plp-list__item-container') || html.includes('is not available at this time')
+  if (!expected) throw new ProviderRefusalError(`Blocked or unexpected ${kind} page from ${url}`, { reason: 'unexpected-provider-page' })
+}
+
 export function productUrl(value) {
   let url
   try { url = new URL(value, ORIGIN) } catch { throw new Error(`Not a product URL: ${value}`) }
@@ -386,7 +439,7 @@ export function sizeUrl(size, page = 1) {
  * is the cheapest path if that ever changes, and it is what --plain-fetch runs.
  */
 export async function fetchSizePage(size, page = 1, options = {}) {
-  const { fetchImpl = fetch, userAgent } = options
+  const { fetchImpl = fetch, userAgent = USER_AGENT } = options
   const url = sizeUrl(size, page)
   const response = await fetchImpl(url, {
     headers: {
@@ -395,18 +448,22 @@ export async function fetchSizePage(size, page = 1, options = {}) {
       'User-Agent': userAgent,
     },
   })
-  if (!response.ok) {
-    throw new Error(`GET ${url} -> ${response.status} ${response.statusText}`)
-  }
-  return { html: await response.text(), url }
+  const html = await response.text()
+  assertProviderResponse(url, response, html)
+  if (!response.ok) throw new Error(`GET ${url} -> ${response.status} ${response.statusText}`)
+  assertExpectedPage(url, html, 'listing')
+  return { html, url }
 }
 
 export async function fetchProductPage(input, options = {}) {
-  const { fetchImpl = fetch, userAgent } = options
+  const { fetchImpl = fetch, userAgent = USER_AGENT } = options
   const url = productUrl(input)
   const response = await fetchImpl(url, { headers: {
     Accept: 'text/html,application/xhtml+xml', 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': userAgent,
   } })
+  const html = await response.text()
+  assertProviderResponse(url, response, html)
   if (!response.ok) throw new Error(`GET ${url} -> ${response.status} ${response.statusText}`)
-  return { html: await response.text(), url }
+  assertExpectedPage(url, html, 'product')
+  return { html, url }
 }
