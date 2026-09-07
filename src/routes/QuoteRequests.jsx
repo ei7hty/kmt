@@ -252,7 +252,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
       </nav>
       <div className="owner-content">
         <p className="eyebrow">OWNER</p>
-        <h1 className="owner-heading">Quote Requests</h1>
+        <h1 className="owner-heading" data-testid="quote-requests-heading">Quote Requests</h1>
         <p className="text-secondary owner-subhead" role="status">{summary}</p>
         {/* The count sits on every tab, so what needs a decision is visible
             without first switching to the tab that would say so. */}

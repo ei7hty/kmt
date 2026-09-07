@@ -82,7 +82,7 @@ function reportCount() {
  *
  * @param size  Tire size as it appears in the catalog, e.g. '265/70R16'.
  */
-async function submitRequest(page, { size, tireName, vehicle, location, date, zip = ZIP_IN_AREA, customerName = 'Jamie Rivera', customerEmail = AUDIT_EMAIL }) {
+async function submitRequest(page, { size, tireId, vehicle, location, date, zip = ZIP_IN_AREA, customerName = 'Jamie Rivera', customerEmail = AUDIT_EMAIL }) {
   const [width, rest] = size.split('/');
   const [ratio, diameter] = rest.split('R');
 
@@ -95,17 +95,17 @@ async function submitRequest(page, { size, tireName, vehicle, location, date, zi
     // ZIP typed here carries into the service details, and the server needs
     // it: it is where the van goes.
     for (const value of [width, ratio, diameter]) {
-      await page.click(`.fitment-option:has-text("${value}")`, step);
+      await page.getByTestId(`fitment-option-${value}`).click(step);
     }
     await page.fill('#fitmentZip', zip, step);
-    await page.click('button:has-text("Continue to tires")', step);
+    await page.getByTestId('continue-to-tires').click(step);
 
-    // Step 2: pick the tire by its catalog name, and say what it is going on.
+    // Step 2: pick the tire by its stable catalog id, and say what it is going on.
     await expandTireList(page);
-    await page.click(`.tire-option:has-text("${tireName}")`, step);
+    await page.getByTestId(`tire-option-${tireId}`).click(step);
     await page.locator('.manual-vehicle summary').click();
     await page.fill('#vehicleInfo', vehicle, step);
-    await page.click('button:has-text("Continue to mobile service")', step);
+    await page.getByTestId('continue-to-mobile-service').click(step);
 
     // Step 3: service details, then submit.
     await page.fill('#location', location, step);
@@ -129,7 +129,7 @@ async function submitRequest(page, { size, tireName, vehicle, location, date, zi
 }
 
 /** A size whose matching tires include the off-road option, which forces owner review. */
-const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain' };
+const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain', tireId: 'tire-5' };
 
 /**
  * A size with no seed tire, so its standard (generated-only) list has
@@ -318,11 +318,11 @@ async function main() {
 
     const [w, r] = CLEAN_TIRE.size.split('/');
     const [ra, di] = r.split('R');
-    for (const value of [w, ra, di]) await page.click(`.fitment-option:has-text("${value}")`);
-    await page.click('button:has-text("Continue to tires")');
+    for (const value of [w, ra, di]) await page.getByTestId(`fitment-option-${value}`).click();
+    await page.getByTestId('continue-to-tires').click();
 
     // Now on step 2, try to advance without choosing a tire.
-    await page.click('button:has-text("Continue to mobile service")');
+    await page.getByTestId('continue-to-mobile-service').click();
     const stepErrorVisible = await page
       .locator('text=Choose a tire for your vehicle')
       .isVisible()
@@ -343,9 +343,9 @@ async function main() {
     for (const [w, r, d] of [['175', '70', '14'], ['225', '45', '17'], ['275', '40', '20'], ['135', '80', '12'], ['325', '35', '24']]) {
       await page.goto(BASE + '/');
       for (const value of [w, r, d]) {
-        await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
+        await page.getByTestId(`fitment-option-${value}`).click({ timeout: 5000 });
       }
-      await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
+      await page.getByTestId('continue-to-tires').click({ timeout: 5000 });
 
       const tireCount = await page.locator('.tire-option').count();
       const wentEmpty = await page.locator('.tire-empty').isVisible().catch(() => false);
@@ -536,15 +536,15 @@ async function main() {
     const [qWidth, qRest] = CLEAN_TIRE.size.split('/');
     const [qRatio, qDiameter] = qRest.split('R');
     for (const value of [qWidth, qRatio, qDiameter]) {
-      await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
+      await page.getByTestId(`fitment-option-${value}`).click({ timeout: 5000 });
     }
     // The ZIP is required at submit now (t48); this scenario drives the
     // fitment step itself rather than through submitRequest(), so it types it.
     await page.fill('#fitmentZip', ZIP_IN_AREA, { timeout: 5000 });
-    await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
+    await page.getByTestId('continue-to-tires').click({ timeout: 5000 });
     await expandTireList(page);
-    await page.click(`.tire-option:has-text("${CLEAN_TIRE.tireName}")`, { timeout: 5000 });
-    await page.click('.quantity-options button:has-text("2")', { timeout: 5000 });
+    await page.getByTestId(`tire-option-${CLEAN_TIRE.tireId}`).click({ timeout: 5000 });
+    await page.getByTestId('quantity-option-2').click({ timeout: 5000 });
 
     const setPriceText = (await page.locator('.tire-quantity-total b').first().textContent().catch(() => ''))?.trim();
     const expectedSetPrice = `$${(CLEAN_TIRE.price * 2).toFixed(2)}`;
@@ -552,7 +552,7 @@ async function main() {
 
     await page.locator('.manual-vehicle summary').click();
     await page.fill('#vehicleInfo', '2020 Toyota Camry', { timeout: 5000 });
-    await page.click('button:has-text("Continue to mobile service")', { timeout: 5000 });
+    await page.getByTestId('continue-to-mobile-service').click({ timeout: 5000 });
     await page.fill('#location', '789 Demo Blvd', { timeout: 5000 });
     await page.fill('#date', LATEST, { timeout: 5000 });
     await page.fill('#customerName', 'Jamie Rivera', { timeout: 5000 });
@@ -599,13 +599,13 @@ async function main() {
     });
     await page.goto(BASE + '/');
     for (const value of ['215', '60', '16']) {
-      await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
+      await page.getByTestId(`fitment-option-${value}`).click({ timeout: 5000 });
     }
-    await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
+    await page.getByTestId('continue-to-tires').click({ timeout: 5000 });
 
     const loadingVisible = await page.locator('.tire-loading').first().isVisible().catch(() => false);
     const tireOptionCount = await page.locator('.tire-option').count();
-    await page.click('button:has-text("Continue to mobile service")', { timeout: 5000 });
+    await page.getByTestId('continue-to-mobile-service').click({ timeout: 5000 });
     const stillCheckingVisible = await page.locator('.step-error:has-text("still checking")').isVisible().catch(() => false);
     const stillOnTireStep = await page.locator('h3:has-text("Your tires. Your vehicle.")').isVisible().catch(() => false);
 
@@ -637,19 +637,19 @@ async function main() {
     });
     await page.goto(BASE + '/');
     for (const value of ['215', '60', '16']) {
-      await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
+      await page.getByTestId(`fitment-option-${value}`).click({ timeout: 5000 });
     }
-    await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
+    await page.getByTestId('continue-to-tires').click({ timeout: 5000 });
     // The request stays held; the app's own 8s wait fires first.
     await page.waitForSelector('.tire-options[data-source="standard"]', { timeout: 12000 });
-    await page.click('.tire-option:has-text("All-Weather Standard")', { timeout: 5000 });
+    await page.getByTestId('tire-option-tire-1').click({ timeout: 5000 });
 
     releaseLiveAnswerB();
     await page.waitForSelector('button.tire-refresh', { timeout: 5000 });
     await page.click('button.tire-refresh', { timeout: 5000 });
 
     const movedNote = await page.locator('.tire-reselect-note[data-outcome="moved"]').first().isVisible().catch(() => false);
-    const stillSelectedB = await page.locator('.tire-option.selected:has-text("All-Weather Standard")').isVisible().catch(() => false);
+    const stillSelectedB = await page.locator('.tire-option.selected[data-testid="tire-option-tire-1"]').isVisible().catch(() => false);
     const sourceIsLiveB = (await page.locator('.tire-options').getAttribute('data-source').catch(() => '')) === 'live';
 
     if (movedNote && stillSelectedB && sourceIsLiveB) {
@@ -690,9 +690,9 @@ async function main() {
     });
     await page.goto(BASE + '/');
     for (const value of [cWidth, cRatio, cDiameter]) {
-      await page.click(`.fitment-option:has-text("${value}")`, { timeout: 5000 });
+      await page.getByTestId(`fitment-option-${value}`).click({ timeout: 5000 });
     }
-    await page.click('button:has-text("Continue to tires")', { timeout: 5000 });
+    await page.getByTestId('continue-to-tires').click({ timeout: 5000 });
     await page.waitForSelector('.tire-options[data-source="standard"]', { timeout: 12000 });
     await page.locator('.tire-option').first().click({ timeout: 5000 });
 
@@ -701,7 +701,7 @@ async function main() {
     await page.click('button.tire-refresh', { timeout: 5000 });
 
     const clearedNote = await page.locator('.tire-reselect-note[data-outcome="cleared"]').first().isVisible().catch(() => false);
-    const continueButton = page.locator('button.primary-action:has-text("Continue to mobile service")');
+    const continueButton = page.getByTestId('continue-to-mobile-service');
     const continueDisabledAfterClear = await continueButton.isDisabled().catch(() => false);
 
     await page.locator('.tire-option').first().click({ timeout: 5000 });
