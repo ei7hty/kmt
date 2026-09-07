@@ -260,10 +260,21 @@ the door.
 
 **That coverage has to exist somewhere, and after this change the only place it
 can exist is the backend suite** — the direct verifier tests above, plus the
-existing session and 401 assertions. `deployed-site-check.mjs` remains the one
-thing that observes the closed door from outside, and its
-"the owner API refuses without a session" assertion becomes correspondingly
-more load-bearing than it is today.
+existing session and 401 assertions. That is not merely equivalent to what is
+lost: per-layer tests can distinguish which control refused a request, and the
+incidental browser coverage never could.
+
+**Ruled by the PROJECT MANAGER, 2026-09-06: accept the reduction, with that
+compensation, recorded as a decision made rather than a consequence
+discovered.** Without this paragraph it would have surfaced months from now as
+"why does nothing test login."
+
+> **`deployed-site-check.mjs`'s "the owner API refuses without a session"
+> assertion stops being a nice-to-have and becomes the only remaining
+> end-to-end evidence that the owner API is gated at all.** Anyone who later
+> proposes trimming it as redundant has to meet this sentence first: after the
+> audits move to a minted session, there is nothing else watching that door
+> from outside.
 
 ---
 
