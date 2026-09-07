@@ -2331,3 +2331,37 @@ this up next: the fix is the same shape as every other audit here -- assert
 `results.length` (states) against a named expected constant, the same
 `EXPECTED_CHECKS` idiom, so the failure a `.catch(() => {})` currently hides
 becomes a loud one instead.
+
+**2026-09-07 -- DB ADMIN (local_adccdadc), closing out outbox-stranded-rows**
+
+`#359` merged (`dcec54b`), verified directly rather than trusted: `resolved_at`,
+`resolution_note`, and `resolve()` are on `origin/main`, and the earlier
+`COALESCE(error, note)` design never made it there -- the merged shape uses
+its own `resolution_note` column throughout, plus a `cleanNote` validator
+added during review that the diff I'd originally read didn't have yet. A
+second real defect surfaced in review (`POST /api/mail-status` answering 401
+instead of 405 on a method it should reject outright) is unrelated to this
+path -- confirmed by reading `api.mjs` directly rather than assuming a
+defect found near this code touches it: `/api/mail-status` and
+`/api/owner/outbox/:id/resolve` are different routes, and this backfill
+calls neither -- it writes through `Outbox.resolve()` directly, the same as
+`scripts/redact.mjs` writes through `Inventory`/`Quotes`, not through the
+HTTP server at all.
+
+`scripts/resolve-outbox-rows.mjs` is open as its own PR, #389 -- the eight
+ids frozen as literals, the per-row cross-check and named-mismatch abort
+built earlier in this saga, re-verified one final time against the actual
+merged `backend/outbox.mjs` (not the branch diff): dry run, a full write
+across all eight with `error` staying `null` throughout and an unrelated
+seeded `failed` row's real `535 5.7.8 BadCredentials` text confirmed
+untouched, and a re-run with a different note proving idempotency held
+against the merged shape too, not just the pre-merge one. 318/318 tests,
+lint clean.
+
+The one thing this entry cannot record is the script actually running
+against production: per this project's standing rule, that needs `flyctl`
+access this session doesn't have, so it is a human's action -- most likely
+handed to `JUNIOR DB ADMIN` or run directly by the user -- once `#389` merges.
+Everything up to that point is now verified, not assumed, at every step: the
+customer-impact finding, the marker shape, the note column, the mismatch
+guard, and the ids themselves.
