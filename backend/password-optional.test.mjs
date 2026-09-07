@@ -34,15 +34,28 @@ const post = (pathname) => ({
 
 // --- The hazard, asserted first, because everything else guards it ----------
 
-test('equals("", "") is TRUE -- which is why an empty password must never reach a comparison', () => {
+test('equals("", "") is TRUE -- the premise this whole file exists to accommodate', () => {
+  // THIS TEST DOES NOT TEST OUR CODE. It pins the assumption our code's shape
+  // exists to work around, and it is here so that assumption cannot stop being
+  // true silently. Do not delete it as a trivial assertion about a library
+  // function -- that is exactly what it looks like, and removing it is the
+  // failure it prevents.
+  //
   // A constant-time compare of two empty buffers succeeds. So a server whose
   // configured password is '' would accept a request carrying no password and
-  // sign the sender in as the owner. This is not hypothetical: it is what the
-  // naive version of this change ("just let the password be empty") does.
+  // issue a valid owner session. That is what the naive version of this change
+  // ("just let the password be empty") does.
   //
-  // Asserted here rather than assumed, so that if `equals` ever changes, the
-  // reason this whole file is shaped the way it is changes with it, loudly.
+  // If a future Node hardens timingSafeEqual to reject empty buffers, the guard
+  // below becomes dead weight and every other test in this file still passes --
+  // so the next reader deletes the guard as redundant, and it stops being
+  // redundant the day someone changes the runtime back. This assertion is the
+  // one thing that would go red and say why.
   assert.equal(equals('', ''), true)
+  // And the near-misses, so the property is pinned at its edges rather than at
+  // one point: only the empty/empty pair is vacuously equal.
+  assert.equal(equals('', undefined), false, "String(undefined) is nine characters, not zero")
+  assert.equal(equals('', 'x'), false)
 })
 
 test('with no password configured, an empty password does NOT sign anyone in', () => {
@@ -65,6 +78,30 @@ test('nor does any other password, when none is configured', async () => {
     await auth.handle(request, out, url, async () => ({ password: guess }))
     assert.equal(out.sent.status, 404, `guess ${JSON.stringify(guess)} must not be accepted`)
     assert.ok(!String(out.sent.headers['Set-Cookie'] || ''), 'no cookie for any guess')
+  }
+})
+
+test('a login request with NO password field at all is refused', async () => {
+  // The PROJECT MANAGER's refinement, and it widens the hole rather than
+  // narrowing it. The call site reads `input?.password ?? ''`, so a request
+  // with no `password` key -- `{}`, or no body at all -- is coerced to '' before
+  // the compare. Under a Google-only configuration that means the hole never
+  // required anyone to deliberately probe with {"password": ""}:
+  //
+  //     a bare POST /api/owner/login, no body, is issued a valid owner session.
+  //
+  // Which is the first thing an unauthenticated scanner sends, before it thinks
+  // to send anything. My earlier tests all passed `{ password: <something> }`,
+  // so the key always existed and this shape rested on the same guard without
+  // pinning it. Reading `equals` alone understates the blast radius; the
+  // coercion at the call site is where it actually lives.
+  const auth = createAuth(readAuthConfig({ ...GOOGLE }), { sessions: memorySessionStore(), google: null })
+  for (const body of [{}, null, undefined, { other: 'field' }]) {
+    const out = recorder()
+    const { request, url } = post('/api/owner/login')
+    await auth.handle(request, out, url, async () => body)
+    assert.equal(out.sent.status, 404, `body ${JSON.stringify(body ?? null)} must not be accepted`)
+    assert.ok(!String(out.sent.headers['Set-Cookie'] || ''), 'and no session cookie is issued')
   }
 })
 
