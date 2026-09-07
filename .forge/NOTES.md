@@ -2001,6 +2001,56 @@ Still held, same as above: the actual write against the eight rows does
 not run until `resolved_at`, the note column, and `resolve()` exist on
 `main` -- `#359` (JUNIOR BACKEND DEV) is building that now.
 
+**Two more gaps, found by the OWNER AGENT reading `#359`'s actual diff
+rather than its summary -- both change what this correction can be, not
+just how it's written.**
+
+**First: `resolve()`'s `COALESCE` doesn't just risk a redaction collision,
+it silently drops the note on every row that already has an `error`.**
+`UPDATE outbox SET resolved_at=?, error=COALESCE(error, ?), ...` --
+`COALESCE` returns the existing value whenever it is non-null, so on the
+seven real `failed` rows (which already carry `535 5.7.8 BadCredentials`)
+the note passed to `resolve()` goes nowhere. It lands only on the eight
+queued rows, whose `error` starts empty. Call `resolve()` with fifteen
+notes and eight record while seven vanish -- on exactly the half where
+the note matters more, since those seven were resolved by a real remedy
+(the credential was rotated) and that fact is worth keeping. This is
+independent of and stronger than the redaction argument above: it isn't
+conditional on a removal request ever happening, it fails today, silently,
+on the first real use. Same fix already ruled -- a separate nullable
+column -- now for a second, sufficient reason. A third, smaller one
+alongside it: a queued row's note reading *"never attempted under the
+null adapter"* sitting in a column literally named `error` would read as
+an error to the next person who looks, which it isn't.
+
+**Second: `#359` adds a route to read unresolved failures and no route to
+resolve one.** There is no way to call `resolve()` against the live
+database -- `flyctl` access here is read-only, and a direct write is the
+user's own hands, same boundary as every other production question
+tonight. So a script -- mine or anyone's -- cannot run this correction
+against production as designed, regardless of which column the note
+lives in. Left alone, this also reopens the day-one-noise problem #359
+was built to close, just moved: the seven `failed` rows sequenced away
+from becoming fifteen, but nothing yet makes them not permanent, and a
+watcher that never goes green teaches the same lesson a watcher that goes
+red on arrival does.
+
+**What this actually re-scopes:** the OWNER AGENT ruled the ongoing
+mechanism is not a script at all -- it's an owner action on the owner
+screen (Ken sees a failure, judges it handled, records why), which needs
+its own write route and its own UI, neither of which is this session's
+lane. What I am building is narrower than "the correction": a one-time
+historical backfill for the fifteen rows that already exist, run once
+that action exists, not the mechanism itself. Recording that distinction
+here so it doesn't quietly become "DB ADMIN's script resolves outbox
+rows" in anyone's summary later.
+
+Still held. Nothing changes about the customer-facing finding above --
+six requests, all terminal or advanced, nobody owed a response. Only what
+"the fix" refers to keeps narrowing as the actual mechanism gets built out
+from under it, each time by someone reading the code rather than the
+description of it.
+
 **2026-09-07 - Claude (DEV OPS/INFRASTRUCTURE)**
 The monitor is shaped like CI; the things worth monitoring are shaped like the
 server.
