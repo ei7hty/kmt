@@ -293,8 +293,15 @@ price hundreds of SKUs has misread the feature.**
 **The amounts.** Ken's prices, and he has not given them beyond the mobile fee
 and disposal.
 
-**Whether per-size means the tire's size or the vehicle's fitment.** They are
-the same today; **if they ever diverge, this needs revisiting.**
+**Whether per-size means the tire's size or the vehicle's fitment.** They
+coincide today **because a tire has been chosen** — a quote pins one tire, so
+its size is determined, even though a vehicle maps to a fitment *range*.
+
+**Naming why they coincide is the point, because it says when they stop.** If
+pricing ever has to resolve **before** tire selection — an estimate from the
+vehicle alone — **they diverge immediately.** A reader who knows only that they
+are *the same today* cannot recognise that moment; one who knows *why* can.
+(PROJECT MANAGER, sharpening this deferral.)
 
 **And whether `scope` belongs on the line or beside it in storage.** That is a
 build decision for whoever holds the screen — **the rulings above constrain the
