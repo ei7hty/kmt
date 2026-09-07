@@ -282,6 +282,25 @@ export class Outbox {
     return this.get(id)
   }
 
+  /**
+   * `deliveryRisk` is the rule over `attempted_at`, computed here rather than
+   * re-derived in the owner screen: what a resend of this row would risk.
+   * `none` -- it never reached a provider, so sending it costs nothing.
+   * `possible-duplicate` -- it was handed over and the outcome was never
+   * recorded, so it may already have arrived.
+   *
+   * Server-side because it is a delivery fact, not a display choice. The same
+   * null check written in a component is a second copy of the rule that
+   * decides what `retryable()` will auto-send, and the two would drift the
+   * first time either moved. Agreed with OWNER OPERATIONS ENGINEER, who maps
+   * it straight to copy ("never sent" / "may have arrived") with no
+   * derivation on their side.
+   *
+   * The wording is load-bearing, per the OWNER AGENT: *may have arrived*, not
+   * *was sent once*. The second quietly becomes false once a row accumulates
+   * more than one ambiguous attempt -- an original and a resend that is also
+   * interrupted -- which is exactly the case nobody would go back and check.
+   */
   shapeRow(row) {
     return {
       id: row.id, requestId: row.request_id, type: row.type, templateVersion: row.template_version,
@@ -290,6 +309,7 @@ export class Outbox {
       createdAt: row.created_at, updatedAt: row.updated_at,
       resolvedAt: row.resolved_at ?? null, resolutionNote: row.resolution_note ?? null,
       attemptedAt: row.attempted_at ?? null,
+      deliveryRisk: row.attempted_at ? 'possible-duplicate' : 'none',
     }
   }
 
@@ -366,15 +386,22 @@ export class Outbox {
    * bound was derived from, and what DEV OPS's stranded-row threshold reads),
    * and moving it here would make every duration read as zero.
    *
-   * Idempotent in the same shape as `resolve()`: a row that already carries
-   * an attempt keeps its original stamp, so a resend never rewrites the
-   * record of the first try.
+   * NOT idempotent, unlike `resolve()` beside it, and the difference is
+   * deliberate. This column reads "when was this last handed to a provider",
+   * so a resend moves it. An earlier draft kept the first stamp -- a resend
+   * never rewrites the record of the first try -- which sounds careful and
+   * answers the wrong question: after Ken resends, *may this have arrived* is
+   * about the resend, not about the attempt he already knows failed. Ruled by
+   * the OWNER AGENT while this was in review.
+   *
+   * Nothing needs the first attempt's time: `created_at` still says when the
+   * message was composed, `retryable()` only asks whether this is null, and an
+   * attempt counter was ruled out as over-building for a one-man business with
+   * rare failures. So one timestamp with one meaning, rather than two meanings
+   * competing for one column.
    */
   markAttempted(id) {
-    const found = this.get(id)
-    if (!found) throw new InputError('No such outbox message.', 404)
-    if (found.attemptedAt) return found
-
+    if (!this.get(id)) throw new InputError('No such outbox message.', 404)
     this.db.prepare('UPDATE outbox SET attempted_at=? WHERE id=?').run(now(), id)
     return this.get(id)
   }

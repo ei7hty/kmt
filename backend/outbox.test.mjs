@@ -405,7 +405,7 @@ test('unresolvedFailures is not a recency window: a failure stays visible past 2
 // byte-identical to an ordinary null-adapter row. These cover the column that
 // separates them and the watermark that keeps it honest about history.
 
-test('markAttempted stamps the attempt, keeps the first stamp, and leaves updated_at alone', t => {
+test('markAttempted stamps the latest attempt and leaves updated_at alone', t => {
   const { outbox, requestId, db } = setup(t)
   const message = outbox.record({ requestId, type: 'request-arrived', data: renderData(), to: 'o@example.com', toName: 'Ken' })
   assert.equal(message.attemptedAt, null, 'a recorded message has not been attempted yet')
@@ -420,12 +420,19 @@ test('markAttempted stamps the attempt, keeps the first stamp, and leaves update
   const attempted = outbox.markAttempted(message.id)
   assert.match(attempted.attemptedAt, /^\d{4}-\d\d-\d\dT/, 'the attempt is stamped')
   assert.equal(attempted.status, 'queued', 'and the status is untouched: nothing has come back yet')
+  assert.equal(message.deliveryRisk, 'none', 'before the attempt, resending it risks nothing')
+  assert.equal(attempted.deliveryRisk, 'possible-duplicate', 'after it, the outcome is unrecorded -- it may already have arrived')
   assert.equal(attempted.updatedAt, ANCIENT,
     'updated_at is NOT moved -- updated_at minus created_at is how long a send took, and the drain bound is derived from it')
 
+  // NOT idempotent, and deliberately so: this column says when the message
+  // was LAST handed to a provider, so a resend moves it. Keeping the first
+  // stamp would answer a question nobody asks -- after Ken resends, "may this
+  // have arrived" is about the resend, not the attempt he knows failed.
   db.prepare('UPDATE outbox SET attempted_at=? WHERE id=?').run(ANCIENT, message.id)
   const again = outbox.markAttempted(message.id)
-  assert.equal(again.attemptedAt, ANCIENT, 'idempotent: a resend never rewrites the record of the first try')
+  assert.notEqual(again.attemptedAt, ANCIENT, 'a second attempt moves the stamp to the second attempt')
+  assert.ok(again.attemptedAt > ANCIENT)
   assert.throws(() => outbox.markAttempted('nope'), /No such outbox message/)
 })
 

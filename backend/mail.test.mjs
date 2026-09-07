@@ -931,5 +931,6 @@ test('#285: a failed resend stays honestly failed and carries the NEW reason', a
   assert.equal(second.status, 'failed', 'still failed -- never silently back to queued, which would read as "owed and untried"')
   assert.match(second.error, /421 4\.7\.0/, 'and carries the second attempt\'s reason')
   assert.doesNotMatch(second.error, /535/, 'not the first attempt\'s, which is no longer what is wrong')
-  assert.equal(second.attemptedAt, first.attemptedAt, 'the record of when this was first tried is not rewritten')
+  assert.ok(second.attemptedAt >= first.attemptedAt,
+    'and the attempt stamp moves to the resend: after Ken retries, "may this have arrived" is about the retry')
 })
