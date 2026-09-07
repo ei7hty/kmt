@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { InputError } from './inventory.mjs'
 import { REASONS, isServiceable, normalizeZip, readServiceAreaConfig } from './service-area.mjs'
 import { catalogFromLiveRows } from '../src/data/catalog.js'
-import { ALLOWED_QUANTITIES, calculateDraftQuote } from '../src/pricing.js'
+import { ALLOWED_QUANTITIES, calculateDraftQuote, computeQuoteTotals, normalizePricingSettings } from '../src/pricing.js'
 
 /** The number a refusal offers. The same one the wizard's call button dials. */
 const SHOP_PHONE = '(617) 410-8319'
@@ -273,8 +273,11 @@ function cleanQuoteAdjustment(input) {
   const trimmedNote = note.trim()
   if (trimmedNote.length > 1000) throw new InputError('The customer note is too long.')
 
-  const totalCents = lineItems.reduce((sum, item) => sum + item.quantity * Math.round(item.unitPrice * 100), 0)
-  return { lineItems, note: trimmedNote, total: totalCents / 100 }
+  // subtotal/tax/total are not this function's to compute -- adjust() derives
+  // them from these lineItems with computeQuoteTotals, the same function the
+  // initial draft uses, so an adjusted quote can never store a total that
+  // disagrees with its own subtotal and tax (finding 1, scrutiny pass 3).
+  return { lineItems, note: trimmedNote }
 }
 
 function cleanCustomerKey(value) {
@@ -711,13 +714,24 @@ export class Quotes {
     })
   }
 
-  /** Save the owner's current version without changing the immutable draft. */
+  /**
+   * Save the owner's current version without changing the immutable draft.
+   *
+   * subtotal/tax/total are recomputed from the adjusted lineItems with
+   * computeQuoteTotals -- the same function the initial draft uses -- rather
+   * than trusting anything the client sent or leaving the draft's stale
+   * numbers in place. `tax` is set explicitly (`undefined` when tax is off)
+   * so JSON.stringify drops it from the stored payload instead of leaving a
+   * pre-adjustment tax figure sitting beside a total that has moved on.
+   */
   adjust(id, input) {
     const version = input?.version
     if (!Number.isInteger(version) || version < 0) {
       throw new InputError('Send the version you were shown, so a stale screen cannot overwrite a newer adjustment.')
     }
     const adjustment = cleanQuoteAdjustment(input)
+    const settings = normalizePricingSettings(this.inventory.getPricingSettings())
+    const totals = computeQuoteTotals(adjustment.lineItems, settings)
 
     return this.transaction(() => {
       const found = this.get(id)
@@ -728,7 +742,7 @@ export class Quotes {
       if (found.quote.status !== 'draft') {
         throw new InputError(`This quote is already ${found.quote.status}, so it cannot be adjusted.`, 409)
       }
-      const payload = { ...found.quote, ...adjustment }
+      const payload = { ...found.quote, ...adjustment, subtotal: totals.subtotal, tax: totals.tax, total: totals.total }
       for (const field of ['id', 'requestId', 'status', 'version', 'reason', 'draftLineItems', 'draftTotal', 'createdAt', 'updatedAt']) delete payload[field]
       this.db.prepare('UPDATE quotes SET payload=?, version=version+1, updated_at=? WHERE id=?')
         .run(JSON.stringify(payload), now(), found.quote.id)
