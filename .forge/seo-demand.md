@@ -207,6 +207,35 @@ immediate dispatch. True whether or not Ken does roadside, costs nothing, and
 converts a possible letdown into a stated process. This is a recommendation, not
 a finding, and not prescribed copy.
 
+**The shape of it (resolution of this section).** The facts above have one
+structure: **the page conflates two different speeds.** "Quick response you can
+count on" / "FAST & RELIABLE" (`:437`) is a claim about **response** time; the
+seven-day floor (`quotes.mjs:25`) is **service** time; the copy does not
+distinguish them. The site is not lying — it is ambiguous in the one direction
+that costs trust: a reader takes it to mean *you will come quickly*, when what is
+fast is the reply. The ambiguity **resolves in the customer's favour in their
+head and against them in reality**, and they find the difference at the form.
+
+**And it closes the loop with finding #1.** The one speed claim that is specific,
+true and measured — fast **replies** (11m52s / 18m00s) — appears **nowhere on the
+marketing search surface**: the title carries no speed term, the description and
+JSON-LD carry none. So the surface is **vague about speed on the page, where
+vagueness misleads**, and **silent about speed in the search surface, where the
+truth would help.** Both halves are presence/absence facts with references, and
+together they are the finding, not three facts side by side. (n=2 still bounds
+it: two responses are evidence Ken is fast, not a claim that survives a customer
+who waited three hours — response speed is sayable as a direction, not a number.)
+
+**One open point between the two leads, reported not resolved (per AGENTS.md).**
+They looked at the same line and diverge: the OWNER AGENT ruled (above) that
+**"Quick response you can count on" survives and is not at issue** — the load is
+on "Roadside assistance" + "always on the move" — because a *response* is the
+answer and the answer is genuinely quick. The PROJECT MANAGER reads
+**"FAST & RELIABLE / Quick response" as itself carrying the come-now ambiguity**
+that costs trust. Both are defensible; they differ on whether that one line is
+safe as-is or part of the problem. **Routed to the OWNER AGENT** (who owns the
+words ruling) with the PM's reading attached; not decided here.
+
 ## Where each finding routes
 
 - **To MARKETING (the words):** the title carries no job/place/speed term; the
@@ -218,10 +247,14 @@ a finding, and not prescribed copy.
   correct for the current one-indexable-page shape; no machinery gap found in
   this pass. If the OWNER AGENT decides `/` should carry more indexable content,
   that has a machinery consequence worth a follow-up.
-- **To the OWNER AGENT (positioning + product):** the three questions above,
-  plus the page-vs-product one: does Ken do roadside assistance at all, and if
-  so how does that square with the seven-day booking floor? Product/copy call,
-  not mine.
+- **To the OWNER AGENT (positioning + product):** the three questions above;
+  the page-vs-product one (does Ken do roadside assistance at all, and how does
+  it square with the seven-day floor? — product, not repo-measurable); the now-
+  answerable positioning one (**is "quick response" the claim the business wants
+  to make**, given it is the one speed claim that is true and measured? — only
+  once answered does wording become MARKETING's); and the open two-lead
+  divergence on whether "FAST & RELIABLE / Quick response" is safe or part of
+  the ambiguity. All product/positioning calls, not mine.
 
 ## The towns Ken really serves — derived, not guessed
 
