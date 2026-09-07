@@ -35,11 +35,14 @@ more carefully: a relay that is internally coherent and simply wrong survives
 any careful read, because a closer look at a coherent-but-wrong statement only
 confirms it. So when a relayed decision conflicts with your own reading of the
 source — the PR diff, the file, the person's own words — trust the source and
-ask, rather than act on the relay. This happened four times in one night: a
+ask, rather than act on the relay. This happened five times in one night: a
 "can follow" tightened into "blocks merge" in transit; a claim row describing a
 ruling with a specificity nobody gave it; a relayed confirmation passed on as
-fact and then retracted; a held, contested PR routed as ready. Each was caught
-by going back to the source, never by a more careful reading of the relay.
+fact and then retracted; a held, contested PR routed as ready; and this very
+rule described to its reviewer by the wrong name — its merged sibling, the
+worktree rule, called a paragraph of this one — by the author who wrote the
+principle. Each was caught by going back to the source, never by a more careful
+reading of the relay.
 
 **Work that outran its record — the inverse of a stale record, and not caught the
 same way.** A stale record has fallen behind the world; you catch it by
@@ -102,7 +105,10 @@ otherwise: a merge does (four rows accumulated in one night, because "release on
 merge" owned by the author has no agent), and so does a close-without-merge
 (#317, closed as a duplicate — its row released by nobody under a merge-only
 rule). An author who sees their PR end may remove their own, but the ender owns
-it; match it by branch name, the row's first column. The ender's removal also
+it; match it by branch name, the row's first column — and if more than one row
+names that branch, remove every one and name the count in the release commit,
+because two sessions claiming a single branch is a violation the file should
+surface, not quietly absorb. The ender's removal also
 needs no one's *account* of what they did — which matters because a release
 report is the one kind of report nothing in this repo checks: a row was found
 stale since its original claim, behind a stated release a full-history search
@@ -147,6 +153,16 @@ already sitting in the shared tree, put there by someone. Riding it along under 
 one-line note in your commit message costs nothing; discarding it destroys a
 claim with no artifact anywhere, and its author finds out when they ask where it
 went.
+
+**And do not reach for a history-rewriting command in the shared checkout —
+`git reset`, `rebase`, `amend` — even to fix a mistake of your own.** That is how
+an orphan gets *created*, not merely met: the `reset --soft` that unmade the
+first claim tonight was run to fix something unrelated, by the person fixing it.
+"Even to fix a mistake" is the load-bearing half — nobody rewrites shared history
+while calm, and the moment that reaches for the command is the moment a rule gets
+skipped, so a rule that does not name that moment does not reach it. Rewrite
+history in a worktree of your own, where the only history you can unmake is
+yours.
 
 A fresh worktree's `CLAIMS.md` holds your row and nothing else: no other
 session's edit to sweep up, discard, or reset over. That makes the collision
