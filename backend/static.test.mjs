@@ -241,8 +241,15 @@ test('the block is a data block, never an executable script', () => {
     // script-src 'self' with no 'unsafe-inline' refuses an executable inline
     // script, and site.test.mjs asserts the policy stays that way. A JSON data
     // block is never executed, so the policy does not apply to it.
-    assert.match(body, /<script type="application\/json" id="site-copy">/)
-    assert.doesNotMatch(body, /<script>/)
+    //
+    // Substring checks rather than regexes: CodeQL's js/bad-tag-filter flags a
+    // regex that looks like it filters HTML tags, correctly, because such a
+    // regex is nearly always wrong about case and whitespace. These are not
+    // filtering anything -- the markup is built by injectCopy two lines up --
+    // but a test that trips a security rule is a test that teaches the next
+    // reader to wave that rule through, so it is written the plain way instead.
+    assert.ok(body.includes('<script type="application/json" id="site-copy">'))
+    assert.ok(!body.includes('<script>'), 'no executable block')
   } finally {
     rmSync(dist, { recursive: true, force: true })
   }
@@ -257,7 +264,13 @@ test('a "<" in the copy cannot end the block early', () => {
     // The literal sequence must not survive into the markup, or everything
     // after it spills into the page as HTML.
     assert.ok(!body.includes('a </script> b'), 'the raw closing tag is escaped')
-    const payload = body.match(/id="site-copy">(.*?)<\/script>/s)[1]
+    // Sliced on literal delimiters rather than matched with a regex: see the
+    // note above on js/bad-tag-filter. It also makes the point of the test
+    // sharper -- the FIRST `</script>` after the block opens is the real end
+    // of the block, which is only true because the one in the copy was escaped.
+    const open = '<script type="application/json" id="site-copy">'
+    const start = body.indexOf(open) + open.length
+    const payload = body.slice(start, body.indexOf('</script>', start))
     assert.equal(JSON.parse(payload)['hero.eyebrow'], 'a </script> b <b>', 'and it round-trips through JSON.parse')
   } finally {
     rmSync(dist, { recursive: true, force: true })
