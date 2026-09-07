@@ -274,6 +274,22 @@ would need its own state to track "this quote was reversed once" separate
 from the status itself, which is exactly the schema complexity choosing
 `sent` was meant to avoid.
 
+**The loop is bounded more tightly than "indefinitely," and it is worth
+saying precisely because nobody designed it for this.** `pay` is a public
+POST, so it already sits behind `backend/limits.mjs`'s general public
+limiter: confirmed directly, `publicPerIp` (60 per 15 minutes, checked for
+any public POST via `isPublicApiCall`) and `publicPerKey` (20 per 15
+minutes, checked again inside the `pay` handler itself,
+`backend/api.mjs`'s `payMatch` branch) both apply to every call to `pay`,
+this repeated one included. **Nobody sized that limiter with this loop in
+mind** -- it exists to bound request submission and spam -- but it caps
+this one too, as a side effect rather than a design. The next person who
+touches `publicPerKey` or `publicPerIp` should know a limit sized for spam
+is also, incidentally, the ceiling on how often this loop can run. Does
+not change the ruling: the trade is still accepted, still "no money moves,
+nothing is deleted, every cycle costs Ken one action" -- this only sizes
+how bad the worst case actually is, smaller than "indefinitely" reads.
+
 **It carries `decided_by` for free, and this is no longer conditional on
 anything landing.** TECHNICAL ARCHITECT's `quote-decided-by` (#290's schema
 half) is merged (PR #349, `quotes.mjs:864-869`, verified directly rather
