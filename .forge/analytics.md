@@ -12,11 +12,28 @@ bug anyone can find by reading code** — the page works, GA accepts the hits,
 nothing errors, no check fails and the audits pass, while the data goes
 somewhere else.
 
-**That is not hypothetical. It already happened.** This document carried
-`G-6VS1BEJ3TS` for several hours, the implementation faithfully matched the
-spec, two people reviewed it, and **both were comparing the code against the
-same wrong string.** Reviewing the implementation against the specification
-could not have caught it, because they agreed.
+**That is not hypothetical. It already happened**, and the honest account has
+two halves rather than one.
+
+**This document carried `G-6VS1BEJ3TS` for several hours** and the
+implementation faithfully matched it, so **reviewing the code against this file
+could not have caught the error** -- they agreed with each other and both were
+wrong. That is the reason for the assertion above.
+
+**But the error was in fact caught before the merge, and merged anyway.** A
+hold naming both ids, stating that one was stale, explaining that a wrong id
+fails silently, and asking in as many words that the correct value be confirmed
+before merging, was posted on the pull request at **00:31:46Z**. **It merged at
+00:39:24Z.** Eight minutes.
+
+**So the proximate failure was not detection. It was enforcement.** The hold
+was posted as a comment rather than by drafting the pull request, and **a
+comment is addressed to a reader who is reading, while a merge during a queue
+clearance is exactly the moment nobody is.**
+
+**Both lessons stand and neither substitutes for the other**: mark the facts
+this repository cannot verify, *and* put a hold that must survive a batch on
+the pull request's state rather than in its comments.
 
 **So the constant needs a check that compares against reality rather than
 against this file:** the deployed-site check should assert the expected id
