@@ -13,7 +13,7 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 78;
+const EXPECTED_CHECKS = 83;
 
 /**
  * Preferred dates, always ahead of today. The server refuses anything inside
@@ -145,6 +145,120 @@ async function main() {
   // Resolved once, against whatever the server is actually offering right
   // now, rather than a name typed into this file -- see cleanTireFor.
   const CLEAN_TIRE = await cleanTireFor(BASE);
+
+  // What these prove, stated narrowly on purpose. The gate's database is a
+  // throwaway with no siteCopy key, and site copy is an OVERRIDE over the
+  // JSX defaults (backend/site-copy.mjs), so what renders here is the shipped
+  // template. These assert THAT THE TEMPLATE RENDERS. They do not exercise the
+  // override path, and a reader concluding the gate covers Ken's live edits
+  // would be wrong. That assertion belongs with the feature that adds the
+  // override, which can seed one through the owner session these audits
+  // already hold; noted here so the gap is visible rather than assumed shut.
+  //
+  // Placed BEFORE the viewport loop, deliberately. fail() does not throw, but a
+  // timeout inside the loop does, and main()'s catch reports the count and
+  // stops -- #392 ended at 48 of 78 that way. Anything after the loop is not
+  // flaky itself, it simply never runs. These checks share no state with the
+  // quote flow and open their own context, so running them first costs nothing
+  // and makes them immune to an abort upstream of them.
+  // The marketing surface: present and non-empty, never a particular sentence.
+  //
+  // Why this exists. Every other check in this file drives the wizard, the
+  // owner screen, /status or /confirmation. Not one of them reads the landing
+  // page's content, and neither does request-flow-check or responsive-check --
+  // responsive-check visits `/` but measures overflow, contrast and tap
+  // targets, which are structure. Measured rather than assumed: with the hero
+  // heading, the hero lede and all three service-strip items blanked in the
+  // source and rebuilt, this audit reported 78 of 78, responsive-check 10 of
+  // 10 screens and 5 of 5 a11y checks, and request-flow-check 34 of 34. The
+  // whole pre-merge gate passed on a site with no marketing copy on it.
+  //
+  // Why it is presence and not wording. Site copy is becoming owner-editable
+  // (.forge/site-copy-inventory.md). An assertion pinning Ken's headline would
+  // go red the first time he edits his own words, and an audit that fails when
+  // the product works as designed gets deleted or routed around within a week.
+  // So these assert the shape of the page and stay silent on what it says.
+  // The inventory's own guard rules the same boundary from the other side: a
+  // heading, a lede and the strip titles cannot be blank. That guard refuses a
+  // bad write; this catches a bad render. Two layers, on purpose -- per-layer
+  // checks say WHICH control failed, which one combined check cannot.
+  //
+  // Why the two entrances are in here. The hero CTA and the /inquiry button
+  // are not copy, they are the only in-app routes into the wizard and into
+  // /inquiry. They used to be covered by accident, because the audits located
+  // them by their visible text; #375 replaced those with data-testid, which is
+  // the right change and removed the accident with it. A CTA whose label is
+  // blank is an invisible button, and one whose scroll target has gone is a
+  // dead end -- which is this file's actual charter, not a content check
+  // smuggled in beside it.
+  //
+  // Folded in here rather than given its own script so it inherits
+  // EXPECTED_CHECKS, which fails on a mismatch in either direction. The same
+  // reasoning as the GA4 gate below: a standalone control only runs when
+  // somebody remembers to run it.
+  //
+  // Run once, at the phone viewport, because this is one page's content and
+  // not a per-viewport behaviour; responsive-check already measures `/` at
+  // both widths. Asserted on text content rather than visibility, so these
+  // stay true regardless of what CSS chooses to show at a given width, and
+  // regardless of whether the copy came from the bundle or from a store.
+  {
+    const { context, page } = await freshPage(browser, { name: 'phone', width: 375, height: 812 });
+    await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+
+    const text = async (selector) => (await page.locator(selector).first().textContent().catch(() => null))?.trim() ?? '';
+
+    const heroHeading = await text('.hero-section h1');
+    if (heroHeading.length > 0) {
+      ok('/: the hero heading renders with text in it (not asserting which text -- it is owner-editable).');
+    } else {
+      fail('/: the hero heading is missing or empty. A visitor lands on a page with no headline.');
+    }
+
+    const heroLede = await text('.hero-section .hero-lede');
+    if (heroLede.length > 0) {
+      ok('/: the hero lede renders with text in it.');
+    } else {
+      fail('/: the hero lede is missing or empty.');
+    }
+
+    const stripItems = await page.locator('.service-strip > div').evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        label: (node.querySelector('b')?.textContent ?? '').trim(),
+        body: (node.textContent ?? '').replace((node.querySelector('b')?.textContent ?? ''), '').trim(),
+      })),
+    );
+    const stripFilled = stripItems.length === 3 && stripItems.every((item) => item.label.length > 0 && item.body.length > 0);
+    if (stripFilled) {
+      ok('/: the service strip renders three items, each with a label and a description.');
+    } else {
+      fail(`/: the service strip is not three filled items. Got ${JSON.stringify(stripItems)}`);
+    }
+
+    const ctaLabel = await text('.hero-section .hero-cta');
+    const orderAnchor = await page.locator('#order').count();
+    if (ctaLabel.length > 0 && orderAnchor > 0) {
+      ok('/: the hero CTA has a label and its scroll target #order exists (the only in-app route into the wizard).');
+    } else {
+      fail(`/: the hero CTA is a dead end. Label: ${JSON.stringify(ctaLabel)}, #order elements found: ${orderAnchor}.`);
+    }
+
+    const inquiryButton = page.locator('.service-strip button');
+    const inquiryLabel = (await inquiryButton.first().textContent().catch(() => null))?.trim() ?? '';
+    let inquiryHeading = '';
+    if (inquiryLabel.length > 0) {
+      await inquiryButton.first().click();
+      await page.waitForURL('**/inquiry', { timeout: 5000 }).catch(() => {});
+      inquiryHeading = (await page.locator('h1').first().textContent().catch(() => null))?.trim() ?? '';
+    }
+    if (inquiryLabel.length > 0 && new URL(page.url()).pathname === '/inquiry' && inquiryHeading.length > 0) {
+      ok('/: the service strip\'s inquiry button has a label and actually reaches /inquiry, which renders a heading.');
+    } else {
+      fail(`/: the inquiry entrance is broken. Label: ${JSON.stringify(inquiryLabel)}, landed on ${page.url()}, heading: ${JSON.stringify(inquiryHeading)}.`);
+    }
+
+    await context.close();
+  }
 
   for (const viewport of [
     { name: 'phone', width: 375, height: 812 },
