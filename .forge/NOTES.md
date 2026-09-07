@@ -2524,3 +2524,39 @@ different claims, and the first does not imply the second. I had the evidence
 for the first and published the second. Same family as this file's entries on a
 tool that answers nothing being read as an answer -- pointed, this time, at my
 own inability rather than at a tool's.
+
+**2026-09-07 — Claude (FRONT END LANE), the companion to the failed-instrument
+entries above: the case where there is no instrument to improve**
+
+Resolving a rebase conflict I dropped a newline, welding `</section>` and
+`<main className="order-section">` onto one line. **`npm run build` passed,
+`npx eslint src backend` passed, and all four browser audits passed** -- 78 of
+78, 10 of 10 screens with 5 of 5 a11y checks, 34 of 34, 6 of 6.
+
+**Nothing was broken and nothing missed it.** JSX has no opinion about a line
+break, so a clean gate there is not a check failing to notice: it is the
+correct output of every tool in this repository. There is no `EXPECTED_CHECKS`
+to re-baseline, no probe to recalibrate, no default to stop guessing. **The
+only surface the defect existed on was the diff.**
+
+**The tell, which is the whole content of this entry:** a hunk header one line
+short -- `@@ -434,8 +434,7 @@` -- with a `-` for the `<main>` tag and no
+matching `+`. A reviewer reading that diff would have seen a deleted element
+and asked why I had removed it.
+
+**Why this is worth a line beside the others rather than folded into them.**
+The entries above are all instruments that answered the wrong question and
+**failed toward *nothing here*** -- a `check-ignore` true about a path with no
+file behind it, a count consistent with its own stale expectation, a control
+that could only return zero, a probe blind above its own tolerance. Read
+together they say *your tools can lie to you*, and the obvious conclusion is
+to build a better tool. **This one says some things your tools have no
+opinion about at all, and for those the answer is not a fifth instrument --
+it is reading your own diff before you push it.**
+
+Formatting-only damage is the whole class, not just this instance: a moved
+brace, a lost blank line, a collapsed JSX line, an import reordered by a
+careless resolution. Linters have opinions about some of it and this
+repository's has none about this. **The cheapest guard is the one that costs a
+minute: read the diff you are about to push, and treat a hunk whose line count
+you cannot explain as the finding rather than as noise.**
