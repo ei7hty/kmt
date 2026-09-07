@@ -34,13 +34,15 @@ test('an absent run-flat field stays absent rather than becoming false', () => {
   assert.equal(Object.hasOwn(row, 'runFlat'), false)
 })
 
-test('labels inside spaced script end tags cannot masquerade as product specs', () => {
-  const html = '<script>document.write("Run Flat: Yes")</script ><h1>Plain product</h1>'
-  const row = parseProductPage(html, { url: URL, fallback: {
-    id: 'giga-sku123', name: 'Plain product', size: SIZE, price: 80, inStock: true,
-    category: 'all-season', description: 'Plain', source: { sku: 'SKU123', url: URL },
-  } })
-  assert.equal(Object.hasOwn(row, 'runFlat'), false)
+test('labels inside malformed script end tags cannot masquerade as product specs', () => {
+  for (const closing of ['</script >', '</script\t\n bar>']) {
+    const html = `<script>document.write("Run Flat: Yes")${closing}<h1>Plain product</h1>`
+    const row = parseProductPage(html, { url: URL, fallback: {
+      id: 'giga-sku123', name: 'Plain product', size: SIZE, price: 80, inStock: true,
+      category: 'all-season', description: 'Plain', source: { sku: 'SKU123', url: URL },
+    } })
+    assert.equal(Object.hasOwn(row, 'runFlat'), false)
+  }
 })
 
 test('product enrichment obeys its batch limit and concurrency bound', async () => {

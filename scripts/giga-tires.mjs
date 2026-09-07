@@ -259,8 +259,25 @@ function productJsonLd(html) {
   return null
 }
 
+function stripRawTextElements(html, tag) {
+  const lower = html.toLowerCase()
+  let cursor = 0, output = ''
+  while (cursor < html.length) {
+    const open = lower.indexOf(`<${tag}`, cursor)
+    if (open === -1) return output + html.slice(cursor)
+    output += html.slice(cursor, open)
+    const close = lower.indexOf(`</${tag}`, open + tag.length + 1)
+    if (close === -1) return output
+    const end = lower.indexOf('>', close + tag.length + 2)
+    if (end === -1) return output
+    cursor = end + 1
+  }
+  return output
+}
+
 const labelValue = (html, labels) => {
-  const plain = decode(html.replace(/<script\b[\s\S]*?<\/script\s*>/gi, ' ').replace(/<style\b[\s\S]*?<\/style\s*>/gi, ' ').replace(/<[^>]*>/g, '\n'))
+  const withoutRawText = stripRawTextElements(stripRawTextElements(html, 'script'), 'style')
+  const plain = decode(withoutRawText.replace(/<[^>]*>/g, '\n'))
   for (const label of labels) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const found = plain.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*[:\\n]\\s*([^\\n]+)`, 'i'))
