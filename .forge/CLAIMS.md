@@ -9,6 +9,7 @@ Remove your row when you are done. Stale rows are worse than no rows.
 
 | branch | agent | files / area | started |
 | --- | --- | --- | --- |
+| seo-docs-resolved | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | `.forge/seo-demand.md` and `.forge/seo-town-pages-verdict.md` only — appended resolution notes. Both documents route positioning questions to my seat and describe the hero/service-strip copy at `CustomerRequest.jsx:436-437` as a live defect. That copy has since been fixed (#356 and the strip rewrite): "FAST & RELIABLE", "Quick response you can count on" and "always on the move" are all gone, and the title now carries "Mobile Tire Installation". Both authors are archived, so nobody else owns closing the loop. No src/, no backend/, no audit surface. | 2026-09-07 |
 | codex/issue-74-readme | CODEX (current session) | README.md only — issue #74: update the stale `/status` description and request API table for the post-#55 lifecycle (`done`, `cancel`, customer cancel route, and `?view=`). Docs-only; no application or audit code. | 2026-09-07 |
 | issue-97-copy-analysis | JUNIOR CUSTOMER SUCCESS MANAGER (this session) | .forge/issue-97-copy-analysis.md only — no src/ or backend/ changes; copy analysis and decisions for #97 (iOS localStorage eviction) | 2026-09-06 |
 | analytics-marketing-only-spec | PRODUCT MANAGER / OWNER AGENT (local_44d1e1f9) | new file .forge/analytics.md only (GA4 on marketing routes only: why not in index.html, the CSP change, the dev/CI gate, the /privacy obligation). Planning lane, no code. | 2026-09-06 |
