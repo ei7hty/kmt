@@ -41,6 +41,27 @@ ruling with a specificity nobody gave it; a relayed confirmation passed on as
 fact and then retracted; a held, contested PR routed as ready. Each was caught
 by going back to the source, never by a more careful reading of the relay.
 
+**Work that outran its record — the inverse of a stale record, and not caught the
+same way.** A stale record has fallen behind the world; you catch it by
+re-reading it against reality (the doc says three audits, you count five). Work
+that outran its record is the opposite: the document is coherent, internally
+consistent, and describes a world that *was* true — nothing in it is wrong, it
+has simply been overtaken, and re-reading confirms it. Only measuring the code
+catches it, and nothing prompts you to measure what you have no reason to doubt.
+The tell, seen three times here: someone says "nobody owns X" and X is already
+done — regression tests about to be rewritten that already existed, a copy defect
+recorded open and fixed hours earlier, an audit path placed for conversion that
+was already built. Each finder was doing something else; a document review would
+have found none of them, because the documents were internally fine. One way it
+bites in particular: **searching for the old thing and reading its presence as
+the new thing's absence.** `audit-ui.mjs` still held `KMT_OWNER_PASSWORD`, so the
+conversion looked undone — but that is the fallback, and the minted-session path
+sits above it. A grep for what you expect to be gone answers a different question
+than the one you asked; the question is *what does this code do now*, and only
+reading it answers that. So: before assigning work a document says is open, read
+the code, not the document — and when a document says a thing is missing, the
+cheapest check is whether it is there.
+
 **A claim row names a region, not a lock on the whole path.** Two agents may
 hold the same file at once when their work sits in different parts of it --
 BUG FIXER held `backend/quotes.mjs`'s `cleanDate()` near the top while JUNIOR
