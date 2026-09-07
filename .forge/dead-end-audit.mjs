@@ -423,10 +423,27 @@ async function main() {
       fail('/confirmation: no visible next action -- dead end.');
     }
 
+    // The same defect as the guarded click above, in its quietest form: an `if`
+    // with no `else`. When the link is absent this check did not fail, it simply
+    // did not execute -- and a run that is two checks short with nothing saying
+    // which two is the shortfall hiding what caused it. EXPECTED_CHECKS notices
+    // the count; only a branch here says what went missing.
+    //
+    // waitForURL is caught for the reason the click above is: inside this branch
+    // the link exists, so a navigation that never arrives is a real dead end and
+    // belongs in the report rather than in main()'s catch, taking the rest of the
+    // run with it. Guarding the click and leaving its own next line unguarded
+    // would be the same bug with a shorter blast radius.
     if (startNewVisible) {
-      await page.click('a:has-text("Start a New Request")');
-      await page.waitForURL(BASE + '/');
-      ok('/confirmation -> /: loop back to start confirmed via click (no URL typed, no back button used).');
+      await page.click('a:has-text("Start a New Request")').catch(() => {});
+      await page.waitForURL(BASE + '/', { timeout: 5000 }).catch(() => {});
+      if (page.url().replace(/\/$/, '') === BASE.replace(/\/$/, '')) {
+        ok('/confirmation -> /: loop back to start confirmed via click (no URL typed, no back button used).');
+      } else {
+        fail(`/confirmation -> /: clicking "Start a New Request" did not return to the start. Landed on: ${page.url()}`);
+      }
+    } else {
+      fail('/confirmation -> /: could not test the loop back to start -- there was no "Start a New Request" action to click.');
     }
 
     // 4. Reload /status directly (simulating a tester returning to a bookmarked/previous tab) to
