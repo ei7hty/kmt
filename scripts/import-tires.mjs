@@ -11,7 +11,7 @@
  * refresh uses. Owner prices and choices are never touched.
  *
  *   node scripts/import-tires.mjs                              # local server
- *   node scripts/import-tires.mjs --to https://kmt.fly.dev     # needs KMT_OWNER_PASSWORD
+ *   node scripts/import-tires.mjs --to https://kmt.fly.dev     # needs a session
  *   node scripts/import-tires.mjs out.json --sizes 215/60R16 --dry-run
  */
 
@@ -50,8 +50,11 @@ Options:
   --help           This message.
 
 Environment:
-  KMT_OWNER_PASSWORD   The hosted server's owner password. The local server
-                       has no sign-in and does not need it.
+  KMT_OWNER_PASSWORD        The hosted server's owner password. The local
+                            server has no sign-in and does not need it.
+  KMT_OWNER_SESSION_COOKIE  A session minted with scripts/mint-session.mjs
+                            ("name=value"), checked before the password --
+                            the way in once Google-only sign-in retires it.
 `.trimStart()
 
 function parseArgs(argv) {
@@ -101,16 +104,44 @@ async function signIn(base, password) {
   const cookies = typeof response.headers.getSetCookie === 'function'
     ? response.headers.getSetCookie()
     : [response.headers.get('set-cookie')].filter(Boolean)
-  const session = cookies.map(cookie => cookie.split(';')[0]).find(pair => pair.startsWith('kmt_owner='))
-  if (!session) throw new Error(`${base} accepted the password but set no session cookie`)
-  return session
+  const cookie = cookies.map(pair => pair.split(';')[0]).find(pair => pair.startsWith('kmt_owner='))
+  if (!cookie) throw new Error(`${base} accepted the password but set no session cookie`)
+  return cookie
+}
+
+/**
+ * The session cookie to import with, minted checked before the password --
+ * the same order and the same reason backend/owner-inventory-audit.mjs's own
+ * plain-fetch session block uses: once Google-only sign-in is live there is
+ * no password to send here at all, and scripts/mint-session.mjs is how this
+ * keeps working after that.
+ *
+ * Format-checked before ever asking the server anything: a malformed
+ * KMT_OWNER_SESSION_COOKIE would otherwise reach the server as a Cookie
+ * header nothing recognises and come back as a confusing 401, the same
+ * shape as no credential at all -- naming the actual problem here is
+ * cheaper than making an operator debug a sign-in failure that was really a
+ * typo in an environment variable.
+ */
+async function session(base) {
+  const minted = process.env.KMT_OWNER_SESSION_COOKIE || ''
+  if (minted) {
+    const separator = minted.indexOf('=')
+    if (separator < 1) throw new Error(`KMT_OWNER_SESSION_COOKIE must be "name=value"; got ${JSON.stringify(minted)}.`)
+    return minted
+  }
+  const password = process.env.KMT_OWNER_PASSWORD || ''
+  return password ? await signIn(base, password) : null
 }
 
 async function postSnapshot(base, snapshot, { complete, dryRun, cookie }) {
   const response = await post(base, '/api/owner/import-snapshot', { snapshot, complete, dryRun }, cookie ? { Cookie: cookie } : {})
   const data = await response.json().catch(() => ({}))
   if (response.status === 401) {
-    throw new Error(`${base} wants the owner password. Set KMT_OWNER_PASSWORD and run again.`)
+    throw new Error(
+      `${base} wants a credential: set KMT_OWNER_PASSWORD, or mint a session with ` +
+      'scripts/mint-session.mjs and pass it as KMT_OWNER_SESSION_COOKIE, and run again.',
+    )
   }
   if (!response.ok) throw new Error(`${base} refused the snapshot: ${data.error || response.status}`)
   return data
@@ -175,8 +206,7 @@ async function main() {
     }
   }
 
-  const password = process.env.KMT_OWNER_PASSWORD || ''
-  const cookie = password ? await signIn(base, password) : null
+  const cookie = await session(base)
 
   const result = await postSnapshot(base, snapshot, { complete: options.complete, dryRun: options.dryRun, cookie })
   printReport(result, base)

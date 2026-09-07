@@ -8,6 +8,7 @@
  * reach. Numbers come out of this script, not off a screenshot.
  *
  *   AUDIT_BASE=http://127.0.0.1:4301 KMT_OWNER_PASSWORD=... node .forge/a11y-85-measure.mjs
+ *   AUDIT_BASE=... KMT_OWNER_SESSION_COOKIE=$(node scripts/mint-session.mjs --quiet) node .forge/a11y-85-measure.mjs
  *
  * Writes .forge/a11y-85-results.json (everything) and prints a summary.
  */

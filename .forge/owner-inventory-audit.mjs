@@ -6,7 +6,7 @@ import { signInIfAsked } from './audit-ui.mjs'
 
 // AUDIT_BASE like the other three audits, so one server can serve the whole
 // gate. The fallback is the local dev server; a hosted-shape server on any
-// port works too, with KMT_OWNER_PASSWORD set to what it was started with.
+// port works too, signed in the way the `session` block below describes.
 const base = process.env.AUDIT_BASE || 'http://127.0.0.1:4180'
 
 /**
@@ -76,7 +76,8 @@ const ownerFetch = (path, init = {}) => fetch(base + path, {
 const browser = await chromium.launch()
 const errors = []
 const inventory = await ownerFetch('/api/owner/inventory')
-assert.equal(inventory.status, 200, 'the owner inventory API answered ' + inventory.status + ' -- is KMT_OWNER_PASSWORD set to what the server was started with?')
+assert.equal(inventory.status, 200, 'the owner inventory API answered ' + inventory.status +
+  ' -- is KMT_OWNER_PASSWORD set to what the server was started with, or KMT_OWNER_SESSION_COOKIE to a session minted with scripts/mint-session.mjs?')
 const initial = (await inventory.json()).items[0]
 mkdirSync('.forge/shots', {recursive:true})
 try {

@@ -1485,6 +1485,79 @@ test('scripts/import-tires.mjs pushes a snapshot file into a password-gated serv
   assert.equal(rows['giga-c'].size, otherSize)
 })
 
+test('scripts/import-tires.mjs accepts a minted session, checked before the password, and needs no password at all', async t => {
+  // The scenario the cutover exists for: KMT_OWNER_PASSWORD unset entirely,
+  // the way a server looks once Google-only sign-in has retired it.
+  const { execFile } = await import('node:child_process')
+  const { writeFileSync } = await import('node:fs')
+  const db = setup(t)
+  db.saveOffer('giga-a', offer())
+
+  const config = readSessionSigningConfig({ KMT_SESSION_SECRET: 'import-tires-mint-secret' })
+  const sessions = memorySessionStore()
+  const auth = createAuth({ ...config, password: 'unused' }, { sessions })
+  const api = createApi(db, new Refresher(db))
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    if (await auth.handle(request, response, url, readJsonBody)) return
+    if (url.pathname.startsWith('/api/') && !auth.isAuthenticated(request)) {
+      response.writeHead(401, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ error: 'Sign in to use the owner workspace.' }))
+      return
+    }
+    if (await api(request, response)) return
+    response.writeHead(404).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(done => server.close(done)))
+  const base = `http://127.0.0.1:${server.address().port}`
+
+  const minted = mintSession(config, sessions)
+  const cookie = `${minted.name}=${minted.value}`
+
+  const folder = mkdtempSync(path.join(tmpdir(), 'kmt-import-mint-test-'))
+  t.after(() => rmSync(folder, { recursive: true, force: true }))
+  const file = path.join(folder, 'scrape.json')
+  writeFileSync(file, JSON.stringify(snapshot([tire('giga-a', { price: 72 })])))
+
+  const script = path.resolve(import.meta.dirname, '../scripts/import-tires.mjs')
+  const run = (env = {}) => new Promise(resolve => execFile(process.execPath, [script, file, '--to', base],
+    { env: { ...process.env, KMT_OWNER_PASSWORD: '', KMT_OWNER_SESSION_COOKIE: '', ...env } },
+    (error, stdout, stderr) => resolve({ code: error?.code ?? 0, stdout, stderr })))
+
+  // A wrong minted cookie must not fall back to the (unset) password and
+  // succeed anyway -- it should fail the same way a wrong password does.
+  const wrongMint = await run({ KMT_OWNER_SESSION_COOKIE: 'kmt_owner=not-a-real-session' })
+  assert.equal(wrongMint.code, 1)
+  assert.match(wrongMint.stderr, /wants a credential/)
+
+  const result = await run({ KMT_OWNER_SESSION_COOKIE: cookie })
+  assert.equal(result.code, 0, result.stderr)
+  assert.match(result.stdout, /Imported 1 tire across 1 size/)
+  assert.equal(db.list().items.find(row => row.id === 'giga-a').price, 72)
+})
+
+test('scripts/import-tires.mjs refuses a malformed KMT_OWNER_SESSION_COOKIE before ever asking the server', async t => {
+  const { execFile } = await import('node:child_process')
+  const { writeFileSync } = await import('node:fs')
+  const folder = mkdtempSync(path.join(tmpdir(), 'kmt-import-badmint-test-'))
+  t.after(() => rmSync(folder, { recursive: true, force: true }))
+  const file = path.join(folder, 'scrape.json')
+  writeFileSync(file, JSON.stringify(snapshot([tire('giga-a')])))
+
+  const script = path.resolve(import.meta.dirname, '../scripts/import-tires.mjs')
+  // Port 1 is refused instantly by the OS -- if the script reached the
+  // network at all this would fail with a connection error, not the format
+  // message, which is how this proves the check runs before any request.
+  const run = (env) => new Promise(resolve => execFile(process.execPath, [script, file, '--to', 'http://127.0.0.1:1'],
+    { env: { ...process.env, KMT_OWNER_PASSWORD: '', ...env } },
+    (error, stdout, stderr) => resolve({ code: error?.code ?? 0, stdout, stderr })))
+
+  const result = await run({ KMT_OWNER_SESSION_COOKIE: 'no-equals-sign' })
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /KMT_OWNER_SESSION_COOKIE must be "name=value"/)
+})
+
 test('a complete import is refused for a size the scraper did not read in full', t => {
   // The tires a trimmed scrape does not mention are ones it did not fetch, not
   // ones the supplier dropped. Retiring them would take tires off Ken's list.
