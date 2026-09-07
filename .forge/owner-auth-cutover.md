@@ -278,6 +278,128 @@ discovered.** Without this paragraph it would have surfaced months from now as
 
 ---
 
+## A minted session must not decide as a person
+
+**Requirement, ruled by the PRODUCT MANAGER / OWNER AGENT out of the #362
+review, placed here by the PROJECT MANAGER so it reaches whoever builds #290
+rather than living in a message thread.**
+
+`scripts/mint-session.mjs` authenticates as the owner and carries **no person
+identity**. #349 made owner decisions record `decided_by` through `moveTo` as
+`actor ?? SHARED_PASSWORD_ACTOR`, and **#290 is exactly what starts passing a
+real `actor` into that seam.** So:
+
+> **A decision made under a minted session must resolve to its own distinct
+> marker — "authenticated, but not as a person" — and never to a real name,
+> and never by falling through to `SHARED_PASSWORD_ACTOR`.**
+
+Three eras must stay distinguishable afterwards: the shared-password era, a
+break-glass decision, and a decision Ken actually made.
+
+### The constraint that is easy to under-build
+
+**The fact has to travel with the session.** An `owner_sessions` row is
+`(id, expires_at)` — at decision time nothing distinguishes a minted session
+from a password one, so a marker that exists only in the CLI's stdout is a
+marker nobody kept. DEVSCOPS/AUDITOR named this and it is the whole difficulty.
+
+### Recommended mechanism, and the part I would argue for
+
+Mechanism is the implementer's; this is the read I gave BUGFIXER, who is
+building it:
+
+**Store the actor string on the session row, not a minted/not-minted flag.** A
+boolean covers today's two cases and forces a second migration the moment #290
+lands, because a Google-issued session is neither minted nor password-issued
+*and* has to carry which person. One nullable `actor TEXT` written at
+`create()` holds all three — `owner:shared-password`, `owner:minted-session`,
+`owner:<verified email>` — so resolution becomes a lookup rather than a
+derivation and **#290 adds a value rather than a column.** That is why
+`SHARED_PASSWORD_ACTOR` is a string constant and not a flag.
+
+Four things that go with it:
+
+- **`create()` takes the actor**, since both the login path and `mintSession`
+  already route through it and neither needs a special case.
+- **`memorySessionStore()` must change with it.** It is a parallel contract
+  used by tests and by a server without a database; teach only the SQLite
+  store about actors and the suite tests the other one. Same family as
+  `quotes.test.mjs`'s hand-written `serve()` mirror.
+- **Not on `has()`.** That runs on every authenticated request; a decision
+  happens a few times a day. A separate read keeps the hot path's contract.
+- **The migration is small, and `decided_by`'s pattern must not be copied.**
+  `owner_sessions` has no `migrate()`, no CHECK, and its rows **expire**, so
+  `ALTER TABLE ADD COLUMN` is enough with no backfill and no rebuild. A null
+  actor is gone within `KMT_SESSION_HOURS` (default 12). That is the opposite
+  of `decided_by`, where a null is permanent.
+
+### The trap, tested before the happy path
+
+```js
+session.actor || SHARED_PASSWORD_ACTOR   // WRONG: a minted session with a null actor becomes "password"
+```
+
+**That is the requirement's own failure, reached by being defensive about
+`undefined`** — the same shape as the `hd` conditional above. An absent actor
+means "not recorded", which for a session created before the column is honest
+and short-lived. **Test the absent case, not only the wrong one.**
+
+### The requirement is the chain, not the column
+
+**DEVSCOPS/AUDITOR's addition, and it closes a gap in the paragraphs above:
+storing the actor is necessary and not sufficient.** The path is
+
+> `session.actor` written at `create()` → surfaced when the auth layer resolves
+> the session → **threaded by the decide handler into `moveTo`'s `actor`**
+
+and **the realistic under-build is not "forgot the column", it is "stored the
+actor and never wired it to the seam".** A session row carrying
+`owner:minted-session` that no handler reads leaves `decided_by` null, which
+collapses to exactly the pre-identity era the requirement exists to keep
+distinct. Every intermediate step can be individually correct while the
+requirement is unmet — which is the defence-in-depth testing problem from the
+section above, wearing different clothes.
+
+**So the requirement is satisfied by an end-to-end assertion, not by unit
+tests of the parts:** mint a session, make a decision under it, read
+`decided_by`, and assert it is **neither a person nor `SHARED_PASSWORD_ACTOR`**.
+That test fails if any link is missing, and no test of a single link does.
+
+### The migration follows `decided_by`'s precedent exactly
+
+**Additive, through a guarded ALTER, with a migration test.** The precedent is
+`backend/quotes.mjs`'s `if (!columns.has('decided_by')) ALTER TABLE quotes ADD
+COLUMN decided_by TEXT`. **A column added outside that path only fails in
+production**, on the one machine holding a database that was not built fresh —
+which is this file's own documented history.
+
+One thing to settle rather than assume: **`owner_sessions` has no `migrate()`
+at all**, so the guard has no existing home. It belongs in `createSessionStore`
+immediately after its `CREATE TABLE IF NOT EXISTS`, reading `PRAGMA
+table_info(owner_sessions)` the same way `migrate()` does — the store is
+constructed on every boot, so that is the equivalent moment.
+
+### Timing: do not borrow #349's cost argument
+
+`decided_by` had to be early because unattributable decisions accumulate
+permanently. **Nothing accumulates here** — sessions expire, so a late column
+costs only a few hours of unlabelled sessions that are already gone. Landing it
+before #290 is sensible because it keeps #290 smaller, not because delay is
+expensive.
+
+**But "less urgent" is not "optional", and the distinction is worth pinning in
+both directions** (DEVSCOPS/AUDITOR's correction to my own framing). A
+mis-attributed break-glass decision is still wrong for as long as that quote
+exists — **the row it writes is permanent even though the session that wrote it
+is not.** What sessions expiring buys is that no *backlog* accumulates, not
+that any individual decision is less wrong. The requirement stands on its own;
+only the urgency argument for its timing is corrected.
+
+**Whether this is a #290 precondition or a #362 merge gate is the OWNER
+AGENT's and the PROJECT MANAGER's call and is deliberately not decided here.**
+
+---
+
 ## Preconditions already true, verified at `c68408c`
 
 Each of these is load-bearing and none of them is obvious from the code that
