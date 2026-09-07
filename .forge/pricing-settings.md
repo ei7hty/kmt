@@ -144,41 +144,84 @@ wants, arriving as a side effect rather than a redesign.
 
 `shippingPerTire` becomes a field in the markup settings beside `rate`,
 owner-editable through the existing `GET`/`PUT /api/owner/markup`, carrying
-its own `isPlaceholder` until Ken sets it. **Dummy value now**, per the
-user's instruction, and visibly ours until replaced.
+its own `isPlaceholder` until Ken sets it. **The default is `0`, not a guessed
+dollar figure** -- nothing charged a separate shipping amount before this
+existed, so an invented number would move live prices on a guess while zero
+preserves them until Ken supplies a real one.
 
 **The per-tire seam is already in the signature.**
 `retailPrice(supplierPrice, tire = {}, settings)` takes a `tire` argument
-that **nothing currently reads**. When the scraper supplies real per-tire
-shipping, it is read from there and the flat setting becomes the fallback for
+that **nothing currently reads**, and the flat setting is the fallback for
 tires that have none. **No caller changes, exactly as the module intended.**
+
+**What that seam is for has changed — see the ruling below.** It was written
+for a scraper that would supply per-tire shipping. **No such number exists.**
+The seam stays because Ken will meet outliers by hand: at one destination and
+one quantity, giga-tires ships one tire **free** and another for **$119.56**,
+and a single flat figure adds his shipping cost to a tire that ships free.
 
 **The owner's own price still wins outright.** If Ken has priced a tire, that
 price is the price — shipping does not get added to it. Markup proposes, the
 owner disposes, unchanged.
 
-### The scraper, planned honestly
+### The scraper: asked, answered, and closed
 
-`scripts/giga-tires.mjs` captures `source: { sku, stock, listPrice, segment,
-url }`. **No shipping field.** Adding one means a new key in the snapshot
-shape, which flows through `import-tires.mjs` and the supplier table the same
-way the others do.
+**This section originally planned a scraper task and scoped it as a question
+first**: *"the first task is not 'pull shipping' -- it is 'find out whether
+shipping is a per-tire number at all.'"* **The scraper lane ran that question
+on 2026-09-06 and the answer is no.** What follows replaces the plan.
 
-**But the first task is not "pull shipping" — it is "find out whether
-shipping is a per-tire number at all."** Supplier shipping is commonly
-**order-level and destination-dependent**: a cart total, free over a
-threshold, varying by how many tires ship together and where they go. If that
-is what giga-tires publishes, then a per-tire field is the wrong shape and
-the honest answer is a configured average rather than a scraped figure.
+**Measured on giga-tires.com, by hand, no scraper run and no import:**
 
-**So the scraper task is scoped as a question first.** Read what the site
-actually shows for shipping on a listing and in a cart, and report the shape.
-**The flat setting stands either way** — that is why it is being built first,
-and it is what makes this safe to ship before the answer exists.
+- **No shipping figure exists until a destination ZIP is entered.** Every card
+  reads "Shipping -- Enter zip code". It is not a catalog attribute.
+- **At the same quantity (4) and the same ZIP (02149), shipping across SKUs
+  was $0.00, $94.00, $97.16, $101.36, $109.32, $116.44 and $119.56.** One tire
+  ships free while another costs $119.56. **No per-tire multiplier can
+  represent that.**
+- **It is not linear in quantity either, which rules out "flat rate x N" as a
+  model of the supplier**: the same tire at the same ZIP is **$32.86 for one
+  and $116.44 for four**, against the $131.44 a flat per-tire rate predicts.
+  Cheaper per unit at volume -- ordinary freight economics, not a constant.
+- **The site says so itself**: *"For orders over quantity 10 of one tire,
+  please call us so we can provide a more accurate shipping cost."* Their own
+  system stops auto-quoting past a threshold.
+- **Total is exactly (per-tire price x quantity) + shipping**, confirmed by
+  arithmetic on several rows. **Shipping is never folded into the per-tire
+  price**, so it cannot be backed out of one either. That also confirms a
+  quiet assumption in `retailPrice`: the supplier's listed price *is* the bare
+  goods cost, which is what treating `supplierPrice` as landed-cost-minus-
+  shipping depends on. Nobody had checked it before.
 
-This is the same discipline the walk used: *page-one coverage is the data
-definition of done, and the deep pass is a separate decision with its cost
-attached.*
+**Ruling: `scripts/giga-tires.mjs`'s `source` block gains no shipping key.**
+There is nothing stable to capture. **A scraped "shipping per tire" would
+assert a precision, and a linearity, that the supplier's own pricing does not
+have.**
+
+**So the flat owner-configured setting is the permanent shape, not a
+stopgap.** This document previously framed it as a placeholder awaiting the
+scraper. **That framing was mine and it was wrong**, and the correction
+matters because a setting described as temporary does not get the care a
+permanent one does.
+
+### The four-tire basis, which the numbers force
+
+**A single per-tire flat rate cannot be right at both quantities.** It is
+arithmetically impossible against the curve above:
+
+- set from a one-tire experience (~$32.86), **a four-tire job overcharges by
+  about $15**
+- set from a four-tire experience (~$29.11), **a single-tire job undercharges
+  by a few dollars**
+
+**Ruling: Ken sets the figure on a four-tire basis, and the owner screen says
+so in the field's help text.**
+
+**Most jobs are four tires, so the common case should be the accurate one.**
+And when a flat rate has to be wrong somewhere, **it should be wrong in the
+direction that costs Ken a little rather than the direction that overcharges a
+customer.** An overcharge is a conversation with somebody who trusted the
+number, and this business runs on that trust.
 
 ## What ships inert, and why that matters
 
