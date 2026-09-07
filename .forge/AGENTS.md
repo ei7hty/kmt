@@ -28,6 +28,40 @@ directions. Your branch name is the claim: make it describe the work.
 **While you work.** Stay in your lane (below). If you must touch a file outside
 it, say so in your claim row first.
 
+**When a decision reaches you second-hand, the source wins and you ask.** A
+routing, a ruling, a claim row that describes someone's decision — these are
+relays, and relays gain and lose fidelity silently. The fix is not to read them
+more carefully: a relay that is internally coherent and simply wrong survives
+any careful read, because a closer look at a coherent-but-wrong statement only
+confirms it. So when a relayed decision conflicts with your own reading of the
+source — the PR diff, the file, the person's own words — trust the source and
+ask, rather than act on the relay. This happened four times in one night: a
+"can follow" tightened into "blocks merge" in transit; a claim row describing a
+ruling with a specificity nobody gave it; a relayed confirmation passed on as
+fact and then retracted; a held, contested PR routed as ready. Each was caught
+by going back to the source, never by a more careful reading of the relay.
+
+**Work that outran its record — the inverse of a stale record, and not caught the
+same way.** A stale record has fallen behind the world; you catch it by
+re-reading it against reality (the doc says three audits, you count five). Work
+that outran its record is the opposite: the document is coherent, internally
+consistent, and describes a world that *was* true — nothing in it is wrong, it
+has simply been overtaken, and re-reading confirms it. Only measuring the code
+catches it, and nothing prompts you to measure what you have no reason to doubt.
+The tell, seen three times here: someone says "nobody owns X" and X is already
+done — regression tests about to be rewritten that already existed, a copy defect
+recorded open and fixed hours earlier, an audit path placed for conversion that
+was already built. Each finder was doing something else; a document review would
+have found none of them, because the documents were internally fine. One way it
+bites in particular: **searching for the old thing and reading its presence as
+the new thing's absence.** `audit-ui.mjs` still held `KMT_OWNER_PASSWORD`, so the
+conversion looked undone — but that is the fallback, and the minted-session path
+sits above it. A grep for what you expect to be gone answers a different question
+than the one you asked; the question is *what does this code do now*, and only
+reading it answers that. So: before assigning work a document says is open, read
+the code, not the document — and when a document says a thing is missing, the
+cheapest check is whether it is there.
+
 **A claim row names a region, not a lock on the whole path.** Two agents may
 hold the same file at once when their work sits in different parts of it --
 BUG FIXER held `backend/quotes.mjs`'s `cleanDate()` near the top while JUNIOR
@@ -55,10 +89,27 @@ edit, not a coherent screen. Two people building in one file still owe each
 other a look at what the other is building, which no claim row can do for them:
 the row is a collision guard, not a design review.
 
-**When you finish.** Remove your row from `CLAIMS.md`. If you learned something
-the next agent would otherwise rediscover the hard way, append it to
-[`.forge/NOTES.md`](NOTES.md). Update `.forge/state.json` if you closed a task,
-and record architecture decisions in `.forge/decisions.md`.
+**When you finish — and finished means merged, not opened.** A claim row is
+released when the PR lands on `main`, not when you push it and open the PR: an
+open PR is still a claim on the file, and it can sit an hour or more waiting on a
+second reader — for that whole window a released row would tell the busiest
+coordination file that nobody is touching a file you are, and the reader who
+needs it is the one who has *not* read your PR. **The agent who ends the PR —
+merging it, or closing it without merging — removes the row, in the same pass.**
+They always observe the ending and are at `main` for it; the author is elsewhere
+on someone else's clock with no reason to look. Both exits orphan a row
+otherwise: a merge does (four rows accumulated in one night, because "release on
+merge" owned by the author has no agent), and so does a close-without-merge
+(#317, closed as a duplicate — its row released by nobody under a merge-only
+rule). An author who sees their PR end may remove their own, but the ender owns
+it; match it by branch name, the row's first column. The ender's removal also
+needs no one's *account* of what they did — which matters because a release
+report is the one kind of report nothing in this repo checks: a row was found
+stale since its original claim, behind a stated release a full-history search
+showed never happened. Then, if you
+learned something the next agent would otherwise rediscover the hard way, append
+it to [`.forge/NOTES.md`](NOTES.md). Update `.forge/state.json` if you closed a
+task, and record architecture decisions in `.forge/decisions.md`.
 
 **Claim and release commits go straight to `main`, never through a pull request.**
 `CLAIMS.md` changes several times an hour across every agent working here, so a
@@ -88,6 +139,14 @@ one night:
   discards it with no commit and no reflog entry, nothing anywhere to recover.
   "Stage explicit paths, never `-A`" protects *across* files and has no force
   *inside* the one file every session writes.
+
+**If you find another session's uncommitted edit to `CLAIMS.md` in the shared
+checkout, commit it with attribution — never `checkout --` or `reset --hard` it
+away.** That is the live case until everyone works from a worktree: a row is
+already sitting in the shared tree, put there by someone. Riding it along under a
+one-line note in your commit message costs nothing; discarding it destroys a
+claim with no artifact anywhere, and its author finds out when they ask where it
+went.
 
 A fresh worktree's `CLAIMS.md` holds your row and nothing else: no other
 session's edit to sweep up, discard, or reset over. That makes the collision
