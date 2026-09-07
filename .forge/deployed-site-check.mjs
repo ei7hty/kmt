@@ -86,25 +86,57 @@ function describeFetchError(error) {
 }
 
 /**
+ * Whether a name resolves in one address family, and the three-way answer
+ * this actually has: yes, no, or the lookup itself did not work. dns.lookup
+ * rather than resolve4/resolve6 -- measured directly (this sandbox and
+ * DEV OPS's own machine both refuse resolve4/resolve6 with ECONNREFUSED for
+ * every name, including ones with real, live records) -- and it is the more
+ * faithful mechanism regardless: it goes through the OS resolver
+ * (getaddrinfo), the same path a customer's browser takes, so "can a
+ * client find this name in this family" is literally the question it
+ * answers, where resolve4/resolve6 answer "does the authoritative chain
+ * hold this record type", a related but different claim.
+ *
+ * ENOTFOUND is lookup's answer to a genuine absence -- confirmed against
+ * both an AAAA-only real host asked for family 4, and a name that does not
+ * exist at all, so it is not a guess at what the error means. Any other
+ * code (ECONNREFUSED, ETIMEOUT, ESERVFAIL, EREFUSED, ...) means the lookup
+ * itself could not complete, which is a fact about the machine running
+ * this script, not about production, and must never be reported as one --
+ * that conflation is the defect this replaces: a resolver refusing to
+ * answer and a host with no record produced the identical outcome before,
+ * and the identical outcome was a false "restore the apex A record" alarm
+ * about a record that was present and healthy the whole time.
+ */
+async function resolveFamily(host, family) {
+  try {
+    const records = await dns.lookup(host, { family, all: true });
+    return { addresses: records.map(record => record.address), undetermined: false };
+  } catch (error) {
+    if (error.code === 'ENOTFOUND') return { addresses: [], undetermined: false };
+    return { addresses: [], undetermined: true, errorCode: error.code };
+  }
+}
+
+/**
  * Whether a host's DNS resolution covers both address families, given
- * pre-fetched A/AAAA record lists (DEV OPS's design, after tonight's
- * apex-A-record outage). Pure, and taking the records rather than doing the
+ * pre-fetched resolveFamily() results (DEV OPS's design, after tonight's
+ * apex-A-record outage). Pure, and taking the results rather than doing the
  * lookup itself, so the two distinct failure messages -- no A record is a
- * different fix and a different urgency than no AAAA record -- can be
- * proven against synthetic data the same way checkOgImageTag above is
- * proven against synthetic HTML, without a real DNS lookup this sandbox
- * cannot always make.
+ * different fix and a different urgency than no AAAA record -- and the
+ * separate undetermined case can all be proven against synthetic data the
+ * same way checkOgImageTag above is proven against synthetic HTML.
  */
 function describeAddressFamily(host, { a, aaaa }) {
+  const describeOne = (result, missingReason) => {
+    if (result.undetermined) {
+      return { ok: null, reason: `could not determine -- the lookup itself failed (${result.errorCode}), not a finding about production` };
+    }
+    return { ok: result.addresses.length > 0, reason: result.addresses.length ? '' : missingReason };
+  };
   return {
-    a: {
-      ok: a.length > 0,
-      reason: a.length ? '' : `no A record -- IPv4-only clients cannot resolve ${host}. Office networks and older routers are IPv4-only; they get "site can't be reached." Restore the apex A record at the registrar.`,
-    },
-    aaaa: {
-      ok: aaaa.length > 0,
-      reason: aaaa.length ? '' : `${host} has no IPv6 address. Lower severity today -- every IPv4 client still works -- but the same class of gap, worth naming rather than folding into a generic "DNS looks wrong."`,
-    },
+    a: describeOne(a, `no A record -- IPv4-only clients cannot resolve ${host}. Office networks and older routers are IPv4-only; they get "site can't be reached." Restore the apex A record at the registrar.`),
+    aaaa: describeOne(aaaa, `${host} has no IPv6 address. Lower severity today -- every IPv4 client still works -- but the same class of gap, worth naming rather than folding into a generic "DNS looks wrong."`),
   };
 }
 
@@ -115,10 +147,19 @@ function describeAddressFamily(host, { a, aaaa }) {
  * redirecting host successfully (that family works fine for it) and is
  * sent somewhere it cannot resolve at all -- worse than a plain outage,
  * because the site looked reachable right up until the redirect.
+ *
+ * Undetermined on either side (any of the four lookups involved failed to
+ * complete) skips the comparison entirely rather than asserting on data
+ * that was never actually obtained -- the presence checks above already
+ * report the specific lookup failure; this does not need to guess on top
+ * of it.
  */
 function checkRedirectFamilyCoverage(host, hostFamilies, canonicalHost, canonicalFamilies) {
-  const missingA = hostFamilies.a.length > 0 && canonicalFamilies.a.length === 0;
-  const missingAaaa = hostFamilies.aaaa.length > 0 && canonicalFamilies.aaaa.length === 0;
+  if (hostFamilies.a.undetermined || hostFamilies.aaaa.undetermined || canonicalFamilies.a.undetermined || canonicalFamilies.aaaa.undetermined) {
+    return { ok: null, reason: `could not fully determine address families for ${host} or ${canonicalHost} -- at least one lookup failed rather than answered` };
+  }
+  const missingA = hostFamilies.a.addresses.length > 0 && canonicalFamilies.a.addresses.length === 0;
+  const missingAaaa = hostFamilies.aaaa.addresses.length > 0 && canonicalFamilies.aaaa.addresses.length === 0;
   return {
     ok: !missingA && !missingAaaa,
     reason: missingA
@@ -566,15 +607,25 @@ async function main() {
   // Resolution needs no connectivity in the family being resolved; only
   // production's own DNS records can answer whether a client in that family
   // could ever reach it, which is the only question worth asking here.
+  // check() only has pass/fail; a lookup that could not complete is neither
+  // -- it is the same "ran but proves nothing" state skip() already exists
+  // for elsewhere in this file, so a null verdict from describeAddressFamily
+  // or checkRedirectFamilyCoverage goes through skip() instead, never
+  // silently folded into either side of an assertion about production.
+  const checkOrSkip = (result, label) => {
+    if (result.ok === null) skip(label, result.reason);
+    else check(result.ok, label, result.reason);
+  };
+
   const addressFamilyHosts = [CANONICAL_HOST, ...REDIRECT_HOSTS];
   const addressFamilies = {};
   for (const host of addressFamilyHosts) {
-    const a = await dns.resolve4(host).catch(() => []);
-    const aaaa = await dns.resolve6(host).catch(() => []);
+    const a = await resolveFamily(host, 4);
+    const aaaa = await resolveFamily(host, 6);
     addressFamilies[host] = { a, aaaa };
     const described = describeAddressFamily(host, { a, aaaa });
-    check(described.a.ok, `${host} resolves over IPv4 (A record)`, described.a.reason);
-    check(described.aaaa.ok, `${host} resolves over IPv6 (AAAA record)`, described.aaaa.reason);
+    checkOrSkip(described.a, `${host} resolves over IPv4 (A record)`);
+    checkOrSkip(described.aaaa, `${host} resolves over IPv6 (AAAA record)`);
   }
 
   // www and order 301 to the canonical; this is where that would have made
@@ -583,7 +634,7 @@ async function main() {
   const canonicalFamilies = addressFamilies[CANONICAL_HOST];
   for (const host of REDIRECT_HOSTS) {
     const coverage = checkRedirectFamilyCoverage(host, addressFamilies[host], CANONICAL_HOST, canonicalFamilies);
-    check(coverage.ok, `${host}'s redirect target (${CANONICAL_HOST}) resolves in every family ${host} does`, coverage.reason);
+    checkOrSkip(coverage, `${host}'s redirect target (${CANONICAL_HOST}) resolves in every family ${host} does`);
   }
 
   // kmt.fly.dev specifically, not one of the DNS aliases: www and order are
