@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { unresolvedOutboxFailures } from '../store'
+import { NeedsSignIn, unresolvedOutboxFailures } from '../store'
 
 /**
  * A failed-mail count in the nav of a screen Ken actually opens, since
@@ -14,23 +14,47 @@ import { unresolvedOutboxFailures } from '../store'
  * opens the portal" -- it does not close that window the way a channel
  * outside the app (SMS, not built) would.
  *
- * Fails silently on purpose: a session that has not signed in yet, or one
- * that has expired mid-visit, should not turn a small nav badge into a
- * visible error on a screen whose main content already handles that case
- * properly.
+ * Two silences look identical unless kept apart on purpose: "checked, and
+ * it is clean" and "could not check." The first draft of this component
+ * conflated them -- a fetch failure fell through the same catch as a
+ * genuinely empty result, so a broken check and a healthy outbox both
+ * rendered as nothing. That is the exact false-negative shape this badge
+ * exists to prevent (the PROJECT MANAGER's read caught it before it
+ * shipped that way). NeedsSignIn is the one error that stays silent on
+ * purpose -- a session not yet established, or one that expired mid-visit,
+ * is the parent screen's own case to handle, not this badge's to narrate.
+ * Anything else means the check itself did not run, and says so rather
+ * than reading as clean.
  */
 function MailAlert({ navigate }) {
-  const [count, setCount] = useState(0)
+  const [count, setCount] = useState(null) // null: not yet known (loading, or not signed in)
+  const [checkFailed, setCheckFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     unresolvedOutboxFailures()
-      .then(messages => { if (!cancelled) setCount(messages.length) })
-      .catch(() => {})
+      .then(messages => {
+        if (cancelled) return
+        setCount(messages.length)
+        setCheckFailed(false)
+      })
+      .catch(err => {
+        if (cancelled) return
+        if (err instanceof NeedsSignIn) return // silent: the screen's own sign-in gate owns this case
+        setCheckFailed(true)
+      })
     return () => { cancelled = true }
   }, [])
 
-  if (count === 0) return null
+  if (checkFailed) {
+    return (
+      <button type="button" className="mail-alert mail-alert-unknown" data-testid="mail-alert" onClick={() => navigate('/owner/outbox')}>
+        Mail: could not check
+      </button>
+    )
+  }
+
+  if (!count) return null
 
   return (
     <button type="button" className="mail-alert" data-testid="mail-alert" onClick={() => navigate('/owner/outbox')}>

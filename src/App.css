@@ -646,6 +646,17 @@
   cursor: pointer;
 }
 
+/* The check itself failed, not the outbox -- amber (status-note-wait's
+   colour), the codebase's own vocabulary for "uncertain," never the red
+   above, which means "confirmed problem." Silence and a false "clean"
+   already fail toward the same wrong answer; this must not fail toward it
+   a second time by reading as another shade of the same red badge. */
+.mail-alert-unknown {
+  border-color: #d9a441;
+  background: rgba(217, 164, 65, 0.12);
+  color: #d9a441;
+}
+
 /* Card panel: dark gradient card with a subtle border, the same
    language as the customer flow's .max-w-2xl / .step-panel cards. */
 .panel {
