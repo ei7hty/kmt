@@ -63,12 +63,20 @@ MARKETING's. Absence is a fact, not an instruction to add anything.
 These are demand observations, not copy. The call on each is the OWNER AGENT's.
 
 1. **The largest query volume is emergency/24-7 roadside intent, which Ken does
-   not serve.** Ken is one owner, by appointment, inside an enforced radius —
-   not 24/7 emergency. Demand fact: chasing emergency-intent queries draws
-   searchers whose job Ken will refuse. The intent Ken *does* serve — planned
-   new-tyre replacement at the customer's location, with a fast honest quote —
-   is a real and less-contested slice of the same market. Which intent the
-   visible surface should speak to is a positioning decision.
+   not serve — and the product enforces this, so it is structural, not a
+   preference.** `backend/quotes.mjs:25` sets `MIN_LEAD_DAYS = 7`, enforced in
+   `cleanDate` at `backend/quotes.mjs:61-62`: a preferred date less than seven
+   calendar days out is refused with "I need at least a week's notice -- the
+   earliest I can come is {date}." Presence/absence fact: **the entire top of
+   the demand curve — "flat tire help near me", "emergency", and even "same
+   day tire replacement" — is unservable by construction.** A searcher with a
+   flat today cannot book sooner than next week, and learns it only after
+   filling in the form. So chasing that volume does not draw a wrong-fit slice;
+   it draws a guaranteed bounce and a bad experience that costs Ken. The intent
+   Ken *does* serve — **planned** new-tyre replacement at the customer's
+   location, booked ahead, with a real quote from the owner — is what the
+   surface can honestly speak to. Which intent the copy targets is a
+   positioning decision; that "same day" is off the table is a fact.
 
 2. **Only `/` and `/privacy` are indexable** (correct and settled — I am not
    reopening the `/status`, `/confirmation`, `/owner` exclusions; `/status`'s
