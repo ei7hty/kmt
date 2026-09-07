@@ -56,8 +56,9 @@ const DEFAULT_TTL_HOURS = 12
  * `backend/quotes.mjs`'s `SHARED_PASSWORD_ACTOR` -- kept as a separate literal
  * here rather than imported, since that constant's long-term home is this
  * file (auth decides who you are, quotes only records who decided) but
- * moving it now would fight #349 over one export. Whoever lands #290's
- * identity resolution should do that move and delete this duplicate.
+ * moving it now would fight #349 over one export. Whoever wires a real
+ * identity into `moveTo`'s `actor` seam should do that move and delete this
+ * duplicate.
  */
 export const PASSWORD_SESSION_ACTOR = 'owner:shared-password'
 
@@ -66,7 +67,7 @@ export const PASSWORD_SESSION_ACTOR = 'owner:shared-password'
  * by `scripts/mint-session.mjs` rather than a sign-in, so that `decided_by`
  * (`backend/quotes.mjs`) can record "authenticated, but not a person" instead
  * of either a false identity or silently falling back to the shared-password
- * marker once #290 starts passing real identities through that seam.
+ * marker once Google sign-in starts passing real identities through that seam.
  */
 export const MINTED_SESSION_ACTOR = 'owner:minted-session'
 
@@ -84,7 +85,9 @@ export const MINTED_SESSION_ACTOR = 'owner:minted-session'
  *
  * Each row also carries who -- or what -- created it: `actor`, a nullable
  * string in the `owner:*` idiom (`PASSWORD_SESSION_ACTOR`,
- * `MINTED_SESSION_ACTOR`, and eventually a verified email once #290 lands).
+ * `MINTED_SESSION_ACTOR`, and eventually a verified email once Google
+ * sign-in records one -- naming the work rather than an issue number, since
+ * #290 itself is the closed spec, not this implementation).
  * A plain `ALTER TABLE`, not a `migrate()` entry: this table has no CHECK to
  * rebuild around, and unlike `quotes.decided_by` a null here is never
  * permanent -- a row with no actor is one created before this column existed,
