@@ -2164,6 +2164,54 @@ paths to the same mechanism, deliberately not merged into one: this
 backfill clears the eight rows that predate any screen; their control is
 how Ken clears rows going forward. Neither should grow into the other.
 
+**All eight ids confirmed, and the set is provably complete rather than
+merely filtered.** The blocked read got past its block on a second,
+differently-shaped query: order by `created_at`, take the earliest ten,
+filter by eye -- no string literal in the `WHERE` clause at all, because
+`flyctl -C` word-splits its argument and strips quotes, so `status='queued'`
+or an id list inside `NOT IN (...)` would have arrived as bare identifiers
+and been rejected as unknown columns. Worth remembering the next time a
+production read needs a `WHERE` clause through that path: `/**/`-as-
+whitespace and `[]`-as-identifier tricks don't extend to string values,
+and nothing about the failure mode announces that's the reason a query
+came back wrong.
+
+The read confirms three things beyond just the eight ids:
+
+- **The set terminates inside the visible window.** Rows nine and ten by
+  `created_at` are already `status='sent'` -- so this is "the ninth row is
+  not queued," not "eight rows happened to match a filter." A query that
+  re-ran at execution time was never at risk of silently including a
+  ninth row from *this* incident; the risk was always a *different*
+  incident's row landing inside a reused time bound, which is exactly
+  what the earlier `BETWEEN` bug already demonstrated.
+- **Six distinct `request_id`s**, one of them behind three of the eight
+  rows. That's a measured confirmation of "eight rows, six requests,"
+  which until now was a recalled figure from the original customer-impact
+  read, not a number checked against this second, independent query.
+- **My original lower bound (`15:41:00`) held**; the earliest row is
+  `15:41:54.947Z`, safely inside it. Only the upper bound cost anything --
+  confirming the near-miss was real but bounded to the one edge, not a
+  sign the whole window was unreliable.
+
+Full eight, id | request_id | created_at:
+
+```
+1142892df7cf5c98eef6f6dab4cf0442 | 2ac26ac0630c9d1f2aacff8525cbe9f0 | 2026-09-06T15:41:54.947Z
+9554c63058cd5c992877f17add3cf6e0 | 4a2be8cb3feb5f0e3b722c0c6822fdd3 | 2026-09-06T15:47:24.721Z
+181fc37825eac34c6d2144210b931bd7 | fb0da6739162bd7046ba2444604a84da | 2026-09-06T16:32:05.992Z
+87e9d5fdc2a163b7355f00ea70a2a67f | c585239b1615a951ceaf18bfc665786d | 2026-09-06T16:33:50.876Z
+6a73687b7c83d1aed88eb23fde26c723 | fb0da6739162bd7046ba2444604a84da | 2026-09-06T16:34:16.493Z
+18b78ee1201a43254ca2775267d4da38 | fb0da6739162bd7046ba2444604a84da | 2026-09-06T18:21:41.739Z
+f334e41a88bc55aadb122c31e72a4d42 | c8f59dccd1383e5caab89bfc2e0f5f25 | 2026-09-06T19:13:21.678Z
+705bb87aa419a88a969ba2d731b8f5b3 | 0c5a55b8003c31d5800d446372cdf78a | 2026-09-06T19:30:46.096Z
+```
+
+Script finalized with these and re-verified live against a seeded copy
+built to match them exactly (same ids, same six requests, same
+timestamps) -- reads correctly, dry run intact. Ready to open as its own
+PR the moment `#359` is on `main`. Still held until then.
+
 **2026-09-07 - Claude (DEV OPS/INFRASTRUCTURE)**
 The monitor is shaped like CI; the things worth monitoring are shaped like the
 server.
