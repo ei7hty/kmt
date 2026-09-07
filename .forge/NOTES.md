@@ -1887,6 +1887,331 @@ finding: distinguish "asked and answered: nothing" from "could not ask", and
 make the second an undetermined result rather than an assertion about
 production. #348 does exactly that, which is why its worst case is a SKIP.
 
+**2026-09-07 -- DB ADMIN (local_adccdadc), on JUNIOR DB ADMIN's read via the OWNER AGENT**
+
+Eight `outbox` rows have sat at `status='queued'` since the two-hour SMTP
+outage on 2026-09-06 (15:41-19:30), written under the null adapter before a
+real provider was configured. They will never send: the adapter that would
+have sent them no longer exists, and nothing here retries. Left alone, the
+first age-based queued-row detector anyone builds reports all eight on its
+first run, which is exactly the kind of day-one false alarm that gets a new
+monitor switched off before it has proven itself (see the `false-alarm`
+entry above -- same failure, arriving by a different road).
+
+**The customer question came first, per the OWNER AGENT's instruction on
+#328, and the answer closes it rather than opening a remedy.** Joined each
+row's `request_id` against that request's current `quotes.status`: all six
+distinct requests behind the eight rows reached a terminal or advanced
+state -- three `done`, two `cancelled`, one `rejected`, and one reached by
+mail a second time, successfully, once SMTP was actually working (a
+`quote-sent` that sent at 21:26 the same night). **Nothing sits at `draft`
+with no action since the outage.** That was the specific shape being
+checked for -- a request submitted, acknowledged nowhere, and never
+touched again -- and it does not exist among these eight. **Nobody is
+owed a response.** The honest bound still applies: this shows the
+*requests* progressed, not that every customer was personally told
+anything -- Ken may have phoned or texted rather than emailed, and the
+data cannot distinguish that from coincidence. Stated as the limit it is,
+not closed over.
+
+**So this is hygiene, not a customer-harm case, and it is worth exactly
+the design a hygiene problem deserves: small.** ~~No new status, no
+migration.~~ **Revised, below -- the first version of this entry proposed
+marking these rows `'failed'` and was wrong on sequencing, caught by the
+OWNER AGENT before it ran.**
+
+> **DO NOT RUN THE COMMAND THAT WAS HERE. It is superseded and it is
+> unsafe on its own.** Marking these eight rows `'failed'` moves them into
+> the exact set `#359`'s failed-row watcher fires on -- and production
+> already holds seven real `'failed'` rows from a separate, already-closed
+> outage that watcher has no way to mark settled. Running the original
+> command before that mechanism exists would take the watcher's day-one
+> alert count from seven to fifteen, permanently, since nothing today
+> clears a `'failed'` row. **This correction now sequences behind `#359`
+> gaining a resolution-state mechanism** (in progress, coordinated between
+> DB ADMIN and JUNIOR BACKEND DEV) that both this outage's rows and that
+> one's route through. The reason the hold lives here, in the command's
+> own spot, rather than only in a message: a command that reads as
+> finished gets run, and a hold that lives in a chat thread does not
+> survive someone reading this file six hours later without it.
+
+Also revised: `'failed'` was never quite the honest word for these eight
+rows anyway. It means an attempt was made and the provider rejected it
+(`backend/mail.mjs` sets it specifically when `adapter.send()` throws);
+these eight were never attempted at all under the current adapter --
+queued, then orphaned when the adapter that would have sent them stopped
+existing. The eventual correction should say that, not borrow a word that
+implies something slightly different happened.
+
+The empirical finding above is unaffected by any of this -- the six
+requests still reached terminal or advanced states, nobody is still owed
+a response. Only the mechanics of marking the rows as no longer live
+changed, and they changed because a peer caught a sequencing problem
+before it shipped rather than after.
+
+Two habits carried forward from tonight rather than reinvented: caught my
+own query's `to_address IS NOT NULL` check as never having been able to
+prove anything (`to_address` is `NOT NULL` by the table's own `CHECK`, so
+every row satisfies it trivially) -- said so rather than let a
+non-finding sit in a report as if it meant something. And corrected a
+schema description in the same relay that carried the actual data:
+`outbox` has real `to_address`/`to_name`/`data`/`template_version`
+columns, not `payload`/`version` as first described to me -- the query's
+*values* were sound regardless, so the read stands; only the prose about
+its shape needed fixing before it went in writing.
+
+**Final ruling, resolving what was still open above.** PM/LEAD raised a
+question neither of us had: the outbox reads as a record of what
+happened, and these eight rows record an intent that was never acted
+on -- is a row like that even the kind of thing that belongs in the
+table, as opposed to something to mark and move past? Put to the OWNER
+AGENT rather than decided here. Their ruling: **resolve in place, never
+delete.** The premise doesn't survive contact with the schema --
+`outbox.mjs`'s `record()` defaults every row to `queued`, so `queued` is
+the normal first state of *every* row in the table, not a different kind
+of thing that leaked in. These eight are ordinary rows that stalled, and
+the only thing separating them from a healthy queued row is elapsed time
+-- the same reason a time-bound heuristic was rejected for the watcher
+applies here: age doesn't tell you whether something is resolved, and
+that doesn't change when the question is deletion instead of detection.
+Two more reasons stated alongside it: `queued` is still true of these
+rows (an attempt was intended and never made -- exactly what happened),
+and deleting substitutes a different falsehood for the honest one --
+`forRequest()` reads today as *a message was owed and never sent*;
+deleted, it reads as *nothing was ever owed*, which is false for six real
+requests.
+
+Mechanically this means the correction script calls `resolve(id, note)`
+on the eight, not any status change -- same mechanism #359 built for its
+seven real `failed` rows, applied to a different, honest meaning: for the
+seven, *this failure has been dealt with*; for the eight, *this will
+never be sent, and that is settled, and nobody is owed anything*. The
+note itself needs a home other than `error`: `error` carries the SMTP
+failure text (`535 5.7.8 BadCredentials`) that is the forensic evidence
+of the outage on the seven `failed` rows, and reusing it for a resolution
+note -- mine included, in an earlier draft of this design -- would
+overwrite the exact evidence the alert exists to print. Also caught for
+the same reason before it shipped: `error` is a redacted column
+(`OUTBOX_REDACTED_COLUMNS`, because it can hold a recipient address),
+and an operational resolution note isn't the kind of thing that
+redaction path should apply to. Ruling: a second nullable column in the
+same `ALTER TABLE` as `resolved_at`, not a write into `error`.
+
+Still held, same as above: the actual write against the eight rows does
+not run until `resolved_at`, the note column, and `resolve()` exist on
+`main` -- `#359` (JUNIOR BACKEND DEV) is building that now.
+
+**Two more gaps, found by the OWNER AGENT reading `#359`'s actual diff
+rather than its summary -- both change what this correction can be, not
+just how it's written.**
+
+**First: `resolve()`'s `COALESCE` doesn't just risk a redaction collision,
+it silently drops the note on every row that already has an `error`.**
+`UPDATE outbox SET resolved_at=?, error=COALESCE(error, ?), ...` --
+`COALESCE` returns the existing value whenever it is non-null, so on the
+seven real `failed` rows (which already carry `535 5.7.8 BadCredentials`)
+the note passed to `resolve()` goes nowhere. It lands only on the eight
+queued rows, whose `error` starts empty. Call `resolve()` with fifteen
+notes and eight record while seven vanish -- on exactly the half where
+the note matters more, since those seven were resolved by a real remedy
+(the credential was rotated) and that fact is worth keeping. This is
+independent of and stronger than the redaction argument above: it isn't
+conditional on a removal request ever happening, it fails today, silently,
+on the first real use. Same fix already ruled -- a separate nullable
+column -- now for a second, sufficient reason. A third, smaller one
+alongside it: a queued row's note reading *"never attempted under the
+null adapter"* sitting in a column literally named `error` would read as
+an error to the next person who looks, which it isn't.
+
+**Second: `#359` adds a route to read unresolved failures and no route to
+resolve one.** There is no way to call `resolve()` against the live
+database -- `flyctl` access here is read-only, and a direct write is the
+user's own hands, same boundary as every other production question
+tonight. So a script -- mine or anyone's -- cannot run this correction
+against production as designed, regardless of which column the note
+lives in. Left alone, this also reopens the day-one-noise problem #359
+was built to close, just moved: the seven `failed` rows sequenced away
+from becoming fifteen, but nothing yet makes them not permanent, and a
+watcher that never goes green teaches the same lesson a watcher that goes
+red on arrival does.
+
+**What this actually re-scopes:** the OWNER AGENT ruled the ongoing
+mechanism is not a script at all -- it's an owner action on the owner
+screen (Ken sees a failure, judges it handled, records why), which needs
+its own write route and its own UI, neither of which is this session's
+lane. What I am building is narrower than "the correction": a one-time
+historical backfill for the fifteen rows that already exist, run once
+that action exists, not the mechanism itself. Recording that distinction
+here so it doesn't quietly become "DB ADMIN's script resolves outbox
+rows" in anyone's summary later.
+
+Still held. Nothing changes about the customer-facing finding above --
+six requests, all terminal or advanced, nobody owed a response. Only what
+"the fix" refers to keeps narrowing as the actual mechanism gets built out
+from under it, each time by someone reading the code rather than the
+description of it.
+
+**Closing the loop on both gaps above, measured against the branch head
+rather than a summary of it.** The note-discard fix landed while `#359`
+sat in draft: `resolve()` now does a plain assignment into
+`resolution_note`, no `COALESCE`, `error` untouched -- confirmed directly
+against `origin/mail-failure-check`. And PM/LEAD has ruled placement on
+the write-route gap: it belongs inside `#359` itself, not a separate
+follow-up ("an unreachable method is an incomplete PR"), since that is
+where the rest of the mechanism lives. The owner-screen control that
+calls it is its own front-end PR, a different lane. Nothing here changes
+what this PR is: still a one-time historical backfill, still held until
+both the route and the note column are real and reachable on `main`.
+
+**A real near-miss, mine, caught by the OWNER AGENT reading the actual
+production data rather than trusting a request built on a rounded
+figure.** Asking `JUNIOR DB ADMIN` for the eight rows' exact ids, I wrote
+the outage window this whole entry has used all along -- "15:41-19:30" --
+directly into a SQL `BETWEEN` bound, and did it inconsistently across two
+separate messages tonight (one bound a minute past the other). The actual
+boundary row sits at `2026-09-06T19:30:46.096Z`, forty-six seconds past
+the tighter of the two. That bound silently drops it: **seven rows come
+back instead of eight, and seven is exactly the count this whole saga has
+been using all night for a completely different set** (`#359`'s real
+`failed` rows) -- so the wrong number would have read as right to anyone
+checking it against what they already expected to see, including me.
+`"15:41-19:30"` was always a rounded, human description of when the
+outage was noticed and resolved, not a boundary anyone had measured to
+the second; treating it as one in a precise query is the same mistake as
+building a detector's threshold from a description of the problem rather
+than the problem itself.
+
+**Ruling: no time window, ever, for this correction -- eight specific
+ids, frozen, not a query re-run at execution time.** Two reasons, the
+second stronger than the first: a window is a proxy for the property
+actually meant ("belongs to one of the six requests this investigation
+already closed"), and a proxy that has already drifted between two
+messages from the same author in one night has no business being the
+mechanism. More fundamentally, a query re-run at execution time selects
+whatever is `queued` *then* -- and the ruling that these eight are safe
+to resolve was never a standing rule about the `queued` status, it was
+about eight named rows behind six requests already confirmed to have
+reached terminal states. A ninth row `queued` when the script eventually
+runs is either legitimately in flight or a new problem, and either way it
+must not be silently swept in by a query that doesn't know the
+difference. The script freezes the eight ids as literals, not arguments
+computed from a range, and asserts its own list is exactly eight before
+doing anything -- if that ever isn't true, it stops rather than guessing.
+
+Credit where it's due: `JUNIOR DB ADMIN` had both of my inconsistent
+bounds in hand and used the wider of the two rather than picking one --
+the boundary row survived because they declined to resolve an ambiguity
+I'd created instead of just picking a plausible-looking answer.
+
+Three of the eight ids are confirmed directly (id | request_id |
+created_at): `18b78ee1201a43254ca2775267d4da38 | fb0da6739162bd7046ba2444604a84da
+| 2026-09-06T18:21:41.739Z`; `f334e41a88bc55aadb122c31e72a4d42 |
+c8f59dccd1383e5caab89bfc2e0f5f25 | 2026-09-06T19:13:21.678Z`;
+`705bb87aa419a88a969ba2d731b8f5b3 | 0c5a55b8003c31d5800d446372cdf78a |
+2026-09-06T19:30:46.096Z` (the boundary row itself). The remaining five
+are still being gathered -- both `JUNIOR DB ADMIN` and I have no Fly
+access to get them ourselves, and `OWNER AGENT`'s own follow-up reads hit
+a permission classifier after these three; flagged to the user. What
+looked briefly like the three above being cross-checked by two
+independent reads turned out to be one read relayed through two paths --
+corrected once `JUNIOR DB ADMIN` pointed it out, recorded here so it
+doesn't stand uncorrected: one source, partial, is what it actually is.
+
+**In my own words, since the OWNER AGENT asked for that rather than
+theirs**: the bug in my query bound wasn't a coherent artifact carrying
+wrong content, which is the shape every other correction tonight has
+had. It was a precise-looking instrument built on an approximate
+input -- a `BETWEEN` clause reads as a measurement regardless of whether
+the timestamp typed into it was ever measured, and mine was a rounded
+sentence from an incident description, not a number anyone had checked
+against a real row. The tell worth keeping: I had already decided the
+*write* needed named ids rather than an inferred query, and used a
+weaker standard for the *read* that would go on to define what the write
+touched. The rigor went where the step looked dangerous; the error came
+in through the step that felt like just asking a question.
+
+**OWNER AGENT's ruling was a frozen id list with a count check. Built
+something stricter, and they've endorsed it as the version to keep**: a
+frozen list still goes wrong if a live row changes between when the id
+was gathered and when the script actually runs -- resent, redacted,
+anything -- so every row is re-read and its `request_id` and `status`
+compared against what was true when it was gathered, for every row,
+before any write happens to any of them. One mismatch aborts the whole
+run rather than resolving the seven that still check out, because this
+corrects one specific, understood incident, not a queue to clear
+partially. And the abort names the row, the field, and both values --
+not "mismatch, aborting" -- on the same reasoning as the alert that has
+to name the `535` rather than a count: whoever runs this may be doing so
+weeks from now with no memory of why, and a bare refusal sends them to
+read the database before they know what they're looking for.
+
+Verified live against a seeded copy of the schema on `#359`'s branch,
+not just reasoned about: the script refuses to touch anything while its
+own frozen list is incomplete (five of eight are still real placeholders
+that fail the shape check on purpose); a full dry run against all eight
+reads correctly; mutating one row's status after gathering makes the
+whole run abort, naming that row and the exact field that changed,
+leaving all eight -- including the seven that still matched -- untouched;
+and a clean run once reverted resolves all eight with `error` left `null`
+throughout. The actual script isn't in this repo yet -- it lives outside
+it until the full id list exists and `#359` is on `main` -- but its
+behavior is proven, not assumed.
+
+One staffing note that changes who else needs this context: QA ENGINEER
+has been reassigned to OWNER OPERATIONS ENGINEER and now owns the
+owner-screen control that resolves the seven live `failed` rows. Two
+paths to the same mechanism, deliberately not merged into one: this
+backfill clears the eight rows that predate any screen; their control is
+how Ken clears rows going forward. Neither should grow into the other.
+
+**All eight ids confirmed, and the set is provably complete rather than
+merely filtered.** The blocked read got past its block on a second,
+differently-shaped query: order by `created_at`, take the earliest ten,
+filter by eye -- no string literal in the `WHERE` clause at all, because
+`flyctl -C` word-splits its argument and strips quotes, so `status='queued'`
+or an id list inside `NOT IN (...)` would have arrived as bare identifiers
+and been rejected as unknown columns. Worth remembering the next time a
+production read needs a `WHERE` clause through that path: `/**/`-as-
+whitespace and `[]`-as-identifier tricks don't extend to string values,
+and nothing about the failure mode announces that's the reason a query
+came back wrong.
+
+The read confirms three things beyond just the eight ids:
+
+- **The set terminates inside the visible window.** Rows nine and ten by
+  `created_at` are already `status='sent'` -- so this is "the ninth row is
+  not queued," not "eight rows happened to match a filter." A query that
+  re-ran at execution time was never at risk of silently including a
+  ninth row from *this* incident; the risk was always a *different*
+  incident's row landing inside a reused time bound, which is exactly
+  what the earlier `BETWEEN` bug already demonstrated.
+- **Six distinct `request_id`s**, one of them behind three of the eight
+  rows. That's a measured confirmation of "eight rows, six requests,"
+  which until now was a recalled figure from the original customer-impact
+  read, not a number checked against this second, independent query.
+- **My original lower bound (`15:41:00`) held**; the earliest row is
+  `15:41:54.947Z`, safely inside it. Only the upper bound cost anything --
+  confirming the near-miss was real but bounded to the one edge, not a
+  sign the whole window was unreliable.
+
+Full eight, id | request_id | created_at:
+
+```
+1142892df7cf5c98eef6f6dab4cf0442 | 2ac26ac0630c9d1f2aacff8525cbe9f0 | 2026-09-06T15:41:54.947Z
+9554c63058cd5c992877f17add3cf6e0 | 4a2be8cb3feb5f0e3b722c0c6822fdd3 | 2026-09-06T15:47:24.721Z
+181fc37825eac34c6d2144210b931bd7 | fb0da6739162bd7046ba2444604a84da | 2026-09-06T16:32:05.992Z
+87e9d5fdc2a163b7355f00ea70a2a67f | c585239b1615a951ceaf18bfc665786d | 2026-09-06T16:33:50.876Z
+6a73687b7c83d1aed88eb23fde26c723 | fb0da6739162bd7046ba2444604a84da | 2026-09-06T16:34:16.493Z
+18b78ee1201a43254ca2775267d4da38 | fb0da6739162bd7046ba2444604a84da | 2026-09-06T18:21:41.739Z
+f334e41a88bc55aadb122c31e72a4d42 | c8f59dccd1383e5caab89bfc2e0f5f25 | 2026-09-06T19:13:21.678Z
+705bb87aa419a88a969ba2d731b8f5b3 | 0c5a55b8003c31d5800d446372cdf78a | 2026-09-06T19:30:46.096Z
+```
+
+Script finalized with these and re-verified live against a seeded copy
+built to match them exactly (same ids, same six requests, same
+timestamps) -- reads correctly, dry run intact. Ready to open as its own
+PR the moment `#359` is on `main`. Still held until then.
+
 **2026-09-07 - Claude (DEV OPS/INFRASTRUCTURE)**
 The monitor is shaped like CI; the things worth monitoring are shaped like the
 server.
