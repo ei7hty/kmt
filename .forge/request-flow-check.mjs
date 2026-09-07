@@ -27,7 +27,7 @@ const AUDIT_EMAIL = 'jamie+request-flow-check@example.com'
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 46
+const EXPECTED_CHECKS = 50
 
 const browser = await chromium.launch()
 let checks = 0
@@ -71,7 +71,18 @@ try {
     await page.locator('#fitmentZip').fill('02148')
     await page.getByTestId('continue-to-tires').click()
     check(await page.getByTestId(`tire-option-${cleanTire.tireId}`).getAttribute('aria-pressed') === 'true' && (await page.locator('.vehicle-preview').innerText()).includes('2020 Toyota Corolla'), 'changing ZIP preserves the tire and vehicle selections')
+    let submittedWhileUnpriced = 0
+    page.on('request', request => {
+      if (request.method() === 'POST' && request.url() === `${base}/api/requests`) submittedWhileUnpriced++
+    })
+    await page.route('**/api/requests/preview', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Preview temporarily unavailable.' }) }), { times: 1 })
     await page.getByTestId('continue-to-mobile-service').click()
+    await page.getByText('Something went wrong at the shop. Please try again in a moment.').waitFor()
+    check(await page.getByTestId('request-my-quote').isDisabled(), 'a server preview failure disables submission before charges are shown')
+    await page.getByTestId('request-my-quote').evaluate(button => button.click())
+    await page.waitForTimeout(100)
+    check(submittedWhileUnpriced === 0, 'a disabled unpriced form sends no request even when clicked programmatically')
+    await page.getByTestId('retry-pricing-preview').click()
     await page.getByTestId('pricing-preview-total').waitFor()
     check(await page.locator('#serviceZip').inputValue() === '02148' && (await page.getByTestId('pricing-preview').innerText()).includes('ZIP 02148'), 'the changed ZIP reaches the service form and refreshed server preview')
     await page.getByTestId('request-my-quote').click()
