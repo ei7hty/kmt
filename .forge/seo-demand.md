@@ -149,6 +149,45 @@ So the reachable slice is barely addressed and the highest-intent word for it
 ("installed"/"installation") is absent from every surface. **What to write with
 this vocabulary is MARKETING's; that it is absent is the finding.**
 
+## The surface advertises the unservable half (page vs. product)
+
+The absence findings above cost reach. This is the inverse and it costs trust:
+the visible copy **promotes the urgent vocabulary the product refuses.** All
+facts, with line numbers; I am not saying what it should say.
+
+- **The hero advertises the urgent curve.** `src/routes/CustomerRequest.jsx:436`
+  hero lede: "Tires. Repairs. Roadside assistance. / Fast, reliable & always on
+  the move." `:437` service strip: "FAST & RELIABLE / Quick response you can
+  count on."
+- **The bookable product enforces a seven-day floor.** `backend/quotes.mjs:25`
+  (`MIN_LEAD_DAYS = 7`), enforced at `:61-62`. The primary CTA ("Order Tires")
+  leads to this path.
+- **Second check — roadside/repairs are not wholly unbacked.** Ran this before
+  claiming the page and the rule flatly disagree: "Repairs. Roadside
+  assistance." routes to `/inquiry` (`src/routes/Inquiry.jsx`) — but that is a
+  **free-text "tell me what you need / I'll text you back" contact form**, no
+  date, no booking, no immediate dispatch ("Flat repairs, roadside help ... I'll
+  read it and text you back"). So there *is* a channel; it is asynchronous
+  contact, not the immediate roadside help a searcher of "roadside assistance"
+  means.
+
+**Net presence/absence fact:** the surface promotes *roadside assistance* and
+*fast / quick response*; the only bookable service is tyres with a seven-day
+floor; roadside/repairs have an async contact channel, not immediate service. A
+customer who reads "Roadside assistance. Fast." and needs help now finds either
+a seven-day tyre booking or a "I'll text you back" form. **Absence costs a
+customer who never knew; this presence costs a customer who believed the page —
+the worse of the two, because it is the one Ken hears about.**
+
+**This is a product question, not a copy note — routed to the OWNER AGENT.**
+Whether "roadside assistance" and "fast" describe what Ken actually does is not
+measurable from the repository. He may do roadside off-platform, quickly and for
+real, in which case the copy is accurate about the business and the gap is that
+the site cannot book it (a product gap); or he may not, in which case the copy
+promises what the business does not do (a copy gap). **I do not guess which.**
+The measurable fact is only that the page and the booking rule point in opposite
+directions on urgency.
+
 ## Where each finding routes
 
 - **To MARKETING (the words):** the title carries no job/place/speed term; the
@@ -160,7 +199,10 @@ this vocabulary is MARKETING's; that it is absent is the finding.**
   correct for the current one-indexable-page shape; no machinery gap found in
   this pass. If the OWNER AGENT decides `/` should carry more indexable content,
   that has a machinery consequence worth a follow-up.
-- **To the OWNER AGENT (positioning):** the three questions above.
+- **To the OWNER AGENT (positioning + product):** the three questions above,
+  plus the page-vs-product one: does Ken do roadside assistance at all, and if
+  so how does that square with the seven-day booking floor? Product/copy call,
+  not mine.
 
 ## The towns Ken really serves — derived, not guessed
 
