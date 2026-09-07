@@ -7,15 +7,16 @@
 React + Vite + Tailwind, plus a Node backend under `backend/` (SQLite via
 `node:sqlite`, HTTP API, supplier refresh job).
 
-- `npm run dev` — the app
+- `node backend/dev.mjs` — the local app and owner API together
 - `npm run build` — production build, and the check that the tree is sound
 - `npm run lint` — eslint, expected to be silent
 - `node --test backend/*.test.mjs` — the backend suites (owner inventory, and
   requests and quotes). Naming one file skips the others.
 - `node .forge/dead-end-audit.mjs` — every click path still reaches a next action
+- `node .forge/request-flow-check.mjs` — the request flow at both widths
 - `node .forge/responsive-check.mjs` — no overflow at 375px or 1280px
-- Both audits drive a real browser against `vite preview --port 4179`, so build
-  and start the preview first.
+- `node .forge/owner-inventory-audit.mjs` — the owner workspace, with the app running
+- `node .forge/deployed-site-check.mjs` — read-only, against the deployed URL
 
 ## Rules that have been paid for
 
@@ -39,9 +40,10 @@ React + Vite + Tailwind, plus a Node backend under `backend/` (SQLite via
   reached the owner is read off the owner's screen. Nothing touches
   `localStorage`, so the audits hold whether the data lives in the browser or
   on the server.
-- The counts to hold: **36** dead-end checks, **30** request-flow checks, **8**
-  responsive screens. A number that drops is a check that stopped running.
-- Start a preview on a port you have confirmed is free and stop it when you are
+- Do not copy audit counts into this file. Each audit script owns its
+  `EXPECTED_CHECKS`, prints the count on its last line, and fails if the number
+  that ran does not match. A number that drops is a check that stopped running.
+- Start the app on a port you have confirmed is free and stop it when you are
   done. A leaked server is bound by the next audit, which then reports a failure
   that is not there. CI does this with a trap; locally it is on you.
 - Supplier prices are last-seen listings, never guaranteed quotes, and an owner

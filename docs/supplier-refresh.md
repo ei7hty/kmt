@@ -151,9 +151,14 @@ of a band will take.
 2. **Dry-run the import**, against a local server so nothing is written
    anywhere real yet:
    ```bash
-   node backend/dev.mjs &
+   node backend/dev.mjs
+   ```
+   Leave that server running in the foreground in its own terminal, then run
+   the dry run from another terminal:
+   ```bash
    npm run import-tires -- --dry-run
    ```
+   Stop the local server with Ctrl-C when the dry run is done.
    Read the per-size new/changed/unchanged counts. A dry run against a
    database already seeded from this exact file will report everything
    unchanged -- that is expected, and proves the file parses and every tire
