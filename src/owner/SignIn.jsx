@@ -74,7 +74,7 @@ export default function SignIn({ onSignedIn, navigate, what = 'this workspace', 
         want. Dropping it left an owner on /owner with no route to the quote
         list at all, which the dead-end audit caught. */}
     <nav className="oi-nav">
-      <button className="oi-brand" onClick={() => navigate('/')}><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
+      <button className="oi-brand" onClick={() => navigate('/')}><img src="/brand/icon-64.png?v=2" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
       <span>OWNER WORKSPACE</span>
       <button className="oi-button" onClick={() => navigate(other.path)}>{other.label}</button>
     </nav>

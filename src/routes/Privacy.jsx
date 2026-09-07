@@ -12,7 +12,7 @@ function Privacy({ navigate }) {
   return (
     <div className="app-shell status-shell">
       <nav className="internal-nav">
-        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
+        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png?v=2" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
         <div className="internal-nav-links"><a href="/" onClick={go('/')} className="btn btn-neutral">← Order tires</a></div>
       </nav>
       <div className="owner-content">

@@ -114,7 +114,7 @@ function Outbox({ navigate }) {
   return (
     <div className="app-shell owner-shell">
       <nav className="internal-nav">
-        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
+        <button className="brand-word" onClick={() => navigate('/')} aria-label="KMT home"><img src="/brand/icon-64.png?v=2" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button>
         <div className="internal-nav-links"><button className="btn btn-neutral" onClick={() => navigate('/owner/quotes')}>← Quote Requests</button><button className="btn btn-neutral" onClick={() => navigate('/')}>Back to Customer Flow</button><button className="btn btn-neutral" onClick={leave}>Sign out</button></div>
       </nav>
       <div className="owner-content">

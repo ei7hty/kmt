@@ -192,7 +192,7 @@
   margin: 0 !important;
   padding: 13px clamp(18px, 4vw, 54px);
   border-bottom: 1px solid #171717;
-  background: rgba(13, 27, 36, 0.94);
+  background: rgba(8, 8, 8, 0.94);
 }
 
 .customer-shell .site-nav::before {
@@ -602,7 +602,7 @@
   margin: 0 auto;
   padding: 16px clamp(18px, 4vw, 54px);
   border-bottom: 1px solid var(--border);
-  background: rgba(13, 27, 36, 0.94);
+  background: rgba(8, 8, 8, 0.94);
 }
 
 .internal-nav .brand-word {
@@ -1588,18 +1588,20 @@
 .tire-show-more { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-height: 44px; margin-top: 14px; }
 .tire-show-more small { font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); }
 
-/* The brand band (t61). The logo files carry their ground baked in, measured
-   at rgb(13, 28, 35) in every corner of every file, so on the black ground
-   the logo would show as a faint rectangle. The nav and the hero keep that
-   exact colour as a deliberate band, the logo sits on it with no shadow and
-   no radius to give it an edge, and everything below is the original black,
-   white and red. These come last so they win over the base and phone-width
-   hero rules above. */
-.site-nav, .internal-nav { background: #0d1c23; border-bottom-color: #1d3745; }
-.oi-nav { background: #0d1c23; border-bottom: 1px solid #1d3745; }
-.hero-section { background: radial-gradient(ellipse at 82% 44%, #1d3745 0, #122430 28%, #0d1c23 65%); }
-.hero-section::after { mask-image: linear-gradient(90deg, #0d1c23, transparent 68%); }
-.hero-visual { background: #0d1c23; }
+/* The brand band (t61), now black. The band existed because every logo file
+   carried a navy ground baked in, measured at rgb(13, 28, 35), which on a
+   black page showed as a faint rectangle. The files are regenerated on
+   #080808, the site's own black, so that reason is gone and the band
+   follows the ground: each navy maps back to the neutral grey of the same
+   lightness, which is t61's mapping run backwards and restores the values
+   the base rules already use. The logo still sits with no shadow, no border
+   and no radius, which is right on any ground. These come last so they win
+   over the base and phone-width hero rules above. */
+.site-nav, .internal-nav { background: #080808; border-bottom-color: #303033; }
+.oi-nav { background: #080808; border-bottom: 1px solid #303033; }
+.hero-section { background: radial-gradient(ellipse at 82% 44%, #303033 0, #121212 28%, #080808 65%); }
+.hero-section::after { mask-image: linear-gradient(90deg, #080808, transparent 68%); }
+.hero-visual { background: #080808; }
 .hero-logo { border: 0; border-radius: 0; box-shadow: none; }
 .brand-mark img { border-radius: 0; }
 .inquiry-page { max-width: 720px; }
@@ -1609,6 +1611,6 @@
 .inquiry-form textarea { min-height: 120px; resize: vertical; }
 .inquiry-received { display: grid; gap: 14px; }
 @media (max-width: 760px) {
-  .hero-section { background: radial-gradient(ellipse at 82% 44%, #24435400 0, #1d3745 0, #122430 30%, #0d1c23 66%); }
-  .hero-visual { background: #0d1c23; }
+  .hero-section { background: radial-gradient(ellipse at 82% 44%, #30303300 0, #303033 0, #121212 30%, #080808 66%); }
+  .hero-visual { background: #080808; }
 }

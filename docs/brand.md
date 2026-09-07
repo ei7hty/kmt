@@ -126,11 +126,11 @@ who asked. The files' provenance belongs in the repository, not on the web.
 
 | file | use |
 | --- | --- |
-| `kens-dark-1200.webp`, `kens-dark-600.webp` | primary lockup on the dark theme: hero (1200) and nav (600) |
-| `kens-light-1200.webp`, `kens-light-600.webp` | primary lockup on white: light surfaces, email templates |
-| `kmt-dark-800.webp`, `kmt-light-800.webp` | compact "KMT" badge, dark and light |
+| `kens-dark-1200.webp`, `kens-dark-600.webp` | primary lockup on the dark theme: hero (1200) and nav (600). 1200x1028 and 600x514 |
+| `kens-light-1200.webp`, `kens-light-600.webp` | primary lockup on white: light surfaces, email templates. Same 1200x1028 and 600x514 as the dark pair; they were 2:1 letterboxes of the same square artwork before |
+| `kmt-dark-800.webp`, `kmt-light-800.webp` | compact "KMT" badge, dark and light. 800x800; they were 800x801 |
 | `kens-badge-dark-800.webp`, `kens-badge-light-800.webp` | compact "KENS" badge, dark and light |
-| `icon-512.png`, `icon-192.png`, `icon-180.png`, `icon-64.png`, `icon-32.png` | the wheel alone on navy: manifest icons, apple-touch-icon (180), favicon fallbacks |
+| `icon-512.png`, `icon-192.png`, `icon-180.png`, `icon-64.png`, `icon-32.png` | the wheel alone on black: manifest icons, apple-touch-icon (180), favicon fallbacks. Palette-indexed PNG, which is what took the set from 584 KB to 190 KB |
 | `og-1200x630.jpg` | link preview image for shared URLs |
 
 Eight of these fourteen files are referenced by `src/`, `index.html` or the
@@ -199,6 +199,10 @@ work from Worcester. A listing that says 25 while enforcement allows 100 is not
 drift: it is the review band doing its job, so that someone at 40 miles who
 finds Ken another way still reaches his judgement instead of a closed door.
 
-Brand ground: navy `#0d1b24`. Brand red: `#ed1c24` (already `--accent`).
+Brand ground: black `#080808` -- the site's own black, the same value as the
+`theme-color` meta and the customer shell, not a new one. It was navy
+`#0d1b24` until the assets were regenerated on black; the nav and hero band
+that existed to hide the logos' baked-in navy went with it (`src/App.css`,
+the t61 block). Brand red: `#ed1c24` (already `--accent`), unchanged.
 Chrome/silver is reserved for the wordmark and the page headline; the flame
 appears nowhere except inside the logo.
