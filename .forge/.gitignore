@@ -6,3 +6,9 @@ shots/
 # Client mockups: kept on disk as design reference, too large to version.
 mock*.png
 mock*.jfif
+
+# Written by a11y-85-measure.mjs on every run. Regenerable, per the line at the
+# top of this file -- and untracked it also blocks `git worktree remove`, which
+# pushes whoever hits it toward `--force`, the flag that once deleted through a
+# node_modules junction into the shared install.
+a11y-85-results.json

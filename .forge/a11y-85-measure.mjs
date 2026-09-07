@@ -16,10 +16,28 @@ import { writeFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 import { EXCEPTION_TIRE, cleanTireFor, expandTireList, freshPage, openOwnerQuotes, signInIfAsked, submitRequest, waitForStatus } from './audit-ui.mjs'
 import { dedupe, hex, lum, measure, ratio } from './contrast-measure.mjs'
+// Imported, never restated. backend/migration.test.mjs already iterates this
+// constant four times and builds the CHECK constraint from it; this is that
+// convention applied to a second place rather than a new idea.
+import { QUOTE_STATUSES } from '../backend/quotes.mjs'
 
 const BASE = process.env.AUDIT_BASE
 if (!BASE) { console.error('Set AUDIT_BASE explicitly; the audits default to different ports and this one refuses to guess.'); process.exit(2) }
 const VIEWPORT = { width: 375, height: 812 }
+
+/**
+ * Which quote statuses this run actually rendered on /status.
+ *
+ * Why a set rather than a count: this script measured fourteen states and
+ * reached two of the seven statuses, which is why it found one of the three
+ * sites of the contrast defect #404 fixed. The two it missed were `rejected`
+ * and `cancelled` -- the screens where a customer has just been told no and
+ * most needs to reach Ken. A coverage number is a claim about what you looked
+ * at, not about what is there.
+ */
+const reached = new Set()
+/** What POST /api/owner/quotes/:id/approve actually leaves the status as. */
+let approveYields
 /** One address per script, not shared across the gate -- see audit-ui.mjs's submitRequest. */
 const AUDIT_EMAIL = 'jamie+a11y-85-measure@example.com'
 
@@ -113,7 +131,7 @@ try {
     results.push(await measure(page, 'acknowledgement (submitted)'))
     await page.goto(BASE + '/status', { waitUntil: 'networkidle' })
     await waitForStatus(page)
-    results.push(await measure(page, '/status (draft)'))
+    results.push(await measure(page, '/status (draft)')); reached.add('draft')
     await context.close()
   }
 
@@ -153,7 +171,7 @@ try {
     if (await approve.count()) { await approve.first().click(); await page.waitForTimeout(800) }
     await page.goto(BASE + '/status', { waitUntil: 'networkidle' })
     await waitForStatus(page)
-    results.push(await measure(page, '/status (sent, Pay available)'))
+    results.push(await measure(page, '/status (sent, Pay available)')); reached.add('sent')
     const pay = page.locator('button:has-text("Pay")')
     if (await pay.count()) {
       await pay.first().click()
@@ -162,6 +180,97 @@ try {
       results.push(await measure(page, '/confirmation (paid)'))
     }
     await context.close()
+  }
+
+  // The statuses nobody was driving.
+  //
+  // Above this point the script reached `draft` and `sent`. QUOTE_STATUSES has
+  // seven, and every one renders distinct customer-visible markup on /status --
+  // `stopped` even removes the stepper for the two closed ones. The five it
+  // never opened included both states where #404's contrast defect was live and
+  // unmeasured, which is why one of three sites was found.
+  //
+  // Driven through the API rather than the UI on purpose: what is measured is
+  // the rendered /status page in each state, not the path that gets there, and
+  // the flow audits already prove the paths. The cost of each is recorded beside
+  // it, because the expensive ones are where a future exclusion gets added
+  // "just for now".
+  {
+    // One signed-in owner context, reused: the owner transitions below need a
+    // session, and signing in per status would spend the login throttle for no
+    // reason (backend/limits.mjs: five failures per address per fifteen minutes).
+    const owner = await freshPage(browser, VIEWPORT)
+    await owner.page.goto(BASE + '/owner/quotes')
+    await signInIfAsked(owner.page)
+
+    /** The quote's current version. Every owner move needs it or answers 409. */
+    const versionOf = async (id) =>
+      (await (await owner.page.request.get(`${BASE}/api/requests/${id}`)).json())?.quote?.version
+
+    /** Submit as a customer, read the id back, and return both. */
+    const submitAndId = async (page) => {
+      await submitRequest(page, { base: BASE, customerEmail: AUDIT_EMAIL, ...clean, vehicle: '2019 Honda Civic', location: '12 Example St, Everett, MA 02149', date: SOON })
+      const key = await page.evaluate(() => localStorage.getItem('kmt_customer_key'))
+      const listed = await (await page.request.get(`${BASE}/api/requests?customer=${key}`)).json()
+      // Each element is { request, quote } -- `element.id` is undefined and fails
+      // later as a 404 on the move rather than as a lookup error (FRONT END LANE).
+      const id = listed.requests?.[0]?.request?.id ?? listed?.[0]?.request?.id
+      if (!id) throw new Error(`could not read a request id back for customer ${key}`)
+      return id
+    }
+
+    /** Submit, move the quote into `status`, and measure /status showing it. */
+    const drive = async (label, status, move) => {
+      const { context, page } = await freshPage(browser, VIEWPORT)
+      const id = await submitAndId(page)
+      await move(id, page)
+      await page.goto(BASE + '/status', { waitUntil: 'networkidle' })
+      await waitForStatus(page)
+      results.push(await measure(page, label))
+      reached.add(status)
+      await context.close()
+    }
+
+    // cancelled -- public, one fetch, no session (api.mjs PUBLIC_POST_PATHS).
+    await drive('/status (cancelled)', 'cancelled', async (id, page) => {
+      await page.request.post(`${BASE}/api/requests/${id}/cancel`, { data: { reason: 'a11y measurement' } })
+    })
+
+    // rejected -- owner session AND the quote's current version.
+    await drive('/status (rejected)', 'rejected', async (id) => {
+      await owner.page.request.post(`${BASE}/api/owner/quotes/${id}/reject`, { data: { version: await versionOf(id), reason: 'a11y measurement' } })
+    })
+
+    // paid -- public, but only after the owner has sent it: two actors.
+    await drive('/status (paid)', 'paid', async (id, page) => {
+      await owner.page.request.post(`${BASE}/api/owner/quotes/${id}/approve`, { data: { version: await versionOf(id) } })
+      await page.request.post(`${BASE}/api/requests/${id}/pay`, { data: {} })
+    })
+
+    // done -- the most expensive: owner, after a payment, three moves deep.
+    await drive('/status (done)', 'done', async (id, page) => {
+      await owner.page.request.post(`${BASE}/api/owner/quotes/${id}/approve`, { data: { version: await versionOf(id) } })
+      await page.request.post(`${BASE}/api/requests/${id}/pay`, { data: {} })
+      await owner.page.request.post(`${BASE}/api/owner/quotes/${id}/done`, { data: { version: await versionOf(id) } })
+    })
+
+    // `approved` is accounted for by an assertion, not by a skip list.
+    //
+    // Nothing produces it. backend/api.mjs is
+    //   quotes.decide(id, action === 'approve' ? 'sent' : 'rejected', ...)
+    // so the route NAMED approve sets `sent`, and decide() refuses anything else.
+    // Asserting that here means the day someone "fixes" the naming, this fails
+    // and whoever did it has to teach this script to reach the new state --
+    // which is exactly what an exclusion list would have quietly permitted.
+    {
+      const { context, page } = await freshPage(browser, VIEWPORT)
+      const id = await submitAndId(page)
+      await owner.page.request.post(`${BASE}/api/owner/quotes/${id}/approve`, { data: { version: await versionOf(id) } })
+      approveYields = (await (await page.request.get(`${BASE}/api/requests/${id}`)).json())?.quote?.status
+      await context.close()
+    }
+
+    await owner.context.close()
   }
 
   // Not-found route, for completeness.
@@ -179,7 +288,21 @@ try {
 const allTexts = results.flatMap(s => s.texts.map(t => ({ state: s.label, ...t })))
 const allTaps = results.flatMap(s => s.interactive.map(i => ({ state: s.label, ...i })))
 const brandRed = dedupe(allTexts.filter(t => t.brandRed), t => [t.fgHex, t.bgHex, t.tag, t.cls, t.size, t.weight].join('|'))
-const textFails = dedupe(allTexts.filter(t => !t.pass && !t.image), t => [t.fgHex, t.bgHex, t.tag, t.cls, t.size, t.weight].join('|'))
+const textFailAll = allTexts.filter(t => !t.pass && !t.image)
+const textFails = dedupe(textFailAll, t => [t.fgHex, t.bgHex, t.tag, t.cls, t.size, t.weight].join('|'))
+/**
+ * How many states each deduped finding actually occurs in.
+ *
+ * The dedupe is by style signature, not by state, so one entry can stand for
+ * the same control failing on several screens -- and the printed count then
+ * understates the reach. That is not academic: this script reported ONE
+ * contrast failure for a rule that broke the same anchor on three screens, and
+ * the one it named was the only state it visited. Saying where each finding
+ * occurs keeps the number from reading as an instance count.
+ */
+const statesOf = (t) => [...new Set(textFailAll
+  .filter(x => [x.fgHex, x.bgHex, x.tag, x.cls, x.size, x.weight].join('|') === [t.fgHex, t.bgHex, t.tag, t.cls, t.size, t.weight].join('|'))
+  .map(x => x.state))]
 const overImage = dedupe(allTexts.filter(t => t.image), t => [t.fgHex, t.tag, t.cls].join('|'))
 const tapFails = dedupe(allTaps.filter(i => !i.tapPass), i => [i.tag, i.cls, i.id, i.text, Math.round(i.w), Math.round(i.h)].join('|'))
 const tapAll = dedupe(allTaps, i => [i.tag, i.cls, i.id, i.text, Math.round(i.w), Math.round(i.h)].join('|'))
@@ -233,8 +356,8 @@ console.log(`\nStates measured: ${results.length}`)
 for (const s of results) console.log(`  ${s.label}  (${s.url})  texts=${s.texts.length} interactive=${s.interactive.length} overflow=${s.scrollWidth > s.docWidth + 1 ? 'YES' : 'no'}`)
 console.log(`\nBRAND RED PAIRINGS (${brandRed.length}):`)
 for (const t of brandRed) console.log('  ' + fmt(t))
-console.log(`\nTEXT CONTRAST FAILURES, all colours (${textFails.length}):`)
-for (const t of textFails.sort((a, b) => a.ratio - b.ratio)) console.log('  ' + fmt(t))
+console.log(`\nTEXT CONTRAST FAILURES, all colours (${textFails.length} distinct, ${textFailAll.length} instances):`)
+for (const t of textFails.sort((a, b) => a.ratio - b.ratio)) { const where = statesOf(t); console.log('  ' + fmt(t)); console.log(`      in ${where.length} state(s): ${where.join(', ')}`) }
 console.log(`\nTEXT OVER A BACKGROUND IMAGE, not computed (${overImage.length}):`)
 for (const t of overImage) console.log(`  ${t.state} | <${t.tag}.${t.cls}> "${t.text}" | fg ${t.fgHex}`)
 console.log(`\nTAP TARGETS UNDER 44x44 (${tapFails.length} of ${tapAll.length} distinct interactive elements):`)
@@ -244,3 +367,59 @@ for (const f of fixes) { console.log(`  ${f.fg} on ${f.bg} at ${f.size}px/${f.we
 console.log(`\nONE RED TOKEN, TWO JOBS (white text on it / it as text on #080808 / it as text on the .panel light stop #1c1c1c):`)
 for (const row of tokenTable) console.log(`  ${row.hex.padEnd(34)} L${String(row.lightness).padStart(3)}  white-on-it ${String(row.whiteOnIt).padStart(5)}  on-ground ${String(row.onGround).padStart(5)}  on-panel ${String(row.onPanelLight).padStart(5)}  ${row.whiteOnIt >= 4.5 && row.onGround >= 4.5 && row.onPanelLight >= 4.5 ? 'passes all three' : row.whiteOnIt >= 4.5 && row.onGround >= 4.5 ? 'passes fill + ground' : ''}`)
 console.log(`\n${results.length} states, ${allTexts.length} text elements, ${allTaps.length} interactive elements measured. Results in .forge/a11y-85-results.json`)
+
+// ---------------------------------------------------------------------------
+// The failure mode. Until now this script could not fail.
+//
+// Its only `process.exit` was `exit(2)` on a missing AUDIT_BASE -- nothing for
+// what it measured. It printed contrast and tap-target failures and exited 0,
+// so "trust the exit code", which is correct for every other script in this
+// repository, silently gave the wrong answer for this one. The person who
+// follows that convention is being consistent, not careless, and consistency is
+// not a thing you can ask people to stop doing: only the instrument can change.
+//
+// That is why this exists, and why one contrast failure sat unreported through
+// however many runs nobody made.
+const findings = textFails.length + tapFails.length
+
+// Coverage, derived rather than enumerated.
+//
+// QUOTE_STATUSES is imported, never restated -- migration.test.mjs already
+// iterates it four times and builds the CHECK constraint from it. Every member
+// must be either rendered above or accounted for by an assertion about what
+// actually produces it. There is deliberately no exclusion list: a list is what
+// a future status gets appended to at 2am with a good reason, and the count
+// then looks like rigour over a hole.
+//
+// `approved` is the accounted-for case. Nothing creates it -- the route named
+// approve sets `sent` -- so it is covered by that assertion rather than skipped,
+// and if the naming is ever "fixed" this goes red instead of quietly passing.
+const accountedFor = new Set(reached)
+const approveIsSent = approveYields === 'sent'
+if (approveIsSent) accountedFor.add('approved')
+const uncovered = QUOTE_STATUSES.filter(status => !accountedFor.has(status))
+
+console.log(`\nQUOTE STATUS COVERAGE (${accountedFor.size} of ${QUOTE_STATUSES.length}):`)
+for (const status of QUOTE_STATUSES) {
+  const how = reached.has(status) ? 'rendered on /status'
+    : status === 'approved' ? `not produced by any code path; POST /approve yields "${approveYields}"`
+      : 'NOT COVERED'
+  console.log(`  ${status.padEnd(10)} ${how}`)
+}
+if (!approveIsSent) {
+  console.error(`\nFAIL: POST /api/owner/quotes/:id/approve left the status as ${JSON.stringify(approveYields)}, not "sent".`)
+  console.error('      `approved` was covered by that assertion rather than by being rendered.')
+  console.error('      If a code path now produces it, this script has to reach and measure it.')
+}
+if (uncovered.length) {
+  console.error(`\nFAIL: ${uncovered.length} quote status(es) neither rendered nor accounted for: ${uncovered.join(', ')}.`)
+  console.error('      Teach the `drive()` block above how to reach each one -- there is no exclusion list to add to,')
+  console.error('      and that is deliberate: a status this script cannot open is a screen nothing has ever measured.')
+}
+if (findings) {
+  console.error(`\nFAIL: ${textFails.length} contrast failure(s) and ${tapFails.length} tap target(s) under 44x44, listed above.`)
+}
+
+const ok = findings === 0 && uncovered.length === 0 && approveIsSent
+console.log(`\n${ok ? 'PASS' : 'FAIL'}: ${results.length} states, ${accountedFor.size}/${QUOTE_STATUSES.length} statuses, ${findings} finding(s).`)
+process.exitCode = ok ? 0 : 1
