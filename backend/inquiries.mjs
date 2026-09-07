@@ -18,7 +18,8 @@ import { newId } from './quotes.mjs'
  * table_info` and one migration test can prove present, the way a JSON key
  * cannot be.
  *
- * Status is the owner screen's small, settled workflow: new, replied, closed.
+ * Status is the owner screen's small, settled workflow: new, replied, closed,
+ * with replied -> new and closed -> replied corrections for a mistaken click.
  * It deliberately has no CHECK constraint, so another useful word can be
  * added without rebuilding a live table (the migration trap quotes.status
  * already demonstrated). There is still no category: Ken has not needed one.
@@ -165,7 +166,7 @@ export class Inquiries {
     if (!INQUIRY_STATUSES.includes(nextStatus)) throw new InputError('Unknown inquiry status.')
     const current = this.get(id)
     if (!current) throw new InputError('No such inquiry.', 404)
-    const allowed = current.status === 'new' ? ['replied', 'closed'] : current.status === 'replied' ? ['closed'] : []
+    const allowed = current.status === 'new' ? ['replied', 'closed'] : current.status === 'replied' ? ['new', 'closed'] : ['replied']
     if (!allowed.includes(nextStatus)) throw new InputError(`A ${current.status} inquiry cannot move to ${nextStatus}.`, 409)
     this.db.prepare('UPDATE inquiries SET status=?, updated_at=? WHERE id=?').run(nextStatus, now(), id)
     return this.get(id)

@@ -2,7 +2,7 @@ import { chromium } from 'playwright'
 import { signInIfAsked } from './audit-ui.mjs'
 
 const BASE = process.env.AUDIT_BASE || 'http://127.0.0.1:4180'
-const EXPECTED_CHECKS = 18
+const EXPECTED_CHECKS = 22
 let passed = 0
 let failed = 0
 const ok = message => { passed++; console.log(`OK: ${message}`) }
@@ -34,7 +34,7 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 1280, height: 900 
   check(true, `${label}: the badge navigates to the inquiry list`)
   await page.waitForSelector('.inquiry-card')
   check(await page.locator('.inquiry-card').first().getAttribute('data-status') === 'new', `${label}: newest inquiry appears as new`)
-  check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${label}: inquiry screen does not scroll sideways`)
+  check(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth), `${label}: inquiry screen does not scroll sideways`)
 
   await page.getByRole('button', { name: 'Mark replied' }).first().click()
   await page.waitForSelector('.inquiry-card[data-status="replied"]')
@@ -42,6 +42,18 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 1280, height: 900 
   await page.getByRole('button', { name: 'Close', exact: true }).first().click()
   await page.waitForSelector('.inquiry-card[data-status="closed"]')
   check(true, `${label}: owner can close a replied inquiry`)
+  await page.getByRole('button', { name: 'Reopen as replied' }).first().click()
+  await page.waitForSelector('.inquiry-card[data-status="replied"]')
+  check(true, `${label}: owner can correct a mistaken close`)
+  await page.getByRole('button', { name: 'Mark new' }).first().click()
+  await page.waitForSelector('.inquiry-card[data-status="new"]')
+  check(true, `${label}: owner can correct a mistaken replied state`)
+  // Leave the shared test database with no new rows so the next viewport's
+  // badge has one exact fixture rather than inheriting this viewport's row.
+  await page.getByRole('button', { name: 'Mark replied' }).first().click()
+  await page.waitForSelector('.inquiry-card[data-status="replied"]')
+  await page.getByRole('button', { name: 'Close', exact: true }).first().click()
+  await page.waitForSelector('.inquiry-card[data-status="closed"]')
 
   await page.route('**/api/owner/inquiries', route => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"broken"}' }))
   await page.reload()

@@ -9,8 +9,8 @@ import MailAlert from '../components/MailAlert.jsx'
 
 const NEXT = {
   new: [{ status: 'replied', label: 'Mark replied' }, { status: 'closed', label: 'Close' }],
-  replied: [{ status: 'closed', label: 'Close' }],
-  closed: [],
+  replied: [{ status: 'new', label: 'Mark new' }, { status: 'closed', label: 'Close' }],
+  closed: [{ status: 'replied', label: 'Reopen as replied' }],
 }
 
 export function InquiryNavButton({ navigate, className = 'btn btn-neutral' }) {
@@ -72,7 +72,7 @@ export default function Inquiries({ navigate }) {
         <a className="inquiry-contact" href={inquiry.contact.includes('@') ? `mailto:${inquiry.contact}` : `tel:${inquiry.contact}`}>{inquiry.contact}</a>
         {inquiry.vehicleInfo && <p><strong>Vehicle:</strong> {inquiry.vehicleInfo}</p>}
         <p className="inquiry-message">{inquiry.message}</p>
-        {NEXT[inquiry.status]?.length > 0 && <div className="owner-actions">{NEXT[inquiry.status].map(action => <button key={action.status} className={action.status === 'replied' ? 'btn btn-approve' : 'btn btn-neutral'} disabled={busyId === inquiry.id} onClick={() => advance(inquiry.id, action.status)}>{busyId === inquiry.id ? 'Saving…' : action.label}</button>)}</div>}
+        {NEXT[inquiry.status]?.length > 0 && <div className="owner-actions">{NEXT[inquiry.status].map(action => <button key={action.status} className={inquiry.status === 'new' && action.status === 'replied' ? 'btn btn-approve' : 'btn btn-neutral'} disabled={busyId === inquiry.id} onClick={() => advance(inquiry.id, action.status)}>{busyId === inquiry.id ? 'Saving…' : action.label}</button>)}</div>}
       </article>)}</div>
     </main><PrivacyFooter navigate={navigate} />
   </div>
