@@ -502,6 +502,19 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
         if (!mailer) throw new InputError('Owner endpoint not found', 404)
         const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 50))
         send(200, { provider: mailer.adapter.name, interim: Boolean(mailer.config?.interim), messages: mailer.outbox.list({ limit }) })
+      } else if (request.method === 'GET' && url.pathname === '/api/owner/outbox/unresolved-failures') {
+        // Its own route rather than a filter on GET /api/owner/outbox above:
+        // that one is a recency window over every status, so a caller that
+        // read it and filtered client-side for `failed` was bounded by total
+        // traffic -- enough other mail between a failure and the next look
+        // pushed it out of the window, a bound that tightens as the business
+        // grows. This is filtered at the query, not the window, so what
+        // comes back is bounded by how many unresolved failures exist, not
+        // by how much unrelated mail was sent since (backend/outbox.mjs's
+        // `unresolvedFailures()`).
+        if (!mailer) throw new InputError('Owner endpoint not found', 404)
+        const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 50))
+        send(200, { messages: mailer.outbox.unresolvedFailures({ limit }) })
       } else if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
         send(200, { ...inventory.list(Object.fromEntries(url.searchParams)), summary: inventory.summary() })
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/by-brand/')) {

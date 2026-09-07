@@ -16,8 +16,12 @@ const base = process.env.AUDIT_BASE || 'http://127.0.0.1:4180'
  *
  * `failed` is never a legitimate resting state the way `queued` is under
  * the null adapter -- so this needs no age threshold and no configuration
- * precondition, unlike the separate queued-row detector. Any failed row is
- * worth reporting the moment this runs.
+ * precondition, unlike the separate queued-row detector. Any *unresolved*
+ * failed row is worth reporting the moment this runs; `resolved_at`
+ * (backend/outbox.mjs) is how a failure that has actually been dealt with
+ * -- tonight's seven, once looked at -- stops being reported without this
+ * script pretending it never happened or inventing an age past which a
+ * live failure quietly stops counting.
  *
  * Deliberately not a retry and not a repair: at-least-once delivery is
  * ruled and specced as its own change (#285). This only reports what was
@@ -55,17 +59,22 @@ const cookie = await (async () => {
   return login.headers.get('set-cookie').split(';')[0]
 })()
 
-// The largest window the endpoint offers (backend/api.mjs clamps at 200): a
-// failure older than that has already scrolled past what this can see, the
-// same limit the owner's own Outbox panel has.
-const outbox = await fetch(base + '/api/owner/outbox?limit=200', { headers: cookie ? { Cookie: cookie } : {} })
+// GET /api/owner/outbox/unresolved-failures, not the general outbox listing
+// filtered client-side: that general listing is a recency window over every
+// status (backend/api.mjs clamps it at 200), so filtering it here would be
+// bounded by how much unrelated mail happened to be sent since the last
+// look, a bound that tightens as the business grows and never announces
+// itself. This route is filtered at the query -- `status='failed' AND
+// resolved_at IS NULL` -- so what comes back is bounded by how many
+// unresolved failures actually exist, not by traffic. `limit` here is a
+// safety cap on that set, not a recency window: hitting it means that many
+// live unresolved failures exist at once, which is its own incident.
+const outbox = await fetch(base + '/api/owner/outbox/unresolved-failures?limit=200', { headers: cookie ? { Cookie: cookie } : {} })
 assert.equal(outbox.status, 200, 'the owner outbox API answered ' + outbox.status)
-const { messages } = await outbox.json()
-
-const failed = messages.filter(message => message.status === 'failed')
+const { messages: failed } = await outbox.json()
 
 if (failed.length === 0) {
-  console.log('OK: 0 failed outbox rows in the most recent ' + messages.length + '.')
+  console.log('OK: 0 unresolved failed outbox rows.')
 } else {
   console.error(`FAIL: ${failed.length} failed outbox row${failed.length === 1 ? '' : 's'}:`)
   for (const message of failed) {

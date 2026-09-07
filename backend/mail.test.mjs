@@ -532,3 +532,56 @@ test('the mail-status route does not exist at all when no token is configured', 
   const response = await fetch(base + '/api/mail-status', { headers: { Authorization: 'Bearer anything' } })
   assert.equal(response.status, 404, 'unconfigured means the route does not exist, not that it exists half-protected')
 })
+
+/* ------------------------------------------------ unresolved-failures route */
+
+function ownerApiServer(t, { quotes, mailer }) {
+  const ownerApi = createApi(quotes.inventory, null, null, quotes, { mailer })
+  const server = createServer(async (req, res) => { if (await ownerApi(req, res)) return; res.writeHead(404); res.end() })
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({
+    base: `http://127.0.0.1:${server.address().port}`,
+    close: () => new Promise(r => server.close(r)),
+  })))
+}
+
+test('GET /api/owner/outbox/unresolved-failures answers only unresolved failed rows, not the general recent-messages window', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+
+  const { request } = quotes.submit(form())
+  outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'queued' }, to: 'a@b.c', toName: 'A' })
+  const failed = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'will fail' }, to: 'a@b.c', toName: 'A' })
+  outbox.updateStatus(failed.id, { status: 'failed', error: '535 5.7.8 credential dead' })
+  const settled = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'already handled' }, to: 'a@b.c', toName: 'A' })
+  outbox.updateStatus(settled.id, { status: 'failed', error: 'old incident' })
+  outbox.resolve(settled.id, 'handled earlier tonight')
+
+  const response = await fetch(base + '/api/owner/outbox/unresolved-failures?limit=200')
+  assert.equal(response.status, 200)
+  const { messages } = await response.json()
+  assert.equal(messages.length, 1, 'the queued row and the resolved failure are both excluded')
+  assert.equal(messages[0].id, failed.id)
+  assert.equal(messages[0].error, '535 5.7.8 credential dead')
+})
+
+test('GET /api/owner/outbox/unresolved-failures is a real query, not the general list scrolled past', async t => {
+  const { quotes, outbox, mailer } = world(t, { adapter: new NullAdapter() })
+  const { base, close } = await ownerApiServer(t, { quotes, mailer })
+  t.after(close)
+  const { request } = quotes.submit(form())
+
+  const failure = outbox.record({ requestId: request.id, type: 'request-received', data: { note: 'x' }, to: 'a@b.c', toName: 'A' })
+  outbox.updateStatus(failure.id, { status: 'failed', error: 'still unresolved' })
+  for (let i = 0; i < 210; i++) {
+    outbox.record({ requestId: request.id, type: 'request-received', data: { note: `q${i}` }, to: 'a@b.c', toName: 'A' })
+  }
+
+  const generalList = await (await fetch(base + '/api/owner/outbox?limit=200')).json()
+  assert.equal(generalList.messages.some(m => m.id === failure.id), false,
+    'sanity check: the general recency-windowed route really has scrolled past the failure by now')
+
+  const unresolved = await (await fetch(base + '/api/owner/outbox/unresolved-failures?limit=200')).json()
+  assert.equal(unresolved.messages.length, 1)
+  assert.equal(unresolved.messages[0].id, failure.id, 'the failure-filtered route still sees it')
+})

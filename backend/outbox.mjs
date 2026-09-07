@@ -47,6 +47,11 @@ import { InputError } from './inventory.mjs'
  * route. `backend/mail.mjs`'s `send()` and the five message templates, and
  * the session-gated `GET /api/owner/outbox` panel, are their own pieces of
  * t37, built on top of `record()`/`list()`/`forRequest()` here.
+ *
+ * `resolve()` and `unresolvedFailures()` are the same idea applied to
+ * settling a row: acknowledging it without inventing a status for
+ * "acknowledged," and reading back only what is still live rather than a
+ * recency window filtered after the fact.
  */
 
 /** Every status a message may hold. Widening this later is a migration, the same as quotes.status. */
@@ -125,6 +130,16 @@ export class Outbox {
       CREATE TABLE IF NOT EXISTS outbox (${OUTBOX_COLUMNS});
       CREATE INDEX IF NOT EXISTS outbox_request ON outbox(request_id);
     `)
+    // `resolved_at` is nullable and carries no CHECK, unlike `status` --
+    // widening that enum to a fifth "settled" value would mean the same
+    // CHECK-rebuild migrate() does for quotes.status, for a concept that
+    // is orthogonal to status rather than a value of it (a `queued` row
+    // that was never attempted and a `failed` row from a closed incident
+    // are both "not a live problem" without either one stopping being
+    // what it was). A plain ALTER, the same guard quotes.mjs uses for
+    // draft_line_items/decided_by.
+    const columns = new Set(this.db.prepare('PRAGMA table_info(outbox)').all().map(column => column.name))
+    if (!columns.has('resolved_at')) this.db.exec('ALTER TABLE outbox ADD COLUMN resolved_at TEXT')
   }
 
   /**
@@ -181,7 +196,7 @@ export class Outbox {
       id: row.id, requestId: row.request_id, type: row.type, templateVersion: row.template_version,
       data: JSON.parse(row.data), to: row.to_address, toName: row.to_name,
       status: row.status, providerId: row.provider_id ?? null, error: row.error ?? null,
-      createdAt: row.created_at, updatedAt: row.updated_at,
+      createdAt: row.created_at, updatedAt: row.updated_at, resolvedAt: row.resolved_at ?? null,
     }
   }
 
@@ -205,6 +220,57 @@ export class Outbox {
   list({ limit = 50 } = {}) {
     return this.db.prepare('SELECT *, rowid FROM outbox ORDER BY created_at DESC, rowid DESC LIMIT ?')
       .all(limit).map(row => this.shapeRow(row))
+  }
+
+  /**
+   * Mark one message settled: acknowledged, and not a live problem, without
+   * claiming anything about `status` that isn't true. A `queued` row that
+   * was never attempted stays `queued` -- it did not suddenly get sent --
+   * and a `failed` row stays `failed` -- the attempt really was rejected.
+   * `resolved_at` says only "someone looked at this and it's accounted
+   * for," orthogonal to what happened.
+   *
+   * `note` fills `error` only when it is currently empty (`COALESCE`): a
+   * `queued` row typically has none, so the note becomes the record of why
+   * it's settled. A `failed` row already carries the provider's real
+   * rejection text, which this must not overwrite -- resolving a failure
+   * is not the same claim as explaining it away, and the original 535 (or
+   * whatever it was) stays exactly what a later reader needs.
+   *
+   * Idempotent: resolving an already-resolved row returns it unchanged
+   * rather than erroring or overwriting `resolved_at`, so a correction
+   * script can be re-run safely.
+   */
+  resolve(id, note = null) {
+    const found = this.get(id)
+    if (!found) throw new InputError('No such outbox message.', 404)
+    if (found.resolvedAt) return found
+
+    this.db.prepare('UPDATE outbox SET resolved_at=?, error=COALESCE(error, ?), updated_at=? WHERE id=?')
+      .run(now(), note, now(), id)
+    return this.get(id)
+  }
+
+  /**
+   * Failed messages nobody has settled -- what a monitor should actually
+   * see, and not the same thing as "the failures within however many rows
+   * of any status happened to be recent."
+   *
+   * `list()` is a recency window over every status, so a caller that reads
+   * it and filters for `failed` is bounded by total traffic: enough `sent`/
+   * `queued` rows between a failure and the next look pushes it out of
+   * view, and that bound tightens as the business grows, silently. This
+   * query is filtered at the source instead -- `WHERE status='failed' AND
+   * resolved_at IS NULL` -- so the set it returns is bounded by how many
+   * unresolved failures actually exist, not by how much unrelated mail was
+   * sent since. `limit` is a safety cap for that set, not a recency window:
+   * hitting it means there are that many live unresolved failures at once,
+   * which is its own incident, not a windowing artifact.
+   */
+  unresolvedFailures({ limit = 200 } = {}) {
+    return this.db.prepare(
+      "SELECT *, rowid FROM outbox WHERE status='failed' AND resolved_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT ?",
+    ).all(limit).map(row => this.shapeRow(row))
   }
 
   /**
