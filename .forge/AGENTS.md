@@ -214,6 +214,22 @@ git worktree remove .worktrees/claim-tmp
 - **On Windows, `git worktree remove` can fail `Permission denied` if that
   directory was recently your shell's cwd;** `rm -rf` it then `git worktree
   prune` — safe only because a plain tree has no junction to follow.
+- **Every command in this recipe is `git -C <path>`, never `cd <path> && git
+  ...`, and that is load-bearing, not a style choice.** A `cd` inside a longer
+  chain can fail silently and leave the shell in whatever directory it was
+  already in — and the next command in the chain then runs there instead,
+  under the assumption that the `cd` succeeded. That is exactly how one claim
+  push became a whole feature branch pushed straight to `main`: a `git push
+  origin HEAD:main` written for a throwaway claims worktree ran from a feature
+  worktree instead, because an earlier `cd` in the same chain had not landed
+  where it was supposed to, and nothing in the chain noticed. `git -C <path>`
+  cannot be redirected by a directory you did not actually enter — it names
+  the target explicitly, on every single command, so a broken chain fails
+  loud (wrong path, command errors) instead of quietly running somewhere
+  else. The same failure shape is not unique to `cd`: any `;`-joined chain
+  lets a failed step run its neighbour anyway, in a context the author no
+  longer controls. Prefer `&&` so a failure stops the chain, and `git -C`
+  wherever the target directory matters more than the current one.
 
 Use `.worktrees/` (`.gitignore` covers it), never a sibling that never gets
 cleaned up. The same holds for any direct-to-`main` commit: the shared `HEAD`
@@ -316,9 +332,18 @@ either side.
 - **Need another branch while someone is editing? Use `git worktree add`,** not
   `git switch`. Switching moves the checkout under whoever is writing.
 - **`node scripts/worktree.mjs add <name>` and `remove <name>`** do that with
-  the shared `node_modules` link handled in the safe order. Never
-  `git worktree remove --force` a tree whose `node_modules` is a link: it
-  deletes through the link into the install every worktree shares.
+  the shared `node_modules` link handled in the safe order. **Never
+  `git worktree remove --force`, and never a raw `rm -rf` on a worktree
+  directory either** — both follow that tree's `node_modules` link straight
+  into the one install every worktree shares, deleting it for every session
+  at once, not just the tree you meant to remove. `git worktree remove
+  --force` at least asks git to do the deleting, which is refusable; `rm -rf`
+  does not ask anyone. `scripts/worktree.mjs remove` unlinks first, then
+  removes — it is the one command that cannot take the install down with it.
+  Reach for it even when a plain removal feels faster; the paragraph you
+  would otherwise be relying on to remember this is not the one your hands
+  are in at the moment you type `rm -rf`, which is exactly why it is written
+  here too.
 - **Push promptly.** The divergence window is where this goes wrong.
 - **An author does not merge their own pull request.** A second agent reads the
   diff and the audit counts in the check log, and merges. That has been the
