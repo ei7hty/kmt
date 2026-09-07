@@ -98,7 +98,7 @@ open PR is still a claim on the file, and it can sit an hour or more waiting on 
 second reader — for that whole window a released row would tell the busiest
 coordination file that nobody is touching a file you are, and the reader who
 needs it is the one who has *not* read your PR. **The agent who ends the PR —
-merging it, or closing it without merging — removes the row, in the same pass.**
+merging it, or closing it without merging — removes the row.**
 They always observe the ending and are at `main` for it; the author is elsewhere
 on someone else's clock with no reason to look. Both exits orphan a row
 otherwise: a merge does (four rows accumulated in one night, because "release on
@@ -108,8 +108,18 @@ rule). An author who sees their PR end may remove their own, but the ender owns
 it; match it by branch name, the row's first column — and if more than one row
 names that branch, remove every one and name the count in the release commit,
 because two sessions claiming a single branch is a violation the file should
-surface, not quietly absorb. The ender's removal also
-needs no one's *account* of what they did — which matters because a release
+surface, not quietly absorb.
+
+**On timing: immediately, or a run's rows in one release commit — but the batch
+commits before the run is finished, never at session-end.** Mergers batch at
+volume whether the rule allows it or not (measured: a merger reached for the
+batch unprompted on a four-PR run), so the rule names the safe form rather than
+the one they will skip. A batched release is a deferred obligation, and a run
+that ends before it — context exhausted, interrupted, spun down — orphans every
+row in the batch with nothing to show they are owed. The cost is small either
+way: the release rides along on any worktree the merge already needed (rebasing
+past `CLAIMS.md` churn), and only rarely needs a dedicated cycle. The ender's
+removal also needs no one's *account* of what they did — which matters because a release
 report is the one kind of report nothing in this repo checks: a row was found
 stale since its original claim, behind a stated release a full-history search
 showed never happened. Then, if you
@@ -121,9 +131,16 @@ task, and record architecture decisions in `.forge/decisions.md`.
 `CLAIMS.md` changes several times an hour across every agent working here, so a
 PR against it re-enters a losing race on every push in its review window — a
 correct rebase collides again within minutes, repeatedly, because the file it
-touches is the busiest one in the repo. `.forge/` is in neither `build_paths`
-nor `ship_paths` in `fly-deploy.yml`, so a claim commit runs the gate and ships
-nothing regardless of how it lands. One small commit, straight to `main`, is
+touches is the busiest one in the repo. A claim push never starts the `Deploy`
+workflow at all: `.forge/*.md` is in that workflow's `push` `paths-ignore`, so a
+`CLAIMS.md` push matches it and the run does not begin — `build_paths`/`ship_paths`
+are computed *inside* the run and are never reached, so do not reason about a
+claim commit from them; the deny-list is what fires. (Reading `.github/workflows/`
+under-reports what runs, too: CodeQL runs on every push with no file there —
+GitHub default setup.) So a claim commit is *free*, not merely ship-free — a
+stronger guarantee than "ships nothing." A docs-only *PR* is the opposite case:
+`pull_request` carries no paths filter, so it runs the full gate. One small
+commit, straight to `main`, is
 the whole mechanism — the same discipline as any other commit here (explicit
 paths, no `-A`, check the branch first), just without a PR wrapped around it.
 
