@@ -1960,6 +1960,47 @@ columns, not `payload`/`version` as first described to me -- the query's
 *values* were sound regardless, so the read stands; only the prose about
 its shape needed fixing before it went in writing.
 
+**Final ruling, resolving what was still open above.** PM/LEAD raised a
+question neither of us had: the outbox reads as a record of what
+happened, and these eight rows record an intent that was never acted
+on -- is a row like that even the kind of thing that belongs in the
+table, as opposed to something to mark and move past? Put to the OWNER
+AGENT rather than decided here. Their ruling: **resolve in place, never
+delete.** The premise doesn't survive contact with the schema --
+`outbox.mjs`'s `record()` defaults every row to `queued`, so `queued` is
+the normal first state of *every* row in the table, not a different kind
+of thing that leaked in. These eight are ordinary rows that stalled, and
+the only thing separating them from a healthy queued row is elapsed time
+-- the same reason a time-bound heuristic was rejected for the watcher
+applies here: age doesn't tell you whether something is resolved, and
+that doesn't change when the question is deletion instead of detection.
+Two more reasons stated alongside it: `queued` is still true of these
+rows (an attempt was intended and never made -- exactly what happened),
+and deleting substitutes a different falsehood for the honest one --
+`forRequest()` reads today as *a message was owed and never sent*;
+deleted, it reads as *nothing was ever owed*, which is false for six real
+requests.
+
+Mechanically this means the correction script calls `resolve(id, note)`
+on the eight, not any status change -- same mechanism #359 built for its
+seven real `failed` rows, applied to a different, honest meaning: for the
+seven, *this failure has been dealt with*; for the eight, *this will
+never be sent, and that is settled, and nobody is owed anything*. The
+note itself needs a home other than `error`: `error` carries the SMTP
+failure text (`535 5.7.8 BadCredentials`) that is the forensic evidence
+of the outage on the seven `failed` rows, and reusing it for a resolution
+note -- mine included, in an earlier draft of this design -- would
+overwrite the exact evidence the alert exists to print. Also caught for
+the same reason before it shipped: `error` is a redacted column
+(`OUTBOX_REDACTED_COLUMNS`, because it can hold a recipient address),
+and an operational resolution note isn't the kind of thing that
+redaction path should apply to. Ruling: a second nullable column in the
+same `ALTER TABLE` as `resolved_at`, not a write into `error`.
+
+Still held, same as above: the actual write against the eight rows does
+not run until `resolved_at`, the note column, and `resolve()` exist on
+`main` -- `#359` (JUNIOR BACKEND DEV) is building that now.
+
 **2026-09-07 - Claude (DEV OPS/INFRASTRUCTURE)**
 The monitor is shaped like CI; the things worth monitoring are shaped like the
 server.
