@@ -9,6 +9,7 @@ import { createAuth, readAuthConfig } from './auth.mjs'
 import { PUBLIC_BODY_LIMIT, RateLimiter } from './limits.mjs'
 import { parseRequestUrl } from './site.mjs'
 import { calculateDraftQuote } from '../src/pricing.js'
+import { loadCatalogForSize } from '../src/data/liveCatalog.js'
 
 const SIZE = '215/60R16'
 const KEY = 'a1b2c3d4e5f60718'
@@ -77,6 +78,50 @@ test('a submit stores the request and its quote, priced exactly as the frontend 
   // And it is readable back by id alone.
   const found = quotes.get(request.id)
   assert.equal(found.quote.total, quote.total)
+})
+
+test('a supplier tire keeps canonical pricing from live catalog through preview and stored quote', t => {
+  const { inventory, quotes } = setup(t)
+  inventory.saveMarkup({ rate: 2, shippingPerTire: 30 })
+  const catalog = quotes.catalog()
+  assert.deepEqual(catalog.map(row => row.id), ['giga-a'], 'only a row with real supplier cost is selectable')
+  assert.equal(catalog[0].price, 130, '($50 supplier × 2 markup) + $30 internal shipping')
+  assert.doesNotMatch(JSON.stringify(catalog), /shipping/i, 'the customer sees only the resulting tire price')
+
+  const selection = form({ quantity: 2 })
+  const preview = quotes.preview(selection)
+  const stored = quotes.submit(selection)
+  const previewTire = preview.lineItems.find(line => line.description === 'Test Touring')
+  const storedTire = stored.quote.lineItems.find(line => line.description === 'Test Touring')
+  assert.deepEqual(
+    { description: previewTire.description, quantity: previewTire.quantity, unitPrice: previewTire.unitPrice },
+    storedTire,
+    'catalog identity and price survive selection, preview, and persistence unchanged',
+  )
+  assert.equal(storedTire.unitPrice, 130)
+  assert.doesNotMatch(JSON.stringify(preview), /shipping/i)
+  assert.doesNotMatch(JSON.stringify(quotes.get(stored.request.id)), /shipping/i)
+
+  assert.throws(() => quotes.preview({ ...selection, tireSelection: 'tire-1' }), /isn't one I offer/,
+    'a fixed-price seed with no supplier cost is excluded, not reinterpreted')
+})
+
+test('a live browser answer excludes static prices, while an offline demo still has its fallback', async t => {
+  const liveTire = { id: 'giga-a', name: 'Test Touring', size: SIZE, price: 130, inStock: true, category: 'all-season', description: '95H BSW' }
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  globalThis.fetch = async () => new Response(JSON.stringify({ tires: [liveTire], disposalFee: null }), {
+    status: 200, headers: { 'Content-Type': 'application/json' },
+  })
+
+  const live = await loadCatalogForSize(SIZE)
+  assert.equal(live.source, 'live')
+  assert.deepEqual(live.tires, [liveTire], 'successful live data is authoritative and gains no fixed-price rows')
+
+  globalThis.fetch = async () => { throw new Error('offline') }
+  const offline = await loadCatalogForSize(SIZE)
+  assert.equal(offline.source, 'static')
+  assert.ok(offline.tires.some(tire => tire.id === 'tire-1'), 'the local/offline demo fallback remains available')
 })
 
 test('global and individual shipping affect the tire price without leaking into customer quote shapes', t => {

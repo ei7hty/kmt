@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto'
 
 import { InputError } from './inventory.mjs'
 import { REASONS, isServiceable, normalizeZip, readServiceAreaConfig } from './service-area.mjs'
-import { catalogFromLiveRows } from '../src/data/catalog.js'
 import { ALLOWED_QUANTITIES, calculateDraftQuote, computeQuoteTotals, normalizePricingSettings } from '../src/pricing.js'
 
 /** The number a refusal offers. The same one the wizard's call button dials. */
@@ -575,9 +574,14 @@ export class Quotes {
     }
   }
 
-  /** The catalog the customer was shown: live rows, composed the way the flow composes them. */
+  /**
+   * Tires this server can price: supplier rows carrying real cost, reduced to
+   * the customer-safe shape by Inventory.catalog(). Static/demo rows have a
+   * fixed display price but no supplier cost, so accepting one here would
+   * bypass owner markup and internal shipping rather than price it.
+   */
   catalog() {
-    return catalogFromLiveRows(this.inventory.catalog())
+    return this.inventory.catalog()
   }
 
   transaction(fn) {
