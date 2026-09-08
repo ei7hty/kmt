@@ -53,3 +53,8 @@ test('literal UTF-16 rejects every unpaired surrogate and preserves valid pairs'
   assert.equal(cleanCatalogDescription(`wrong \ud800A end`), 'wrong �A end')
   assert.equal(cleanCatalogDescription(`pair \ud83d\ude97 end`), 'pair 🚗 end')
 })
+
+test('deeply encoded nested markup is flattened without recursive stack growth', () => {
+  const description = '&lt;b&gt;'.repeat(5000) + 'Grip' + '&lt;/b&gt;'.repeat(5000)
+  assert.equal(cleanCatalogDescription(description), 'Grip')
+})

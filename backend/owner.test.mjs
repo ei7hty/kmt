@@ -1481,6 +1481,20 @@ test('the public catalog returns plain descriptions without changing tire identi
   )
 })
 
+test('a deeply nested historical supplier description cannot take down the public catalog', async t => {
+  const db = setup(t)
+  db.saveOffer('giga-a', offer({ priceCents: 8999 }))
+  const historical = '&lt;b&gt;'.repeat(5000) + 'Grip' + '&lt;/b&gt;'.repeat(5000)
+  db.db.prepare("UPDATE supplier SET payload=json_set(payload,'$.description',?) WHERE id=?")
+    .run(historical, 'giga-a')
+
+  const [row] = db.catalog()
+  assert.deepEqual(
+    { id: row.id, name: row.name, size: row.size, price: row.price, description: row.description },
+    { id: 'giga-a', name: 'Test Touring', size: SIZE, price: 89.99, description: 'Grip' },
+  )
+})
+
 test('a tire the supplier has delisted stays in the catalog, out of stock, however it was priced', async t => {
   // Both ways a row can reach the catalog, because the flag has to win in
   // each: the owner set a price, and markup proposed one for a tire he never

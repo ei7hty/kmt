@@ -15,18 +15,39 @@ function rejectInvalidNumericReferences(value) {
   })
 }
 
-function textContent(node) {
-  if (node.nodeName === '#text') return node.value
-  if (node.nodeName === '#comment') return ''
-  if (DISCARD_CONTENT_TAGS.has(node.tagName)) return ''
+function textContent(root) {
+  const output = []
+  const stack = [{ node: root, closeBlock: false }]
 
-  const content = (node.childNodes || []).map(textContent).join('')
-  return BLOCK_TAGS.has(node.tagName) ? ` ${content} ` : content
+  while (stack.length > 0) {
+    const { node, closeBlock } = stack.pop()
+    if (closeBlock) {
+      output.push(' ')
+      continue
+    }
+    if (node.nodeName === '#text') {
+      output.push(node.value)
+      continue
+    }
+    if (node.nodeName === '#comment' || DISCARD_CONTENT_TAGS.has(node.tagName)) continue
+
+    const block = BLOCK_TAGS.has(node.tagName)
+    if (block) {
+      output.push(' ')
+      stack.push({ node, closeBlock: true })
+    }
+    const children = node.childNodes || []
+    for (let index = children.length - 1; index >= 0; index--) {
+      stack.push({ node: children[index], closeBlock: false })
+    }
+  }
+
+  return output.join('')
 }
 
 function parseAsText(value) {
   const fragment = parseFragment(rejectInvalidNumericReferences(value))
-  return fragment.childNodes.map(textContent).join('')
+  return textContent(fragment)
 }
 
 function withoutAngles(value) {
