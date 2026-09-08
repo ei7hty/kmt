@@ -13,7 +13,7 @@ const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 83;
+const EXPECTED_CHECKS = 88;
 
 /**
  * Preferred dates, always ahead of today. The server refuses anything inside
@@ -53,6 +53,52 @@ function fail(msg) {
 function ok(msg) {
   passed += 1;
   console.log(`OK: ${msg}`);
+}
+
+/** Run a fallible probe without ever letting its required cleanup disappear. */
+async function withRequiredCleanup(probe, cleanup) {
+  let probeError = null;
+  try {
+    await probe();
+  } catch (error) {
+    probeError = error;
+  }
+
+  try {
+    await cleanup();
+  } catch (cleanupError) {
+    throw new AggregateError(
+      [probeError, cleanupError].filter(Boolean),
+      `Editable copy cleanup failed${probeError ? ` after: ${probeError.message}` : ''}: ${cleanupError.message}`,
+      { cause: cleanupError },
+    );
+  }
+  if (probeError) throw probeError;
+}
+
+/** Fault injection: a throw after a write must still restore the old value. */
+async function verifyRequiredCleanup() {
+  const original = 'shipped';
+  let value = original;
+  let undoAttempts = 0;
+  let caught = null;
+  try {
+    await withRequiredCleanup(
+      async () => {
+        value = 'marked';
+        throw new Error('injected failure after write');
+      },
+      async () => {
+        undoAttempts += 1;
+        value = original;
+      },
+    );
+  } catch (error) {
+    caught = error;
+  }
+  if (caught?.message !== 'injected failure after write' || undoAttempts !== 1 || value !== original) {
+    throw new Error(`Editable copy cleanup self-test failed: caught=${caught?.message}, undoAttempts=${undoAttempts}, value=${value}`);
+  }
 }
 
 /** The count, held against the baseline. Printed last, so it is the line a reader lands on. */
@@ -149,6 +195,7 @@ const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain', tireId
 const NO_SEED_SIZE = '135/80R12';
 
 async function main() {
+  await verifyRequiredCleanup();
   const browser = await chromium.launch();
   // Resolved once, against whatever the server is actually offering right
   // now, rather than a name typed into this file -- see cleanTireFor.
@@ -212,7 +259,62 @@ async function main() {
   // regardless of whether the copy came from the bundle or from a store.
   {
     const { context, page } = await freshPage(browser, { name: 'phone', width: 375, height: 812 });
-    await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+    try {
+      await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+
+    // Prove the editable-copy chain as five separately diagnosed links. A
+    // presence check cannot cover this: #397 once had a correct store, route,
+    // injector and screen while the customer component still rendered its
+    // literal. Use one marked field, through the authenticated owner API, and
+    // undo it before this context closes so the audit leaves its database as
+    // it found it.
+    const copyTarget = page.getByTestId('copy-hero-heading-top');
+    const shippedCopy = (await copyTarget.textContent().catch(() => null))?.trim() ?? '';
+    const copyMarker = `AUDIT COPY ${Date.now()}`;
+    if (shippedCopy && shippedCopy !== copyMarker) {
+      ok('Editable copy precondition: the landing page starts with shipped wording and not the audit marker.');
+    } else {
+      fail(`Editable copy precondition failed: expected non-empty shipped wording before the write, got ${JSON.stringify(shippedCopy)}.`);
+    }
+
+    await openOwnerQuotes(page);
+    const copyWrite = await context.request.put(BASE + '/api/owner/site-copy', {
+      data: { values: { 'hero.headingTop': copyMarker }, acknowledged: [] },
+    });
+    if (copyWrite.status() === 200) {
+      ok('Editable copy write: the authenticated owner API accepted the marked override.');
+    } else {
+      fail(`Editable copy write failed: the owner API refused the override with HTTP ${copyWrite.status()}.`);
+    }
+
+      await withRequiredCleanup(
+        async () => {
+          const injectedHtml = await (await context.request.get(BASE + '/')).text();
+          if (injectedHtml.includes(copyMarker)) {
+            ok('Editable copy injection: served HTML contains the override accepted by the owner API.');
+          } else {
+            fail('Editable copy injection failed: the write was attempted but the served HTML does not contain its marker.');
+          }
+
+          await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+          const renderedMarker = (await copyTarget.textContent().catch(() => null))?.trim() ?? '';
+          if (renderedMarker === copyMarker) {
+            ok('Editable copy render: the marked customer element renders the injected override.');
+          } else {
+            fail(`Editable copy render failed: HTML injection was checked separately, but the customer component rendered ${JSON.stringify(renderedMarker)}.`);
+          }
+        },
+        async () => {
+          const copyUndo = await context.request.post(BASE + '/api/owner/site-copy/undo', { data: {} });
+          await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+          const restoredCopy = (await copyTarget.textContent().catch(() => null))?.trim() ?? '';
+          if (copyUndo.status() === 200 && restoredCopy === shippedCopy && restoredCopy !== copyMarker) {
+            ok('Editable copy undo: the API restored the shipped wording and the customer page renders it again.');
+          } else {
+            fail(`Editable copy undo failed: HTTP ${copyUndo.status()}, expected restored ${JSON.stringify(shippedCopy)}, rendered ${JSON.stringify(restoredCopy)}.`);
+          }
+        },
+      );
 
     const text = async (selector) => (await page.locator(selector).first().textContent().catch(() => null))?.trim() ?? '';
 
@@ -265,7 +367,9 @@ async function main() {
       fail(`/: the inquiry entrance is broken. Label: ${JSON.stringify(inquiryLabel)}, landed on ${page.url()}, heading: ${JSON.stringify(inquiryHeading)}.`);
     }
 
-    await context.close();
+    } finally {
+      await context.close();
+    }
   }
 
   for (const viewport of [
