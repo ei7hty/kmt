@@ -58,6 +58,7 @@ export function validateQueue(queue) {
         entry.blockers.length || !entry.boundaries.includes('merge-via-existing-ci'))) add('active release lacks authorization, review, verification, executor, scope or has blockers');
     if (entry.state === 'merging' && entry.ship) merging += 1;
     if (entry.state === 'deployed' && (!entry.ship || !entry.release)) add('deployed needs ship scope and observed release evidence');
+    if (entry.state !== 'deployed' && entry.release !== null) add('release evidence belongs only to deployed');
     if (entry.state === 'waiting' && !entry.blockers.length) add('waiting needs a concrete blocker');
     for (const date of [entry.updatedAt, entry.authorization?.at, entry.review?.at, entry.verification?.at, entry.release?.at].filter(Boolean)) {
       if (!Number.isFinite(Date.parse(date)) || new Date(date).toISOString().replace('.000Z', 'Z') !== date) add('invalid timestamp');
@@ -74,7 +75,8 @@ export function parseClaims(markdown) {
 }
 
 export function checkConsistency(queue, claims, prs) {
-  const errors = [], warnings = [];
+  const errors = validateQueue(queue), warnings = [];
+  if (errors.length) return { errors, warnings };
   const branches = new Set();
   for (const claim of claims) {
     if (branches.has(claim.branch)) errors.push(`Duplicate claim: ${claim.branch}`);

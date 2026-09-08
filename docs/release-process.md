@@ -74,6 +74,8 @@ Each entry carries:
   release turn (remaining `merging` after GitHub merge while deployment is in
   flight); `deployed` only with observed `release.commit`, evidence `source`
   and timestamp. `closed` records an ended non-shipping/cancelled item.
+  `release` must remain `null` in every state except `deployed`, including while
+  deployment is in flight; premature or stale evidence fails validation.
   All timestamps use UTC `YYYY-MM-DDTHH:mm:ssZ`.
 
 The queue is not an atomic lock, authorization service or automatic scheduler.

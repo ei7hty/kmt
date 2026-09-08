@@ -54,11 +54,38 @@ test('only ship merges serialize; duplicate branch or PR is rejected', () => {
   assert.match(validateQueue(queue).join(';'), /duplicate/);
 });
 
+for (const state of ['waiting', 'ready', 'merging', 'closed']) {
+  test(`${state} cannot carry release evidence before deployment`, () => {
+    const queue = ready(), entry = queue.entries[0];
+    entry.state = state;
+    if (state === 'waiting') entry.blockers = ['Owner authorization pending'];
+    entry.release = { commit: 'c'.repeat(40), source: 'Observed release fixture', at };
+    assert.match(validateQueue(queue).join(';'), /release evidence belongs only to deployed/);
+    const pr = { number: entry.pr, branch: entry.branch, head: entry.head, state: ['merging', 'closed'].includes(state) ? 'closed' : 'open', merged: state === 'merging' };
+    assert.match(checkConsistency(queue, [], [pr]).errors.join(';'), /release evidence belongs only to deployed/);
+  });
+}
+
+test('deployed merged shipping entry carries observed release evidence', () => {
+  const queue = ready(), entry = queue.entries[0];
+  entry.state = 'deployed';
+  entry.release = { commit: 'c'.repeat(40), source: 'Observed release fixture', at };
+  const pr = { number: entry.pr, branch: entry.branch, head: entry.head, state: 'closed', merged: true };
+  assert.deepEqual(validateQueue(queue), []);
+  assert.deepEqual(checkConsistency(queue, [], [pr]).errors, []);
+  entry.state = 'merging';
+  assert.match(validateQueue(queue).join(';'), /release evidence belongs only to deployed/);
+  assert.match(checkConsistency(queue, [], [pr]).errors.join(';'), /release evidence belongs only to deployed/);
+  entry.release = null;
+  assert.deepEqual(validateQueue(queue), []);
+  assert.deepEqual(checkConsistency(queue, [], [pr]).errors, []);
+});
+
 const row = branch => `| ${branch} | agent | scoped region | 2026-09-08 |`;
 test('claims use branch identity; missing, duplicate and ended rows are errors', () => {
   const claims = parseClaims(['| branch | agent | files / area | started |', '| --- | --- | --- | --- |', row('codex/closed'), row('codex/closed'), row('codex/review')].join('\r\n'));
   const prs = [{ number: 1, branch: 'codex/closed', state: 'closed' }, { number: 2, branch: 'codex/open', state: 'open' }];
-  const report = checkConsistency({ entries: [] }, claims, prs);
+  const report = checkConsistency({ version: 1, entries: [] }, claims, prs);
   assert.equal(claims.length, 3);
   assert.match(report.errors.join(';'), /Duplicate claim/);
   assert.match(report.errors.join(';'), /Ended PR still claimed/);
@@ -76,10 +103,12 @@ test('GitHub head drift, premature claim/queue release, and ended queue are dete
   pr.head = sha; pr.state = 'closed';
   assert.match(checkConsistency(queue, claims, [pr]).errors.join(';'), /queued PR has ended/);
   entry.state = 'deployed';
+  entry.release = { commit: 'c'.repeat(40), source: 'Observed release fixture', at };
   assert.match(checkConsistency(queue, [], [pr]).errors.join(';'), /without merge/);
   pr.state = 'open';
   assert.match(checkConsistency(queue, [], [pr]).errors.join(';'), /premature/);
   entry.state = 'closed'; pr.state = 'closed'; pr.merged = true;
+  entry.release = null;
   assert.match(checkConsistency(queue, [], [pr]).errors.join(';'), /merged shipping PR requires/);
   entry.state = 'merging';
   assert.deepEqual(validateQueue(queue), []);
