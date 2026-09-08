@@ -13,8 +13,9 @@ export function transferBudget({ candidate = false, status, encoding, bytes, bod
   };
 }
 export function candidateConfig(env = process.env) {
-  if (env.AUDIT_MODE && !['candidate', 'deployed'].includes(env.AUDIT_MODE)) throw new Error('Unknown AUDIT_MODE');
-  if (!env.AUDIT_MODE && (env.AUDIT_EXPECTED_RELEASE || /127\.0\.0\.1|localhost|\[::1\]/.test(env.AUDIT_BASE || ''))) throw new Error('Local audits require explicit AUDIT_MODE=candidate');
+  if (env.AUDIT_MODE && env.AUDIT_MODE !== 'candidate') throw new Error('Unknown AUDIT_MODE');
+  const hostname = env.AUDIT_BASE ? new URL(env.AUDIT_BASE).hostname : '';
+  if (!env.AUDIT_MODE && (env.AUDIT_EXPECTED_RELEASE || /^127\.|^localhost$|^\[::1\]$/.test(hostname))) throw new Error('Local audits require explicit AUDIT_MODE=candidate');
   if (env.AUDIT_MODE !== 'candidate') return null;
   const base = new URL(env.AUDIT_BASE || '');
   if (base.protocol !== 'http:' || !['127.0.0.1', '[::1]'].includes(base.hostname) ||

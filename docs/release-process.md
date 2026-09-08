@@ -71,7 +71,8 @@ Each entry carries:
   owner instruction, never an extra capability smuggled into this queue.
 - `waiting` with concrete `blockers`; `ready` only with all evidence and no
   blockers; `merging` when the independent executor has acquired the existing
-  release turn; `deployed` only with observed `release.commit`, evidence `source`
+  release turn (remaining `merging` after GitHub merge while deployment is in
+  flight); `deployed` only with observed `release.commit`, evidence `source`
   and timestamp. `closed` records an ended non-shipping/cancelled item.
   All timestamps use UTC `YYYY-MM-DDTHH:mm:ssZ`.
 

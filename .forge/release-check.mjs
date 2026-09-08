@@ -90,10 +90,10 @@ export function checkConsistency(queue, claims, prs) {
     const pr = prs.find(pr => pr.number === entry.pr);
     if (!pr) { errors.push(`#${entry.pr}: PR absent from snapshot`); continue; }
     if (pr.branch !== entry.branch || pr.head !== entry.head) errors.push(`#${entry.pr}: branch/head differs from GitHub`);
-    if (['waiting', 'ready', 'merging'].includes(entry.state) && pr.state !== 'open') errors.push(`#${entry.pr}: queued PR has ended; reconcile ledger and release claim`);
+    if (['waiting', 'ready', 'merging'].includes(entry.state) && pr.state !== 'open' && !(entry.state === 'merging' && pr.merged)) errors.push(`#${entry.pr}: queued PR has ended; reconcile ledger and release claim`);
     if (['closed', 'deployed'].includes(entry.state) && pr.state === 'open') errors.push(`#${entry.pr}: premature queue completion`);
     if (entry.state === 'deployed' && !pr.merged) errors.push(`#${entry.pr}: closed without merge cannot be deployed`);
-    if (entry.ship && pr.merged && entry.state !== 'deployed') errors.push(`#${entry.pr}: merged shipping PR requires deployed state and release evidence`);
+    if (entry.ship && pr.merged && entry.state === 'closed') errors.push(`#${entry.pr}: merged shipping PR requires deployed state and release evidence`);
   }
   return { errors, warnings };
 }

@@ -81,6 +81,10 @@ test('GitHub head drift, premature claim/queue release, and ended queue are dete
   assert.match(checkConsistency(queue, [], [pr]).errors.join(';'), /premature/);
   entry.state = 'closed'; pr.state = 'closed'; pr.merged = true;
   assert.match(checkConsistency(queue, [], [pr]).errors.join(';'), /merged shipping PR requires/);
+  entry.state = 'merging';
+  assert.deepEqual(validateQueue(queue), []);
+  assert.deepEqual(checkConsistency(queue, [], [pr]).errors, []); // deploy still in flight
+  entry.state = 'closed';
   pr.merged = false;
   assert.deepEqual(checkConsistency(queue, [], [pr]).errors, []); // cancelled before shipping
 });
@@ -90,7 +94,9 @@ test('candidate configuration rejects remote/ambiguous targets and missing ident
     assert.throws(() => candidateConfig({ AUDIT_MODE: 'candidate', AUDIT_BASE: base, AUDIT_EXPECTED_RELEASE: sha }));
   }
   assert.throws(() => candidateConfig({ AUDIT_MODE: 'oops' }));
+  assert.throws(() => candidateConfig({ AUDIT_MODE: 'deployed', AUDIT_BASE: 'http://127.0.0.1:4173', AUDIT_EXPECTED_RELEASE: 'abcdef0' }));
   assert.throws(() => candidateConfig({ AUDIT_BASE: 'http://127.0.0.1:4173' }));
+  assert.throws(() => candidateConfig({ AUDIT_BASE: 'http://0x7f000001:4173' }));
   assert.throws(() => candidateConfig({ AUDIT_MODE: 'candidate', AUDIT_BASE: 'http://127.0.0.1:4173' }));
   assert.equal(candidateConfig({}), null);
 });
