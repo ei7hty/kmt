@@ -1099,12 +1099,35 @@ async function main() {
     const gaAttempts = [];
     const cspViolations = [];
     await context.route('**://www.googletagmanager.com/**', route => {
-      gaAttempts.push(route.request().url());
-      route.fulfill({ status: 200, contentType: 'application/javascript', body: '// stubbed for the gate -- never reaches Google' });
+      const request = route.request();
+      gaAttempts.push({ url: request.url(), type: request.resourceType() });
+      if (request.resourceType() !== 'script') return route.fulfill({ status: 204, body: '' });
+      // Exercise the complete CSP contract without analytics pollution. The
+      // real loader is never fetched; this deterministic stub attempts the
+      // three GA4 connection families and both pixel families instead.
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: `
+          fetch('https://www.google-analytics.com/g/collect?a=audit').catch(() => {});
+          fetch('https://region1.analytics.google.com/g/collect?a=audit').catch(() => {});
+          fetch('https://www.googletagmanager.com/g/collect?a=audit').catch(() => {});
+          for (const src of [
+            'https://www.google-analytics.com/g/collect?a=audit-pixel',
+            'https://www.googletagmanager.com/a?id=audit-pixel',
+          ]) { const img = new Image(); img.src = src; }
+        `,
+      });
     });
     await context.route('**://*.google-analytics.com/**', route => {
-      gaAttempts.push(route.request().url());
-      route.abort();
+      const request = route.request();
+      gaAttempts.push({ url: request.url(), type: request.resourceType() });
+      route.fulfill({ status: 204, body: '' });
+    });
+    await context.route('**://*.analytics.google.com/**', route => {
+      const request = route.request();
+      gaAttempts.push({ url: request.url(), type: request.resourceType() });
+      route.fulfill({ status: 204, body: '' });
     });
     await context.route(`${FAKE_ORIGIN}/**`, async route => {
       const url = new URL(route.request().url());
@@ -1121,24 +1144,51 @@ async function main() {
       if (msg.type() === 'error' && /content security policy/i.test(msg.text())) cspViolations.push(msg.text());
     });
 
-    await page.goto(`${FAKE_ORIGIN}/`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
-    if (gaAttempts.length > 0) {
-      ok('GA4 is attempted on / when this is genuinely the canonical host (intercepted, never reached Google)');
+    const marketingProblems = [];
+    for (const path of ['/', '/privacy']) {
+      gaAttempts.length = 0;
+      cspViolations.length = 0;
+      await page.goto(`${FAKE_ORIGIN}${path}`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(800);
+      const attempted = new Set(gaAttempts.map(({ url, type }) => `${new URL(url).hostname}:${type}`));
+      const required = [
+        'www.googletagmanager.com:script',
+        'www.googletagmanager.com:fetch',
+        'www.googletagmanager.com:image',
+        'www.google-analytics.com:fetch',
+        'www.google-analytics.com:image',
+        'region1.analytics.google.com:fetch',
+      ];
+      const missing = required.filter(value => !attempted.has(value));
+      if (missing.length > 0 || cspViolations.length > 0) {
+        marketingProblems.push({ path, missing, violations: [...cspViolations] });
+      }
+    }
+    if (marketingProblems.length === 0) {
+      ok('GA4 loader, connection and pixel requests are permitted on / and /privacy at the canonical host (all intercepted; none reached Google)');
     } else {
-      fail('GA4 is attempted on / when this is genuinely the canonical host -- expected a request to googletagmanager.com, got none');
+      fail(`GA4 marketing-route CSP verification failed: ${JSON.stringify(marketingProblems)}`);
     }
 
-    gaAttempts.length = 0;
-    cspViolations.length = 0;
-    await page.goto(`${FAKE_ORIGIN}/status?request=audit-fake-request-id`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(800);
-    if (gaAttempts.length === 0 && cspViolations.length === 0) {
-      ok('GA4 never even attempts to load on /status, even with the hostname spoofed to canonical and a request id in the URL -- not blocked by CSP, never tried');
+    const sensitivePaths = [
+      '/status?request=audit-fake-request-id', '/confirmation?quoteId=audit-fake-quote-id', '/inquiry',
+      '/owner', '/owner/quotes', '/owner/outbox', '/owner/inquiries', '/owner/site-copy', '/owner/social-proof',
+      '/api/catalog', '/api/health', '/api/inquiries', '/api/requests/audit-fake-request-id', '/api/owner/outbox',
+    ];
+    const leaked = [];
+    for (const path of sensitivePaths) {
+      gaAttempts.length = 0;
+      cspViolations.length = 0;
+      await page.goto(`${FAKE_ORIGIN}${path}`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(100);
+      if (gaAttempts.length > 0 || cspViolations.length > 0) leaked.push({ path, attempts: [...gaAttempts], violations: [...cspViolations] });
+    }
+    if (leaked.length === 0) {
+      ok('GA4 never attempts to load on sensitive, owner, customer or API routes at the canonical host -- not blocked by CSP, never tried');
     } else {
       fail(
-        `GA4's frontend gate tried to run on /status -- attempts: ${JSON.stringify(gaAttempts)}, ` +
-          `CSP violations: ${JSON.stringify(cspViolations)}. Blocked by CSP is not the same as never having tried.`,
+        `GA4's frontend gate tried to run outside / and /privacy: ${JSON.stringify(leaked)}. ` +
+          'Blocked by CSP is not the same as never having tried.',
       );
     }
 

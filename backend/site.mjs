@@ -129,8 +129,10 @@ export const ANALYTICS_PATHS = new Set(['/', '/privacy'])
  * for localhost.
  *
  * The one exception is GA4, and only on `ANALYTICS_PATHS`: `script-src`
- * gains `googletagmanager.com` and `connect-src` gains `google-analytics.com`
- * there, and nowhere else. Widening the policy is a real security cost --
+ * gains the tag loader, while `connect-src` and `img-src` gain only GA4's
+ * collection hosts. `*.google-analytics.com` deliberately does not grant
+ * `google-analytics.com` itself under CSP wildcard semantics; GA4 collects
+ * through subdomains such as `www`. Widening the policy is a real security cost --
  * a compromise at Google's CDN could then run script on that page -- so it
  * is paid on the two pages that need it and never on the ones holding a
  * customer's own data.
@@ -142,9 +144,11 @@ export function securityHeaders({ secure, release = '', serviceAreaOn, pathname 
       "default-src 'self'",
       analytics ? "script-src 'self' https://www.googletagmanager.com" : "script-src 'self'",
       "style-src 'self'",
-      "img-src 'self' data:",
+      analytics ? "img-src 'self' data: https://*.google-analytics.com https://www.googletagmanager.com" : "img-src 'self' data:",
       "font-src 'self'",
-      analytics ? "connect-src 'self' https://*.google-analytics.com" : "connect-src 'self'",
+      analytics
+        ? "connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com"
+        : "connect-src 'self'",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
