@@ -339,7 +339,7 @@ test('a storage key cannot be durably rebound to another hash, and the second ro
 
 test('canonical IP parsing rejects private, loopback, link-local, ULA, mapped, and reserved literals', () => {
   const ipv4 = ['0.0.0.0', '10.1.2.3', '100.64.0.1', '127.0.0.1', '169.254.1.1', '172.16.0.1', '192.0.0.1', '192.0.2.1', '192.168.1.1', '198.18.0.1', '198.51.100.1', '203.0.113.1', '224.0.0.1', '255.255.255.255']
-  const ipv6 = ['::', '::1', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'ff02::1', '2001:db8::1', '::ffff:10.0.0.1', '::ffff:192.168.1.1', '::ffff:127.0.0.1', '::ffff:169.254.1.1']
+  const ipv6 = ['::', '::1', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'ff02::1', '2001:db8::1', '::ffff:10.0.0.1', '::ffff:192.168.1.1', '::ffff:127.0.0.1', '::ffff:169.254.1.1', '64:ff9b::7f00:1', '64:ff9b::a00:1', '64:ff9b:1::a00:1', '2002:7f00:1::', '2001::ffff:7f00:1']
   for (const address of ipv4) {
     assert.throws(() => assertAllowedImageUrl(`https://${address}./image.webp`, [address]), /private|local|allowlisted/, address)
     assert.throws(() => assertSafeResolvedAddress(address), /private|local|link-local|non-public/, address)
@@ -349,6 +349,16 @@ test('canonical IP parsing rejects private, loopback, link-local, ULA, mapped, a
     assert.throws(() => assertSafeResolvedAddress(address), /private|local|link-local|non-public/, address)
   }
   assert.equal(assertAllowedImageUrl('https://[::ffff:93.184.216.34]/image.webp', ['::ffff:5db8:d822']), 'https://[::ffff:5db8:d822]/image.webp')
+})
+
+test('safe transport rejects IPv4-translation and tunneling addresses before connect', async () => {
+  for (const address of ['64:ff9b::7f00:1', '64:ff9b::a00:1', '64:ff9b:1::a00:1', '2002:7f00:1::', '2001::ffff:7f00:1']) {
+    const safe = createSafeImageFetcher({ fetch: async (url, options) => {
+      options.onConnect({ url, address })
+      return fakeImageResponse(new Uint8Array([1, 2, 3, 4]))
+    } }, { allowedHosts: ['cdn.example.test'] })
+    await assert.rejects(() => safe(IMAGE_URL), /address refused/, address)
+  }
 })
 
 test('safe transport blocks an allowed-to-forbidden redirect before a forbidden connection', async () => {
@@ -512,4 +522,27 @@ test('image schema upgrades a hand-built pre-revision table without losing rows'
   assert.equal(columns.includes('candidate_revision'), true)
   assert.equal(inventory.db.prepare('SELECT count(*) AS n FROM image_assets').get().n, 1)
   assert.equal(inventory.db.prepare('SELECT usage_status FROM image_assets').get().usage_status, 'candidate')
+})
+
+test('reconciliation retires removed source URLs and never fetches them again', async t => {
+  const { inventory, folder } = inventoryFixture()
+  t.after(() => { try { inventory.close() } catch { /* already closed */ } rmSync(folder, { recursive: true, force: true }) })
+  const oldUrl = 'https://cdn.example.test/old.webp'
+  const newUrl = 'https://cdn.example.test/new.webp'
+  reconcileImageCandidates(inventory, [tire({ imageUrls: [oldUrl] })], { allowedHosts: ALLOWED_HOSTS, at: 'r1' })
+  reconcileImageCandidates(inventory, [tire({ imageUrls: [newUrl], source: { ...tire().source, fetchedAt: 'r2' } })], { allowedHosts: ALLOWED_HOSTS, at: 'r2' })
+  const repository = createImageAssetRepository(inventory)
+  const rows = repository.list()
+  assert.equal(rows.find(row => row.originalUrl === oldUrl).sourceCurrent, false)
+  assert.equal(rows.find(row => row.originalUrl === newUrl).sourceCurrent, true)
+  const fetched = []
+  const storage = fakeStorage()
+  const result = await mirrorRemoteImages(rows, {
+    dryRun: false, delayMs: 0, allowedHosts: ['cdn.example.test'],
+    fetcher: trustedFetcher(async url => { fetched.push(url); return fakeImageResponse(new Uint8Array([1, 2, 3, 4]), 'image/webp', 200, newUrl) }),
+    inspectImage: () => ({ width: 2, height: 2, format: 'webp' }), storage, repository,
+  })
+  assert.deepEqual(fetched, [newUrl])
+  assert.equal(result.stored, 1)
+  assert.equal(repository.list().find(row => row.originalUrl === oldUrl).storageKey, null)
 })

@@ -16,9 +16,15 @@ like the same asset. A no-image sentinel records the negative result too.
 
 The table holds the future asset record: original URL, storage key and URL,
 SHA-256, byte count, width, height, format, fetched/stored timestamps,
-provenance, usage status, and failure state/message. Reconciliation updates
-source metadata only; it never clears storage fields or replaces an approved
-asset.
+provenance, usage status, failure state/message, and whether the source URL is
+current. Reconciliation updates source metadata and currentness only; it never
+clears storage fields or replaces an approved asset.
+
+Each row also carries a `source_current` marker. Reconciliation clears it
+atomically for absent, unapproved URLs belonging to the supplier snapshot and
+sets it for URLs present in the new snapshot. Selection, failure recording, and
+storage commits require a current row; approved rows and their stored metadata
+are preserved.
 
 ## Future provider wiring
 

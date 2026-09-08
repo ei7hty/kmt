@@ -44,6 +44,7 @@ export function ensureImageAssetSchema(inventoryOrDb) {
       product_url TEXT,
       identity_key TEXT NOT NULL,
       candidate_revision TEXT NOT NULL DEFAULT '',
+      source_current INTEGER NOT NULL DEFAULT 1 CHECK(source_current IN (0, 1)),
       remote_image_url TEXT,
       remote_image_present INTEGER NOT NULL DEFAULT 0 CHECK(remote_image_present IN (0, 1)),
       source_metadata_present INTEGER NOT NULL DEFAULT 0 CHECK(source_metadata_present IN (0, 1)),
@@ -76,6 +77,7 @@ export function ensureImageAssetSchema(inventoryOrDb) {
   `)
   const columns = new Set(db.prepare('PRAGMA table_info(image_assets)').all().map(row => row.name))
   if (!columns.has('candidate_revision')) db.exec("ALTER TABLE image_assets ADD COLUMN candidate_revision TEXT NOT NULL DEFAULT ''")
+  if (!columns.has('source_current')) db.exec("ALTER TABLE image_assets ADD COLUMN source_current INTEGER NOT NULL DEFAULT 1 CHECK(source_current IN (0, 1))")
   return db
 }
 
@@ -106,6 +108,10 @@ function isPrivateHost(hostname) {
   const mapped = bytes.slice(0, 12).every((byte, index) => index < 10 ? byte === 0 : byte === 0xff)
   if (mapped) return isPrivateHost(bytes.slice(12).join('.'))
   if (first === 0 && bytes.slice(0, 12).every(byte => byte === 0) ||
+      first === 0x00 && second === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b ||
+      first === 0x00 && second === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b && bytes[4] === 0x00 && bytes[5] === 0x01 ||
+      first === 0x20 && second === 0x02 ||
+      first === 0x20 && second === 0x01 && bytes[2] === 0x00 && bytes[3] === 0x00 ||
       first >= 0xfc && first <= 0xff || first === 0xfe && (second & 0xc0) === 0x80 ||
       first === 0x20 && second === 0x01 && bytes[2] === 0x0d && bytes[3] === 0xb8) return true
   return false
@@ -195,24 +201,28 @@ export function reconcileImageCandidates(inventoryOrDb, tires, { at = now(), all
 
   const upsert = db.prepare(`
     INSERT INTO image_assets (
-      supplier_id, supplier_sku, product_url, identity_key, candidate_revision, remote_image_url,
+      supplier_id, supplier_sku, product_url, identity_key, candidate_revision, source_current, remote_image_url,
       remote_image_present, source_metadata_present, provenance, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(supplier_id, identity_key) DO UPDATE SET
       supplier_sku=excluded.supplier_sku,
       product_url=excluded.product_url,
       candidate_revision=excluded.candidate_revision,
+      source_current=1,
       remote_image_url=excluded.remote_image_url,
       remote_image_present=excluded.remote_image_present,
       source_metadata_present=excluded.source_metadata_present,
       updated_at=excluded.updated_at
   `)
   const write = () => {
+    for (const supplierId of new Set(rows.map(row => row.supplierId))) {
+      db.prepare("UPDATE image_assets SET source_current=0, updated_at=? WHERE supplier_id=? AND usage_status <> 'approved'").run(at, supplierId)
+    }
     for (const row of rows) {
       for (const remoteImageUrl of row.remoteUrls) {
         const identityKey = remoteImageUrl ?? '__no-remote-image__'
         upsert.run(
-          row.supplierId, row.supplierSku, row.productUrl, identityKey, row.candidateRevision, remoteImageUrl,
+          row.supplierId, row.supplierSku, row.productUrl, identityKey, row.candidateRevision, 1, remoteImageUrl,
           Number(Boolean(remoteImageUrl)), Number(row.sourceMetadataPresent),
           IMAGE_ASSET_PROVENANCE, at, at,
         )
@@ -231,6 +241,7 @@ function candidateFromRow(row) {
     supplierSku: row.supplier_sku,
     productUrl: row.product_url,
     candidateRevision: row.candidate_revision,
+    sourceCurrent: Boolean(row.source_current),
     originalUrl: row.remote_image_url,
     remoteImagePresent: Boolean(row.remote_image_present),
     sourceMetadataPresent: Boolean(row.source_metadata_present),
@@ -272,13 +283,13 @@ export function createImageAssetRepository(inventoryOrDb) {
           typeof expected.originalUrl !== 'string' || typeof expected.revision !== 'string') return { status: 'stale-conflict' }
       db.exec('BEGIN IMMEDIATE')
       try {
-        const target = db.prepare('SELECT usage_status, supplier_id, supplier_sku, remote_image_url, candidate_revision FROM image_assets WHERE id=?').get(id)
+        const target = db.prepare('SELECT usage_status, source_current, supplier_id, supplier_sku, remote_image_url, candidate_revision FROM image_assets WHERE id=?').get(id)
         if (!target) throw new Error(`Image asset ${id} was not found`)
         if (target.usage_status === 'approved') {
           db.exec('COMMIT')
           return { status: 'approved-conflict' }
         }
-        if (target.supplier_id !== expected.supplierId || target.supplier_sku !== expected.supplierSku ||
+        if (!target.source_current || target.supplier_id !== expected.supplierId || target.supplier_sku !== expected.supplierSku ||
             target.remote_image_url !== expected.originalUrl || target.candidate_revision !== expected.revision) {
           db.exec('COMMIT')
           return { status: 'stale-conflict' }
@@ -292,7 +303,7 @@ export function createImageAssetRepository(inventoryOrDb) {
         const changed = db.prepare(`UPDATE image_assets SET
           storage_key=?, storage_url=?, sha256=?, bytes=?, width=?, height=?, format=?,
           fetched_at=?, stored_at=?, provenance=?, usage_status=?, failure_state=NULL,
-          failure_message=NULL, updated_at=? WHERE id=? AND usage_status <> 'approved' AND supplier_id=? AND supplier_sku=? AND remote_image_url=? AND candidate_revision=?`).run(
+          failure_message=NULL, updated_at=? WHERE id=? AND usage_status <> 'approved' AND source_current=1 AND supplier_id=? AND supplier_sku=? AND remote_image_url=? AND candidate_revision=?`).run(
           asset.storageKey, storageUrl, asset.sha256, asset.bytes, asset.width, asset.height,
           asset.format, asset.fetchedAt ?? null, storedAt, asset.provenance ?? IMAGE_ASSET_PROVENANCE,
           asset.usageStatus ?? 'candidate', storedAt, id, expected.supplierId, expected.supplierSku, expected.originalUrl, expected.revision,
@@ -312,7 +323,7 @@ export function createImageAssetRepository(inventoryOrDb) {
       const hasIdentity = typeof expected.supplierId === 'string' && typeof expected.supplierSku === 'string' &&
         typeof expected.originalUrl === 'string' && typeof expected.revision === 'string'
       const where = hasIdentity
-        ? 'AND supplier_id=? AND supplier_sku=? AND remote_image_url=? AND candidate_revision=?'
+        ? 'AND source_current=1 AND supplier_id=? AND supplier_sku=? AND remote_image_url=? AND candidate_revision=?'
         : typeof expected.originalUrl === 'string' && typeof expected.revision === 'string'
           ? 'AND remote_image_url=? AND candidate_revision=?' : ''
       const args = [failure.state, failure.message ?? null, failure.at ?? now(), id]

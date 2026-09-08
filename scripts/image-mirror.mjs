@@ -165,7 +165,7 @@ function selectedCandidates(records) {
   if (!Array.isArray(records)) throw new TypeError('Image mirroring requires an array of records')
   return records.filter(record =>
     record && record.remoteImagePresent === true && typeof record.originalUrl === 'string' &&
-    record.originalUrl && record.usageStatus === 'candidate')
+    record.originalUrl && record.usageStatus === 'candidate' && record.sourceCurrent !== false)
 }
 
 function finalUrl(response) {
