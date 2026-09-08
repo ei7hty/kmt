@@ -106,6 +106,8 @@ test('every template names its personal fields the way the outbox redacts them, 
   assert.match(rendered.text, /T × 4 @ \$50\.00 = \$200\.00/)
   assert.match(rendered.text, /https:\/\/x\/status\?request=r1/)
   assert.doesNotMatch(rendered.html, /<script/)
+  assert.doesNotMatch(JSON.stringify(data), /shipping/i, 'internal freight never enters stored customer-mail data')
+  assert.doesNotMatch(`${rendered.text}\n${rendered.html}`, /shipping/i, 'customer email shows only the final tire price')
 })
 
 test('a taxed quote-sent email names the tax, not just the final total (owner-agent scrutiny finding 2)', () => {

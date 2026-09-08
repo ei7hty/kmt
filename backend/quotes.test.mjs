@@ -79,6 +79,37 @@ test('a submit stores the request and its quote, priced exactly as the frontend 
   assert.equal(found.quote.total, quote.total)
 })
 
+test('global and individual shipping affect the tire price without leaking into customer quote shapes', t => {
+  const { inventory, quotes } = setup(t)
+  inventory.saveMarkup({ rate: 2, shippingPerTire: 30 })
+  inventory.saveOffer('giga-a', {
+    priceCents: null, shippingCents: 500, enabled: true, notes: '', version: 0,
+  })
+
+  const selection = { tireSelection: 'giga-a', quantity: 4, serviceZip: '02149' }
+  const catalog = quotes.catalog()
+  assert.equal(catalog.find(item => item.id === 'giga-a').price, 105, '(supplier $50 × 2 markup) + $5 individual shipping')
+  assert.doesNotMatch(JSON.stringify(catalog), /shipping/i, 'the public catalog exposes only the final tire price')
+
+  const preview = quotes.preview(selection)
+  const submitted = quotes.submit(form(selection))
+  assert.equal(preview.lineItems[0].unitPrice, 105)
+  assert.deepEqual(
+    preview.lineItems.map(({ description, quantity, unitPrice }) => ({ description, quantity, unitPrice })),
+    submitted.quote.lineItems,
+    'the preview and stored quote use the same catalog price',
+  )
+  assert.doesNotMatch(JSON.stringify(preview), /shipping/i)
+  assert.doesNotMatch(JSON.stringify(quotes.get(submitted.request.id)), /shipping/i,
+    'the status/customer response does not disclose internal shipping')
+
+  const ownerPrice = inventory.saveOffer('giga-a', {
+    priceCents: 9900, shippingCents: 500, enabled: true, notes: '', version: 1,
+  })
+  assert.equal(ownerPrice.priceCents, 9900)
+  assert.equal(quotes.catalog().find(tire => tire.id === 'giga-a').price, 99, 'an explicit owner price still wins outright')
+})
+
 test('submit reads the owner\'s catalogue, not a constant, and the customer sees subtotal but not the raw tax gate', async t => {
   const { inventory, quotes } = setup(t)
   // Post-stage-2, the fee's source of truth is the catalogue, seeded once at

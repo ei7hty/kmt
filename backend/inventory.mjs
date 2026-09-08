@@ -59,10 +59,11 @@ export class Inventory {
       );
       CREATE INDEX IF NOT EXISTS supplier_size ON supplier(size);
       CREATE TABLE IF NOT EXISTS offers (
-        id TEXT PRIMARY KEY REFERENCES supplier(id), price_cents INTEGER,
+        id TEXT PRIMARY KEY REFERENCES supplier(id), price_cents INTEGER, shipping_cents INTEGER,
         enabled INTEGER NOT NULL DEFAULT 0, notes TEXT NOT NULL DEFAULT '',
         version INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL,
-        CHECK(price_cents IS NULL OR price_cents > 0)
+        CHECK(price_cents IS NULL OR price_cents > 0),
+        CHECK(shipping_cents IS NULL OR shipping_cents >= 0)
       );
       CREATE TABLE IF NOT EXISTS coverage (
         size TEXT PRIMARY KEY, last_success TEXT, completeness TEXT NOT NULL,
@@ -70,6 +71,8 @@ export class Inventory {
       );
       CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `)
+    const offerColumns = this.db.prepare('PRAGMA table_info(offers)').all().map(column => column.name)
+    if (!offerColumns.includes('shipping_cents')) this.db.exec('ALTER TABLE offers ADD COLUMN shipping_cents INTEGER')
     this.seedCatalogueLines()
   }
 
@@ -101,8 +104,8 @@ export class Inventory {
    * decided, so the customer catalog can mark those prices provisional
    * instead of presenting a default as a decision that was made. It is the OR
    * of two per-field flags (`rateIsPlaceholder`, `shippingPerTireIsPlaceholder`)
-   * rather than one flag for the whole object: `retailPrice` folds shipping
-   * into the rate's own multiplication, so a proposed price is only as
+   * rather than one flag for the whole object: `retailPrice` combines shipping
+   * with the marked-up supplier price, so a proposed price is only as
    * decided as its least-decided input (#finding-3, the scrutiny agent's
    * third pass -- a save of one field used to silently ratify the other,
    * whichever it happened to be sitting at).
@@ -545,12 +548,12 @@ export class Inventory {
     const total = this.db.prepare(`SELECT count(*) AS n ${from}`).get(...args).n
     const pageSize = 24
     const currentPage = Math.max(1, Math.min(Math.floor(Number(page)) || 1, Math.max(1, Math.ceil(total / pageSize))))
-    const rows = this.db.prepare(`SELECT s.*, o.price_cents, o.enabled, o.notes, o.version ${from}
+    const rows = this.db.prepare(`SELECT s.*, o.price_cents, o.shipping_cents, o.enabled, o.notes, o.version ${from}
       ORDER BY s.size, json_extract(s.payload,'$.name'), s.id LIMIT ? OFFSET ?`)
       .all(...args, pageSize, (currentPage - 1) * pageSize)
     return { items: rows.map(row => ({
       ...JSON.parse(row.payload), lastSeen: row.last_seen, supplierActive: !!row.active,
-      offer: { priceCents: row.price_cents ?? null, enabled: !!row.enabled,
+      offer: { priceCents: row.price_cents ?? null, shippingCents: row.shipping_cents ?? null, enabled: !!row.enabled,
         notes: row.notes ?? '', version: row.version ?? 0 },
     })), total, page: currentPage, pageSize }
   }
@@ -559,18 +562,20 @@ export class Inventory {
     if (typeof input.enabled !== 'boolean' || !Number.isInteger(input.version) || input.version < 0 ||
         typeof input.notes !== 'string' || input.notes.length > 2000 ||
         (input.priceCents !== null && (!Number.isInteger(input.priceCents) || input.priceCents <= 0 || input.priceCents > 10000000)) ||
-        (input.enabled && input.priceCents === null)) {
-      throw new InputError('Enter a positive KMT price before offering a tire; use at most two decimal places.')
+        (input.shippingCents !== undefined && input.shippingCents !== null &&
+          (!Number.isInteger(input.shippingCents) || input.shippingCents < 0 || input.shippingCents > 20000))) {
+      throw new InputError('Enter a positive KMT price and a shipping override from $0 to $200; use at most two decimal places.')
     }
     return this.transaction(() => {
       if (!this.db.prepare('SELECT id FROM supplier WHERE id=?').get(id)) throw new InputError('Tire not found', 404)
-      const current = this.db.prepare('SELECT version FROM offers WHERE id=?').get(id)
+      const current = this.db.prepare('SELECT version, shipping_cents FROM offers WHERE id=?').get(id)
       if ((current?.version ?? 0) !== input.version) throw new InputError('This offer changed in another window. Reload inventory before saving.', 409)
-      this.db.prepare(`INSERT INTO offers VALUES (?, ?, ?, ?, ?, ?)
+      const shippingCents = input.shippingCents === undefined ? (current?.shipping_cents ?? null) : input.shippingCents
+      this.db.prepare(`INSERT INTO offers (id, price_cents, shipping_cents, enabled, notes, version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET price_cents=excluded.price_cents, enabled=excluded.enabled,
-          notes=excluded.notes, version=excluded.version, updated_at=excluded.updated_at`)
-        .run(id, input.priceCents, Number(input.enabled), input.notes, input.version + 1, now())
-      return { ...input, version: input.version + 1 }
+          shipping_cents=excluded.shipping_cents, notes=excluded.notes, version=excluded.version, updated_at=excluded.updated_at`)
+        .run(id, input.priceCents, shippingCents, Number(input.enabled), input.notes, input.version + 1, now())
+      return { ...input, shippingCents, version: input.version + 1 }
     })
   }
 
@@ -683,7 +688,7 @@ export class Inventory {
         json_extract(s.payload,'$.inStock') AS inStock,
         json_extract(s.payload,'$.category') AS category,
         json_extract(s.payload,'$.description') AS description,
-        s.active, o.id AS offer_id, o.price_cents, o.enabled
+        s.active, o.id AS offer_id, o.price_cents, o.shipping_cents, o.enabled
       FROM supplier s LEFT JOIN offers o ON o.id=s.id
       ${where}
       ORDER BY s.size, name, s.id`).all(...args)
@@ -698,7 +703,9 @@ export class Inventory {
         : { priceCents: row.price_cents ?? null, enabled: !!row.enabled }
 
       const { price, offered } = quotedPrice({
-        supplierPrice: row.price, offer, tire: row, settings,
+        supplierPrice: row.price, offer,
+        tire: { ...row, shippingPerTire: row.shipping_cents === null || row.shipping_cents === undefined ? undefined : row.shipping_cents / 100 },
+        settings,
       })
       if (price === null || !offered) continue
 

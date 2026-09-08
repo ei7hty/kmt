@@ -6,6 +6,7 @@ import { signOut } from './session.js'
 import { PrivacyFooter } from '../routes/Privacy.jsx'
 import MailAlert from '../components/MailAlert.jsx'
 import { InquiryNavButton } from './Inquiries.jsx'
+import { retailPrice } from '../markup.js'
 
 const dollars = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const dateLabel = value => value ? new Date(value).toLocaleString() : 'Never refreshed'
@@ -156,7 +157,7 @@ function MarkupRule({ markup, onSaved }) {
   return <section className="oi-refresh" aria-label="Markup rule">
     <div>
       <h2>Default markup</h2>
-      <p>Tires you have not priced are offered at the supplier price plus shipping, times this number. Any price you set below wins over it.</p>
+      <p>Tires you have not priced are offered at the supplier price times this number, plus shipping. Any price you set below wins over it.</p>
       <p className="oi-muted">
         {markup.isPlaceholder
           ? 'Still the starting values — nobody has set these yet, so those prices are provisional.'
@@ -164,7 +165,7 @@ function MarkupRule({ markup, onSaved }) {
       </p>
     </div>
     <form className="oi-refresh-actions" onSubmit={save}>
-      <label htmlFor="markup-rate" className="oi-kicker">× (SUPPLIER PRICE + SHIPPING)</label>
+      <label htmlFor="markup-rate" className="oi-kicker">SUPPLIER PRICE × MARKUP, THEN + SHIPPING</label>
       <input id="markup-rate" value={rate} onChange={e => setRate(e.target.value)} inputMode="decimal" disabled={saving} />
       <label htmlFor="markup-shipping" className="oi-kicker">SHIPPING PER TIRE ($)</label>
       <input id="markup-shipping" value={shippingPerTire} onChange={e => setShippingPerTire(e.target.value)} inputMode="decimal" disabled={saving} />
@@ -390,6 +391,7 @@ function BrandOffers({ brands, onChanged }) {
 
 function TireOffer({ tire, markup, onSaved }) {
   const [price, setPrice] = useState(tire.offer.priceCents == null ? '' : (tire.offer.priceCents / 100).toFixed(2))
+  const [shipping, setShipping] = useState(tire.offer.shippingCents == null ? '' : (tire.offer.shippingCents / 100).toFixed(2))
   const [enabled, setEnabled] = useState(tire.offer.enabled)
   const [notes, setNotes] = useState(tire.offer.notes)
   const [saving, setSaving] = useState(false)
@@ -398,20 +400,27 @@ function TireOffer({ tire, markup, onSaved }) {
   const stockLabel = !tire.supplierActive ? 'No longer listed' : stock == null ? 'Stock unconfirmed' : !tire.inStock || stock === 0 ? 'Out of stock' : `${stock.toLocaleString()} in stock`
   const isAvailable = tire.supplierActive && tire.inStock && stock > 0
   const parsedPrice = /^\d+(\.\d{1,2})?$/.test(price) ? Math.round(Number(price) * 100) : null
+  const parsedShipping = shipping === '' ? null : /^\d+(\.\d{1,2})?$/.test(shipping) ? Math.round(Number(shipping) * 100) : NaN
   const spread = parsedPrice == null ? null : parsedPrice - Math.round(tire.price * 100)
   // What this tire costs a customer today if the owner never touches it.
-  const suggestedCents = markup?.rate ? Math.round(tire.price * markup.rate * 100) : null
+  const suggestedPrice = markup?.rate ? retailPrice(tire.price, {
+    shippingPerTire: parsedShipping === null ? undefined : parsedShipping / 100,
+  }, markup) : null
+  const suggestedCents = suggestedPrice === null ? null : Math.round(suggestedPrice * 100)
 
   async function save(event) {
     event.preventDefault()
     setError('')
-    if ((price !== '' && (parsedPrice == null || parsedPrice <= 0)) || (enabled && parsedPrice == null)) {
+    if (price !== '' && (parsedPrice == null || parsedPrice <= 0)) {
       setError('Enter a positive KMT price with up to two decimal places.'); return
+    }
+    if (Number.isNaN(parsedShipping) || parsedShipping < 0 || parsedShipping > 20000) {
+      setError('Enter a shipping override from $0 to $200, or leave it blank to use the default.'); return
     }
     setSaving(true)
     try {
       const offer = await api(`offers/${encodeURIComponent(tire.id)}`, {
-        method: 'PUT', body: JSON.stringify({ priceCents: parsedPrice, enabled, notes, version: tire.offer.version }),
+        method: 'PUT', body: JSON.stringify({ priceCents: parsedPrice, shippingCents: parsedShipping, enabled, notes, version: tire.offer.version }),
       })
       onSaved(tire.id, offer)
     } catch (err) { setError(err.message) }
@@ -444,6 +453,8 @@ function TireOffer({ tire, markup, onSaved }) {
         <input id={`price-${tire.id}`} value={price} onChange={e => setPrice(e.target.value)} inputMode="decimal" placeholder="Set your price" disabled={saving} /></div>
       </div>
       <p className={spread != null && spread < 0 ? 'oi-attention oi-spread' : 'oi-spread'}>{spread == null ? 'Set independently from Giga’s price.' : `${dollars(spread)} ${spread < 0 ? 'below' : 'above'} Giga’s listed price`.replace('-$', '$')}</p>
+      <label htmlFor={`shipping-${tire.id}`}>Shipping override per tire ($)</label>
+      <input id={`shipping-${tire.id}`} value={shipping} onChange={e => setShipping(e.target.value)} inputMode="decimal" placeholder={`Default $${Number(markup?.shippingPerTire ?? 0).toFixed(2)}`} disabled={saving} />
       {suggestedCents != null && tire.offer.priceCents == null && <p className="oi-spread oi-muted">
         Markup offers this at {dollars(suggestedCents)} until you set a price.
         <button type="button" className="oi-button oi-inline" onClick={() => setPrice((suggestedCents / 100).toFixed(2))} disabled={saving}>Use {dollars(suggestedCents)}</button>
@@ -537,7 +548,7 @@ export default function OwnerInventory({ navigate }) {
   function markupSaved(markup) {
     invalidate()
     setData(previous => ({ ...previous, summary: { ...previous.summary, markup } }))
-    setNotice(`Default markup saved. Tires you have not priced are now offered at ${markup.rate}× (supplier price + $${markup.shippingPerTire} shipping).`)
+    setNotice(`Default markup saved. Tires you have not priced are now offered at supplier price × ${markup.rate}, plus $${markup.shippingPerTire} shipping.`)
   }
 
   function pricingSaved(pricing) {

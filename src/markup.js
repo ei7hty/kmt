@@ -48,11 +48,10 @@
  */
 export const DEFAULT_MARKUP_SETTINGS = {
   rate: 1.35,
-  // What Ken pays a supplier to get one tire to Malden, per tire, folded into
-  // the landed cost before the rate multiplies it (pricing-settings.md,
-  // "Shipping"): markup applies to what the tire actually cost him to have in
-  // hand, not to the supplier's sticker price with freight passed through at
-  // cost. Zero rather than a guessed dollar figure -- unlike the mobile fee,
+  // What Ken pays a supplier to get one tire to Malden, per tire, passed
+  // through after markup under the owner's current ruling. It remains an
+  // internal pricing input: customers see only the resulting tire price.
+  // Zero rather than a guessed dollar figure -- unlike the mobile fee,
   // nothing has ever charged a separate shipping amount before this existed,
   // so an invented number would move live prices on a guess; zero preserves
   // today's pricing until Ken supplies a real one, and `isPlaceholder` still
@@ -93,10 +92,9 @@ export function normalizeMarkupSettings(settings) {
  * change to this function alone, not to any caller. `tire.category` and
  * `tire.size` remain unread; every other rule listed above still needs them.
  *
- * Shipping lands inside the multiplier, not outside it: `(supplierPrice +
- * shipping) × rate`, because markup is on landed cost, not on the supplier's
- * price with freight passed through separately (pricing-settings.md,
- * "The formula, and the one decision inside it").
+ * Shipping is passed through after markup: `(supplierPrice × rate) +
+ * shipping`. It is Ken's internal freight cost, not goods margin, and never
+ * appears as its own customer-facing line or field.
  *
  * Returns null for a price it cannot work from, rather than inventing one: a
  * tire with no usable cost is not something the quoting flow should price.
@@ -105,7 +103,7 @@ export function retailPrice(supplierPrice, tire = {}, settings = DEFAULT_MARKUP_
   if (!isUsableAmount(supplierPrice)) return null
   const normalized = normalizeMarkupSettings(settings)
   const shipping = isUsableShipping(tire?.shippingPerTire) ? tire.shippingPerTire : normalized.shippingPerTire
-  return roundCurrency((supplierPrice + shipping) * normalized.rate)
+  return roundCurrency((supplierPrice * normalized.rate) + shipping)
 }
 
 /**
