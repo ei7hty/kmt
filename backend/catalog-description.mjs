@@ -35,6 +35,26 @@ function withoutAngles(value) {
   return result
 }
 
+function replaceInvalidSurrogates(value) {
+  let result = ''
+  for (let cursor = 0; cursor < value.length; cursor++) {
+    const unit = value.charCodeAt(cursor)
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(cursor + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        result += value[cursor] + value[++cursor]
+      } else {
+        result += '\ufffd'
+      }
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      result += '\ufffd'
+    } else {
+      result += value[cursor]
+    }
+  }
+  return result
+}
+
 /**
  * Turn supplier-authored description fragments into inert, readable text.
  *
@@ -46,9 +66,10 @@ function withoutAngles(value) {
  */
 export function cleanCatalogDescription(input) {
   if (typeof input !== 'string' || input === '') return ''
-  if (!/[<&]/.test(input)) return input
+  const scalarSafe = replaceInvalidSurrogates(input)
+  if (!/[<&]/.test(scalarSafe)) return scalarSafe
 
-  let text = input
+  let text = scalarSafe
   // Supplier feeds can encode a fragment twice. Each parse is inert and its
   // output is parsed again only to turn decoded markup into text-node content.
   for (let pass = 0; pass < 3; pass++) {

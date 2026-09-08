@@ -46,3 +46,10 @@ test('ordinary plain descriptions are returned byte for byte unchanged', () => {
   const description = 'Quiet ride, long tread life · 95H BSW'
   assert.equal(cleanCatalogDescription(description), description)
 })
+
+test('literal UTF-16 rejects every unpaired surrogate and preserves valid pairs', () => {
+  assert.equal(cleanCatalogDescription(`high \ud800 end`), 'high � end')
+  assert.equal(cleanCatalogDescription(`low \udc00 end`), 'low � end')
+  assert.equal(cleanCatalogDescription(`wrong \ud800A end`), 'wrong �A end')
+  assert.equal(cleanCatalogDescription(`pair \ud83d\ude97 end`), 'pair 🚗 end')
+})

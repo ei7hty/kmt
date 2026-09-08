@@ -1460,7 +1460,7 @@ test('the public catalog returns plain descriptions without changing tire identi
   // Simulate a row written before ingress normalization existed. The read
   // boundary must protect customers without a production backfill.
   db.db.prepare("UPDATE supplier SET payload=json_set(payload,'$.description',?) WHERE id=?")
-    .run('score&lt;sup&gt;®&lt;/sup&gt; &amp; touring<script>alert(1)</script>', 'giga-a')
+    .run('score&lt;sup&gt;®&lt;/sup&gt; &amp; touring<script>alert(1)</script> \ud800', 'giga-a')
 
   const catalogApi = createCatalogApi(db)
   const server = createServer(async (request, response) => {
@@ -1477,7 +1477,7 @@ test('the public catalog returns plain descriptions without changing tire identi
   const [row] = JSON.parse(raw).tires
   assert.deepEqual(
     { id: row.id, name: row.name, size: row.size, price: row.price, description: row.description },
-    { id: 'giga-a', name: 'Test Touring', size: SIZE, price: 89.99, description: 'score® & touring' },
+    { id: 'giga-a', name: 'Test Touring', size: SIZE, price: 89.99, description: 'score® & touring �' },
   )
 })
 
