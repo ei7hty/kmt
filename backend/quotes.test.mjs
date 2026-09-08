@@ -93,7 +93,7 @@ test('submit reads the owner\'s catalogue, not a constant, and the customer sees
   ])
 
   const { request, quote } = quotes.submit(form({ disposeOldTires: true }))
-  assert.ok(quote.lineItems.some(line => line.description === 'Mobile installation service' && line.unitPrice === 75))
+  assert.ok(quote.lineItems.some(line => line.description === 'Mobile service fee' && line.unitPrice === 75))
   assert.ok(quote.lineItems.some(line => line.description === 'Old tire disposal' && line.unitPrice === 6))
   const tireLine = quote.lineItems.find(line => line.description === 'Test Touring')
   assert.equal(quote.subtotal, tireLine.quantity * tireLine.unitPrice + 75 + 6 * 4, 'four tires at the catalog (marked-up) price, the configured fee, four tires’ worth of disposal')
@@ -131,7 +131,7 @@ test('a preview is customer-safe, stores nothing, and agrees exactly with the su
   assert.deepEqual(Object.keys(preview).sort(), ['lineItems', 'serviceZip', 'subtotal', 'tax', 'total'])
   assert.ok(preview.lineItems.some(line => line.description === 'Tire installation' && line.unitPrice === 25), 'SKU amount wins over size amount')
   assert.ok(preview.lineItems.some(line => line.description === 'Old tire disposal' && line.quantity === 2))
-  assert.equal(preview.lineItems.find(line => line.description === 'Mobile installation service').serviceZip, '02149')
+  assert.equal(preview.lineItems.find(line => line.description === 'Mobile service fee').serviceZip, '02149')
   assert.deepEqual(Object.keys(preview.tax).sort(), ['amount', 'rate'], 'the internal tax applicability rule is not public')
   for (const leak of ['supplierPrice', 'shipping', 'markup', 'sku', 'stock', 'exceptionReasons']) {
     assert.equal(JSON.stringify(preview).includes(leak), false, `${leak} is not in the preview`)
@@ -139,6 +139,15 @@ test('a preview is customer-safe, stores nothing, and agrees exactly with the su
 
   const submitted = quotes.submit(form({ ...selection }))
   assert.deepEqual(preview.lineItems.map(({ description, quantity, unitPrice }) => ({ description, quantity, unitPrice })), submitted.quote.lineItems)
+  assert.deepEqual(
+    submitted.quote.lineItems.slice(1).map(({ description, quantity }) => ({ description, quantity })),
+    [
+      { description: 'Mobile service fee', quantity: 1 },
+      { description: 'Tire installation', quantity: 2 },
+      { description: 'Old tire disposal', quantity: 2 },
+    ],
+    'preview and submission both distinguish the per-visit fee from per-tire labour',
+  )
   assert.equal(preview.subtotal, submitted.quote.subtotal)
   assert.equal(preview.tax.amount, submitted.quote.tax.amount)
   assert.equal(preview.total, submitted.quote.total)
@@ -168,6 +177,23 @@ test('an owner adjustment changes the current quote and keeps the original draft
   assert.deepEqual(adjusted.quote.draftLineItems, original.quote.lineItems)
   assert.equal(adjusted.quote.draftTotal, original.quote.total)
   assert.equal(adjusted.quote.version, original.quote.version + 1)
+})
+
+test('an owner adjustment cannot erase the requested tire quantity from the owner list', t => {
+  const { quotes } = setup(t)
+  const original = quotes.submit(form({ quantity: 4 }))
+
+  // Replace every current line, including the tire line. The owner card must
+  // not infer quantity from this mutable list: line zero now says one visit.
+  quotes.adjust(original.request.id, {
+    lineItems: [{ description: 'Mobile service fee', quantity: 1, unitPrice: 60 }],
+    version: original.quote.version,
+  })
+
+  const listed = quotes.listForOwner().find(row => row.request.id === original.request.id)
+  assert.equal(listed.quote.lineItems[0].quantity, 1, 'the adjusted current line demonstrates the misleading value')
+  assert.equal(listed.request.quantity, 4, 'the immutable request remains the owner card authority')
+  assert.equal(listed.quote.draftLineItems[0].quantity, 4, 'the original draft remains a fallback for legacy requests')
 })
 
 test('finding 1 (scrutiny pass 3): adjusting a taxed quote recomputes subtotal and tax, not just total', async t => {
@@ -342,13 +368,13 @@ test('the original draft is an owner-only figure: a customer read never carries 
 // A stand-in for the seeded mobile-service catalogue entry (#354 stage 2) --
 // calculateDraftQuote no longer generates this line itself, so a unit test
 // exercising it supplies one explicitly, perJob so it never multiplies.
-const mobileFeeLine = { id: 'mobile-service', label: 'Mobile installation service', amountCents: 4999, basis: 'perJob', mode: 'automatic', taxable: false, enabled: true }
+const mobileFeeLine = { id: 'mobile-service', label: 'Mobile service fee', amountCents: 4999, basis: 'perJob', mode: 'automatic', taxable: false, enabled: true }
 
 test('calculateDraftQuote multiplies the tire line by quantity and leaves the fee alone', () => {
   const catalog = [tire()]
   const quoteOfFour = calculateDraftQuote({ tireSelection: 'giga-a', quantity: 4 }, catalog, undefined, [mobileFeeLine])
-  const tireLine = quoteOfFour.lineItems.find(item => item.description !== 'Mobile installation service')
-  const feeLine = quoteOfFour.lineItems.find(item => item.description === 'Mobile installation service')
+  const tireLine = quoteOfFour.lineItems.find(item => item.description !== 'Mobile service fee')
+  const feeLine = quoteOfFour.lineItems.find(item => item.description === 'Mobile service fee')
   assert.equal(tireLine.quantity, 4)
   assert.equal(tireLine.unitPrice, 50)
   assert.equal(feeLine.quantity, 1)
@@ -363,8 +389,8 @@ test('quantity defaults to 4, an explicit choice is honoured, and the fee never 
   const { inventory, quotes } = setup(t)
 
   const defaulted = quotes.submit(form({ quantity: undefined }))
-  const tireLine = defaulted.quote.lineItems.find(item => item.description !== 'Mobile installation service')
-  const feeLine = defaulted.quote.lineItems.find(item => item.description === 'Mobile installation service')
+  const tireLine = defaulted.quote.lineItems.find(item => item.description !== 'Mobile service fee')
+  const feeLine = defaulted.quote.lineItems.find(item => item.description === 'Mobile service fee')
   assert.equal(tireLine.quantity, 4, 'a request that says nothing about quantity means a full set')
   assert.equal(feeLine.quantity, 1, 'the mobile-service fee is one line regardless of how many tires')
   const expectedDefault = calculateDraftQuote({ ...form({ quantity: 4 }), id: defaulted.request.id }, quotes.catalog(), inventory.getPricingSettings(), inventory.getCatalogueLines(), [])
@@ -372,7 +398,7 @@ test('quantity defaults to 4, an explicit choice is honoured, and the fee never 
   assert.deepEqual(defaulted.quote.lineItems, expectedDefault.lineItems)
 
   const explicit = quotes.submit(form({ quantity: 2 }))
-  const explicitTireLine = explicit.quote.lineItems.find(item => item.description !== 'Mobile installation service')
+  const explicitTireLine = explicit.quote.lineItems.find(item => item.description !== 'Mobile service fee')
   assert.equal(explicitTireLine.quantity, 2)
   const expectedExplicit = calculateDraftQuote({ ...form({ quantity: 2 }), id: explicit.request.id }, quotes.catalog(), inventory.getPricingSettings(), inventory.getCatalogueLines(), [])
   assert.equal(explicit.quote.total, expectedExplicit.total)

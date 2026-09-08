@@ -272,10 +272,12 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
         {!loading && !error && requests.length === 0 ? <div className="panel"><p className="text-secondary">{view === 'open' ? 'No open requests. Go to the customer flow and submit one.' : 'Nothing here right now.'}</p></div> : (
           <div className="owner-list">
             {requests.map(({ request, quote, tire }) => {
-              // The tire line always carries how many, drafted once and never
-              // recomputed here: reading it back is how the owner sees the
-              // same quantity the quote was actually priced for.
-              const tireLine = quote?.lineItems?.find(item => item.description !== 'Mobile installation service')
+              // The request is the immutable authority for how many tires the
+              // customer chose. Current quote lines are owner-editable and may
+              // no longer contain a tire at all after an adjustment. Very old
+              // requests can predate quantity; their untouched original draft
+              // remains the safest fallback, before the mutable current lines.
+              const tireQuantity = request.quantity ?? quote?.draftLineItems?.[0]?.quantity ?? quote?.lineItems?.[0]?.quantity
               return (
               <div key={request.id} id={`request-${request.id}`}
                 className={request.id === linkedId && linkedSearch === 'found' ? 'panel owner-request owner-request-linked' : 'panel owner-request'}>
@@ -285,7 +287,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
                 </div>
                 {request.createdAt && <p className="owner-request-age" title={exactTime(request.createdAt)}>Submitted {timeAgo(request.createdAt)}</p>}
                 <dl className="owner-details">
-                  <div><dt>Tire:</dt> <dd>{tire?.name ? `${tireLine ? `${tireLine.quantity} × ` : ''}${tire.name} · ${tire.size}` : `${tire?.id ?? request.tireSelection} (no longer in the catalog)`}</dd></div>
+                  <div><dt>Tire:</dt> <dd>{tire?.name ? `${tireQuantity ? `${tireQuantity} × ` : ''}${tire.name} · ${tire.size}` : `${tire?.id ?? request.tireSelection} (no longer in the catalog)`}</dd></div>
                   {/* #105: what the supplier last showed for this tire, read off the
                       supplier row rather than the customer catalog, so Ken approves
                       against stock as it was seen, not as the catalog assumes. The
