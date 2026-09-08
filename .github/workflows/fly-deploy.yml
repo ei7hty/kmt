@@ -51,6 +51,8 @@ on:
       - '.forge/*.md'
       - '.forge/roles/**'
       - '.forge/state.json'
+      # Mutable coordination metadata must never evict a pending deploy.
+      - '.forge/release-queue.json'
       - 'docs/**'
       - '*.md'
   pull_request:
@@ -86,6 +88,10 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Validate release metadata and safety contracts
+        run: |
+          node --test .forge/release-check.test.mjs
+          node .forge/release-check.mjs
       # Every backend test file, not one named file: a new suite that CI does not
       # run is a suite that passes locally and guards nothing.
       - run: node --test backend/*.test.mjs
@@ -144,7 +150,7 @@ jobs:
       # against a stale server.
       - name: Audit the built frontend against the real server
         env:
-          AUDIT_BASE: http://localhost:4173
+          AUDIT_BASE: http://127.0.0.1:4173
         run: |
           # node directly, not `npx`: npx spawns the server as a grandchild, so
           # $! would be the wrapper and killing it leaves the port held. That
@@ -167,6 +173,7 @@ jobs:
           KMT_OWNER_PASSWORD=audit-only-password-not-a-secret \
           KMT_OWNER_DB="$db" \
           KMT_SESSION_SECRET="$secret" \
+          KMT_RELEASE="${GITHUB_SHA::7}" \
           PORT=4173 \
           KMT_BIND=127.0.0.1 \
           node backend/server.mjs &
@@ -195,6 +202,11 @@ jobs:
           # fall through to a password path CI will not have once the cutover
           # finishes.
           cookie="$(KMT_OWNER_DB="$db" KMT_SESSION_SECRET="$secret" node scripts/mint-session.mjs --quiet)"
+
+          # GITHUB_SHA is the built synthetic merge candidate on PRs, not the
+          # independently reviewed PR head recorded in the release ledger.
+          node --test .forge/release-browser.test.mjs
+          AUDIT_MODE=candidate AUDIT_EXPECTED_RELEASE="${GITHUB_SHA::7}" node .forge/deployed-site-check.mjs
 
           KMT_OWNER_SESSION_COOKIE="$cookie" node .forge/dead-end-audit.mjs
           KMT_OWNER_SESSION_COOKIE="$cookie" node .forge/request-flow-check.mjs
