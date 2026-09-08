@@ -13,6 +13,12 @@ const REFUSAL_MARKERS = [
 ]
 const DEFAULT_MAX_REDIRECTS = 3
 
+export function redirectBudget(...limits) {
+  const supplied = limits.filter(limit => limit !== undefined)
+  if (supplied.some(limit => !Number.isInteger(limit) || limit < 0 || limit > 10)) throw new TypeError('maxRedirects must be an integer from 0 through 10')
+  return Math.min(...supplied)
+}
+
 export class ImageMirrorError extends Error {
   constructor(message, state = 'mirror-error', { refusal = false } = {}) {
     super(message)
@@ -35,7 +41,7 @@ function statusOf(response) {
   return Number(status)
 }
 
-function refusalText(value) {
+export function refusalText(value) {
   if (typeof value !== 'string') return false
   const lower = value.toLowerCase()
   return REFUSAL_MARKERS.some(marker => lower.includes(marker))
@@ -60,9 +66,10 @@ function oversize(size, maxBytes) {
  */
 export function createSafeImageFetcher(transport, { allowedHosts, allowedPorts = [443], maxRedirects = DEFAULT_MAX_REDIRECTS } = {}) {
   if (!transport || typeof transport.fetch !== 'function') throw new TypeError('A transport with fetch() is required')
+  redirectBudget(maxRedirects)
   const safe = async (url, options = {}) => {
-    const effectiveMaxRedirects = Number.isInteger(options.maxRedirects)
-      ? Math.min(maxRedirects, options.maxRedirects) : maxRedirects
+    const effectiveMaxRedirects = redirectBudget(maxRedirects, options.maxRedirects)
+    let redirects = 0
     const authorizeUrl = nextUrl => {
       try { return assertAllowedImageUrl(nextUrl, allowedHosts, { allowedPorts }) }
       catch (error) { throw new ImageMirrorError(`Image transport destination refused: ${error.message}`, 'provider-refusal', { refusal: true }) }
@@ -71,10 +78,15 @@ export function createSafeImageFetcher(transport, { allowedHosts, allowedPorts =
     return transport.fetch(url, {
       ...options,
       maxRedirects: effectiveMaxRedirects,
-      onRedirect: nextUrl => authorizeUrl(nextUrl),
+      onRedirect: nextUrl => {
+        if (++redirects > effectiveMaxRedirects) throw new ImageMirrorError('Provider redirect limit exceeded', 'provider-refusal', { refusal: true })
+        const allowed = authorizeUrl(nextUrl)
+        options.onRedirect?.(allowed)
+        return allowed
+      },
       onConnect: ({ url: connectedUrl, address }) => {
         authorizeUrl(connectedUrl)
-        try { return assertSafeResolvedAddress(address) }
+        try { assertSafeResolvedAddress(address); return options.onConnect?.({ url: connectedUrl, address }) }
         catch (error) { throw new ImageMirrorError(`Image transport address refused: ${error.message}`, 'provider-refusal', { refusal: true }) }
       },
     })
@@ -93,6 +105,12 @@ function waitWithAbort(value, signal) {
   })
 }
 
+async function boundedCleanup(operation) {
+  let timer
+  try {
+    await Promise.race([Promise.resolve().then(operation).catch(() => {}), new Promise(resolve => { timer = setTimeout(resolve, 250) })])
+  } finally { clearTimeout(timer) }
+}
 async function responseBytes(response, maxBytes, signal) {
   if (response?.bytes !== undefined) {
     const bytes = bytesOf(response.bytes)
@@ -116,13 +134,13 @@ async function responseBytes(response, maxBytes, signal) {
         const bytes = bytesOf(part.value)
         total += bytes.byteLength
         if (total > maxBytes) {
-          await reader.cancel('image exceeds configured byte limit')
+          await boundedCleanup(() => reader.cancel('image exceeds configured byte limit'))
           throw oversize(total, maxBytes)
         }
         chunks.push(bytes)
       }
     } catch (error) {
-      if (signal?.aborted) await reader.cancel('image mirror deadline exceeded').catch(() => {})
+      if (signal?.aborted) await boundedCleanup(() => reader.cancel('image mirror deadline exceeded'))
       throw error
     } finally { reader.releaseLock?.() }
     const result = new Uint8Array(total)
@@ -147,7 +165,8 @@ async function responseBytes(response, maxBytes, signal) {
       }
     } finally {
       if (!completed) {
-        try { void iterator.return?.() } catch { /* best-effort cancellation */ }
+        body.destroy?.()
+        await boundedCleanup(() => iterator.return?.())
       }
     }
     const result = new Uint8Array(total)
@@ -178,6 +197,7 @@ function finalUrl(response) {
 
 function failureFor(error) {
   if (error instanceof ImageMirrorError) return error
+  if (error?.name === 'AbortError') return new ImageMirrorError(error.message, 'timeout')
   return new ImageMirrorError(error?.message || 'Image fetch failed', 'fetch-error')
 }
 
@@ -251,6 +271,7 @@ export async function mirrorRemoteImages(records, {
   allowedPorts = [443],
   maxRedirects = DEFAULT_MAX_REDIRECTS,
   timeoutMs = 30_000,
+  signal,
 } = {}) {
   const candidates = selectedCandidates(records)
   if (dryRun) return { dryRun: true, selected: candidates.map(record => record.id), attempted: 0, stored: 0, deduped: 0, conflicts: 0, stale: 0, failures: [], stoppedOnRefusal: false }
@@ -270,10 +291,15 @@ export async function mirrorRemoteImages(records, {
 
   const result = { dryRun: false, selected: candidates.map(record => record.id), attempted: 0, stored: 0, deduped: 0, conflicts: 0, stale: 0, failures: [], stoppedOnRefusal: false }
   for (const [index, record] of candidates.entries()) {
-    if (index > 0 && delayMs > 0) await sleep(delayMs)
+    if (signal?.aborted) break
+    if (index > 0 && delayMs > 0) await waitWithAbort(sleep(delayMs), signal)
+    if (signal?.aborted) break
     result.attempted++
     const controller = new AbortController()
+    const onAbort = () => controller.abort()
+    signal?.addEventListener('abort', onAbort, { once: true })
     const deadline = setTimeout(() => controller.abort(), timeoutMs)
+    let response
     try {
       let originalUrl
       try { originalUrl = assertAllowedImageUrl(record.originalUrl, allowedHosts, { allowedPorts }) }
@@ -287,7 +313,7 @@ export async function mirrorRemoteImages(records, {
         try { return assertSafeResolvedAddress(address) }
         catch (error) { throw new ImageMirrorError(`Image transport address refused: ${error.message}`, 'provider-refusal', { refusal: true }) }
       }
-      const response = await waitWithAbort(fetcher(originalUrl, {
+      response = await waitWithAbort(fetcher(originalUrl, {
         maxBytes, maxRedirects, signal: controller.signal, onRedirect: authorizeTransportUrl, onConnect: authorizeTransportAddress,
       }), controller.signal)
       const preview = typeof response?.body === 'string' ? response.body : ''
@@ -310,18 +336,24 @@ export async function mirrorRemoteImages(records, {
       if (details.format !== mimeFormat) throw new ImageMirrorError(`MIME ${mediaType} does not match decoded ${details.format}`, 'format-mismatch')
       const sha256 = sha256Bytes(bytes)
       const existing = await waitWithAbort(repository.findByHash(sha256), controller.signal)
-      let stored = existing
-      if (!existing) {
-        const storageKey = imageStorageKey(sha256, details.format)
-        stored = await waitWithAbort(storage.put({ bytes, contentType: mediaType, sha256, width: details.width, height: details.height, format: details.format, storageKey, ifAbsent: true, signal: controller.signal }), controller.signal)
-      }
+      const storageKey = imageStorageKey(sha256, details.format)
+      const storageInput = { bytes, byteLength: bytes.byteLength, contentType: mediaType, sha256, width: details.width, height: details.height, format: details.format, storageKey, ifAbsent: true, signal: controller.signal }
+      if (controller.signal.aborted) throw new ImageMirrorError('Image mirror deadline exceeded', 'timeout')
+      if (existing && typeof storage.verify !== 'function') throw new ImageMirrorError('Dedupe requires storage verification of bytes and immutable metadata', 'storage-error')
+      // Storage owns cancellation and its publication outcome. Racing its promise
+      // would report failure while an unobserved write might still publish.
+      const stored = existing
+        ? await storage.verify({ ...storageInput, storageUrl: existing.storageUrl })
+        : await storage.put(storageInput)
+      if (existing && (existing.storageKey !== stored.storageKey || existing.sha256 !== stored.sha256 || existing.format !== stored.format || existing.storageUrl !== stored.storageUrl)) throw new ImageMirrorError('Repository storage identity disagrees with verified object', 'storage-error')
       if (typeof stored?.storageKey !== 'string' || typeof stored?.storageUrl !== 'string' ||
           stored.storageKey !== imageStorageKey(sha256, details.format) ||
           stored.sha256 !== sha256 || stored.format !== details.format) {
         throw new ImageMirrorError('Storage adapter returned untrusted content-addressed metadata', 'storage-error')
       }
       const fetchedAt = now()
-      const commit = await waitWithAbort(repository.recordStored(record.id, {
+      if (controller.signal.aborted) throw new ImageMirrorError('Image mirror deadline exceeded', 'timeout')
+      const commit = await repository.recordStored(record.id, {
         originalUrl: record.originalUrl,
         storageKey: stored.storageKey,
         storageUrl: stored.storageUrl,
@@ -337,7 +369,8 @@ export async function mirrorRemoteImages(records, {
       }, {
         supplierId: record.supplierId, supplierSku: record.supplierSku,
         originalUrl: record.originalUrl, revision: record.candidateRevision,
-      }), controller.signal)
+        signal: controller.signal,
+      })
       if (commit?.status === 'approved-conflict') { result.conflicts = (result.conflicts ?? 0) + 1; continue }
       if (commit?.status === 'stale-conflict') { result.stale = (result.stale ?? 0) + 1; continue }
       if (commit?.status !== 'stored') throw new ImageMirrorError('Repository did not confirm the stored asset', 'repository-error')
@@ -354,7 +387,12 @@ export async function mirrorRemoteImages(records, {
         result.stoppedOnRefusal = true
         break
       }
-    } finally { clearTimeout(deadline) }
+    } finally {
+      clearTimeout(deadline)
+      signal?.removeEventListener('abort', onAbort)
+      response?.body?.destroy?.()
+      if (typeof response?.body?.cancel === 'function') await boundedCleanup(() => response.body.cancel())
+    }
   }
   return result
 }

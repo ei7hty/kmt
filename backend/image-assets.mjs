@@ -276,6 +276,7 @@ export function createImageAssetRepository(inventoryOrDb) {
       return row ? { storageKey: row.storage_key, storageUrl: row.storage_url, sha256: row.sha256, format: row.format } : null
     },
     recordStored: (id, asset, expected = {}) => {
+      expected.signal?.throwIfAborted()
       ensureImageAssetSchema(db)
       const expectedKey = imageStorageKey(asset.sha256, asset.format)
       if (asset.storageKey !== expectedKey) throw new ImageAssetStorageConflictError(`Storage key must be ${expectedKey}`)
@@ -295,7 +296,7 @@ export function createImageAssetRepository(inventoryOrDb) {
           return { status: 'stale-conflict' }
         }
         const existing = db.prepare('SELECT sha256, storage_url, format FROM image_storage WHERE storage_key=?').get(asset.storageKey)
-        if (existing && (existing.sha256 !== asset.sha256 || existing.format !== asset.format)) throw new ImageAssetStorageConflictError(`Storage key ${asset.storageKey} already maps to another hash or format`)
+        if (existing && (existing.sha256 !== asset.sha256 || existing.format !== asset.format || existing.storage_url !== asset.storageUrl)) throw new ImageAssetStorageConflictError(`Storage key ${asset.storageKey} already maps to another hash, format or store`)
         const storedAt = asset.storedAt ?? now()
         if (!existing) db.prepare('INSERT INTO image_storage(storage_key, sha256, storage_url, format, created_at) VALUES (?, ?, ?, ?, ?)')
           .run(asset.storageKey, asset.sha256, asset.storageUrl, asset.format, storedAt)

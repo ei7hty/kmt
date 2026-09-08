@@ -38,6 +38,12 @@ function fakeStorage() {
   const writes = []
   return {
     writes,
+    async verify(input) {
+      const stored = writes.find(row => row.sha256 === input.sha256)
+      assert.ok(stored, 'dedupe requires an existing blob')
+      assert.deepEqual(stored.bytes, input.bytes)
+      return stored
+    },
     async put(input) {
       const stored = { storageKey: `images/${input.sha256}.${input.format}`, storageUrl: `https://storage.example.test/${input.sha256}`, sha256: input.sha256, format: input.format }
       writes.push({ ...input, ...stored })
@@ -441,7 +447,7 @@ test('repository owns cross-run dedupe across two IDs and a database reopen', as
   inventory.refreshSize(SIZE, [tire(), second])
   reconcileImageCandidates(inventory, [tire(), second], { allowedHosts: ALLOWED_HOSTS })
   const repository = createImageAssetRepository(inventory)
-  const storage = { writes: [], async put(input) { this.writes.push(input); return { storageKey: input.storageKey, storageUrl: `https://storage.example.test/${input.sha256}`, sha256: input.sha256, format: input.format } } }
+  const storage = fakeStorage()
   const bytes = new Uint8Array([9, 8, 7, 6])
   const result = await mirrorRemoteImages(repository.list(), { dryRun: false, delayMs: 0, allowedHosts: ['cdn.example.test'], fetcher: trustedFetcher(async () => fakeImageResponse(bytes)), inspectImage: () => ({ width: 2, height: 2, format: 'webp' }), storage, repository })
   assert.equal(result.stored, 1)
@@ -545,4 +551,95 @@ test('reconciliation retires removed source URLs and never fetches them again', 
   assert.deepEqual(fetched, [newUrl])
   assert.equal(result.stored, 1)
   assert.equal(repository.list().find(row => row.originalUrl === oldUrl).storageKey, null)
+})
+
+// Exercise the actual filesystem/SQLite seam, including a repository hash hit.
+test('repository hash hits require live blob verification in the bound staging store', async t => {
+  const { createImageStagingStorage } = await import('./image-staging.mjs')
+  const { readFile, writeFile, rm } = await import('node:fs/promises')
+  const { inventory, folder } = inventoryFixture()
+  t.after(() => { inventory.close(); rmSync(folder, { recursive: true, force: true }) })
+  reconcileImageCandidates(inventory, [tire()], { allowedHosts: ALLOWED_HOSTS })
+  const base = createImageAssetRepository(inventory)
+  let commits = 0
+  const repository = { ...base, recordStored(...args) { commits++; return base.recordStored(...args) } }
+  const storage = createImageStagingStorage({ directory: join(folder, 'staging'), storeId: 'test-store' })
+  const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=', 'base64')
+  const options = { dryRun: false, delayMs: 0, allowedHosts: ['cdn.example.test'], fetcher: trustedFetcher(async () => fakeImageResponse(bytes, 'image/png')), inspectImage: () => ({ width: 1, height: 1, format: 'png' }), repository, storage }
+  assert.equal((await mirrorRemoteImages(repository.list(), options)).stored, 1)
+  assert.equal((await mirrorRemoteImages(repository.list(), options)).deduped, 1)
+  assert.equal(commits, 2)
+  const file = join(storage.root, repository.list()[0].storageKey)
+  const valid = await readFile(file)
+  for (const corrupt of [Buffer.from([0]), valid.subarray(0, valid.length - 1)]) {
+    await writeFile(file, corrupt)
+    const result = await mirrorRemoteImages(repository.list(), options)
+    assert.equal(result.failures.length, 1)
+    assert.equal(result.deduped, 0)
+    assert.equal(commits, 2)
+  }
+  await rm(file)
+  assert.equal((await mirrorRemoteImages(repository.list(), options)).failures.length, 1)
+  assert.equal(commits, 2)
+  const other = createImageStagingStorage({ directory: join(folder, 'other-staging'), storeId: 'test-store' })
+  assert.equal((await mirrorRemoteImages(repository.list(), { ...options, storage: other })).failures.length, 1)
+  assert.equal(commits, 2)
+})
+
+test('storage/SQL failure boundaries recover without duplicate or inconsistent database mappings', async t => {
+  const { createImageStagingStorage } = await import('./image-staging.mjs')
+  const { inventory, folder } = inventoryFixture()
+  t.after(() => { inventory.close(); rmSync(folder, { recursive: true, force: true }) })
+  reconcileImageCandidates(inventory, [tire()], { allowedHosts: ALLOWED_HOSTS })
+  const repository = createImageAssetRepository(inventory)
+  const storage = createImageStagingStorage({ directory: join(folder, 'staging'), storeId: 'test-store' })
+  const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=', 'base64')
+  const options = { dryRun: false, delayMs: 0, allowedHosts: ['cdn.example.test'], fetcher: trustedFetcher(async () => fakeImageResponse(bytes, 'image/png')), inspectImage: () => ({ width: 1, height: 1, format: 'png' }), repository, storage }
+  const beforeSql = { ...repository, recordStored() { throw new Error('before SQL') } }
+  assert.equal((await mirrorRemoteImages(repository.list(), { ...options, repository: beforeSql })).failures.length, 1)
+  assert.equal(inventory.db.prepare('SELECT count(*) AS n FROM image_storage').get().n, 0)
+  inventory.db.exec("CREATE TRIGGER injected_failure BEFORE UPDATE OF storage_key ON image_assets BEGIN SELECT RAISE(FAIL, 'injected SQL boundary'); END")
+  assert.equal((await mirrorRemoteImages(repository.list(), options)).failures.length, 1)
+  assert.equal(inventory.db.prepare('SELECT count(*) AS n FROM image_storage').get().n, 0)
+  inventory.db.exec('DROP TRIGGER injected_failure')
+  const ackLost = { ...repository, recordStored(...args) { repository.recordStored(...args); throw new Error('SQL commit acknowledgment lost') } }
+  assert.equal((await mirrorRemoteImages(repository.list(), { ...options, repository: ackLost })).failures.length, 1)
+  assert.equal(inventory.db.prepare('SELECT count(*) AS n FROM image_storage').get().n, 1)
+  assert.equal((await mirrorRemoteImages(repository.list(), options)).deduped, 1)
+  assert.equal(inventory.db.prepare('SELECT count(*) AS n FROM image_storage').get().n, 1)
+})
+
+test('staging abort before publication never commits later; publication-won abort is recoverable', async t => {
+  const { createImageStagingStorage } = await import('./image-staging.mjs')
+  for (const phase of ['publication', 'published']) {
+    const { inventory, folder } = inventoryFixture()
+    t.after(() => { inventory.close(); rmSync(folder, { recursive: true, force: true }) })
+    reconcileImageCandidates(inventory, [tire()], { allowedHosts: ALLOWED_HOSTS })
+    const repository = createImageAssetRepository(inventory)
+    const controller = new AbortController()
+    const directory = join(folder, 'staging')
+    const storage = createImageStagingStorage({ directory, storeId: 'test-store', checkpoint: current => { if (current === phase) controller.abort() } })
+    const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=', 'base64')
+    const options = { dryRun: false, delayMs: 0, allowedHosts: ['cdn.example.test'], fetcher: trustedFetcher(async () => fakeImageResponse(bytes, 'image/png')), inspectImage: () => ({ width: 1, height: 1, format: 'png' }), repository, storage, signal: controller.signal }
+    const result = await mirrorRemoteImages(repository.list(), options)
+    assert.equal(result.failures[0].state, 'timeout')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(inventory.db.prepare('SELECT count(*) AS n FROM image_storage').get().n, 0)
+    assert.equal((await mirrorRemoteImages(repository.list(), { ...options, signal: undefined, storage: createImageStagingStorage({ directory, storeId: 'test-store' }) })).stored, 1)
+  }
+})
+
+// Cancellation of an injected stream cannot hold the serial runner forever.
+test('bounded stream cancellation handles a never-settling cancel promise', async () => {
+  let cancelled = 0
+  const fetcher = trustedFetcher(async () => ({ status: 200, finalUrl: IMAGE_URL, headers: { 'content-type': 'image/webp' }, body: {
+    getReader() { return { read: async () => ({ done: false, value: Buffer.alloc(100) }), cancel() { cancelled++; return new Promise(() => {}) }, releaseLock() {} } },
+  } }))
+  const result = await mirrorRemoteImages([{ id: 1, originalUrl: IMAGE_URL, remoteImagePresent: true, usageStatus: 'candidate', sourceCurrent: true }], {
+    dryRun: false, allowedHosts: ['cdn.example.test'], fetcher, maxBytes: 10, timeoutMs: 1000,
+    inspectImage() { assert.fail('oversize body cannot decode') }, storage: fakeStorage(),
+    repository: { findByHash() { return null }, recordStored() { assert.fail('oversize body cannot store') }, recordFailure() {} },
+  })
+  assert.equal(cancelled, 1)
+  assert.equal(result.failures[0].state, 'oversize')
 })
