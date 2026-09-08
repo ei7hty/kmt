@@ -781,6 +781,32 @@ test('a browser sees its own requests and nobody else', async t => {
   assert.notEqual(theirs[0].request.id, mine.request.id)
 })
 
+test('customer and owner lists keep insertion chronology when created timestamps tie', t => {
+  const { quotes } = setup(t)
+  const older = quotes.submit(form({ location: 'First request' }))
+  const newer = quotes.submit(form({ location: 'Second request' }))
+  const tiedAt = '2026-09-08T12:00:00.000Z'
+  quotes.db.prepare('UPDATE requests SET created_at=? WHERE id IN (?, ?)')
+    .run(tiedAt, older.request.id, newer.request.id)
+
+  // Make the planner's otherwise-valid tie order oppose insertion order. A
+  // query that names only created_at can silently follow either index; the
+  // public contract must not depend on which one SQLite happens to choose.
+  const olderSortsFirst = older.request.id < newer.request.id
+  const idDirection = olderSortsFirst ? 'ASC' : 'DESC'
+  quotes.db.exec(`
+    DROP INDEX requests_customer;
+    CREATE INDEX requests_customer_probe ON requests(customer_key, created_at DESC, id ${idDirection});
+    CREATE INDEX requests_created_probe ON requests(created_at DESC, id ${idDirection});
+  `)
+
+  const expected = [newer.request.id, older.request.id]
+  assert.deepEqual(quotes.listForCustomer(KEY).map(row => row.request.id), expected,
+    'the browser sees the later insertion first even at the same millisecond')
+  assert.deepEqual(quotes.listForOwner().map(row => row.request.id), expected,
+    'the owner sees the same stable chronology')
+})
+
 test('paying needs the id alone, and a quote the owner has approved (#284: not the submitting browser\'s key)', async t => {
   const { quotes } = setup(t)
   const { request } = quotes.submit(form())
