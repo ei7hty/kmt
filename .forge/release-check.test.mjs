@@ -11,8 +11,8 @@ const at = '2026-09-08T09:00:00Z';
 function ready() {
   return { version: 1, entries: [{ pr: 900, branch: 'codex/example', head: sha, authorTask: task(1), coordinatorTask: task(2), executorTask: task(3), state: 'ready', ship: true, updatedAt: at,
     authorization: { source: 'owner message permalink', owner: 'owner', head: sha, action: 'merge', at },
-    review: { source: 'review permalink', reviewerTask: task(4), head: sha, at },
-    verification: { source: 'gate run permalink', head: sha, base: 'b'.repeat(40), at },
+    review: { source: 'review permalink', reviewerTask: task(4), head: sha, verdict: 'clean', at },
+    verification: { source: 'gate run permalink', head: sha, base: 'b'.repeat(40), result: 'passed', at },
     boundaries: ['merge-via-existing-ci'], prohibitions: [...PROHIBITIONS], blockers: [], release: null }] };
 }
 
@@ -27,6 +27,8 @@ for (const [name, change, expected] of [
   ['same PM routing', e => { e.executorTask = e.coordinatorTask; }, /executor/],
   ['self merge', e => { e.executorTask = e.authorTask; }, /executor/],
   ['self review', e => { e.review.reviewerTask = e.authorTask; }, /independent/],
+  ['negative review', e => { e.review.verdict = 'changes-requested'; }, /lacks/],
+  ['failed gate', e => { e.verification.result = 'failed'; }, /lacks/],
   ['missing owner authorization', e => { e.authorization = null; }, /lacks/],
   ['stale review', e => { e.review.head = 'c'.repeat(40); }, /different head/],
   ['stale authorization', e => { e.authorization.head = 'c'.repeat(40); }, /different head/],
@@ -36,6 +38,7 @@ for (const [name, change, expected] of [
   ['unexplained waiting', e => { e.state = 'waiting'; }, /blocker/],
   ['missing release evidence', e => { e.state = 'deployed'; }, /observed/],
   ['unknown field', e => { e.autoMerge = true; }, /unknown/],
+  ['prototype-named unknown field', e => { e.constructor = 'unknown'; }, /unknown/],
   ['invalid date', e => { e.updatedAt = '2026-02-31T00:00:00Z'; }, /timestamp/],
 ]) test(name, () => { const queue = ready(); change(queue.entries[0]); assert.match(validateQueue(queue).join(';'), expected); });
 

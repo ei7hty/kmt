@@ -30,7 +30,7 @@ export function validateShape(value, rule, path = '$', errors = []) {
   } else if (typeof value === 'object') {
     for (const key of rule.required || []) if (!(key in value)) errors.push(`${path}.${key}: missing`);
     for (const key of Object.keys(value)) {
-      if (!rule.properties?.[key]) {
+      if (!rule.properties || !Object.hasOwn(rule.properties, key)) {
         if (rule.additionalProperties === false) errors.push(`${path}.${key}: unknown field`);
       } else validateShape(value[key], rule.properties[key], `${path}.${key}`, errors);
     }
@@ -54,7 +54,7 @@ export function validateQueue(queue) {
     }
     if (entry.review?.reviewerTask === entry.authorTask) add('review must be independent');
     const active = ['ready', 'merging', 'deployed'].includes(entry.state);
-    if (active && (!entry.authorization || !entry.review || !entry.verification || !entry.executorTask ||
+    if (active && (!entry.authorization || entry.review?.verdict !== 'clean' || entry.verification?.result !== 'passed' || !entry.executorTask ||
         entry.blockers.length || !entry.boundaries.includes('merge-via-existing-ci'))) add('active release lacks authorization, review, verification, executor, scope or has blockers');
     if (entry.state === 'merging' && entry.ship) merging += 1;
     if (entry.state === 'deployed' && (!entry.ship || !entry.release)) add('deployed needs ship scope and observed release evidence');

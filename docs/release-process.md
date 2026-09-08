@@ -59,8 +59,10 @@ Each entry carries:
 - `authorization`: owner identity, original message/artifact locator, exact
   head, `action: "merge"` and timestamp, or `null` while absent. A relay is
   insufficient evidence without checking the owner's source.
-- `review`: independent reviewer task ID, exact head, source and timestamp.
-- `verification`: exact PR head, integration base, evidence locator and time.
+- `review`: independent reviewer task ID, exact head, source, timestamp and
+  `verdict` (`clean` or `changes-requested`). Ready requires `clean`.
+- `verification`: exact PR head, integration base, evidence locator, time and
+  `result` (`passed` or `failed`). Ready requires `passed`.
   CI's synthetic merge `GITHUB_SHA` identifies the tested artifact, and must be
   recorded in the evidence; it is not substituted for the reviewed PR head.
 - `boundaries`: only `merge-via-existing-ci`; `prohibitions`: all of
