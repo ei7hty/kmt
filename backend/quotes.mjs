@@ -773,11 +773,19 @@ export class Quotes {
     return this.shapeRow(this.db.prepare('SELECT * FROM requests WHERE id=?').get(id), audience)
   }
 
-  /** Everything one browser submitted, newest first, and nobody else's. */
+  /**
+   * Everything one browser submitted, newest first, and nobody else's.
+   *
+   * ISO timestamps have millisecond precision, so two sequential submissions
+   * can tie. Request ids are random and say nothing about chronology; rowid is
+   * assigned by SQLite in the same transaction that inserts each request, so
+   * descending rowid preserves newest insertion first without exposing a new
+   * field in either API shape.
+   */
   listForCustomer(customerKey) {
     const key = cleanCustomerKey(customerKey)
     return this.db
-      .prepare('SELECT * FROM requests WHERE customer_key=? ORDER BY created_at DESC')
+      .prepare('SELECT * FROM requests WHERE customer_key=? ORDER BY created_at DESC, rowid DESC')
       .all(key)
       .map(row => this.shapeRow(row))
   }
@@ -804,7 +812,7 @@ export class Quotes {
   listForOwner() {
     const catalog = this.catalog()
     const supplierRow = this.db.prepare('SELECT payload, last_seen, active FROM supplier WHERE id=?')
-    return this.db.prepare('SELECT * FROM requests ORDER BY created_at DESC').all().map(row => {
+    return this.db.prepare('SELECT * FROM requests ORDER BY created_at DESC, rowid DESC').all().map(row => {
       const shaped = this.shapeRow(row, 'owner')
       const tire = catalog.find(item => item.id === shaped.request.tireSelection) ?? null
       const supplier = supplierRow.get(shaped.request.tireSelection)
