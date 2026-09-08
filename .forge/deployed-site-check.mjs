@@ -5,6 +5,7 @@ import https from 'node:https';
 import { promises as dns } from 'node:dns';
 import { CATALOG_FIELDS } from './audit-ui.mjs';
 import { GA_MEASUREMENT_ID } from '../src/analytics.js';
+import { candidateConfig, candidateFetch, candidateAsset, transferBudget, MAX_CANDIDATE_BODY, assertCandidateRequest, guardCandidateContext, assertCandidateClean } from './release-candidate.mjs';
 
 /**
  * What a deploy has to prove, without touching anything.
@@ -25,6 +26,9 @@ import { GA_MEASUREMENT_ID } from '../src/analytics.js';
  */
 
 const BASE = process.env.AUDIT_BASE || 'https://kmt.fly.dev';
+const CANDIDATE = candidateConfig();
+const fetch = CANDIDATE ? (url, options) => candidateFetch(CANDIDATE, url, options) : globalThis.fetch;
+const assetUrl = url => CANDIDATE ? candidateAsset(CANDIDATE, url, CANONICAL_HOST) : new URL(url, BASE).href;
 
 /**
  * The domain, as configuration rather than a literal (t53).
@@ -53,7 +57,7 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 69;
+const EXPECTED_CHECKS = CANDIDATE ? 53 : 69;
 const CATALOG_CACHE_CONTROL = 'public, max-age=300';
 const CATALOG_TRANSFER_BUDGET_BYTES = 200 * 1024;
 
@@ -358,7 +362,9 @@ const BRAND_ASSETS = [
  */
 function traceRequest(url) {
   return new Promise((resolve, reject) => {
-    const req = https.request(url, { method: 'TRACE' }, res => {
+    if (CANDIDATE) assertCandidateRequest(CANDIDATE, url, 'TRACE');
+    const client = new URL(url).protocol === 'http:' ? http : https;
+    const req = client.request(url, { method: 'TRACE' }, res => {
       res.resume();
       res.on('end', () => resolve({ status: res.statusCode, allow: res.headers.allow || '', location: res.headers.location || '' }));
     });
@@ -375,9 +381,15 @@ function traceRequest(url) {
  */
 function rawGet(url, { headers = {} } = {}, redirects = 0) {
   return new Promise((resolve, reject) => {
+    if (CANDIDATE) assertCandidateRequest(CANDIDATE, url);
     const target = new URL(url);
     const client = target.protocol === 'http:' ? http : https;
     const req = client.request(target, { method: 'GET', headers }, res => {
+      if (CANDIDATE && res.statusCode >= 300 && res.statusCode < 400) {
+        res.resume();
+        reject(new Error('Candidate refuses redirects'));
+        return;
+      }
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects < 5) {
         res.resume();
         res.on('end', () => rawGet(new URL(res.headers.location, target).href, { headers }, redirects + 1).then(resolve, reject));
@@ -385,10 +397,20 @@ function rawGet(url, { headers = {} } = {}, redirects = 0) {
       }
 
       let bytes = 0;
-      res.on('data', chunk => { bytes += chunk.length; });
-      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, bytes, url: target.href }));
+      const chunks = [];
+      res.on('error', reject);
+      res.on('data', chunk => {
+        bytes += chunk.length;
+        if (CANDIDATE && bytes > MAX_CANDIDATE_BODY) {
+          req.destroy(new Error('Candidate response exceeds bounded body limit'));
+          return;
+        }
+        if (CANDIDATE) chunks.push(chunk);
+      });
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, bytes, url: target.href, body: CANDIDATE ? Buffer.concat(chunks) : null }));
     });
     req.on('error', reject);
+    if (CANDIDATE) req.setTimeout(20000, () => req.destroy(new Error('Request timed out')));
     req.end();
   });
 }
@@ -436,7 +458,7 @@ async function selectSize(page, size) {
 }
 
 async function main() {
-  console.log(`Deployed-site check against ${BASE}`);
+  console.log(`${CANDIDATE ? 'Candidate contracts (not deployment acceptance)' : 'Deployed-site check'} against ${BASE}`);
 
   // 1. The API, read directly. No browser needed to know whether the catalog is
   //    the shape the customer flow is built on.
@@ -473,13 +495,17 @@ async function main() {
       headers: { Accept: 'application/json', 'Accept-Encoding': 'br, gzip' },
     });
     const encoding = transfer.headers['content-encoding'] || 'identity';
+    // Fly supplies production encoding. Loopback has no edge; calculate the
+    // candidate payload budget without claiming to have tested edge behavior.
+    const budget = transferBudget({ ...transfer, candidate: Boolean(CANDIDATE), encoding }, CATALOG_TRANSFER_BUDGET_BYTES);
     check(
-      transfer.status === 200 &&
+      CANDIDATE ? budget.ok : transfer.status === 200 &&
         ['br', 'gzip'].includes(encoding) &&
         transfer.bytes > 0 &&
         transfer.bytes <= CATALOG_TRANSFER_BUDGET_BYTES,
-      `GET /api/catalog compressed transfer stays under ${formatBytes(CATALOG_TRANSFER_BUDGET_BYTES)}`,
-      `status ${transfer.status}, encoding ${encoding}, ${formatBytes(transfer.bytes)} from ${transfer.url}`,
+      `GET /api/catalog ${budget.label} stays under ${formatBytes(CATALOG_TRANSFER_BUDGET_BYTES)}`,
+      CANDIDATE ? `status ${transfer.status}, encoding ${encoding}, ${formatBytes(budget.bytes)} budget bytes (${formatBytes(transfer.bytes)} source bytes) from ${transfer.url}` :
+        `status ${transfer.status}, encoding ${encoding}, ${formatBytes(transfer.bytes)} from ${transfer.url}`,
     );
   } catch (error) {
     fail(`GET /api/catalog compressed transfer stays under ${formatBytes(CATALOG_TRANSFER_BUDGET_BYTES)} — ${describeFetchError(error)}`);
@@ -508,13 +534,15 @@ async function main() {
   // production next week, not just in the minute after a deploy.
   const releaseResponse = await fetch(`${BASE}/`);
   const release = releaseResponse.headers.get('x-kmt-release') || '';
-  check(/^[0-9a-f]{7,40}$/i.test(release),
+  check(CANDIDATE ? release === CANDIDATE.release : /^[0-9a-f]{7,40}$/i.test(release),
     'the deployed site answers X-KMT-Release, shaped like a commit SHA',
     release ? `got ${JSON.stringify(release)}` : 'header absent');
 
   const browser = await chromium.launch();
   try {
-    const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: CANDIDATE ? 'block' : 'allow' });
+    if (CANDIDATE) await guardCandidateContext(context, CANDIDATE);
+    const page = await context.newPage();
 
     // 4. The site answers and renders the thing a customer starts with.
     const home = await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
@@ -567,7 +595,9 @@ async function main() {
 
     // 8. Nothing scrolls sideways, on a phone or on a desktop.
     for (const viewport of [{ name: 'phone', width: 375, height: 812 }, { name: 'desktop', width: 1280, height: 900 }]) {
-      const sized = await (await browser.newContext({ viewport })).newPage();
+      const sizedContext = await browser.newContext({ viewport, serviceWorkers: CANDIDATE ? 'block' : 'allow' });
+      if (CANDIDATE) await guardCandidateContext(sizedContext, CANDIDATE);
+      const sized = await sizedContext.newPage();
       for (const path of ['/', '/status', '/owner']) {
         await sized.goto(`${BASE}${path}`, { waitUntil: 'domcontentloaded' });
         await sized.waitForTimeout(500);
@@ -580,6 +610,11 @@ async function main() {
   } finally {
     await browser.close();
   }
+  if (CANDIDATE) assertCandidateClean(CANDIDATE);
+
+  const bareHost = (value) => value.replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
+  let flipLive = false;
+  if (!CANDIDATE) {
 
   // 9. The domain (t53). Read entirely: no browser, and no literal domain --
   //    the apex-versus-subdomain decision changed once already this sprint,
@@ -598,7 +633,6 @@ async function main() {
   // bundle-leak check that once passed 3-of-3 on a leaking build is why that
   // matters here: this one exists to catch a state rare enough that it will
   // be read far more often than it ever fires.
-  const bareHost = (value) => value.replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
 
   // Whether the flip is live is not a question this script can ask its own
   // environment: KMT_CANONICAL_HOST is a Fly secret, set on the server this
@@ -629,7 +663,7 @@ async function main() {
   // caught mid-rollout -- it is one host broken while the rest are fine,
   // and that is a real failure, not the pre-flip state this file stays
   // quiet about.
-  const flipLive = redirectResults.some(result => result.redirectsToCanonical);
+  flipLive = redirectResults.some(result => result.redirectsToCanonical);
 
   for (const { host, redirectsToCanonical, status, location, error } of redirectResults) {
     const label = `${host} redirects to the canonical host (${CANONICAL_HOST})`;
@@ -711,6 +745,8 @@ async function main() {
     fail(`GET /api/health on ${HEALTH_OTHER_HOST} answers 200 with ok:true — ${describeFetchError(error)}`);
   }
 
+  } // Production-only domain, DNS, alias redirects and other-host health.
+
   // 10. The brand assets t60 shipped, one file at a time.
   for (const [path, expectedType] of BRAND_ASSETS) {
     try {
@@ -790,7 +826,7 @@ async function main() {
     // stated the other way, so it passes on the same evidence as the 405.
     const { status, allow, location } = await traceRequest(`${BASE}/`);
     const answersDirectly = status === 405 && allow.includes('GET') && allow.includes('HEAD');
-    const redirectsToCanonical = status === 301 && bareHost(location) === bareHost(CANONICAL_HOST);
+    const redirectsToCanonical = !CANDIDATE && status === 301 && bareHost(location) === bareHost(CANONICAL_HOST);
     check(answersDirectly || redirectsToCanonical,
       'TRACE / answers 405 naming GET and HEAD as the allowed methods, or redirects to the host that does',
       `got status ${status}, allow ${allow || 'none'}${location ? `, location ${location}` : ''}`);
@@ -821,7 +857,7 @@ async function main() {
     check(ogImage.ok, 'og:image is absolute and names the canonical host', ogImage.reason);
 
     if (ogImage.url) {
-      const resolvedUrl = /^https?:\/\//i.test(ogImage.url) ? ogImage.url : new URL(ogImage.url, BASE).toString();
+      const resolvedUrl = assetUrl(ogImage.url);
       try {
         const imgResponse = await fetch(resolvedUrl);
         const imgType = imgResponse.headers.get('content-type') || '';
@@ -858,7 +894,7 @@ async function main() {
       const problems = [];
       for (const [field, url] of assets) {
         try {
-          const response = await fetch(/^https?:\/\//i.test(url) ? url : new URL(url, BASE).toString());
+          const response = await fetch(assetUrl(url));
           const type = response.headers.get('content-type') || '';
           if (response.status !== 200 || !type.startsWith('image/')) {
             problems.push(`${field}: status ${response.status}, content-type ${type || 'none'}`);
@@ -946,7 +982,8 @@ async function main() {
   // last is the line a reader actually lands on. Keyed off flipLive, the
   // observed result above, not a guess at which secret is missing: this
   // script cannot see KMT_CANONICAL_HOST and must not claim to.
-  if (!flipLive) {
+  if (CANDIDATE) console.log('Candidate-only: DNS, TLS, aliases and deployment acceptance still require the live audit.');
+  if (!CANDIDATE && !flipLive) {
     console.log(
       `\nOPEN: none of ${REDIRECT_HOSTS.join(', ')} redirect to the canonical host yet. Until one does, ${[CANONICAL_HOST, ...REDIRECT_HOSTS].join(', ')} ` +
       'all serve identical content with no redirect between them -- four crawlable copies of one site, ' +
