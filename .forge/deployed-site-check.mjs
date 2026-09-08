@@ -312,19 +312,15 @@ function reportCount() {
 }
 
 /**
- * A size the supplier snapshot covers, and one only the generator fills.
+ * One size the live supplier catalog covers and one it deliberately does not.
  *
- * GENERATED_SIZE was 175/70R14 until the September 6 breadth import gave it
- * 10 real supplier rows -- the check still passes (a completed selection
- * still lands on tires, more surely than before), but it stopped exercising
- * the path its own label claims: the pure-generated fallback with no
- * supplier data behind it. 135/80R12 is confirmed absent from that import's
- * walk file, so it still tests what this constant says it tests. Confirm
- * against the current walk file before reusing this size again -- coverage
- * only grows from here.
+ * #436 made a successful live catalog authoritative: generated demo tires are
+ * an offline fallback, not stock the server can quote without a supplier cost.
+ * 135/80R12 is absent from the live catalog, so production must tell the truth
+ * and offer recovery instead of silently substituting a generated tire.
  */
 const SCRAPED_SIZE = '215/60R16';
-const GENERATED_SIZE = '135/80R12';
+const UNAVAILABLE_LIVE_SIZE = '135/80R12';
 
 /**
  * The static assets t60 shipped (#141, #147): 14 brand files plus the web
@@ -433,6 +429,9 @@ async function selectSize(page, size) {
   return {
     tires: await page.locator('.tire-option').count(),
     empty: await page.locator('.tire-empty').isVisible().catch(() => false),
+    shortageNamed: await page.locator(`.tire-empty-title:has-text("I don't sell ${size} online yet.")`).isVisible().catch(() => false),
+    textRecovery: await page.locator('.tire-empty-actions a[href^="sms:"]').isVisible().catch(() => false),
+    sizeRecovery: await page.locator('.tire-empty-actions button:has-text("Choose another size")').isVisible().catch(() => false),
   };
 }
 
@@ -552,15 +551,19 @@ async function main() {
     check(await page.locator('.oi-signin').count() > 0,
       '/owner shows the sign-in form to a visitor with no session');
 
-    // 7. A completed selection lands on tires, for a size the supplier covers
-    //    and a size only the generator fills. Both, because they come from
-    //    different halves of the catalog and only one of them is live data.
-    for (const [size, label] of [[SCRAPED_SIZE, 'a scraped size'], [GENERATED_SIZE, 'a generated size']]) {
-      const landing = await selectSize(page, size);
-      check(landing.tires > 0 && !landing.empty,
-        `a completed selection for ${size} (${label}) lands on tires`,
-        `${landing.tires} tires, empty state ${landing.empty}`);
-    }
+    // 7. A supplier-backed size lands on real tires. A size absent from the
+    //    authoritative live catalog lands on the honest shortage state and
+    //    keeps both recovery paths visible. These are opposite outcomes by
+    //    design after #436, and one check for each keeps the total unchanged.
+    const stocked = await selectSize(page, SCRAPED_SIZE);
+    check(stocked.tires > 0 && !stocked.empty,
+      `a completed selection for ${SCRAPED_SIZE} (a supplier-backed size) lands on tires`,
+      `${stocked.tires} tires, empty state ${stocked.empty}`);
+
+    const unavailable = await selectSize(page, UNAVAILABLE_LIVE_SIZE);
+    check(unavailable.tires === 0 && unavailable.empty && unavailable.shortageNamed && unavailable.textRecovery && unavailable.sizeRecovery,
+      `a completed selection for ${UNAVAILABLE_LIVE_SIZE} (absent from the live supplier catalog) shows the honest shortage state with recovery`,
+      `${unavailable.tires} tires, empty state ${unavailable.empty}, shortage names size ${unavailable.shortageNamed}, text recovery ${unavailable.textRecovery}, choose-size recovery ${unavailable.sizeRecovery}`);
 
     // 8. Nothing scrolls sideways, on a phone or on a desktop.
     for (const viewport of [{ name: 'phone', width: 375, height: 812 }, { name: 'desktop', width: 1280, height: 900 }]) {
