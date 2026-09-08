@@ -59,7 +59,13 @@ test('GA4 widens the CSP only on / and /privacy, never on a page carrying a cust
   // a visible mismatch rather than a typo two files apart.
   assert.ok(ANALYTICS_PATHS.has('/'))
   assert.ok(ANALYTICS_PATHS.has('/privacy'))
-  for (const path of ['/status', '/confirmation', '/owner', '/owner/quotes', '/owner/outbox', '/api/catalog', '']) {
+  const strictPaths = [
+    '', '/status', '/confirmation', '/inquiry',
+    '/owner', '/owner/quotes', '/owner/outbox', '/owner/inquiries', '/owner/site-copy', '/owner/social-proof',
+    '/api/catalog', '/api/health', '/api/inquiries', '/api/site-copy', '/api/requests/audit-id',
+    '/api/owner/inventory', '/api/owner/requests', '/api/owner/outbox', '/api/owner/inquiries',
+  ]
+  for (const path of strictPaths) {
     assert.equal(ANALYTICS_PATHS.has(path), false, `${JSON.stringify(path)} must never get the relaxed policy`)
   }
 
@@ -70,13 +76,14 @@ test('GA4 widens the CSP only on / and /privacy, never on a page carrying a cust
 
   for (const csp of [home, privacy]) {
     assert.match(csp, /script-src 'self' https:\/\/www\.googletagmanager\.com/, 'GA\'s loader is allowed to run')
-    assert.match(csp, /connect-src 'self' https:\/\/\*\.google-analytics\.com/, 'GA is allowed to phone home')
-    assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/, 'widening for GA is not an excuse to widen anything else')
+    assert.match(csp, /connect-src 'self' https:\/\/\*\.google-analytics\.com https:\/\/\*\.analytics\.google\.com https:\/\/www\.googletagmanager\.com/, 'only GA4 collection endpoints are allowed to phone home')
+    assert.match(csp, /img-src 'self' data: https:\/\/\*\.google-analytics\.com https:\/\/www\.googletagmanager\.com/, 'GA4 pixel fallbacks are allowed on the marketing surface')
+    assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval|doubleclick|googleadservices|googlesyndication|https:\/\/google\.com|frame-src/, 'GA4 does not widen executable, advertising, generic Google, or frame sources')
   }
   // No pathname (every caller before this feature, and every path outside
   // the set) is the exact same string as before this feature existed.
   assert.equal(status, strict, '/status keeps the untouched policy string, not a version with GA carved back out')
-  assert.doesNotMatch(strict, /googletagmanager|google-analytics/)
+  assert.doesNotMatch(strict, /googletagmanager|google-analytics|analytics\.google/)
 
   const server = createServer((request, response) => {
     const { url } = parseRequestUrl(request.url)
@@ -90,11 +97,13 @@ test('GA4 widens the CSP only on / and /privacy, never on a page carrying a cust
 
   for (const path of ['/', '/privacy']) {
     const csp = (await fetch(base + path)).headers.get('content-security-policy')
-    assert.match(csp, /googletagmanager\.com/, `${path} carries the relaxed policy over the wire`)
+    assert.match(csp, /script-src[^;]*www\.googletagmanager\.com/, `${path} carries the GA4 loader policy over the wire`)
+    assert.match(csp, /connect-src[^;]*\*\.google-analytics\.com[^;]*\*\.analytics\.google\.com[^;]*www\.googletagmanager\.com/, `${path} carries every required GA4 connection source over the wire`)
+    assert.match(csp, /img-src[^;]*\*\.google-analytics\.com[^;]*www\.googletagmanager\.com/, `${path} carries the GA4 pixel sources over the wire`)
   }
-  for (const path of ['/status', '/confirmation', '/owner', '/owner/quotes', '/owner/outbox']) {
+  for (const path of strictPaths.filter(Boolean)) {
     const csp = (await fetch(base + path)).headers.get('content-security-policy')
-    assert.doesNotMatch(csp, /googletagmanager|google-analytics/, `${path} must answer the strict policy over the wire, not just in a unit test`)
+    assert.equal(csp, strict, `${path} must answer the exact strict policy over the wire, not a relaxed policy with GA carved back out`)
   }
 })
 
