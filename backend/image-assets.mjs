@@ -276,6 +276,7 @@ export function createImageAssetRepository(inventoryOrDb) {
       return row ? { storageKey: row.storage_key, storageUrl: row.storage_url, sha256: row.sha256, format: row.format } : null
     },
     recordStored: (id, asset, expected = {}) => {
+      expected.signal?.throwIfAborted()
       ensureImageAssetSchema(db)
       const expectedKey = imageStorageKey(asset.sha256, asset.format)
       if (asset.storageKey !== expectedKey) throw new ImageAssetStorageConflictError(`Storage key must be ${expectedKey}`)
@@ -295,7 +296,7 @@ export function createImageAssetRepository(inventoryOrDb) {
           return { status: 'stale-conflict' }
         }
         const existing = db.prepare('SELECT sha256, storage_url, format FROM image_storage WHERE storage_key=?').get(asset.storageKey)
-        if (existing && (existing.sha256 !== asset.sha256 || existing.format !== asset.format)) throw new ImageAssetStorageConflictError(`Storage key ${asset.storageKey} already maps to another hash or format`)
+        if (existing && (existing.sha256 !== asset.sha256 || existing.format !== asset.format || existing.storage_url !== asset.storageUrl)) throw new ImageAssetStorageConflictError(`Storage key ${asset.storageKey} already maps to another hash, format or store`)
         const storedAt = asset.storedAt ?? now()
         if (!existing) db.prepare('INSERT INTO image_storage(storage_key, sha256, storage_url, format, created_at) VALUES (?, ?, ?, ?, ?)')
           .run(asset.storageKey, asset.sha256, asset.storageUrl, asset.format, storedAt)
@@ -303,7 +304,7 @@ export function createImageAssetRepository(inventoryOrDb) {
         const changed = db.prepare(`UPDATE image_assets SET
           storage_key=?, storage_url=?, sha256=?, bytes=?, width=?, height=?, format=?,
           fetched_at=?, stored_at=?, provenance=?, usage_status=?, failure_state=NULL,
-          failure_message=NULL, updated_at=? WHERE id=? AND usage_status <> 'approved' AND source_current=1 AND supplier_id=? AND supplier_sku=? AND remote_image_url=? AND candidate_revision=?`).run(
+          failure_message=NULL, updated_at=? WHERE id=? AND usage_status='candidate' AND source_current=1 AND supplier_id=? AND supplier_sku=? AND remote_image_url=? AND candidate_revision=?`).run(
           asset.storageKey, storageUrl, asset.sha256, asset.bytes, asset.width, asset.height,
           asset.format, asset.fetchedAt ?? null, storedAt, asset.provenance ?? IMAGE_ASSET_PROVENANCE,
           asset.usageStatus ?? 'candidate', storedAt, id, expected.supplierId, expected.supplierSku, expected.originalUrl, expected.revision,
@@ -329,7 +330,7 @@ export function createImageAssetRepository(inventoryOrDb) {
       const args = [failure.state, failure.message ?? null, failure.at ?? now(), id]
       if (hasIdentity) args.push(expected.supplierId, expected.supplierSku, expected.originalUrl, expected.revision)
       else if (where) args.push(expected.originalUrl, expected.revision)
-      const changed = db.prepare(`UPDATE image_assets SET failure_state=?, failure_message=?, updated_at=? WHERE id=? AND usage_status <> 'approved' ${where}`)
+      const changed = db.prepare(`UPDATE image_assets SET failure_state=?, failure_message=?, updated_at=? WHERE id=? AND usage_status='candidate' ${where}`)
         .run(...args)
       return changed.changes === 1 ? { status: 'recorded' } : { status: 'approved-conflict' }
     },
