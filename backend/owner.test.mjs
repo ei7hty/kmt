@@ -67,7 +67,7 @@ test('refresh updates supplier data without overwriting owner price, choice, or 
   const row = db.list().items.find(row => row.id === 'giga-a')
   assert.equal(row.price, 72)
   assert.equal(row.inStock, false)
-  assert.deepEqual(row.offer, { ...offer(), version: 1 })
+  assert.deepEqual(row.offer, { ...offer(), shippingCents: null, version: 1 })
   assert.equal(db.summary().fullSizeCount, 1)
 })
 
@@ -91,7 +91,7 @@ test('malformed and empty refreshes preserve all previous rows', t => {
 
 test('invalid prices and stale owner saves are rejected', t => {
   const db = setup(t)
-  for (const priceCents of [null, 0, -1, 0.5, '89.99', 10000001]) {
+  for (const priceCents of [0, -1, 0.5, '89.99', 10000001]) {
     assert.throws(() => db.saveOffer('giga-a', offer({ priceCents })))
   }
   db.saveOffer('giga-a', offer())
@@ -237,10 +237,13 @@ test('owner HTTP API persists offers, validates input, and refuses foreign origi
   }, body: JSON.stringify(value) })
   assert.equal((await send(offer(), 'https://unrelated.example')).status, 403)
   assert.equal((await send(offer({ priceCents: -1 }))).status, 400)
-  assert.equal((await send(offer())).status, 200)
+  const saved = await send(offer({ priceCents: null, shippingCents: 2575 }))
+  assert.equal(saved.status, 200)
+  assert.equal((await saved.json()).shippingCents, 2575, 'the owner save response round-trips integer cents')
   assert.equal((await send(offer())).status, 409)
   const result = await (await fetch(`${base}/inventory?filter=offered`)).json()
-  assert.equal(result.items[0].offer.priceCents, 8999)
+  assert.equal(result.items[0].offer.priceCents, null)
+  assert.equal(result.items[0].offer.shippingCents, 2575, 'a fresh owner load returns the individual override')
   assert.equal(result.summary.offeredCount, 1)
 })
 
@@ -357,7 +360,7 @@ test('markup rejects rates that would quote below cost or reprice by typo', t =>
   assert.equal(db.getMarkup().isPlaceholder, true, 'nothing was written by the rejected saves')
 })
 
-test('shipping per tire is folded into landed cost before the rate multiplies it (#289)', t => {
+test('shipping per tire is passed through after markup, not marked up itself', t => {
   const db = setup(t)
   assert.equal(db.getMarkup().shippingPerTire, DEFAULT_MARKUP_SETTINGS.shippingPerTire, 'starts at the shared default')
 
@@ -365,8 +368,9 @@ test('shipping per tire is folded into landed cost before the rate multiplies it
   assert.equal(saved.shippingPerTire, 8)
   assert.equal(saved.isPlaceholder, false)
 
-  // (supplierPrice + shipping) x rate, not supplierPrice x rate + shipping.
-  assert.equal(quotedPrice({ supplierPrice: 50, offer: null, settings: db.getMarkup() }).price, 87, '(50 + 8) x 1.5')
+  // supplierPrice x rate + shipping: freight is an internal cost passed
+  // through after the goods margin is calculated.
+  assert.equal(quotedPrice({ supplierPrice: 50, offer: null, settings: db.getMarkup() }).price, 83, '(50 x 1.5) + 8')
 })
 
 test('omitting shippingPerTire on a save keeps whatever was already stored', t => {
@@ -1479,12 +1483,65 @@ test('a tire the supplier has delisted stays in the catalog, out of stock, howev
   assert.equal(after['giga-z'].inStock, true, 'while what the supplier does list is still in stock')
 })
 
-test('an offer cannot be enabled without a price, which is why there are only two states', async t => {
-  // Pinning the reason the test above covers two cases and not three: an
-  // enabled offer with no price is refused, so the only rows a customer can
-  // see are owner-priced ones and ones markup priced on their own.
+test('an enabled tire may use markup pricing with an individual shipping override', t => {
   const db = setup(t)
-  assert.throws(() => db.saveOffer('giga-a', offer({ priceCents: null })), /positive KMT price/)
+  db.saveMarkup({ rate: 1.5, shippingPerTire: 8 })
+  db.saveOffer('giga-a', offer({ priceCents: null, shippingCents: 1200 }))
+
+  const owner = db.list().items[0]
+  assert.deepEqual(owner.offer, {
+    priceCents: null, shippingCents: 1200, enabled: true, notes: 'Owner choice', version: 1,
+  }, 'the owner round trip keeps cents and distinguishes an override from the global value')
+
+  const [customer] = db.catalog()
+  assert.equal(customer.price, 87, '(50 × 1.5) + the $12 individual override')
+  assert.deepEqual(Object.keys(customer).sort(), ['category', 'description', 'id', 'inStock', 'name', 'price', 'size'])
+  assert.doesNotMatch(JSON.stringify(customer), /shipping/i, 'shipping remains internal to the final tire price')
+
+  db.saveOffer('giga-a', { ...owner.offer, shippingCents: 0 })
+  assert.equal(db.catalog()[0].price, 75, 'explicit zero overrides global shipping; zero is not unset')
+
+  const zero = db.list().items[0].offer
+  db.saveOffer('giga-a', { ...zero, shippingCents: null })
+  assert.equal(db.catalog()[0].price, 83, 'null clears the override and returns to $8 global shipping')
+})
+
+test('an existing offers table gains nullable shipping cents without changing owner prices', () => {
+  const folder = mkdtempSync(path.join(tmpdir(), 'kmt-shipping-migration-test-'))
+  const filename = path.join(folder, 'test.sqlite')
+  let db
+  try {
+    db = new Inventory(filename, [SIZE])
+    db.importSnapshot(snapshot([tire()]))
+    db.saveOffer('giga-a', offer())
+
+    // Rebuild only the fixture to the exact pre-override schema. Opening it
+    // again must take Inventory's additive column path, like production.
+    db.db.exec(`
+      PRAGMA foreign_keys=OFF;
+      CREATE TABLE offers_old (
+        id TEXT PRIMARY KEY REFERENCES supplier(id), price_cents INTEGER,
+        enabled INTEGER NOT NULL DEFAULT 0, notes TEXT NOT NULL DEFAULT '',
+        version INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL,
+        CHECK(price_cents IS NULL OR price_cents > 0)
+      );
+      INSERT INTO offers_old SELECT id, price_cents, enabled, notes, version, updated_at FROM offers;
+      DROP TABLE offers;
+      ALTER TABLE offers_old RENAME TO offers;
+      PRAGMA foreign_keys=ON;
+    `)
+    db.close()
+
+    db = new Inventory(filename, [SIZE])
+    const columns = db.db.prepare('PRAGMA table_info(offers)').all().map(column => column.name)
+    assert.ok(columns.includes('shipping_cents'))
+    assert.deepEqual(db.list().items[0].offer, {
+      ...offer(), shippingCents: null, version: 1,
+    }, 'the old owner decision survives and the new override starts unset')
+  } finally {
+    db?.close()
+    rmSync(folder, { recursive: true, force: true })
+  }
 })
 
 test('brandSummary groups supplier rows by brand, most tires first, with per-brand price and enabled counts', t => {
@@ -1586,7 +1643,7 @@ test('a snapshot applied to a live database upserts rows and leaves offers and u
   assert.equal(result.dryRun, false)
   const rows = Object.fromEntries(db.list().items.map(row => [row.id, row]))
   assert.equal(rows['giga-a'].price, 72, 'supplier data moved')
-  assert.deepEqual(rows['giga-a'].offer, { ...offer(), version: 1 }, 'the owner price and choice did not')
+  assert.deepEqual(rows['giga-a'].offer, { ...offer(), shippingCents: null, version: 1 }, 'the owner price and choice did not')
   assert.equal(rows['giga-b'].supplierActive, true)
   assert.equal(db.summary().importedSizeCount, 2, 'a partial import is labelled as such')
   assert.equal(db.summary().job.status, 'completed', 'and /owner is told')
