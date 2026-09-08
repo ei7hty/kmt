@@ -1,4 +1,4 @@
-import { catalogFromLiveRows, getAllTires } from './catalog'
+import { getAllTires } from './catalog.js'
 
 /**
  * The catalog the customer is quoted from, live where possible.
@@ -31,8 +31,8 @@ export async function loadCatalog(signal) {
  * on a phone at a roadside. Nothing on that screen needs it: the size selector
  * runs on the static fitment ranges. So the flow asks for one size once one
  * is chosen (#154: a few hundred bytes, a millisecond), and composes it into
- * the static catalog exactly as the whole answer was composed -- seeds, then
- * the live rows for that size, then generated coverage for every other size.
+ * the live rows for that size. A successful server answer is authoritative:
+ * built-in demo rows have no supplier cost and cannot be priced by the owner.
  *
  * A server from before #154 ignores `?size=` and answers everything; the
  * rows are filtered to the size here as well, so this works, only bigger,
@@ -56,12 +56,15 @@ async function loadLive(path, signal, select) {
     if (!response.ok) throw new Error(data?.error || 'The catalog service refused the request.')
     if (!Array.isArray(data?.tires)) throw new Error('The catalog service answered in an unexpected shape.')
 
-    // Composed, not substituted: the endpoint answers with what the owner
-    // curated, which is a part of the catalog rather than all of it.
+    // A successful live answer is substituted, not composed. Static seed and
+    // generated rows have fixed display prices but no supplier cost, so adding
+    // them here would let a customer select a tire the server cannot apply
+    // owner markup or internal shipping to. They remain the failure fallback
+    // below, useful for an offline/demo screen but never accepted by Quotes.
     // disposalFee rides along the same way markup rides along the owner
     // screen's summary (#289): one round trip, not two. `null` -- Ken has not
     // set one -- means the wizard does not offer the opt-in at all.
-    return { tires: catalogFromLiveRows(select(data.tires)), source: 'live', disposalFee: data.disposalFee ?? null }
+    return { tires: select(data.tires), source: 'live', disposalFee: data.disposalFee ?? null }
   } catch (error) {
     // An abort is the component going away, not a backend failure, and
     // answering it with a catalog nobody will read hides real cancellation.

@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { cleanTireFor, expandTireList, freshPage, openOwnerQuotes, waitForStatus } from './audit-ui.mjs';
+import { cleanTireFor, exceptionTireFor, expandTireList, freshPage, openOwnerQuotes, waitForStatus } from './audit-ui.mjs';
 import { MOBILE_SERVICE_FEE } from '../src/pricing.js';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
@@ -182,9 +182,6 @@ async function submitRequest(page, { size, tireId, vehicle, location, date, zip 
   }
 }
 
-/** A size whose matching tires include the off-road option, which forces owner review. */
-const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain', tireId: 'tire-5' };
-
 /**
  * A size with no seed tire, so its standard (generated-only) list has
  * nothing that would also survive into a mocked live answer by construction
@@ -200,6 +197,7 @@ async function main() {
   // Resolved once, against whatever the server is actually offering right
   // now, rather than a name typed into this file -- see cleanTireFor.
   const CLEAN_TIRE = await cleanTireFor(BASE);
+  const EXCEPTION_TIRE = await exceptionTireFor(BASE);
 
   // What these prove, stated narrowly on purpose. The gate's database is a
   // throwaway with no siteCopy key, and site copy is an OVERRIDE over the
@@ -594,13 +592,10 @@ async function main() {
       fail('/ (step 2, nothing chosen): Continue did nothing and said nothing -- a silent dead end.');
     }
 
-    // 6. The selector narrows each stage to choices that lead somewhere, so a
-    //    completed selection should always land on tires rather than an empty
-    //    list. Sampled here; the exhaustive walk of all 910 paths is a one-off,
-    //    too slow to run every time. The first three sit in the middle of the
-    //    range; the last two are its edges -- the smallest and the largest
-    //    size the selector can build -- so a change to the fitment lists or
-    //    the plausibility rule that strands either end fails here.
+    // 6. The fitment selector intentionally covers sizes beyond today's
+    //    supplier inventory. A completed selection must therefore either land
+    //    on real offered tires or explain the shortage with both supported
+    //    ways forward; generated demo prices must never fill the gap.
     for (const [w, r, d] of [['175', '70', '14'], ['225', '45', '17'], ['275', '40', '20'], ['135', '80', '12'], ['325', '35', '24']]) {
       await page.goto(BASE + '/');
       for (const value of [w, r, d]) {
@@ -610,10 +605,12 @@ async function main() {
 
       const tireCount = await page.locator('.tire-option').count();
       const wentEmpty = await page.locator('.tire-empty').isVisible().catch(() => false);
-      if (tireCount > 0 && !wentEmpty) {
-        ok(`/ (${w}/${r}R${d}): a completed selection lands on tires, not an empty list.`);
+      const textAction = await page.locator('.tire-empty a[href^="sms:"]').isVisible().catch(() => false);
+      const changeAction = await page.locator('.tire-empty button:has-text("Choose another size")').isVisible().catch(() => false);
+      if ((tireCount > 0 && !wentEmpty) || (tireCount === 0 && wentEmpty && textAction && changeAction)) {
+        ok(`/ (${w}/${r}R${d}): selection shows only offered tires, or an honest shortage with two ways forward.`);
       } else {
-        fail(`/ (${w}/${r}R${d}): selection ended with no tires -- the selector offered a size nothing fills.`);
+        fail(`/ (${w}/${r}R${d}): selection exposed an unhandled shortage or an unusable tire list.`);
       }
     }
 
@@ -957,20 +954,19 @@ async function main() {
     }
     await page.unroute('**/api/catalog?size=*');
 
-    // 9b. A live answer arriving after the standard list is offered as a
-    //     refresh, not swapped in silently, and the customer's own choice
-    //     survives the refresh when it is still in the live list. 215/60R16
-    //     carries a seed tire ("All-Weather Standard"), and catalogFromLiveRows
-    //     always prepends every seed regardless of what a live answer
-    //     carries -- so this is not a special case, it is what a real
-    //     supplier answer does for any size that also has a seed.
+    // 9b. A live answer arriving after the standard demo list is offered as a
+    //     refresh, not swapped in silently. If the supplier carries the same
+    //     named tire, the choice moves to its real supplier id and price.
     await context.close();
     ({ context, page } = await freshPage(browser, viewport));
     let releaseLiveAnswerB;
     const liveAnswerHeldB = new Promise(resolve => { releaseLiveAnswerB = resolve; });
     await page.route('**/api/catalog?size=*', async route => {
       await liveAnswerHeldB;
-      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ tires: [] }) });
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ tires: [{
+        id: 'audit-live-supplier', name: 'All-Weather Standard', size: '215/60R16',
+        price: 123.45, inStock: true, category: 'all-season', description: 'Supplier-priced audit row',
+      }] }) });
     });
     await page.goto(BASE + '/');
     for (const value of ['215', '60', '16']) {
@@ -986,7 +982,7 @@ async function main() {
     await page.click('button.tire-refresh', { timeout: 5000 });
 
     const movedNote = await page.locator('.tire-reselect-note[data-outcome="moved"]').first().isVisible().catch(() => false);
-    const stillSelectedB = await page.locator('.tire-option.selected[data-testid="tire-option-tire-1"]').isVisible().catch(() => false);
+    const stillSelectedB = await page.locator('.tire-option.selected[data-testid="tire-option-audit-live-supplier"]').isVisible().catch(() => false);
     const sourceIsLiveB = (await page.locator('.tire-options').getAttribute('data-source').catch(() => '')) === 'live';
 
     if (movedNote && stillSelectedB && sourceIsLiveB) {

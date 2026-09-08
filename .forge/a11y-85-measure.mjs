@@ -14,7 +14,7 @@
  */
 import { writeFileSync } from 'node:fs'
 import { chromium } from 'playwright'
-import { EXCEPTION_TIRE, cleanTireFor, expandTireList, freshPage, openOwnerQuotes, signInIfAsked, submitRequest, waitForStatus } from './audit-ui.mjs'
+import { cleanTireFor, exceptionTireFor, expandTireList, freshPage, openOwnerQuotes, signInIfAsked, submitRequest, waitForStatus } from './audit-ui.mjs'
 import { dedupe, hex, lum, measure, ratio } from './contrast-measure.mjs'
 // Imported, never restated. backend/migration.test.mjs already iterates this
 // constant four times and builds the CHECK constraint from it; this is that
@@ -23,6 +23,7 @@ import { QUOTE_STATUSES } from '../backend/quotes.mjs'
 
 const BASE = process.env.AUDIT_BASE
 if (!BASE) { console.error('Set AUDIT_BASE explicitly; the audits default to different ports and this one refuses to guess.'); process.exit(2) }
+const EXCEPTION_TIRE = await exceptionTireFor(BASE)
 const VIEWPORT = { width: 375, height: 812 }
 
 /**

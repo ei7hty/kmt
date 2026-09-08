@@ -1,11 +1,12 @@
 /* global document */ // used inside page.evaluate, which runs in the browser
 import { chromium } from 'playwright';
-import { EXCEPTION_TIRE, cleanTireFor, freshPage, openOwnerQuotes, signInIfAsked, submitRequest } from './audit-ui.mjs';
+import { cleanTireFor, exceptionTireFor, freshPage, openOwnerQuotes, signInIfAsked, submitRequest } from './audit-ui.mjs';
 import { dedupe, measure } from './contrast-measure.mjs';
 
 const BASE = process.env.AUDIT_BASE || 'http://localhost:4173';
 /** One address per script, not shared across the gate -- see audit-ui.mjs's submitRequest. */
 const AUDIT_EMAIL = 'jamie+responsive-check@example.com';
+const EXCEPTION_TIRE = await exceptionTireFor(BASE);
 /**
  * A preferred date well clear of today: the server now refuses anything
  * inside a week of today (t48's date floor), and a value right at day 7 can

@@ -208,8 +208,16 @@ export async function freshPage(browser, viewport) {
   return { context, page }
 }
 
-/** A size whose tires include the off-road option, which forces owner review. */
-export const EXCEPTION_TIRE = { size: '265/70R16', tireName: 'Off-Road Terrain', tireId: 'tire-5' }
+/** A real supplier off-road tire, resolved dynamically so the exception path never depends on a demo price. */
+export async function exceptionTireFor(base) {
+  const response = await fetch(`${base}/api/catalog?size=265%2F70R16`)
+  const { tires } = await response.json()
+  const supplierTire = tires.find(tire => tire.id.startsWith('giga-') && tire.category === 'off-road' && tire.inStock)
+  if (!supplierTire) {
+    throw new Error('No offered in-stock supplier off-road tire is listed in 265/70R16, so the exception fixture cannot run.')
+  }
+  return { size: supplierTire.size, tireName: supplierTire.name, tireId: supplierTire.id, price: supplierTire.price }
+}
 /** The size every gate database has real supplier rows in, via the local scraped-tires.json snapshot. */
 export const CLEAN_SIZE = '205/65R15'
 
