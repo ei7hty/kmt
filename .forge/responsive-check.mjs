@@ -29,7 +29,7 @@ const VIEWPORTS = [
  * means screens stopped being measured -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 10;
+const EXPECTED_CHECKS = 12;
 
 /**
  * #107: the same baseline, but for the AA-contrast and 44px-tap-target gate.
@@ -45,7 +45,7 @@ const EXPECTED_CHECKS = 10;
  * hide. If a specific element can't reasonably be fixed, that is a decision
  * for whoever owns that screen to make and record -- not a filter in here.
  */
-const EXPECTED_A11Y_CHECKS = 5;
+const EXPECTED_A11Y_CHECKS = 6;
 function usesA11y(v) { return v.name === 'phone'; }
 
 async function checkOverflow(page) {
@@ -85,6 +85,17 @@ const screens = [
     label: 'home/request-form',
     path: '/',
     async reach(page) { await page.goto(BASE + '/', { waitUntil: 'networkidle' }); },
+  },
+  {
+    label: 'status (no device history)',
+    path: '/status',
+    async reach(page) {
+      await page.goto(BASE + '/status', { waitUntil: 'networkidle' });
+      await page.getByText('No request history was found on this device.', { exact: true }).waitFor();
+      await page.getByText("Reopen the quote status link from Ken's email to view a previous request.", { exact: true }).waitFor();
+      await page.getByRole('link', { name: 'Text (617) 410-8319' }).waitFor();
+      await page.getByRole('button', { name: 'New Request' }).waitFor();
+    },
   },
   {
     label: 'owner inventory',

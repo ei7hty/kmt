@@ -111,7 +111,13 @@ function Status({ navigate }) {
             <a className="btn btn-primary" href={TEXT_HREF}>{TEXT_LABEL}</a>
           </div>
         </div>}
-        {!loading && !error && rows.length === 0 ? <div className="panel"><p className="text-secondary">No quote requests yet. Start one from the home page.</p></div> : (
+        {!loading && !error && rows.length === 0 ? <div className="panel">
+          <p className="owner-request-vehicle">No request history was found on this device.</p>
+          <p className="text-secondary">Reopen the quote status link from Ken&apos;s email to view a previous request.</p>
+          <div className="tire-empty-actions">
+            <a className="btn btn-primary" href={TEXT_HREF}>{TEXT_LABEL}</a>
+          </div>
+        </div> : (
           <div className="owner-list">
             {rows.filter(Boolean).map(({ request, quote }) => {
               // The same stepper the customer saw while ordering, so the
