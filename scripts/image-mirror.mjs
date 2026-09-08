@@ -188,6 +188,8 @@ function assertResponseAllowed(response, bodyPreview = '') {
       refusalText(response?.refusalReason) || refusalText(bodyPreview)) {
     throw new ImageMirrorError('Provider refusal or challenge detected; stopping image mirroring', 'provider-refusal', { refusal: true })
   }
+  const encoding = header(response, 'content-encoding').trim().toLowerCase()
+  if (encoding && encoding !== 'identity') throw new ImageMirrorError(`Unsupported image content encoding: ${encoding}`, 'wrong-content-encoding')
   if (!Number.isFinite(status) || status < 200 || status >= 300) {
     throw new ImageMirrorError(`Image request returned HTTP ${status || 'unknown'}`, 'http-error')
   }

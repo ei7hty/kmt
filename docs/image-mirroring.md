@@ -26,9 +26,24 @@ sets it for URLs present in the new snapshot. Selection, failure recording, and
 storage commits require a current row; approved rows and their stored metadata
 are preserved.
 
-## Future provider wiring
+## Provider and staging wiring
 
-`mirrorRemoteImages()` is intentionally adapter-only. A caller must inject an
+`mirrorRemoteImages()` remains intentionally adapter-only. The repository now
+ships two environment-driven building blocks, but no application route wires
+them into customer serving:
+
+- `scripts/image-provider.mjs` provides an HTTPS transport with per-hop DNS
+  resolution, the existing safe connect/redirect hooks, a bounded response
+  body, and a descriptive User-Agent. It has no credentials and does not pick
+  hosts; the caller still supplies the exact allowlist through
+  `createSafeImageFetcher()`.
+- `backend/image-staging.mjs` provides durable filesystem staging under the
+  absolute `KMT_IMAGE_STAGING_DIR` directory. It writes only canonical
+  content-addressed keys, conditionally and immutably, and returns an opaque
+  `staging://` URL by default. The directory is not served by the backend and
+  must not be configured beneath a public static root.
+
+An execution caller must inject an
 explicit exact-host `allowedHosts` list and an explicit `allowedPorts` policy
 (the default is HTTPS port 443) as well as:
 
@@ -88,7 +103,8 @@ node scripts/image-mirror.mjs
 node scripts/image-mirror.mjs --input path/to/local-candidates.json
 ```
 
-Both commands are offline/dry-run only. `--execute` exits with a wiring error
-until a provider-specific fetcher and a durable storage adapter are supplied
-by application code. No provider credentials belong in this module or in a
-fixture.
+The CLI remains offline/dry-run only. `--execute` exits with a wiring error
+until application code supplies the provider transport, image decoder,
+repository, and staging adapter together. No provider credentials belong in
+these modules or in a fixture; customer rendering and approval/import remain
+separate owner-controlled steps.
