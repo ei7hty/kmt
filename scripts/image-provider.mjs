@@ -28,12 +28,12 @@ function bodyBytes(response, maxBytes) {
   })
 }
 
-function requestOnce(url, { signal, maxBytes = DEFAULT_MAX_BYTES, onConnect, timeoutMs = 30_000 }) {
+function requestOnce(url, { signal, maxBytes = DEFAULT_MAX_BYTES, onConnect, timeoutMs = 30_000, requestImpl = request, lookupImpl = lookup }) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url)
     let settled = false
     const finish = (fn, value) => { if (!settled) { settled = true; fn(value) } }
-    const req = request({
+    const req = requestImpl({
       protocol: parsed.protocol,
       hostname: parsed.hostname,
       port: parsed.port || 443,
@@ -42,19 +42,25 @@ function requestOnce(url, { signal, maxBytes = DEFAULT_MAX_BYTES, onConnect, tim
       headers: { 'user-agent': 'KMT catalog image mirror (owner-authorized staging test)', accept: 'image/gif,image/jpeg,image/png,image/webp' },
       timeout: timeoutMs,
       lookup(hostname, options, callback) {
-        lookup(hostname, { ...options, all: true }, (error, addresses) => {
+        lookupImpl(hostname, { ...options, all: true }, (error, addresses) => {
           if (error) return callback(error)
           if (!Array.isArray(addresses) || !addresses.length || addresses.some(entry => isIP(entry.address) === 0)) return callback(new Error('Provider hostname returned an invalid address'))
           const first = addresses[0]
           if (!first) return callback(new Error('Provider hostname did not resolve to an IP address'))
           try { for (const entry of addresses) onConnect({ url, address: entry.address }) } catch (validationError) { return callback(validationError) }
-          callback(null, first.address, first.family)
+          if (options.all) callback(null, addresses)
+          else callback(null, first.address, first.family)
         })
       },
     }, response => {
       const headers = headersOf(response)
+      if (response.statusCode === 403 || response.statusCode === 429) {
+        response.destroy()
+        finish(reject, new ImageMirrorError(`Provider refused image request (${response.statusCode})`, `provider-${response.statusCode}`, { refusal: true }))
+        return
+      }
       if (response.statusCode >= 300 && response.statusCode < 400 && headers.location) {
-        response.resume()
+        response.destroy()
         let location
         try { location = new URL(headers.location, url).toString() } catch (error) {
           response.destroy()
@@ -77,15 +83,18 @@ function requestOnce(url, { signal, maxBytes = DEFAULT_MAX_BYTES, onConnect, tim
 }
 
 /** A provider transport with per-hop DNS resolution and safe-connect hooks. */
-export function createHttpsImageTransport({ maxRedirects = DEFAULT_MAX_REDIRECTS, timeoutMs = 30_000 } = {}) {
+export function createHttpsImageTransport({ maxRedirects = DEFAULT_MAX_REDIRECTS, timeoutMs = 30_000, requestImpl = request, lookupImpl = lookup } = {}) {
   return {
-    async fetch(url, options = {}) {
+      async fetch(url, options = {}) {
+      const redirectLimit = Number.isInteger(options.maxRedirects) ? Math.min(maxRedirects, options.maxRedirects) : maxRedirects
+      const visited = new Set()
       let current = url
       for (let hop = 0; ; hop++) {
-        if (hop > maxRedirects) throw new ImageMirrorError('Provider redirect limit exceeded', 'provider-refusal', { refusal: true })
-        const response = await requestOnce(current, { ...options, timeoutMs, onConnect: details => options.onConnect?.(details), maxBytes: options.maxBytes })
+        if (hop > redirectLimit || visited.has(current)) throw new ImageMirrorError('Provider redirect limit or loop exceeded', 'provider-refusal', { refusal: true })
+        visited.add(current)
+        const response = await requestOnce(current, { ...options, timeoutMs, requestImpl, lookupImpl, onConnect: details => options.onConnect?.(details), maxBytes: options.maxBytes })
         if (!response.location) return response
-        if (hop === maxRedirects) throw new ImageMirrorError('Provider redirect limit exceeded', 'provider-refusal', { refusal: true })
+        if (hop === redirectLimit) throw new ImageMirrorError('Provider redirect limit exceeded', 'provider-refusal', { refusal: true })
         const next = options.onRedirect?.(response.location) ?? response.location
         current = next
       }

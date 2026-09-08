@@ -61,6 +61,8 @@ function oversize(size, maxBytes) {
 export function createSafeImageFetcher(transport, { allowedHosts, allowedPorts = [443], maxRedirects = DEFAULT_MAX_REDIRECTS } = {}) {
   if (!transport || typeof transport.fetch !== 'function') throw new TypeError('A transport with fetch() is required')
   const safe = async (url, options = {}) => {
+    const effectiveMaxRedirects = Number.isInteger(options.maxRedirects)
+      ? Math.min(maxRedirects, options.maxRedirects) : maxRedirects
     const authorizeUrl = nextUrl => {
       try { return assertAllowedImageUrl(nextUrl, allowedHosts, { allowedPorts }) }
       catch (error) { throw new ImageMirrorError(`Image transport destination refused: ${error.message}`, 'provider-refusal', { refusal: true }) }
@@ -68,7 +70,7 @@ export function createSafeImageFetcher(transport, { allowedHosts, allowedPorts =
     authorizeUrl(url)
     return transport.fetch(url, {
       ...options,
-      maxRedirects,
+      maxRedirects: effectiveMaxRedirects,
       onRedirect: nextUrl => authorizeUrl(nextUrl),
       onConnect: ({ url: connectedUrl, address }) => {
         authorizeUrl(connectedUrl)

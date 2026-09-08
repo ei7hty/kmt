@@ -38,10 +38,14 @@ them into customer serving:
   hosts; the caller still supplies the exact allowlist through
   `createSafeImageFetcher()`.
 - `backend/image-staging.mjs` provides durable filesystem staging under the
-  absolute `KMT_IMAGE_STAGING_DIR` directory. It writes only canonical
-  content-addressed keys, conditionally and immutably, and returns an opaque
-  `staging://` URL by default. The directory is not served by the backend and
-  must not be configured beneath a public static root.
+  absolute `KMT_IMAGE_STAGING_DIR` directory, bound to the explicit
+  `KMT_IMAGE_STAGING_STORE_ID`. It writes only canonical content-addressed
+  keys, conditionally and immutably, with flushed temporary files and
+  no-clobber publication, and returns an opaque `kmt-staging://<store-id>/`
+  locator. The directory is not served by the backend and must not be
+  configured beneath a public static or production data root. Missing or
+  corrupt objects fail closed; an interrupted blob-only publication can be
+  recovered only when its bytes still verify exactly.
 
 An execution caller must inject an
 explicit exact-host `allowedHosts` list and an explicit `allowedPorts` policy
