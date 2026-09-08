@@ -179,6 +179,23 @@ test('an owner adjustment changes the current quote and keeps the original draft
   assert.equal(adjusted.quote.version, original.quote.version + 1)
 })
 
+test('an owner adjustment cannot erase the requested tire quantity from the owner list', t => {
+  const { quotes } = setup(t)
+  const original = quotes.submit(form({ quantity: 4 }))
+
+  // Replace every current line, including the tire line. The owner card must
+  // not infer quantity from this mutable list: line zero now says one visit.
+  quotes.adjust(original.request.id, {
+    lineItems: [{ description: 'Mobile service fee', quantity: 1, unitPrice: 60 }],
+    version: original.quote.version,
+  })
+
+  const listed = quotes.listForOwner().find(row => row.request.id === original.request.id)
+  assert.equal(listed.quote.lineItems[0].quantity, 1, 'the adjusted current line demonstrates the misleading value')
+  assert.equal(listed.request.quantity, 4, 'the immutable request remains the owner card authority')
+  assert.equal(listed.quote.draftLineItems[0].quantity, 4, 'the original draft remains a fallback for legacy requests')
+})
+
 test('finding 1 (scrutiny pass 3): adjusting a taxed quote recomputes subtotal and tax, not just total', async t => {
   const { inventory, quotes } = setup(t)
   inventory.savePricingSettings({ mobileServiceFee: 75, disposalFee: 6, tax: { rate: 0.1, appliesTo: 'all' } })
