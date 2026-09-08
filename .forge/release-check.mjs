@@ -93,6 +93,7 @@ export function checkConsistency(queue, claims, prs) {
     if (['waiting', 'ready', 'merging'].includes(entry.state) && pr.state !== 'open') errors.push(`#${entry.pr}: queued PR has ended; reconcile ledger and release claim`);
     if (['closed', 'deployed'].includes(entry.state) && pr.state === 'open') errors.push(`#${entry.pr}: premature queue completion`);
     if (entry.state === 'deployed' && !pr.merged) errors.push(`#${entry.pr}: closed without merge cannot be deployed`);
+    if (entry.ship && pr.merged && entry.state !== 'deployed') errors.push(`#${entry.pr}: merged shipping PR requires deployed state and release evidence`);
   }
   return { errors, warnings };
 }

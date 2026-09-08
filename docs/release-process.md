@@ -103,7 +103,8 @@ node .forge/release-check.mjs --github
 The first two are local and deterministic. `--github` explicitly uses `gh` GET
 requests to read current **main** claims and all PR pages, reports its observation
 time/claims blob, and exits nonzero on missing, duplicate or ended-PR claims,
-head drift or premature completion. Preparation/review claims without a PR are
+head drift or premature completion, including a merged shipping PR recorded as
+closed without deployment evidence. Preparation/review claims without a PR are
 warnings. It never edits rows, labels, reviews or PRs. This mutable global scan
 is intentionally not a required PR gate: unrelated stale rows cannot idle every
 candidate. A snapshot race requires a fresh observation, not an automatic repair.
@@ -120,9 +121,11 @@ AUDIT_MODE=candidate AUDIT_BASE=http://127.0.0.1:4173 AUDIT_EXPECTED_RELEASE=<ar
 Candidate mode refuses missing/invalid local configuration or release identity,
 allows only GET/HEAD/TRACE at its exact numeric loopback origin, follows no
 redirects, blocks browser external requests/WebSockets/service workers, and uses
-no owner session. Canonical metadata stays canonical; asset reachability maps
+no owner session. Forbidden attempts (including CSP-blocked requests) make the
+candidate audit fail even if its visible assertions still pass. Canonical metadata stays canonical; asset reachability maps
 its canonical path to loopback. The negative egress test uses a second local
-origin as a trap and asserts zero hits and zero mutation requests.
+origin as a trap and asserts zero hits and zero mutation requests, while proving
+the attempted operations (including CSP-blocked fetches) make acceptance fail.
 
 Candidate keeps every BASE-relative assertion. Its catalog budget can calculate
 Brotli size from a bounded identity body because loopback lacks Fly compression;

@@ -22,7 +22,7 @@ export function candidateConfig(env = process.env) {
     throw new Error('Candidate AUDIT_BASE must be a numeric HTTP loopback origin');
   }
   if (!/^(?:[a-f0-9]{7}|[a-f0-9]{40})$/.test(env.AUDIT_EXPECTED_RELEASE || '')) throw new Error('Candidate requires AUDIT_EXPECTED_RELEASE (7 or 40 hex characters)');
-  return { origin: base.origin, release: env.AUDIT_EXPECTED_RELEASE.slice(0, 7) };
+  return { origin: base.origin, release: env.AUDIT_EXPECTED_RELEASE.slice(0, 7), violations: [] };
 }
 
 export function assertCandidateRequest(config, url, method = 'GET') {
@@ -40,22 +40,36 @@ export async function candidateFetch(config, url, options = {}, fetcher = global
 }
 
 export async function guardCandidateContext(context, config) {
+  // CSP may block an attempt before Playwright routing sees a request.
+  await context.exposeBinding('__kmtCandidateViolation', () => config.violations.push('CSP violation'));
+  await context.addInitScript(() => {
+    globalThis.addEventListener('securitypolicyviolation', () => globalThis.__kmtCandidateViolation());
+  });
   await context.route('**/*', async route => {
     try {
       assertCandidateRequest(config, route.request().url(), route.request().method());
       const response = await route.fetch({ maxRedirects: 0, timeout: 20000 });
       if ([301, 302, 303, 307, 308].includes(response.status())) {
+        config.violations.push('browser redirect');
         console.log('BLOCK: candidate browser redirect');
         return route.abort('blockedbyclient');
       }
       return route.fulfill({ response });
     } catch {
+      config.violations.push('forbidden or failed browser request');
       console.log(`BLOCK: candidate browser ${route.request().method()} outside the read-only local contract`);
       return route.abort('blockedbyclient');
     }
   });
   // Route interception does not cover WebSocket handshakes.
-  await context.routeWebSocket('**/*', socket => socket.close());
+  await context.routeWebSocket('**/*', socket => {
+    config.violations.push('WebSocket attempt');
+    socket.close();
+  });
+}
+
+export function assertCandidateClean(config) {
+  if (config.violations.length) throw new Error(`Candidate attempted ${config.violations.length} forbidden/failed browser operations; blocked traffic is not a passing contract`);
 }
 
 export function candidateAsset(config, url, canonicalHost) {

@@ -79,6 +79,10 @@ test('GitHub head drift, premature claim/queue release, and ended queue are dete
   assert.match(checkConsistency(queue, [], [pr]).errors.join(';'), /without merge/);
   pr.state = 'open';
   assert.match(checkConsistency(queue, [], [pr]).errors.join(';'), /premature/);
+  entry.state = 'closed'; pr.state = 'closed'; pr.merged = true;
+  assert.match(checkConsistency(queue, [], [pr]).errors.join(';'), /merged shipping PR requires/);
+  pr.merged = false;
+  assert.deepEqual(checkConsistency(queue, [], [pr]).errors, []); // cancelled before shipping
 });
 
 test('candidate configuration rejects remote/ambiguous targets and missing identity', () => {

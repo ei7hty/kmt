@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { chromium } from 'playwright';
-import { candidateConfig, candidateFetch, guardCandidateContext } from './release-candidate.mjs';
+import { candidateConfig, candidateFetch, guardCandidateContext, assertCandidateClean } from './release-candidate.mjs';
 
 async function listen(server) {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -20,6 +20,7 @@ test('real browser and Node refuse external origin, writes and redirect egress',
   const local = http.createServer((req, res) => {
     if (!['GET', 'HEAD'].includes(req.method)) writes++;
     if (req.url === '/redirect') { res.writeHead(302, { location: external }); res.end(); return; }
+    if (req.url === '/csp') res.setHeader('Content-Security-Policy', "connect-src 'self'");
     res.setHeader('Content-Type', 'text/html');
     res.end('<!doctype html><title>Local guard fixture</title><main>Local contract</main>');
   });
@@ -35,6 +36,7 @@ test('real browser and Node refuse external origin, writes and redirect egress',
     const page = await context.newPage();
     await page.goto(origin);
     assert.equal(await page.locator('main').innerText(), 'Local contract');
+    assert.doesNotThrow(() => assertCandidateClean(config));
     const outcomes = await page.evaluate(async externalOrigin => {
       return Promise.all([
         fetch(externalOrigin).then(() => 'escaped', () => 'blocked'),
@@ -44,8 +46,16 @@ test('real browser and Node refuse external origin, writes and redirect egress',
     }, external);
     assert.deepEqual(outcomes, ['blocked', 'blocked', 'blocked']);
     await assert.rejects(page.goto(`${origin}/redirect`));
+    const cspPage = await context.newPage();
+    await cspPage.goto(`${origin}/csp`);
+    await cspPage.evaluate(target => new Promise(resolve => {
+      globalThis.addEventListener('securitypolicyviolation', () => resolve(true), { once: true });
+      fetch(target).catch(() => {});
+    }), external);
+    assert.ok(config.violations.includes('CSP violation'));
     assert.equal(externalHits, 0);
     assert.equal(writes, 0);
+    assert.throws(() => assertCandidateClean(config), /blocked traffic is not a passing contract/);
   } finally {
     if (browser) await browser.close();
     await close(local); await close(trap);

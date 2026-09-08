@@ -5,7 +5,7 @@ import https from 'node:https';
 import { promises as dns } from 'node:dns';
 import { CATALOG_FIELDS } from './audit-ui.mjs';
 import { GA_MEASUREMENT_ID } from '../src/analytics.js';
-import { candidateConfig, candidateFetch, candidateAsset, transferBudget, MAX_CANDIDATE_BODY, assertCandidateRequest, guardCandidateContext } from './release-candidate.mjs';
+import { candidateConfig, candidateFetch, candidateAsset, transferBudget, MAX_CANDIDATE_BODY, assertCandidateRequest, guardCandidateContext, assertCandidateClean } from './release-candidate.mjs';
 
 /**
  * What a deploy has to prove, without touching anything.
@@ -504,7 +504,8 @@ async function main() {
         transfer.bytes > 0 &&
         transfer.bytes <= CATALOG_TRANSFER_BUDGET_BYTES,
       `GET /api/catalog ${budget.label} stays under ${formatBytes(CATALOG_TRANSFER_BUDGET_BYTES)}`,
-      `status ${transfer.status}, encoding ${encoding}, ${formatBytes(transfer.bytes)} from ${transfer.url}`,
+      CANDIDATE ? `status ${transfer.status}, encoding ${encoding}, ${formatBytes(budget.bytes)} budget bytes (${formatBytes(transfer.bytes)} source bytes) from ${transfer.url}` :
+        `status ${transfer.status}, encoding ${encoding}, ${formatBytes(transfer.bytes)} from ${transfer.url}`,
     );
   } catch (error) {
     fail(`GET /api/catalog compressed transfer stays under ${formatBytes(CATALOG_TRANSFER_BUDGET_BYTES)} — ${describeFetchError(error)}`);
@@ -609,6 +610,7 @@ async function main() {
   } finally {
     await browser.close();
   }
+  if (CANDIDATE) assertCandidateClean(CANDIDATE);
 
   const bareHost = (value) => value.replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
   let flipLive = false;
