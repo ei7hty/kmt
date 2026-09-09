@@ -71,7 +71,9 @@ try {
   assert.ok(publicState.profiles.length > 0, 'public state has at least one enabled profile')
   ok('public HTML exposes enabled profiles without testimonials')
 
-  const compact = page.locator('.social-proof-compact')
+  // This audit intentionally stays on CustomerRequest: the owner-approved
+  // marketing surface is the order page and its footer, not PrivacyFooter.
+  const compact = page.locator('.customer-shell > .social-proof-compact')
   await compact.waitFor()
   assert.equal(await compact.getByRole('heading', { name: "Follow Ken's Mobile Tire" }).count(), 1)
   assert.equal(await compact.getByText('Real words from real customers').count(), 0)
@@ -85,7 +87,7 @@ try {
   assert.ok(orderTop && compactBottom && compactBottom.y + compactBottom.height <= orderTop.y, 'compact links appear before the order form')
   ok('enabled profile links are discoverable before the customer starts the order form')
 
-  const footer = page.locator('.site-footer .social-proof-footer')
+  const footer = page.locator('.customer-shell > .site-footer .social-proof-footer')
   await footer.waitFor()
   assert.equal(await footer.locator('a').count(), publicState.profiles.length)
   ok('footer repeats the compact profile links for a consistent marketing location')
