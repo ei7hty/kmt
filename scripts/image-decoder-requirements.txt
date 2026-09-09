@@ -1,0 +1,6 @@
+# Native image decoding requires a maintained codec, not a header parser.
+# Install only in a dedicated operator-controlled Python environment.
+Pillow==12.3.0
+# Pillow suppresses recoverable libjpeg errors; strict=True surfaces them.
+simplejpeg==1.9.0
+numpy==2.5.3
