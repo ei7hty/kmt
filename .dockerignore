@@ -52,3 +52,7 @@ backend/data
 # shape belongs to a file read AFTER boot, like backend/zip-centroids.json,
 # where the image starts and serves and only fails when a customer touches the
 # feature. If you ever add a data-shaped rule here, name the directory exactly.
+
+# KMT_OWNER_DB may point anywhere: its adjacent private image store must never
+# enter COPY . . at any depth, even when the SQLite file itself is excluded.
+**/catalog-images-private

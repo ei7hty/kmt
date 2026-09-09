@@ -58,3 +58,6 @@ secrets/
 /public/brand/IMG_0074.jpg
 /public/brand/IMG_0092.jpg
 /public/brand/IMG_7943.PNG
+
+# Private image containers beside an operator-selected KMT_OWNER_DB.
+**/catalog-images-private/
