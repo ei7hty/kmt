@@ -7,6 +7,8 @@ test('profile copies, canonicalizes and deeply freezes exact pilot policy', () =
   const input = profile(), result = compileImageProviderProfile(input)
   input.allowedHosts[0] = 'changed.example.test'; input.policy.allowedPorts.push(80)
   assert.deepEqual(result.allowedHosts, ['cdn.example.test'])
+  assert.deepEqual(result.policy.allowedFormats, ['jpeg', 'png'])
+  assert.throws(() => result.policy.allowedFormats.push('gif'))
   assert.throws(() => result.policy.allowedPorts.push(80))
   assert.equal(result.digest, compileImageProviderProfile(profile()).digest)
 })
@@ -16,7 +18,7 @@ test('profile refuses wildcards, IPs, credentials, localhost, ports and malforme
   }
 })
 test('profile refuses relaxed limits and injected approval fields', () => {
-  for (const [key, value] of [['candidateLimit', 6], ['allowedPorts', [443, 8443]], ['maxFrames', 2], ['delayMs', 0], ['memoryBytes', 1024 * 1024 * 1024]]) {
+  for (const [key, value] of [['candidateLimit', 6], ['allowedFormats', ['gif', 'jpeg', 'png', 'webp']], ['allowedPorts', [443, 8443]], ['maxFrames', 2], ['delayMs', 0], ['memoryBytes', 1024 * 1024 * 1024]]) {
     const raw = profile(); raw.policy[key] = value; assert.throws(() => compileImageProviderProfile(raw))
   }
   assert.throws(() => compileImageProviderProfile({ ...profile(), approved: true }))

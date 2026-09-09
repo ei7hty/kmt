@@ -8,7 +8,7 @@ export const IMAGE_EXECUTION_ENABLED = false
 // A separate reviewed change must populate this registry AND enable execution.
 const PM_APPROVALS = Object.freeze([])
 export const IMAGE_PILOT_POLICY = Object.freeze({
-  candidateLimit: 5, allowedPorts: Object.freeze([443]), maxBytes: 5 * 1024 * 1024,
+  candidateLimit: 5, allowedPorts: Object.freeze([443]), allowedFormats: Object.freeze(['jpeg', 'png']), maxBytes: 5 * 1024 * 1024,
   maxWidth: 10000, maxHeight: 10000, maxPixels: 16_000_000, maxFrames: 1,
   maxDecodeMs: 5000, memoryBytes: 256 * 1024 * 1024, maxRedirects: 3,
   timeoutMs: 30000, delayMs: 1500,
@@ -39,7 +39,7 @@ export function compileImageProviderProfile(input) {
   for (const key of Object.keys(IMAGE_PILOT_POLICY)) {
     if (JSON.stringify(input.policy[key]) !== JSON.stringify(IMAGE_PILOT_POLICY[key])) reject()
   }
-  const profile = { version: 1, providerId: input.providerId, allowedHosts: hosts, policy: { ...IMAGE_PILOT_POLICY, allowedPorts: [443] } }
+  const profile = { version: 1, providerId: input.providerId, allowedHosts: hosts, policy: { ...IMAGE_PILOT_POLICY, allowedPorts: [443], allowedFormats: ['jpeg', 'png'] } }
   const digest = sha256Bytes(JSON.stringify(profile))
   return freeze({ ...profile, digest })
 }

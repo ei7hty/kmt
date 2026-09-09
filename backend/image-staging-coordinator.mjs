@@ -178,7 +178,8 @@ async function runFixtures(input) {
       signal,
       inspectImage: async (bytes, options) => {
         const details = await inspect(bytes, options)
-        append('decoded', { sha256: sha256Bytes(bytes), bytes: bytes.length, width: details.width, height: details.height, format: details.format })
+        append('decoded', { sha256: sha256Bytes(bytes), bytes: bytes.length, width: details.width, height: details.height, format: details.format,
+          decoder: details.decoder, isolation: details.isolation, validation: details.validation })
         return details
       },
     })

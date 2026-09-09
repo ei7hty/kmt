@@ -45,7 +45,8 @@ export function createIsolatedImageDecoder({ python, memoryBytes = 256 * 1024 * 
         try {
           const result = JSON.parse(output)
           if (result.decoder !== DECODER_VERSION || !['windows-job', 'posix-rlimit'].includes(result.isolation) ||
-              !['png', 'jpeg', 'gif', 'webp'].includes(result.format) || result.frames !== 1 ||
+              !['png', 'jpeg'].includes(result.format) || result.frames !== 1 ||
+              result.validation !== (result.format === 'jpeg' ? 'simplejpeg-1.9.0-strict' : 'png-zlib-complete-v1') ||
               !Number.isSafeInteger(result.width) || !Number.isSafeInteger(result.height) ||
               result.width < 1 || result.height < 1 || result.width * result.height > maxPixels) throw failure('invalid-result')
           resolve(Object.freeze(result))

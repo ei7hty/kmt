@@ -3,21 +3,43 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { createIsolatedImageDecoder } from './image-decoder.mjs'
-import { decoderPython, realImageFixtures } from './fixtures/image-provider/decoder-fixtures.mjs'
+import { decoderPython, realImageFixtures, incompletePayloads } from './fixtures/image-provider/decoder-fixtures.mjs'
 
 const fixtures = realImageFixtures()
 const inspect = createIsolatedImageDecoder({ python: decoderPython })
-for (const format of ['png', 'jpeg', 'gif', 'webp']) {
+for (const format of ['png', 'jpeg']) {
   test(`isolated decoder fully loads real ${format}`, async () => {
     const result = await inspect(fixtures[format])
     assert.equal(result.format, format); assert.equal(result.width, 4); assert.equal(result.height, 3)
     assert.equal(result.frames, 1); assert.equal(result.decoder, '12.3.0')
+    assert.equal(result.validation, format === 'jpeg' ? 'simplejpeg-1.9.0-strict' : 'png-zlib-complete-v1')
     assert.equal(result.isolation, process.platform === 'win32' ? 'windows-job' : 'posix-rlimit')
   })
   test(`isolated decoder rejects truncated ${format}`, async () => {
     await assert.rejects(inspect(fixtures[format].subarray(0, -5)))
   })
 }
+for (const format of ['gif', 'webp']) {
+  test(`valid ${format} is conservatively refused pending strict payload validation`, async () => {
+    await assert.rejects(inspect(fixtures[format]))
+  })
+}
+for (const format of ['jpeg', 'png', 'gif', 'webp']) {
+  test(`preserved-container ${format} payload removals never pass real decoding`, async () => {
+    for (const variant of incompletePayloads(fixtures).filter(item => item.format === format)) {
+      await assert.rejects(inspect(variant.bytes), `${format}: ${variant.missing} payload bytes removed`)
+    }
+  })
+}
+test('strict validators preserve progressive JPEG and PNG bit-depth/color modes', async () => {
+  for (const [name, bytes] of Object.entries(fixtures).filter(([name]) => name.startsWith('valid-'))) {
+    const result = await inspect(bytes)
+    assert.equal(result.width, 4, name); assert.equal(result.height, 3, name)
+  }
+})
+test('complete PNG zlib streams with wrong row size or trailing streams are refused', async () => {
+  for (const name of ['png-short-rows', 'png-extra-rows', 'png-extra-stream']) await assert.rejects(inspect(fixtures[name]), name)
+})
 test('isolated decoder rejects malformed, unsupported and animated content', async () => {
   for (const bytes of [Buffer.from('not an image'), fixtures.bmp, fixtures.animated]) await assert.rejects(inspect(bytes))
 })

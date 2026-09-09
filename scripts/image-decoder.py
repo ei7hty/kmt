@@ -53,6 +53,45 @@ def constrain(memory, milliseconds):
     raise RuntimeError('unsupported isolation platform')
 
 
+def validate_png_stream(data, width, height):
+    """Pillow checks chunk CRCs, but tolerates an absent zlib checksum/EOF.
+    Stream through stdlib zlib with bounded output and exact PNG scanline size.
+    This supplements the native decoder; it never implements pixel decoding.
+    """
+    import zlib
+    depth, color, interlace = data[24], data[25], data[28]
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[color]
+    passes = [(0, 0, 1, 1)] if interlace == 0 else [
+        (0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4),
+        (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2)]
+    expected = 0
+    for x, y, dx, dy in passes:
+        w = max(0, (width - x + dx - 1) // dx)
+        h = max(0, (height - y + dy - 1) // dy)
+        if w and h:
+            expected += h * (1 + (w * channels * depth + 7) // 8)
+    chunks, offset = [], 8
+    while offset < len(data):
+        size = int.from_bytes(data[offset:offset + 4], 'big')
+        if offset + size + 12 > len(data):
+            raise ValueError('png chunk length')
+        if data[offset + 4:offset + 8] == b'IDAT':
+            chunks.append(data[offset + 8:offset + 8 + size])
+        offset += size + 12
+    pending = b''.join(chunks)
+    decoder, total = zlib.decompressobj(), 0
+    while True:
+        block = decoder.decompress(pending, 65536)
+        total += len(block)
+        if total > expected or decoder.unused_data:
+            raise ValueError('png decompressed size')
+        pending = decoder.unconsumed_tail
+        if not pending and len(block) < 65536:
+            break
+    if not decoder.eof or decoder.unused_data or total != expected:
+        raise ValueError('incomplete png zlib stream')
+
+
 def decode():
     memory, pixels, frames, milliseconds = map(int, sys.argv[1:])
     if not (0 < memory <= 512 * 1024 * 1024 and 0 < pixels <= 100_000_000 and frames == 1 and 0 < milliseconds <= 30000):
@@ -70,7 +109,9 @@ def decode():
     data = sys.stdin.buffer.read(5 * 1024 * 1024 + 1)
     if not data or len(data) > 5 * 1024 * 1024:
         raise ValueError('input size')
-    formats = ['PNG', 'JPEG', 'GIF', 'WEBP']
+    # GIF/WebP are conservatively unavailable until strict payload validation
+    # exists. Their Pillow paths can recover after payload bytes are removed.
+    formats = ['PNG', 'JPEG']
     # Restrict plugin discovery, verify container integrity, reopen and fully decode.
     with Image.open(io.BytesIO(data), formats=formats) as image:
         width, height = image.size
@@ -78,6 +119,25 @@ def decode():
         if width * height > pixels or getattr(image, 'n_frames', 1) > frames:
             raise ValueError('pixel or frame budget')
         image.verify()
+    if fmt == 'JPEG':
+        # Pillow's libjpeg wrapper suppresses recoverable entropy errors, even
+        # when truncation is disabled. Strict libturbojpeg errors are mandatory.
+        # Keep NumPy's BLAS runtime single-threaded within the same OS limits.
+        os.environ['OPENBLAS_NUM_THREADS'] = '1'
+        os.environ['OMP_NUM_THREADS'] = '1'
+        import simplejpeg
+        import numpy
+        if simplejpeg.__version__ != '1.9.0' or numpy.__version__ != '2.5.3':
+            raise ValueError('unreviewed strict jpeg runtime')
+        jpeg_height, jpeg_width, _, _ = simplejpeg.decode_jpeg_header(data, strict=True)
+        if (jpeg_width, jpeg_height) != (width, height):
+            raise ValueError('jpeg header mismatch')
+        decoded = simplejpeg.decode_jpeg(data, strict=True)
+        if decoded.shape[:2] != (height, width):
+            raise ValueError('jpeg decode mismatch')
+        del decoded
+    if fmt == 'PNG':
+        validate_png_stream(data, width, height)
     with Image.open(io.BytesIO(data), formats=formats) as image:
         image.load()
         # A seek proves EOF for formats whose frame count is discovered lazily.
@@ -90,14 +150,11 @@ def decode():
     # Some codecs tolerate missing terminal markers even with truncation disabled.
     if fmt == 'JPEG' and not data.endswith(b'\xff\xd9'):
         raise ValueError('truncated jpeg')
-    if fmt == 'GIF' and not data.endswith(b';'):
-        raise ValueError('truncated gif')
     if fmt == 'PNG' and not data.endswith(b'\x00\x00\x00\x00IEND\xaeB`\x82'):
         raise ValueError('truncated png')
-    if fmt == 'WEBP' and (len(data) < 12 or int.from_bytes(data[4:8], 'little') + 8 != len(data)):
-        raise ValueError('truncated webp')
     print(json.dumps(dict(width=width, height=height, format=fmt.lower(), frames=1,
-                          decoder=PIL.__version__, isolation=isolation)))
+                          decoder=PIL.__version__, isolation=isolation,
+                          validation='simplejpeg-1.9.0-strict' if fmt == 'JPEG' else 'png-zlib-complete-v1')))
 
 
 if __name__ == '__main__':

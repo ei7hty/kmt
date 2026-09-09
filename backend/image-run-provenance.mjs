@@ -22,7 +22,7 @@ export function createImageRunProvenance(db, { runId, profileDigest, snapshotDig
   const append = (type, fields = {}) => {
     if (!TYPES.has(type)) throw failure()
     // No raw Error objects, storage locators or local filesystem paths accepted.
-    const allowed = new Set(['candidateId', 'supplierId', 'supplierSku', 'revision', 'sourceUrl', 'originalUrl', 'finalUrl', 'redirectUrl', 'address', 'status', 'sha256', 'format', 'width', 'height', 'bytes', 'outcome', 'policy', 'selected'])
+    const allowed = new Set(['candidateId', 'supplierId', 'supplierSku', 'revision', 'sourceUrl', 'originalUrl', 'finalUrl', 'redirectUrl', 'address', 'status', 'sha256', 'format', 'width', 'height', 'bytes', 'outcome', 'policy', 'selected', 'decoder', 'isolation', 'validation'])
     if (!fields || Object.keys(fields).some(key => !allowed.has(key))) throw failure()
     const payload = JSON.stringify({ at: new Date().toISOString(), profileDigest, snapshotDigest, ...fields })
     if (Buffer.byteLength(payload) > 32768) throw failure()

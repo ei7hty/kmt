@@ -11,7 +11,7 @@ import { sha256Bytes } from './image-assets.mjs'
 import { IMAGE_PILOT_POLICY } from './image-provider-profile.mjs'
 import { createImageRunProvenance, verifyImageRunProvenance } from './image-run-provenance.mjs'
 import { prepareApprovedImageStagingRun, runOfflineImageStagingFixtures } from './image-staging-coordinator.mjs'
-import { decoderPython, realImageFixtures } from './fixtures/image-provider/decoder-fixtures.mjs'
+import { decoderPython, realImageFixtures, incompletePayloads } from './fixtures/image-provider/decoder-fixtures.mjs'
 
 const images = realImageFixtures()
 function plan(host = 'cdn.example.test') {
@@ -46,9 +46,54 @@ test('exact-five fixture run persists snapshot, private provenance and candidate
   const source = JSON.parse(events.find(e => e.type === 'candidate-start').payload)
   assert.equal(source.supplierSku, 'sku-0'); assert.equal(source.revision, 'revision-1')
   assert.equal(source.profileDigest, result.profileDigest); assert.equal(source.snapshotDigest, result.snapshotDigest)
+  const decoded = JSON.parse(events.find(e => e.type === 'decoded').payload)
+  assert.equal(decoded.decoder, '12.3.0'); assert.equal(decoded.validation, 'png-zlib-complete-v1')
+  assert.ok(['windows-job', 'posix-rlimit'].includes(decoded.isolation))
   assert.throws(() => db.exec('DELETE FROM image_run_events'), /append-only/)
   assert.throws(() => db.exec("UPDATE image_run_events SET payload='{}'"), /append-only/)
   db.close()
+})
+test('incomplete JPEG entropy with preserved EOI never creates storage mappings or candidate hashes', async t => {
+  const root = await workspace(t)
+  for (const variant of incompletePayloads(images).filter(item => item.format === 'jpeg')) {
+    const input = plan(), directory = join(root, `missing-${variant.missing}`)
+    for (const fixture of input.fixtures.values()) { fixture.contentType = 'image/jpeg'; fixture.bytes = variant.bytes }
+    const result = await runOfflineImageStagingFixtures({ ...input, directory })
+    assert.equal(result.attempted, 5); assert.equal(result.failed, 5); assert.equal(result.stored, 0); assert.equal(result.deduped, 0)
+    const db = new DatabaseSync(join(directory, `${result.runId}.sqlite`))
+    try {
+      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM image_storage').get().n, 0)
+      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM image_assets WHERE sha256 IS NOT NULL OR storage_key IS NOT NULL').get().n, 0)
+      assert.equal(db.prepare("SELECT COUNT(*) AS n FROM image_run_events WHERE type='decoded' OR type='commit-intent'").get().n, 0)
+    } finally { db.close() }
+    assert.ok(!(await readdir(directory)).includes('images'), 'no object publication')
+  }
+})
+test('incomplete PNG stream and unsupported GIF/WebP never attach or publish', async t => {
+  const root = await workspace(t)
+  for (const format of ['png', 'gif', 'webp']) {
+    const variant = incompletePayloads(images).find(item => item.format === format && item.missing === 1)
+    const input = plan(), directory = join(root, format)
+    for (const fixture of input.fixtures.values()) { fixture.contentType = `image/${format}`; fixture.bytes = variant.bytes }
+    const result = await runOfflineImageStagingFixtures({ ...input, directory })
+    assert.equal(result.failed, 5); assert.equal(result.stored, 0); assert.equal(result.deduped, 0)
+    assert.ok(result.states.every(row => row.sha256 === null))
+    const db = new DatabaseSync(join(directory, `${result.runId}.sqlite`))
+    try { assert.equal(db.prepare('SELECT COUNT(*) AS n FROM image_storage').get().n, 0) }
+    finally { db.close() }
+    assert.ok(!(await readdir(directory)).includes('images'))
+  }
+})
+test('valid strict JPEG still stores and deduplicates with validator evidence', async t => {
+  const input = plan(), directory = await workspace(t)
+  for (const fixture of input.fixtures.values()) { fixture.contentType = 'image/jpeg'; fixture.bytes = images.jpeg }
+  const result = await runOfflineImageStagingFixtures({ ...input, directory })
+  assert.equal(result.stored, 1); assert.equal(result.deduped, 4); assert.equal(result.failed, 0)
+  const db = new DatabaseSync(join(directory, `${result.runId}.sqlite`))
+  try {
+    const decoded = JSON.parse(db.prepare("SELECT payload FROM image_run_events WHERE type='decoded' LIMIT 1").get().payload)
+    assert.equal(decoded.validation, 'simplejpeg-1.9.0-strict')
+  } finally { db.close() }
 })
 test('staging refuses wrong hash, count, stale identity, credentials and unknown fields before filesystem writes', async t => {
   const directory = await workspace(t)

@@ -168,7 +168,7 @@ grant authority. The existing CLI still refuses `--execute`.
 
 `compileImageProviderProfile()` validates exact hostnames and the complete,
 fixed pilot policy, copies and deeply freezes it, and computes a canonical
-SHA-256 digest. HTTPS/443 only, exactly five candidates, serial requests,
+SHA-256 digest. JPEG/PNG only, HTTPS/443 only, exactly five candidates, serial requests,
 1.5-second delay, three redirects, 5 MiB encoded bytes, 16 million pixels, one
 frame, 5-second decode deadline, 256 MiB native memory, and 30-second candidate
 deadline are bound into that digest. The offline harness alone uses zero delay
@@ -205,9 +205,11 @@ offline tests are not permission to contact a provider.
 
 `createIsolatedImageDecoder({ python })` requires an absolute path to a trusted,
 dedicated Python interpreter with `scripts/image-decoder-requirements.txt`
-installed. Pillow 12.3.0 is pinned and checked inside the worker. This dependency
-is justified because a header parser cannot validate real compressed image
-content. Install into a private virtual environment, never the shared runtime:
+installed. Pillow 12.3.0, simplejpeg 1.9.0 and its NumPy 2.5.3 dependency are
+pinned. The worker checks the JPEG runtime versions before JPEG validation.
+The additional JPEG codec interface is required to expose recoverable native
+errors as failures; Pillow's strict truncation setting alone does not do that.
+Install into a private virtual environment, never the shared runtime:
 
 ```text
 python -m venv decoder.local
@@ -225,9 +227,25 @@ Object native process-memory/CPU/active-process limits or POSIX `RLIMIT_AS` and
 `RLIMIT_CPU`. Failure to establish those limits refuses decoding. The parent
 spawns without a shell, uses Python isolated mode, omits inherited secrets,
 bounds stdin/stdout/stderr, kills on abort/deadline and waits for process close.
-The worker restricts formats to PNG/JPEG/GIF/WebP, treats decompression warnings
-as errors, verifies then reopens and fully loads pixels, rejects extra frames,
-and checks terminal container markers to reject tolerated truncation.
+The worker restricts formats to JPEG/PNG, treats decompression warnings as
+errors, verifies then reopens and fully loads pixels, and rejects extra frames.
+JPEG additionally goes through `simplejpeg.decode_jpeg_header(strict=True)` and
+`decode_jpeg(strict=True)` inside the same process/resource limits, so recoverable
+libturbojpeg errors refuse storage. NumPy's BLAS thread count is fixed to one.
+PNG additionally streams IDAT through standard-library zlib with a 64 KiB output
+buffer, requires complete EOF/checksum with no trailing stream, and checks exact
+scanline byte counts for the declared color/depth and Adam7 passes. Native Pillow
+still validates chunks and decodes pixels. Terminal marker checks supplement
+these validators; they do not establish complete payload validation on their own.
+
+GIF and WebP are conservatively refused by this pilot decoder, including valid
+fixtures, until stricter payload validation is reviewed. Generic storage and
+mirror metadata retain their existing four-format capability; that does not
+authorize the pilot decoder to accept all four. The immutable profile's
+`allowedFormats` binds the narrower JPEG/PNG policy. Supported valid progressive
+JPEG and PNG color/bit-depth variants remain covered. Tests also remove payload
+bytes while preserving container endings/lengths and verify that no object,
+storage mapping or candidate hash is created.
 
 This is process/resource isolation, **not** a filesystem/network sandbox against
 arbitrary native code execution. The trusted runtime, operator-controlled
@@ -244,7 +262,7 @@ Each staging database contains an ordered hash-chained event log committed with
 SQLite `synchronous=FULL`. It records run/profile/snapshot identity, exact policy,
 source identity/revision/product and original URL, each attempted redirect and
 connection assertion, response/final URL/hash, decoded dimensions/format/hash,
-commit intent/result, failures and a terminal reconciliation of actual SQL
+decoder/version/isolation/validation evidence, commit intent/result, failures and a terminal reconciliation of actual SQL
 candidate states. Raw errors, object locators and filesystem paths are excluded
 from events. Source URLs remain private because they may contain supplier query
 data. The returned summary contains digests, counts and candidate outcomes only.
