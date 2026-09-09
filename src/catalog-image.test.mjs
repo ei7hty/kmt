@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { catalogImagePath } from './catalog-image.js'
+import { catalogImageIdentity, catalogImagePath } from './catalog-image.js'
 
 const hash = 'a'.repeat(64)
 
@@ -22,4 +22,14 @@ test('catalog images reject remote, ambiguous, and unrelated paths', () => {
     ` /api/images/${hash}.png`,
     '', null, undefined,
   ]) assert.equal(catalogImagePath(value), '', String(value))
+})
+
+test('image identity follows approved reassignment and temporary omission', () => {
+  const id = 'supplier-tire-1'
+  const first = `/api/images/${'a'.repeat(64)}.png`
+  const second = `/api/images/${'b'.repeat(64)}.jpeg`
+  assert.deepEqual(
+    [first, second, first, undefined, first].map(imageUrl => catalogImageIdentity({ id, imageUrl })),
+    [`${id}:${first}`, `${id}:${second}`, `${id}:${first}`, `${id}:`, `${id}:${first}`],
+  )
 })
