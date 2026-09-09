@@ -19,6 +19,9 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { execFileSync } from 'node:child_process'
+import { readPrivateImageInput } from './import-images.mjs'
+import { prepareImagePilot, collectImagePilot, writeImagePilotPacket, assertImagePilotOutput } from './image-pilot-packet.mjs'
 
 import { createBrowserFetcher, RateLimitedError } from './browser-fetch.mjs'
 import { canonicalSize, fetchProductPage, fetchSizePage, parseListingPage, parseProductPage, parseSize, productUrl, ProviderRefusalError, USER_AGENT } from './giga-tires.mjs'
@@ -51,6 +54,12 @@ Options:
   --validate-products Validate exactly five seeded random product pages from
                      the existing snapshot; read-only, serial and fail-closed.
   --validation-seed N Required integer seed for reproducible page selection.
+  --validation-input ABS_PATH  Private exact-five owner product-URL mapping.
+  --validation-snapshot ABS_PATH  Optional private supplier baseline snapshot.
+  --validation-output ABS_DIR  New private packet directory outside this repo.
+                     Both are required for an export; --dry-run performs only
+                     local input validation. Export uses document-only browser
+                     requests, 2-5s spacing, and stops on any incomplete result.
   --validation-jitter-min MS  Lower bound for validation pacing (default 2000).
   --validation-jitter-max MS  Upper bound for validation pacing (default 5000).
   --min-interval MS  Minimum time between one size's request and the next,
@@ -117,6 +126,9 @@ function parseArgs(argv) {
     else if (arg === '--product-delay') options.productDelay = Number(value())
     else if (arg === '--validate-products') options.validateProducts = true
     else if (arg === '--validation-seed') options.validationSeed = Number(value())
+    else if (arg === '--validation-input') options.validationInput = value()
+    else if (arg === '--validation-snapshot') options.validationSnapshot = value()
+    else if (arg === '--validation-output') options.validationOutput = value()
     else if (arg === '--validation-jitter-min') options.validationJitterMin = Number(value())
     else if (arg === '--validation-jitter-max') options.validationJitterMax = Number(value())
     else if (arg === '--limit') options.limit = Number(value())
@@ -465,8 +477,31 @@ async function main() {
     return
   }
 
+  if (!options.validateProducts && (options.validationInput || options.validationOutput || options.validationSnapshot)) throw new Error('Private packet flags require --validate-products')
+
   if (options.validateProducts) {
     const validationOptions = createValidationOptions(options)
+    if (options.validationInput || options.validationOutput || options.validationSnapshot) {
+      if (!options.validationInput || !options.validationOutput || options.headless || options.plainFetch ||
+          options.validationJitterMin < 2000 || options.validationJitterMax > 5000) throw new Error('Private packet export requires both paths, a visible document-only browser and 2-5 second pacing')
+      const inputBytes = readPrivateImageInput(options.validationSnapshot || DEFAULT_OUT, 8 * 1024 * 1024)
+      const mappingBytes = readPrivateImageInput(options.validationInput, 65536)
+      const plan = prepareImagePilot(inputBytes, mappingBytes)
+      assertImagePilotOutput(options.validationOutput, ROOT)
+      const urls = selectValidationUrls([...plan.baseline.keys()].map(url => ({ source: { url } })), options.validationSeed)
+      const codeSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8', windowsHide: true }).trim()
+      if (options.dryRun) { console.log('Private exact-five inputs valid; dry run made no provider requests and wrote no packet.'); return }
+      if (execFileSync('git', ['status', '--porcelain', '--untracked-files=normal'], { cwd: ROOT, encoding: 'utf8', windowsHide: true }).trim()) throw new Error('Pilot execution requires a clean reviewed checkout')
+      const browser = await createBrowserFetcher({ headless: false, userAgent: USER_AGENT, productMetadataOnly: true })
+      try {
+        const packet = await collectImagePilot(plan, urls, { codeSha, seed: options.validationSeed, delayForNext: validationOptions.delayForNext }, url => browser.fetchProductPage(url))
+        writeImagePilotPacket(options.validationOutput, packet, ROOT)
+        console.log('Private exact-five metadata packet written. No image files downloaded or approval granted.')
+      } catch { throw new Error('Private product pilot stopped; no retry, substitution, image download or activation. Inspect operator-local evidence.') }
+      finally { await browser.close() }
+      return
+    }
+    if (options.dryRun) { console.log('Validation dry run: no provider requests. Supply private mapping/output paths to validate an exact-five packet.'); return }
     const snapshot = JSON.parse(await readFile(DEFAULT_OUT, 'utf8'))
     const urls = selectValidationUrls(snapshot.tires || [], options.validationSeed)
     console.log(`Validating exactly ${urls.length} seeded product pages (seed ${options.validationSeed}); read-only, serial, no retries.`)
@@ -474,7 +509,7 @@ async function main() {
     console.log(options.plainFetch ? 'Using plain HTTP.\n' : 'Opening a browser window.\n')
     const browser = options.plainFetch
       ? null
-      : await createBrowserFetcher({ headless: options.headless, userAgent: USER_AGENT })
+      : await createBrowserFetcher({ headless: options.headless, userAgent: USER_AGENT, productMetadataOnly: true })
     const productFetcher = browser
       ? url => browser.fetchProductPage(url)
       : url => fetchProductPage(url, { userAgent: USER_AGENT })

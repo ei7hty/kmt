@@ -55,6 +55,8 @@ import { Outbox } from './outbox.mjs'
 import { createMailer, describeMail, drainMail, readMailConfig } from './mail.mjs'
 import { Inquiries } from './inquiries.mjs'
 import { createInquiriesApi } from './inquiries-api.mjs'
+import { ImagePublication, imageDirectoryForDatabase } from './image-publication.mjs'
+import { createImageApi } from './image-api.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
@@ -150,6 +152,7 @@ const mailer = createMailer({
 const inquiries = new Inquiries(inventory.db)
 const api = createApi(inventory, refresher, importer, quotes, { mailer, inquiries, auth })
 const catalogApi = createCatalogApi(inventory)
+const imageApi = createImageApi(new ImagePublication(inventory, { directory: imageDirectoryForDatabase(dbPath) }), auth)
 const siteCopyStore = new SiteCopy(inventory)
 const socialProofStore = new SocialProof(inventory)
 const siteCopyApi = createSiteCopyApi(inventory)
@@ -260,6 +263,7 @@ const server = createServer(async (request, response) => {
       if (await healthApi(request, response)) return
       if (await mailStatusApi(request, response)) return
       if (await catalogApi(request, response)) return
+      if (await imageApi(request, response)) return
       if (await siteCopyApi(request, response)) return
       if (await requestsApi(request, response)) return
       if (await inquiriesApi(request, response)) return

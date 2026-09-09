@@ -21,6 +21,33 @@ import { assertExpectedPage, assertProviderResponse, productUrl, ProviderRefusal
 
 const READY_SELECTOR = '.plp-list__item-container'
 
+// Metadata pilot: one exact main-document request, no redirects, subresources,
+// popups, scripts, XHR, images, fonts or media. A page requiring any of those
+// fails; the pilot never relaxes policy or retries to obtain a result.
+export function productDocumentPolicy(expectedUrl) {
+  let used = false
+  return request => {
+    if (used || !request.isNavigationRequest() || request.resourceType() !== 'document' ||
+        request.frame() !== request.frame().page().mainFrame() || request.url() !== expectedUrl) return false
+    used = true
+    return true
+  }
+}
+
+export async function routeProductDocument(route, allow) {
+  if (!allow(route.request())) { await route.abort(); return }
+  // route.continue() can follow an HTTP redirect without another route hook.
+  // Fetch exactly one response and refuse redirects before browser fulfillment.
+  const response = await route.fetch({ maxRedirects: 0, maxRetries: 0, timeout: 30000 })
+  if (response.status() >= 300 && response.status() < 400 ||
+      Number(response.headers()['content-length']) > 4 * 1024 * 1024) {
+    await route.abort(); throw new Error('Product metadata response refused')
+  }
+  const body = await response.body()
+  if (body.length > 4 * 1024 * 1024) { await route.abort(); throw new Error('Product metadata response too large') }
+  await route.fulfill({ response, body })
+}
+
 /**
  * The supplier's own words for a size it does not carry, e.g. "Unfortunately,
  * the size is not available at this time." Confirmed by reading a real empty
@@ -50,7 +77,7 @@ export class RateLimitedError extends ProviderRefusalError {
  * up on the first page carries over, so later pages load without re-challenging.
  */
 export async function createBrowserFetcher(options = {}) {
-  const { headless = false, timeout = 60000, userAgent = USER_AGENT } = options
+  const { headless = false, timeout = 60000, userAgent = USER_AGENT, productMetadataOnly = false } = options
 
   const { chromium } = await import('playwright')
 
@@ -67,12 +94,14 @@ export async function createBrowserFetcher(options = {}) {
     : []
 
   const browser = await chromium.launch({ headless, executablePath, args })
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, userAgent })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, userAgent,
+    serviceWorkers: 'block', ...(productMetadataOnly ? { javaScriptEnabled: false } : {}) })
   const page = await context.newPage()
 
   // Images and fonts are most of the bytes on a listing page and none of the
   // data. Skipping them is lighter on us and on them.
-  await page.route('**/*', route => {
+  await context.route('**/*', route => {
+    if (productMetadataOnly) return route.abort()
     const type = route.request().resourceType()
     return type === 'image' || type === 'font' || type === 'media'
       ? route.abort()
@@ -117,20 +146,31 @@ export async function createBrowserFetcher(options = {}) {
       // A separate page per product makes explicitly bounded concurrency safe;
       // the listing page above stays dedicated to its sequential pagination.
       const productPage = await context.newPage()
+      let documentError
       try {
+        if (productMetadataOnly) {
+          const allow = productDocumentPolicy(url)
+          await productPage.route('**/*', route => routeProductDocument(route, allow).catch(async error => {
+            documentError = error
+            await route.abort().catch(() => {})
+          }))
+        }
         const response = await productPage.goto(url, { waitUntil: 'domcontentloaded', timeout })
+        if (documentError) throw documentError
         if (response?.status() === 429) {
           throw new RateLimitedError(`429 from ${url}`, response.headers()['retry-after'] ?? null)
         }
         if (!response) throw new Error(`GET ${url} -> no response`)
         // A refusal page should not wait for product JSON-LD to appear.
         assertProviderResponse(url, response, await productPage.content())
-        await productPage.locator('script[type="application/ld+json"]').first().waitFor({ timeout: 20000 }).catch(() => {})
+        if (!productMetadataOnly) await productPage.locator('script[type="application/ld+json"]').first().waitFor({ timeout: 20000 }).catch(() => {})
         const html = await productPage.content()
         assertProviderResponse(url, response, html)
         if (response.status() >= 400) throw new Error(`GET ${url} -> ${response.status()}`)
         assertExpectedPage(url, html, 'product')
-        return { html, url }
+        const finalUrl = productUrl(productPage.url())
+        if (productMetadataOnly && finalUrl !== url) throw new Error('Product pilot final URL changed')
+        return { html, url: finalUrl }
       } finally {
         await productPage.close()
       }

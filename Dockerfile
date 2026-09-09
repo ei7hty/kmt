@@ -6,7 +6,15 @@
 #
 # Node 24 is a hard floor, not a preference -- the backend uses node:sqlite,
 # which does not exist earlier.
+FROM python:3.12-slim-bookworm AS image-decoder-runtime
+COPY scripts/image-decoder-requirements.txt /tmp/image-decoder-requirements.txt
+RUN python -m venv /opt/kmt-image-decoder \
+  && /opt/kmt-image-decoder/bin/pip install --no-cache-dir --only-binary=:all: -r /tmp/image-decoder-requirements.txt
+
 FROM node:24-bookworm-slim
+COPY --from=image-decoder-runtime /usr/local/ /usr/local/
+COPY --from=image-decoder-runtime /opt/kmt-image-decoder /opt/kmt-image-decoder
+ENV KMT_IMAGE_DECODER_PYTHON=/opt/kmt-image-decoder/bin/python
 
 # Chromium, its shared libraries, and Xvfb.
 #
@@ -74,6 +82,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --include=dev
 
 COPY . .
+# Exercise the copied Python/native codec runtime in the final Node image,
+# including its real resource-isolation boundary, using generated fixtures only.
+RUN gosu node node --test backend/image-decoder.test.mjs
 RUN npm run build
 
 # Only now, so it governs the server and not the install.

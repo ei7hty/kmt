@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 import { DEFAULT_PRICING_SETTINGS, normalizePricingSettings } from '../src/pricing.js'
 import { deriveBrand } from '../src/data/brand.js'
+import { ensureImagePublicationSchema, approvedImageUrls } from './image-publication.mjs'
 import { cleanCatalogDescription } from './catalog-description.mjs'
 
 const DEFAULT_MARKUP_RATE = DEFAULT_MARKUP_SETTINGS.rate
@@ -75,6 +76,7 @@ export class Inventory {
     const offerColumns = this.db.prepare('PRAGMA table_info(offers)').all().map(column => column.name)
     if (!offerColumns.includes('shipping_cents')) this.db.exec('ALTER TABLE offers ADD COLUMN shipping_cents INTEGER')
     this.seedCatalogueLines()
+    ensureImagePublicationSchema(this.db)
   }
 
   transaction(fn) {
@@ -679,8 +681,11 @@ export class Inventory {
    * source. Out of stock is the honest answer, and the pricing rules already
    * route an out-of-stock choice to the owner instead of quoting it outright.
    */
+  hasImagePackets() { return !!this.db.prepare('SELECT 1 FROM image_packets LIMIT 1').get() }
+
   catalog({ size = '' } = {}) {
     const settings = this.getMarkup()
+    const imageUrls = approvedImageUrls(this.db)
     const where = size ? 'WHERE s.size=?' : ''
     const args = size ? [size] : []
     const rows = this.db.prepare(`SELECT
@@ -725,6 +730,7 @@ export class Inventory {
         // Normalize at the customer boundary as well as ingress: historical
         // payloads are corrected immediately without rewriting production data.
         description: cleanCatalogDescription(row.description),
+        ...(imageUrls.has(row.id) ? { imageUrl: imageUrls.get(row.id) } : {}),
       })
     }
     return tires
