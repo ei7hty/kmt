@@ -27,7 +27,7 @@ const AUDIT_EMAIL = 'jamie+request-flow-check@example.com'
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 82
+const EXPECTED_CHECKS = 90
 
 const imageHash = 'a'.repeat(64)
 const brokenImageHash = 'b'.repeat(64)
@@ -40,6 +40,9 @@ const socialProfiles = [
   { platform: 'tiktok', url: 'https://tiktok.com/@ken_thetireguy/', enabled: true },
   { platform: 'youtube', url: 'https://youtube.com/@kens_mobiletire/', enabled: true },
   { platform: 'facebook', url: 'https://facebook.com/p/kens-mobile-tire-61577670628260/', enabled: true },
+]
+const socialTestimonials = [
+  { id: 'customer-1', text: 'Ken made the whole tire replacement easy.', attribution: 'Local customer', kind: 'testimonial' },
 ]
 
 async function openTireStep(page, size) {
@@ -138,6 +141,28 @@ try {
       await injectSocialState(page, { profiles: [], testimonials: [] })
       await page.goto(base)
       check(await page.getByTestId('social-proof-section').count() === 0, 'empty social metadata reserves no customer-page shell')
+      await page.close()
+    }
+
+    {
+      const page = await browser.newPage({ viewport: { width, height: 900 } })
+      const check = (condition, message) => { assert.ok(condition, message); checks++; console.log(`OK ${width}px: ${message}`) }
+      await injectSocialState(page, { profiles: [], testimonials: socialTestimonials })
+      await page.goto(base)
+      const section = page.getByTestId('social-proof-section')
+      check(await section.locator('.social-proof-card').count() === 1 && await section.locator('.social-profile-link').count() === 0, 'testimonial-only metadata renders customer proof without profile cards')
+      check(!(await section.locator('.social-proof-note').innerText()).includes('verified social profiles'), 'testimonial-only copy does not claim social profiles are present')
+      await page.close()
+    }
+
+    {
+      const page = await browser.newPage({ viewport: { width, height: 900 } })
+      const check = (condition, message) => { assert.ok(condition, message); checks++; console.log(`OK ${width}px: ${message}`) }
+      await injectSocialState(page, { profiles: socialProfiles, testimonials: socialTestimonials })
+      await page.goto(base)
+      const section = page.getByTestId('social-proof-section')
+      check(await section.locator('.social-proof-card').count() === 1 && await section.locator('.social-profile-link').count() === socialProfiles.length, 'combined metadata renders testimonials and every enabled profile')
+      check((await section.locator('.social-proof-note').innerText()).includes('Customer experiences') && (await section.locator('.social-proof-note').innerText()).includes('verified social profiles'), 'combined copy truthfully names customer experiences and profiles')
       await page.close()
     }
 

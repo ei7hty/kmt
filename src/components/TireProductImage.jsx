@@ -8,7 +8,7 @@ export default function TireProductImage({ tire }) {
   const showImage = Boolean(imagePath) && failedPath !== imagePath
   return <span className="tire-media" data-image-state={showImage ? 'image' : 'fallback'}>
     {showImage
-      ? <img src={imagePath} alt={`${tire.name} tire`} loading="lazy" decoding="async" onError={() => setFailedPath(imagePath)} />
+      ? <img src={imagePath} alt={`${tire.name} tire`} loading="lazy" decoding="async" onLoad={() => setFailedPath('')} onError={() => setFailedPath(imagePath)} />
       : <span className="tire-art" aria-hidden="true" />}
   </span>
 }

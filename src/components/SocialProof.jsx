@@ -22,8 +22,14 @@ export default function SocialProof() {
   const { profiles, testimonials } = socialProof()
   if (!profiles.length && !testimonials.length) return null
   const hasTestimonials = testimonials.length > 0
+  const hasProfiles = profiles.length > 0
+  const note = hasTestimonials
+    ? hasProfiles
+      ? 'Customer experiences and Ken’s verified social profiles.'
+      : 'Customer experiences shared with Ken’s Mobile Tire.'
+    : 'Find Ken’s Mobile Tire on these verified social profiles.'
   return <section className="social-proof" aria-labelledby="social-proof-heading" data-testid="social-proof-section">
-    <div className="social-proof-heading"><p className="eyebrow">{hasTestimonials ? 'FROM KEN’S MOBILE TIRE' : 'STAY CONNECTED'}</p><h2 id="social-proof-heading">{hasTestimonials ? 'Real words from real customers' : 'Follow Ken’s Mobile Tire'}</h2><p className="social-proof-note">{hasTestimonials ? 'Customer experiences and Ken’s verified social profiles.' : 'Find Ken’s Mobile Tire on these verified social profiles.'}</p></div>
+    <div className="social-proof-heading"><p className="eyebrow">{hasTestimonials ? 'FROM KEN’S MOBILE TIRE' : 'STAY CONNECTED'}</p><h2 id="social-proof-heading">{hasTestimonials ? 'Real words from real customers' : 'Follow Ken’s Mobile Tire'}</h2><p className="social-proof-note">{note}</p></div>
     {testimonials.length > 0 && <div className="social-proof-grid">{testimonials.map(item => <figure className="social-proof-card" key={item.id}><blockquote>“{item.text}”</blockquote><figcaption><strong>{item.attribution}</strong>{item.source && <span>{item.source}</span>}{item.date && <time dateTime={item.date}>{item.date}</time>}{item.kind === 'external-review' && item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer">View source<span className="sr-only">, opens in a new tab</span></a>}</figcaption></figure>)}</div>}
     {profiles.length > 0 && <SocialProfileLinks profiles={profiles} />}
   </section>
