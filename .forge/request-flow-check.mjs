@@ -1,4 +1,4 @@
-/* global innerWidth */ // used inside a locator evaluate, which runs in the browser
+/* global document, getComputedStyle, innerWidth */ // used inside locator evaluates, which run in the browser
 import { chromium } from 'playwright'
 import { cleanTireFor, expandTireList, openOwnerQuotes } from './audit-ui.mjs'
 import assert from 'node:assert/strict'
@@ -27,7 +27,43 @@ const AUDIT_EMAIL = 'jamie+request-flow-check@example.com'
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 50
+const EXPECTED_CHECKS = 90
+
+const imageHash = 'a'.repeat(64)
+const brokenImageHash = 'b'.repeat(64)
+const imagePath = `/api/images/${imageHash}.png`
+const brokenImagePath = `/api/images/${brokenImageHash}.png`
+const remoteImageUrl = 'https://supplier.invalid/private-tire.png'
+const onePixelPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+const socialProfiles = [
+  { platform: 'instagram', url: 'https://instagram.com/kens_mobiletire/', enabled: true },
+  { platform: 'tiktok', url: 'https://tiktok.com/@ken_thetireguy/', enabled: true },
+  { platform: 'youtube', url: 'https://youtube.com/@kens_mobiletire/', enabled: true },
+  { platform: 'facebook', url: 'https://facebook.com/p/kens-mobile-tire-61577670628260/', enabled: true },
+]
+const socialTestimonials = [
+  { id: 'customer-1', text: 'Ken made the whole tire replacement easy.', attribution: 'Local customer', kind: 'testimonial' },
+]
+
+async function openTireStep(page, size) {
+  const [width, rest] = size.split('/')
+  const [ratio, diameter] = rest.split('R')
+  await page.goto(base)
+  for (const value of [width, ratio, diameter]) await page.getByTestId(`fitment-option-${value}`).click()
+  await page.locator('#fitmentZip').fill('02149')
+  await page.getByTestId('continue-to-tires').click()
+}
+
+async function injectSocialState(page, state) {
+  await page.route(`${base}/`, async route => {
+    const response = await route.fetch()
+    const body = (await response.text()).replace(
+      /(<script type="application\/json" id="social-proof">)[\s\S]*?(<\/script>)/,
+      `$1${JSON.stringify(state)}$2`,
+    )
+    await route.fulfill({ response, body })
+  })
+}
 
 const browser = await chromium.launch()
 let checks = 0
@@ -40,8 +76,96 @@ try {
   const cleanTire = await cleanTireFor(base)
   const [cleanWidth, cleanRest] = cleanTire.size.split('/')
   const [cleanRatio, cleanDiameter] = cleanRest.split('R')
+  const imageCatalog = await (await fetch(`${base}/api/catalog?size=${encodeURIComponent(cleanTire.size)}`)).json()
+  assert.ok(imageCatalog.tires.length >= 4, 'image audit needs four catalog rows')
 
   for (const width of [375, 1280]) {
+    {
+      const page = await browser.newPage({ viewport: { width, height: 900 } })
+      const check = (condition, message) => { assert.ok(condition, message); checks++; console.log(`OK ${width}px: ${message}`) }
+      const rows = imageCatalog.tires.slice(0, 4).map(tire => ({ ...tire }))
+      rows[0].imageUrl = imagePath
+      delete rows[1].imageUrl
+      rows[2].imageUrl = brokenImagePath
+      rows[3].imageUrl = remoteImageUrl
+      let remoteRequests = 0
+      page.on('request', request => { if (request.url().startsWith('https://supplier.invalid/')) remoteRequests++ })
+      await page.route('**/api/catalog?size=*', route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...imageCatalog, tires: rows }),
+      }))
+      await page.route(`**${imagePath}`, route => route.fulfill({ status: 200, contentType: 'image/png', body: onePixelPng }))
+      await page.route(`**${brokenImagePath}`, route => route.fulfill({ status: 404, contentType: 'text/plain', body: 'missing' }))
+      await openTireStep(page, cleanTire.size)
+      const imageCard = page.getByTestId(`tire-option-${rows[0].id}`)
+      const absentCard = page.getByTestId(`tire-option-${rows[1].id}`)
+      const brokenCard = page.getByTestId(`tire-option-${rows[2].id}`)
+      const remoteCard = page.getByTestId(`tire-option-${rows[3].id}`)
+      await imageCard.locator('img').waitFor()
+      await brokenCard.locator('[data-image-state="fallback"]').waitFor()
+      check(await imageCard.locator('img').evaluate(img => img.complete && img.naturalWidth > 0), 'an approved catalog image renders successfully')
+      check(await imageCard.locator('img').getAttribute('loading') === 'lazy' && await imageCard.locator('img').getAttribute('decoding') === 'async', 'catalog images lazy-load and decode asynchronously')
+      check(await imageCard.locator('img').getAttribute('alt') === `${rows[0].name} tire`, 'the product image has a useful tire-specific alternative')
+      check(await absentCard.locator('img').count() === 0 && await absentCard.locator('[data-image-state="fallback"]').count() === 1, 'an absent image uses generic tire art')
+      check(await brokenCard.locator('img').count() === 0, 'a failed approved image returns to generic tire art')
+      check(await remoteCard.locator('img').count() === 0 && remoteRequests === 0 && !(await page.content()).includes(remoteImageUrl), 'a supplier URL never reaches markup or the network')
+      check(await imageCard.locator('.tire-media').evaluate(el => { const box = el.getBoundingClientRect(); return box.width > 0 && Math.abs(box.width - box.height) < 1 }), 'the image slot reserves a fixed square aspect ratio')
+      check(await page.locator('.tire-options').evaluate(el => el.scrollWidth <= el.clientWidth + 1), 'product-image cards do not overflow the tire list')
+      await page.close()
+    }
+
+    {
+      const page = await browser.newPage({ viewport: { width, height: 900 } })
+      const check = (condition, message) => { assert.ok(condition, message); checks++; console.log(`OK ${width}px: ${message}`) }
+      await injectSocialState(page, { profiles: socialProfiles, testimonials: [] })
+      await page.goto(base)
+      const section = page.getByTestId('social-proof-section')
+      await section.waitFor()
+      const links = section.locator('.social-profile-link')
+      check(await page.getByTestId('social-proof-section').count() === 1, 'enabled profiles render in exactly one social section')
+      check(await section.evaluate(el => el.previousElementSibling?.id === 'order' && el.nextElementSibling?.classList.contains('site-footer')), 'the social section sits after the order form and before the normal footer')
+      check(await links.count() === socialProfiles.length, 'every enabled owner profile renders once')
+      check(await links.evaluateAll((items, expected) => items.every((item, index) => item.href === expected[index].url && item.target === '_blank' && item.rel.includes('noopener') && item.rel.includes('noreferrer')), socialProfiles), 'profile cards retain their approved destinations and safe external-link behavior')
+      check(await links.evaluateAll((items, expected) => items.every((item, index) => item.innerText.includes('↗') && item.textContent.includes(expected[index]) && /opens in a new tab/i.test(item.textContent)), ['Instagram', 'TikTok', 'YouTube', 'Facebook']), 'profile cards expose platform names and an external-link cue')
+      await links.first().focus()
+      await page.keyboard.press('Tab')
+      check(await links.nth(1).evaluate(el => document.activeElement === el && getComputedStyle(el).outlineStyle !== 'none'), 'profile cards have visible keyboard focus in owner-selected order')
+      check(await page.locator('body').evaluate(el => el.scrollWidth <= innerWidth + 1), 'the social cards do not overflow the viewport')
+      await page.close()
+    }
+
+    {
+      const page = await browser.newPage({ viewport: { width, height: 900 } })
+      const check = (condition, message) => { assert.ok(condition, message); checks++; console.log(`OK ${width}px: ${message}`) }
+      await injectSocialState(page, { profiles: [], testimonials: [] })
+      await page.goto(base)
+      check(await page.getByTestId('social-proof-section').count() === 0, 'empty social metadata reserves no customer-page shell')
+      await page.close()
+    }
+
+    {
+      const page = await browser.newPage({ viewport: { width, height: 900 } })
+      const check = (condition, message) => { assert.ok(condition, message); checks++; console.log(`OK ${width}px: ${message}`) }
+      await injectSocialState(page, { profiles: [], testimonials: socialTestimonials })
+      await page.goto(base)
+      const section = page.getByTestId('social-proof-section')
+      check(await section.locator('.social-proof-card').count() === 1 && await section.locator('.social-profile-link').count() === 0, 'testimonial-only metadata renders customer proof without profile cards')
+      check(!(await section.locator('.social-proof-note').innerText()).includes('verified social profiles'), 'testimonial-only copy does not claim social profiles are present')
+      await page.close()
+    }
+
+    {
+      const page = await browser.newPage({ viewport: { width, height: 900 } })
+      const check = (condition, message) => { assert.ok(condition, message); checks++; console.log(`OK ${width}px: ${message}`) }
+      await injectSocialState(page, { profiles: socialProfiles, testimonials: socialTestimonials })
+      await page.goto(base)
+      const section = page.getByTestId('social-proof-section')
+      check(await section.locator('.social-proof-card').count() === 1 && await section.locator('.social-profile-link').count() === socialProfiles.length, 'combined metadata renders testimonials and every enabled profile')
+      check((await section.locator('.social-proof-note').innerText()).includes('Customer experiences') && (await section.locator('.social-proof-note').innerText()).includes('verified social profiles'), 'combined copy truthfully names customer experiences and profiles')
+      await page.close()
+    }
+
     const page = await browser.newPage({ viewport: { width, height: 900 } })
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
