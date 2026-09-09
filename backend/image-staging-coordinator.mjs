@@ -192,7 +192,7 @@ async function runFixtures(input) {
     db.close(); closed = true
     // No source URLs, storage locators, raw errors or private database path leave this API.
     return Object.freeze({ runId, profileDigest: plan.profile.digest, snapshotDigest: plan.snapshotDigest,
-      selected: 5, attempted: result.attempted, stored: result.stored, deduped: result.deduped,
+      selected: plan.ids.length, attempted: result.attempted, stored: result.stored, deduped: result.deduped,
       failed: result.failures.length, stoppedOnRefusal: result.stoppedOnRefusal, integrity, states: Object.freeze(states) })
   } catch {
     try { log?.append('run-interrupted', { outcome: 'failed' }) } catch { /* leave incomplete prefix for review */ }

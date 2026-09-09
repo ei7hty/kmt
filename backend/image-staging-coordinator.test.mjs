@@ -127,6 +127,9 @@ test('a snapshot with fewer candidates stages fewer images rather than refusing'
   // `attempted` is the assertion that matters: four candidates were actually
   // run rather than the snapshot being refused for not containing five.
   assert.equal(result.attempted, snapshot.candidates.length)
+  // `selected` reported 5 unconditionally before this change, so a four-image
+  // run claimed five were selected -- a number true only while it could not vary.
+  assert.equal(result.selected, snapshot.candidates.length)
   assert.equal(result.failed, 0)
   assert.equal(result.stoppedOnRefusal, false)
   // Not `stored === 4`: every fixture serves the same PNG bytes, so
