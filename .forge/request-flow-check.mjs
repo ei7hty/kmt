@@ -27,7 +27,7 @@ const AUDIT_EMAIL = 'jamie+request-flow-check@example.com'
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 94
+const EXPECTED_CHECKS = 96
 
 const imageHash = 'a'.repeat(64)
 const brokenImageHash = 'b'.repeat(64)
@@ -78,6 +78,25 @@ try {
   const [cleanRatio, cleanDiameter] = cleanRest.split('R')
   const imageCatalog = await (await fetch(`${base}/api/catalog?size=${encodeURIComponent(cleanTire.size)}`)).json()
   assert.ok(imageCatalog.tires.length >= 4, 'image audit needs four catalog rows')
+
+  for (const { width, count } of [{ width: 768, count: 3 }, { width: 1024, count: 4 }]) {
+    const page = await browser.newPage({ viewport: { width, height: 900 } })
+    await injectSocialState(page, { profiles: socialProfiles.slice(0, count), testimonials: [] })
+    await page.goto(base)
+    const centered = await page.getByTestId('social-proof-section').evaluate(el => {
+      const cards = [...el.querySelectorAll('.social-profile-link')]
+      const lowestTop = Math.max(...cards.map(card => card.getBoundingClientRect().top))
+      const finalRow = cards.filter(card => Math.abs(card.getBoundingClientRect().top - lowestTop) < 2)
+      const left = Math.min(...finalRow.map(card => card.getBoundingClientRect().left))
+      const right = Math.max(...finalRow.map(card => card.getBoundingClientRect().right))
+      const section = el.getBoundingClientRect()
+      return Math.abs((left + right) / 2 - (section.left + section.right) / 2) < 2
+    })
+    assert.ok(centered, `${count} profiles at ${width}px center their incomplete final row`)
+    checks++
+    console.log(`OK ${width}px: ${count} profiles center their incomplete final row`)
+    await page.close()
+  }
 
   for (const width of [375, 1280]) {
     {

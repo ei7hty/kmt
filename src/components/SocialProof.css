@@ -10,8 +10,8 @@
 .social-proof-card figcaption span::before, .social-proof-card figcaption time::before { content: '·'; margin-right: 7px; }
 .social-proof-card a { min-height: 44px; color: var(--accent-text); display: inline-flex; align-items: center; }
 .social-proof-card a { margin-left: auto; }
-.social-profile-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 250px)); justify-content: center; gap: 14px; width: 100%; }
-.social-profile-link { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; min-height: 156px; padding: 18px 16px; border: 1px solid var(--border); border-radius: 10px; background: #111; color: var(--text-h); text-align: center; text-decoration: none; }
+.social-profile-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; width: 100%; }
+.social-profile-link { display: flex; flex: 1 1 210px; flex-direction: column; align-items: center; justify-content: center; max-width: 250px; gap: 9px; min-height: 156px; padding: 18px 16px; border: 1px solid var(--border); border-radius: 10px; background: #111; color: var(--text-h); text-align: center; text-decoration: none; }
 .social-profile-link:hover { border-color: #707078; background: #171717; }
 .social-profile-link:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 3px; }
 .social-profile-badge { display: grid; place-items: center; width: 44px; aspect-ratio: 1; border: 1px solid #55555c; border-radius: 50%; color: white; background: #252529; font-size: 12px; font-weight: 900; letter-spacing: -.2px; }
@@ -21,4 +21,4 @@
 .social-profile-label small { color: var(--muted); font-size: 11px; line-height: 1.35; }
 .social-profile-external { color: var(--accent-text); font-size: 18px; line-height: 1; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-@media (max-width: 600px) { .social-proof { padding: 48px 16px; } .social-proof-card a { margin-left: 0; } .social-profile-links { grid-template-columns: minmax(0, 320px); } .social-profile-link { min-height: 148px; } }
+@media (max-width: 600px) { .social-proof { padding: 48px 16px; } .social-proof-card a { margin-left: 0; } .social-profile-link { flex-basis: 100%; max-width: 320px; min-height: 148px; } }
