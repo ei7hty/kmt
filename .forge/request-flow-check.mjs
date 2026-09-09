@@ -27,7 +27,7 @@ const AUDIT_EMAIL = 'jamie+request-flow-check@example.com'
  * means checks stopped running -- the way an audit here once passed while
  * asserting nothing -- and more means the baseline was not updated.
  */
-const EXPECTED_CHECKS = 92
+const EXPECTED_CHECKS = 94
 
 const imageHash = 'a'.repeat(64)
 const brokenImageHash = 'b'.repeat(64)
@@ -127,6 +127,17 @@ try {
       check(await section.evaluate(el => el.previousElementSibling?.id === 'order' && el.nextElementSibling?.classList.contains('site-footer')), 'the social section sits after the order form and before the normal footer')
       check(await links.count() === socialProfiles.length, 'every enabled owner profile renders once')
       check(await links.locator('.social-profile-badge img').evaluateAll(items => items.length === 4 && items.every(item => item.complete && item.naturalWidth > 0 && new URL(item.src).origin === location.origin && item.src.includes('/brand/social/'))), 'social cards use loaded same-origin local icon assets')
+      check(await section.evaluate(el => {
+        const heading = el.querySelector('.social-proof-heading')
+        const container = el.querySelector('.social-profile-links')
+        const cards = [...el.querySelectorAll('.social-profile-link')]
+        const sectionBox = el.getBoundingClientRect()
+        const containerBox = container.getBoundingClientRect()
+        const centered = node => getComputedStyle(node).textAlign === 'center' && getComputedStyle(node).alignItems === 'center'
+        return getComputedStyle(heading).textAlign === 'center'
+          && Math.abs((containerBox.left + containerBox.right) / 2 - (sectionBox.left + sectionBox.right) / 2) < 2
+          && cards.every(card => centered(card) && card.getBoundingClientRect().right <= innerWidth + 1)
+      }), 'heading, profile row and each card are centered without viewport overflow')
       check(await links.evaluateAll((items, expected) => items.every((item, index) => item.href === expected[index].url && item.target === '_blank' && item.rel.includes('noopener') && item.rel.includes('noreferrer')), socialProfiles), 'profile cards retain their approved destinations and safe external-link behavior')
       check(await links.evaluateAll((items, expected) => items.every((item, index) => item.innerText.includes('↗') && item.textContent.includes(expected[index]) && /opens in a new tab/i.test(item.textContent)), ['Instagram', 'TikTok', 'YouTube', 'Facebook']), 'profile cards expose platform names and an external-link cue')
       await links.first().focus()
