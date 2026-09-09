@@ -88,6 +88,14 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install isolated image decoder test runtime
+        run: |
+          python -m venv "$RUNNER_TEMP/kmt-image-decoder"
+          "$RUNNER_TEMP/kmt-image-decoder/bin/python" -m pip install --only-binary=:all: -r scripts/image-decoder-requirements.txt
+          echo "KMT_IMAGE_DECODER_PYTHON=$RUNNER_TEMP/kmt-image-decoder/bin/python" >> "$GITHUB_ENV"
       - name: Validate release metadata and safety contracts
         run: |
           node --test .forge/release-check.test.mjs
