@@ -1,14 +1,21 @@
 import { platformLabel, socialProof } from '../social-proof.js'
 import './SocialProof.css'
 
-const PLATFORM_BADGES = { facebook: 'f', instagram: 'IG', tiktok: 'TT', youtube: 'YT', x: 'X', linkedin: 'in' }
+const PLATFORM_ICONS = {
+  facebook: '/brand/social/facebook.svg',
+  instagram: '/brand/social/instagram.svg',
+  tiktok: '/brand/social/tiktok.svg',
+  youtube: '/brand/social/youtube.svg',
+}
 
 function SocialProfileLinks({ profiles }) {
   return <nav className="social-profile-links" aria-label="Ken’s Mobile Tire social profiles">
     {profiles.map(profile => {
       const label = platformLabel(profile.platform)
       return <a className={`social-profile-link social-profile-${profile.platform}`} href={profile.url} target="_blank" rel="noopener noreferrer" key={profile.platform}>
-        <span className="social-profile-badge" aria-hidden="true">{PLATFORM_BADGES[profile.platform] ?? label.slice(0, 2)}</span>
+        <span className="social-profile-badge" aria-hidden="true">{PLATFORM_ICONS[profile.platform]
+          ? <img src={PLATFORM_ICONS[profile.platform]} alt="" width="24" height="24" />
+          : label.slice(0, 2)}</span>
         <span className="social-profile-label"><strong>{label}</strong><small>Follow Ken on {label}</small></span>
         <span className="social-profile-external" aria-hidden="true">↗</span>
         <span className="sr-only">, opens in a new tab</span>
