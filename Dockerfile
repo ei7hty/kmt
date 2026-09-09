@@ -84,7 +84,7 @@ RUN npm ci --include=dev
 COPY . .
 # Exercise the copied Python/native codec runtime in the final Node image,
 # including its real resource-isolation boundary, using generated fixtures only.
-RUN node --test backend/image-decoder.test.mjs
+RUN gosu node node --test backend/image-decoder.test.mjs
 RUN npm run build
 
 # Only now, so it governs the server and not the install.
