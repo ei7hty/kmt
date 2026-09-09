@@ -9,6 +9,9 @@
 .social-proof-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border); }
 .social-proof-list span { display: grid; gap: 4px; min-width: 0; }
 .social-proof-list small { overflow-wrap: anywhere; color: var(--muted); }
+.social-proof-list .social-proof-live, .social-proof-list .social-proof-disabled { font-weight: 700; }
+.social-proof-list .social-proof-live { color: var(--text-h); }
+.social-proof-list .social-proof-disabled { color: var(--accent-text); }
 .social-proof-check { display: flex !important; grid-template-columns: auto 1fr; align-items: center; }
 .social-proof-check input { width: 20px; min-height: 20px; }
 .social-proof-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -16,4 +19,4 @@
 .social-proof-owner-card blockquote { margin: 10px 0; color: var(--text-h); white-space: pre-wrap; overflow-wrap: anywhere; }
 .social-proof-owner-card p { margin: 5px 0 0; }
 .social-proof-kind { color: var(--accent-text); font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
-@media (max-width: 600px) { .social-proof-owner-card { display: grid; } .social-proof-list li { align-items: start; flex-direction: column; } }
+@media (max-width: 600px) { .social-proof-owner-card { display: grid; } .social-proof-list li { align-items: start; flex-direction: column; } .social-proof-list .social-proof-actions { width: 100%; } }

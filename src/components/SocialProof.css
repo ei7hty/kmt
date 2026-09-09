@@ -1,6 +1,8 @@
 .social-proof { display: grid; gap: 24px; max-width: 1120px; margin: 0 auto; padding: 64px 24px; }
+.social-proof-compact { gap: 16px; padding-top: 28px; padding-bottom: 28px; }
 .social-proof-heading { display: grid; gap: 8px; }
 .social-proof-heading h2 { margin: 0; color: var(--text-h); font-size: clamp(28px, 4vw, 46px); text-transform: uppercase; }
+.social-proof-note { max-width: 620px; margin: 0; color: var(--muted); line-height: 1.5; }
 .social-proof-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
 .social-proof-card { display: grid; gap: 18px; min-height: 150px; margin: 0; padding: 22px; border: 1px solid var(--border); background: #111; }
 .social-proof-card blockquote { margin: 0; color: var(--text-h); font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
@@ -10,5 +12,8 @@
 .social-proof-card a, .social-profile-links a { min-height: 44px; color: var(--accent-text); display: inline-flex; align-items: center; }
 .social-proof-card a { margin-left: auto; }
 .social-profile-links { display: flex; flex-wrap: wrap; gap: 10px 22px; border-top: 1px solid var(--border); padding-top: 18px; }
+.social-profile-links-compact { border-top: 0; padding-top: 0; }
+.social-proof-footer { display: grid; gap: 10px; padding: 18px 24px; border-top: 1px solid var(--border); background: #111; }
+.social-proof-footer p { margin: 0; color: var(--text-h); font-size: 12px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 600px) { .social-proof { padding: 48px 16px; } .social-proof-card a { margin-left: 0; } }
