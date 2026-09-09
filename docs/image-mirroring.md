@@ -154,3 +154,106 @@ until application code supplies the provider transport, image decoder,
 repository, and staging adapter together. No provider credentials belong in
 these modules or in a fixture; customer rendering and approval/import remain
 separate owner-controlled steps.
+
+## Offline activation prerequisites (execution remains disabled)
+
+The new coordinator is deliberately an offline fixture harness. It imports no
+HTTP provider and accepts no transport callback, existing database handle, or
+database filename. `prepareApprovedImageStagingRun()` refuses every profile
+until the PROJECT MANAGER supplies an exact approved plan and a separately
+reviewed activation change installs it. `IMAGE_EXECUTION_ENABLED` is false;
+the source-controlled approval registry is empty. No real provider profile or
+host is invented here. Neither environment variables nor JSON approval flags
+grant authority. The existing CLI still refuses `--execute`.
+
+`compileImageProviderProfile()` validates exact hostnames and the complete,
+fixed pilot policy, copies and deeply freezes it, and computes a canonical
+SHA-256 digest. HTTPS/443 only, exactly five candidates, serial requests,
+1.5-second delay, three redirects, 5 MiB encoded bytes, 16 million pixels, one
+frame, 5-second decode deadline, 256 MiB native memory, and 30-second candidate
+deadline are bound into that digest. The offline harness alone uses zero delay
+because no request is sent. Approval must bind the profile digest, exact source
+snapshot digest and ordered five supplier IDs. Changing any of those requires
+new approval. Limits cannot be relaxed by a profile.
+
+The authoritative local snapshot is UTF-8 JSON with this exact shape, containing
+five unique supplier IDs and one image per supplier:
+
+```json
+{"version":1,"candidates":[{"supplierId":"fixture-0","supplierSku":"sku-0","productUrl":"https://cdn.example.test/product/0","originalUrl":"https://cdn.example.test/image/0","revision":"revision-1"}]}
+```
+
+The abbreviated example has one row; execution requires five. The coordinator
+copies and hashes the raw snapshot bytes before parsing, compares the expected
+digest, rejects extra fields and invalid identities/URLs, and creates a new
+private UUID-named SQLite database. It never opens an owner/production database.
+The original bytes and digest are immutable staging records. Candidate rows are
+reconciled from that snapshot and committed through the existing identity-bound
+repository. A staging trigger additionally refuses approval. Source changes
+require a new plan; there is no silent refresh from another snapshot.
+
+The only runnable entry point, `runOfflineImageStagingFixtures()`, accepts an
+in-memory `Map` of bounded fixture bytes and metadata, and requires all profile
+hosts to end in the reserved `.test` suffix. It simulates redirects and public
+DNS assertions without opening sockets or resolving names. It uses the real
+isolated decoder, real private object storage and real staging SQLite. Real
+profiles cannot enter this harness. A future live coordinator needs separate
+exact-head security review of its transport/event wiring and activation; these
+offline tests are not permission to contact a provider.
+
+### Real decoder runtime
+
+`createIsolatedImageDecoder({ python })` requires an absolute path to a trusted,
+dedicated Python interpreter with `scripts/image-decoder-requirements.txt`
+installed. Pillow 12.3.0 is pinned and checked inside the worker. This dependency
+is justified because a header parser cannot validate real compressed image
+content. Install into a private virtual environment, never the shared runtime:
+
+```text
+python -m venv decoder.local
+decoder.local/Scripts/python.exe -m pip install -r scripts/image-decoder-requirements.txt
+```
+
+On POSIX use `decoder.local/bin/python`. Set `KMT_IMAGE_DECODER_PYTHON` to its
+absolute path when testing outside that default local environment. Missing or
+wrong-version runtimes fail tests and decoding; there is no skipped decoder
+test or fallback to metadata-only inspection. The dependency is not installed
+in the deployed web application by this change.
+
+Before importing Pillow or consuming image bytes, the worker sets Windows Job
+Object native process-memory/CPU/active-process limits or POSIX `RLIMIT_AS` and
+`RLIMIT_CPU`. Failure to establish those limits refuses decoding. The parent
+spawns without a shell, uses Python isolated mode, omits inherited secrets,
+bounds stdin/stdout/stderr, kills on abort/deadline and waits for process close.
+The worker restricts formats to PNG/JPEG/GIF/WebP, treats decompression warnings
+as errors, verifies then reopens and fully loads pixels, rejects extra frames,
+and checks terminal container markers to reject tolerated truncation.
+
+This is process/resource isolation, **not** a filesystem/network sandbox against
+arbitrary native code execution. The trusted runtime, operator-controlled
+directory and Windows ACL are prerequisites. POSIX memory is address space;
+Windows memory is committed process memory. The parent deadline includes worker
+startup; OS CPU time has whole-second granularity. The limits do not claim that
+every image within the pixel budget will fit in memory. See the primary
+[Pillow security guidance](https://pillow.readthedocs.io/en/stable/handbook/security.html)
+and [Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects).
+
+### Private append-only provenance
+
+Each staging database contains an ordered hash-chained event log committed with
+SQLite `synchronous=FULL`. It records run/profile/snapshot identity, exact policy,
+source identity/revision/product and original URL, each attempted redirect and
+connection assertion, response/final URL/hash, decoded dimensions/format/hash,
+commit intent/result, failures and a terminal reconciliation of actual SQL
+candidate states. Raw errors, object locators and filesystem paths are excluded
+from events. Source URLs remain private because they may contain supplier query
+data. The returned summary contains digests, counts and candidate outcomes only.
+
+Triggers prohibit event updates/deletes; hash verification detects edited or
+reordered records. This is application append-only storage, not WORM protection
+against an operator who can rewrite the database and its chain. A process crash
+leaves an incomplete prefix, possibly ending at commit intent. Missing `run-end`
+means interrupted/unknown, never success; inspect both SQL truth and verified
+private objects before an explicitly approved recovery. Provenance failure
+aborts subsequent work. No automatic retry or catalog approval follows a crash.
+The earlier Windows directory-entry power-loss limitation still applies.

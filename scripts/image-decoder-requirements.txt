@@ -1,0 +1,3 @@
+# Native image decoding requires a maintained codec, not a header parser.
+# Install only in a dedicated operator-controlled Python environment.
+Pillow==12.3.0
