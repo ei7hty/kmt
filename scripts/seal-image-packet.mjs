@@ -36,7 +36,7 @@ export function sealImagePacket(directory, bindingsFile) {
   for (const [name, bytes] of files) write(name, bytes)
   write('manifest.json', manifestBytes) // completeness marker published last
   if (process.platform !== 'win32') { const fd = openSync(directory, 'r'); try { fsyncSync(fd) } finally { closeSync(fd) } }
-  return { manifestDigest: digest, count: 5 }
+  return { manifestDigest: digest, count: assets.length }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
