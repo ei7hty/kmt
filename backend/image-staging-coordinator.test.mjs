@@ -127,23 +127,13 @@ test('abrupt coordinator process death preserves a verifiable incomplete provena
     windowsHide: true, stdio: 'ignore', env: { ...process.env, KMT_IMAGE_DECODER_PYTHON: decoderPython },
   })
   const closed = once(child, 'close')
-  let databasePath, observed = false
+  const timeout = setTimeout(() => child.kill('SIGKILL'), 20000)
   try {
-    for (let attempt = 0; attempt < 200 && !observed; attempt++) {
-      const names = await readdir(directory)
-      const name = names.find(value => value.endsWith('.sqlite'))
-      if (name) {
-        databasePath = join(directory, name)
-        const db = new DatabaseSync(databasePath, { readOnly: true })
-        try { observed = db.prepare("SELECT COUNT(*) AS n FROM image_run_events WHERE type='candidate-start'").get().n > 0 }
-        catch { /* schema not committed yet */ }
-        finally { db.close() }
-      }
-      if (!observed) await new Promise(resolve => setTimeout(resolve, 20))
-    }
-    assert.ok(observed, 'must interrupt an actual in-progress run')
-  } finally { child.kill('SIGKILL'); await closed }
-  const db = new DatabaseSync(databasePath)
+    const [code] = await closed
+    assert.equal(code, 86, 'fixture must terminate after its actual durable candidate-start')
+  } finally { clearTimeout(timeout); child.kill('SIGKILL') }
+  const name = (await readdir(directory)).find(value => value.endsWith('.sqlite'))
+  const db = new DatabaseSync(join(directory, name))
   try {
     const integrity = verifyImageRunProvenance(db)
     assert.ok(integrity.events > 1); assert.equal(integrity.complete, false)
