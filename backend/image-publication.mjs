@@ -149,7 +149,7 @@ export class ImagePublication {
       const current = this.review(digest)
       if (current.version !== expectedVersion || (action === 'approved' ? current.action !== 'imported' : current.action !== 'approved')) throw failure()
       const records = this.db.prepare('SELECT * FROM image_packet_assets WHERE packet=? ORDER BY ordinal').all(digest)
-      if (records.length !== 5) throw failure()
+      if (!records.length) throw failure()
       if (action === 'approved') {
         const eligible = new Set(this.inventory.catalog().map(row => row.id))
         for (const row of records) {

@@ -95,18 +95,44 @@ test('valid strict JPEG still stores and deduplicates with validator evidence', 
     assert.equal(decoded.validation, 'simplejpeg-1.9.0-strict')
   } finally { db.close() }
 })
-test('staging refuses wrong hash, count, stale identity, credentials and unknown fields before filesystem writes', async t => {
+// `candidates.pop()` left this list when the packet size stopped being five: a
+// snapshot with one fewer candidate is a smaller run, not a truncated one, and
+// is covered by its own test below. An EMPTY snapshot is still refused -- a run
+// of nothing is a mistake rather than a smaller run -- so the zero case took
+// pop()'s place here. Every other mutation in the list is a real invariant and
+// none of them is about the count: duplicate rows, a reused supplier id,
+// credentials in a URL, and a snapshot that pre-approves its own candidates.
+test('staging refuses wrong hash, empty set, stale identity, credentials and unknown fields before filesystem writes', async t => {
   const directory = await workspace(t)
-  for (const change of [data => data.candidates.pop(), data => data.candidates.push(data.candidates[0]),
+  for (const change of [data => data.candidates.push(data.candidates[0]),
     data => { data.candidates[1].supplierId = data.candidates[0].supplierId },
     data => { data.candidates[0].originalUrl = 'https://secret@cdn.example.test/image' },
-    data => { data.candidates[0].usageStatus = 'approved' }]) {
+    data => { data.candidates[0].usageStatus = 'approved' },
+    data => { data.candidates.length = 0 }]) {
     const input = plan(), snapshot = JSON.parse(input.snapshotBytes); change(snapshot)
     input.snapshotBytes = Buffer.from(JSON.stringify(snapshot)); input.expectedSnapshotDigest = sha256Bytes(input.snapshotBytes)
     await assert.rejects(runOfflineImageStagingFixtures({ ...input, directory }))
   }
   await assert.rejects(runOfflineImageStagingFixtures({ ...plan(), directory, expectedSnapshotDigest: 'a'.repeat(64) }))
   assert.deepEqual(await readdir(directory), [])
+})
+test('a snapshot with fewer candidates stages fewer images rather than refusing', async t => {
+  const directory = await workspace(t)
+  const input = plan(), snapshot = JSON.parse(input.snapshotBytes)
+  const dropped = snapshot.candidates.pop()
+  input.snapshotBytes = Buffer.from(JSON.stringify(snapshot))
+  input.expectedSnapshotDigest = sha256Bytes(input.snapshotBytes)
+  const result = await runOfflineImageStagingFixtures({ ...input, directory })
+  assert.ok(dropped, 'the fixture had a candidate to drop, or this proves nothing')
+  // `attempted` is the assertion that matters: four candidates were actually
+  // run rather than the snapshot being refused for not containing five.
+  assert.equal(result.attempted, snapshot.candidates.length)
+  assert.equal(result.failed, 0)
+  assert.equal(result.stoppedOnRefusal, false)
+  // Not `stored === 4`: every fixture serves the same PNG bytes, so
+  // content-addressed storage keeps one object and dedupes the rest. The
+  // invariant is that each attempt is accounted for, not that each is a file.
+  assert.equal(result.stored + result.deduped, snapshot.candidates.length)
 })
 test('real host profile cannot run through fixture seam and approval entry point stays blocked', async t => {
   const directory = await workspace(t)

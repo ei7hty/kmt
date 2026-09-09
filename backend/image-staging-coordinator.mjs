@@ -38,7 +38,7 @@ function planFrom({ profile: rawProfile, snapshotBytes, expectedSnapshotDigest }
   const snapshotDigest = sha256Bytes(snapshot)
   if (snapshotDigest !== expectedSnapshotDigest) throw refused()
   const data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(snapshot))
-  if (!keys(data, ['version', 'candidates']) || data.version !== 1 || !Array.isArray(data.candidates) || data.candidates.length !== 5) throw refused()
+  if (!keys(data, ['version', 'candidates']) || data.version !== 1 || !Array.isArray(data.candidates) || !data.candidates.length) throw refused()
   const ids = new Set()
   for (const item of data.candidates) {
     if (!keys(item, ['supplierId', 'supplierSku', 'productUrl', 'originalUrl', 'revision'])) throw refused()
@@ -123,7 +123,7 @@ async function runFixtures(input) {
     log = createImageRunProvenance(db, { runId, profileDigest: plan.profile.digest, snapshotDigest: plan.snapshotDigest })
     log.append('run-start', { policy: plan.profile.policy, selected: plan.ids })
     const candidates = repository.list()
-    if (candidates.length !== 5 || candidates.some(row => row.usageStatus !== 'candidate')) throw refused()
+    if (candidates.length !== plan.ids.length || candidates.some(row => row.usageStatus !== 'candidate')) throw refused()
     let current
     const controller = new AbortController()
     const signal = input.signal ? AbortSignal.any([input.signal, controller.signal]) : controller.signal

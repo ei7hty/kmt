@@ -4,11 +4,17 @@ import { assertAllowedImageUrl, sha256Bytes } from './image-assets.mjs'
 export const IMAGE_EXECUTION_ENABLED = false
 // This reviewed source is the trust anchor. No env var, CLI flag, JSON boolean,
 // request field or caller-supplied digest can grant PROJECT MANAGER approval.
-// PM must supply the exact profile, snapshot digest and five candidate IDs.
+// PM must supply the exact profile, snapshot digest and candidate IDs.
 // A separate reviewed change must populate this registry AND enable execution.
 const PM_APPROVALS = Object.freeze([])
+// `candidateLimit` is the operational batch ceiling, and it is load on somebody
+// else's server: at `delayMs` 1500 a run of 250 is about six minutes of
+// one-at-a-time traffic against the supplier. It was 5 for the pilot batch.
+// Raising it changes the profile digest, which is correct rather than awkward --
+// the digest pins the policy a run was approved under, so a wider batch is a
+// different policy and has to be approved as one.
 export const IMAGE_PILOT_POLICY = Object.freeze({
-  candidateLimit: 5, allowedPorts: Object.freeze([443]), allowedFormats: Object.freeze(['jpeg', 'png']), maxBytes: 5 * 1024 * 1024,
+  candidateLimit: 250, allowedPorts: Object.freeze([443]), allowedFormats: Object.freeze(['jpeg', 'png']), maxBytes: 5 * 1024 * 1024,
   maxWidth: 10000, maxHeight: 10000, maxPixels: 16_000_000, maxFrames: 1,
   maxDecodeMs: 5000, memoryBytes: 256 * 1024 * 1024, maxRedirects: 3,
   timeoutMs: 30000, delayMs: 1500,
@@ -46,7 +52,8 @@ export function compileImageProviderProfile(input) {
 
 export function assertApprovedImagePlan(profile, snapshotDigest, candidateIds) {
   if (!/^[a-f0-9]{64}$/.test(snapshotDigest) || !Array.isArray(candidateIds) ||
-      candidateIds.length !== 5 || new Set(candidateIds).size !== 5) reject()
+      candidateIds.length < 1 || candidateIds.length > IMAGE_PILOT_POLICY.candidateLimit ||
+      new Set(candidateIds).size !== candidateIds.length) reject()
   const approval = PM_APPROVALS.find(item => item.profileDigest === profile?.digest &&
     item.snapshotDigest === snapshotDigest && JSON.stringify(item.candidateIds) === JSON.stringify(candidateIds))
   if (!approval) throw new Error('Image execution blocked: exact PROJECT MANAGER approval is absent')

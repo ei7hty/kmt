@@ -6,7 +6,7 @@ import path from 'node:path'
 import { createServer } from 'node:http'
 import { Inventory } from './inventory.mjs'
 import { ImagePublication, imageDirectoryForDatabase, verifyImageDecisions } from './image-publication.mjs'
-import { parseImagePacket, supplierImageRevision } from './image-manifest.mjs'
+import { IMAGE_SELECTION_TAG, parseImagePacket, supplierImageRevision } from './image-manifest.mjs'
 import { sha256Bytes } from './image-assets.mjs'
 import { IMAGE_PILOT_POLICY, compileImageProviderProfile, IMAGE_EXECUTION_ENABLED } from './image-provider-profile.mjs'
 import { createImageStagingStorage, createPrivateImageStorage } from './image-staging.mjs'
@@ -25,7 +25,7 @@ function packetFor(rows, bytes = fixtures.png, format = 'png', seed = 1) {
   const candidates = rows.map(row => ({ supplierId: row.id, supplierSku: row.source.sku, productUrl: `https://provider.test/product/${row.id}`,
     originalUrl: `https://provider.test/photo/${row.id}`, revision: supplierImageRevision(row) }))
   const snapshot = { version: 2, candidates, provenance: { codeSha: 'a'.repeat(40), seed, inputDigest: 'b'.repeat(64), mappingDigest: 'c'.repeat(64),
-    selection: 'owner-mapped-five-seeded-v1', productHosts: ['provider.test'], imageHosts: ['provider.test'],
+    selection: IMAGE_SELECTION_TAG, productHosts: ['provider.test'], imageHosts: ['provider.test'],
     observations: candidates.map((c, i) => ({ supplierId: c.supplierId, requestedUrl: c.productUrl, finalUrl: c.productUrl, sku: c.supplierSku, size: rows[i].size, listingUrl: rows[i].source.url })) },
   enrichedRows: candidates.map((c, i) => ({ ...rows[i], source: { sku: c.supplierSku, url: c.productUrl }, imageUrls: [c.originalUrl] })) }
   const snapshotBytes = Buffer.from(JSON.stringify(snapshot)), sha256 = sha256Bytes(bytes)

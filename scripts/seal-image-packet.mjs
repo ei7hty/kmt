@@ -13,7 +13,7 @@ export function sealImagePacket(directory, bindingsFile) {
   const profileBytes = readPrivateImageInput(path.join(directory, 'profile.json'), 65536)
   const snapshot = JSON.parse(snapshotBytes), profile = compileImageProviderProfile(JSON.parse(profileBytes))
   const bindings = JSON.parse(readPrivateImageInput(bindingsFile, 65536))
-  if (!Array.isArray(bindings) || bindings.length !== 5 || snapshot.candidates?.length !== 5) throw new Error('Exact-five bindings required')
+  if (!Array.isArray(bindings) || !bindings.length || snapshot.candidates?.length !== bindings.length) throw new Error('Bindings must match the snapshot candidate count')
   const files = new Map()
   const assets = bindings.map((binding, i) => {
     if (Object.keys(binding).sort().join(',') !== 'format,path,supplierId' || binding.supplierId !== snapshot.candidates[i].supplierId || !['png', 'jpeg'].includes(binding.format)) throw new Error('Ordered bindings refused')
