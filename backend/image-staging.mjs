@@ -16,16 +16,16 @@ function checkSignal(signal) {
     throw error
   }
 }
-function isolated(value) {
+function isolated(value, persistent = false) {
   if (typeof value !== 'string' || !path.isAbsolute(value)) throw new TypeError('Image staging directory must be an absolute path')
   const root = path.resolve(value)
-  if (root.split(path.sep).some(part => PROTECTED_PARTS.has(part.toLowerCase()))) throw new TypeError('Image staging directory must be private and outside served or production data roots')
+  if (root.split(path.sep).some(part => (persistent ? ['public', 'dist'] : [...PROTECTED_PARTS]).includes(part.toLowerCase()))) throw new TypeError('Image staging directory must be private and outside served or production data roots')
   return root
 }
 
 // Walk BEFORE creating descendants. Never mkdir recursively through an alias.
 // Repeat on every I/O boundary; a cached realpath is not containment evidence.
-function directoryAt(directory, create = false) {
+function directoryAt(directory, create = false, persistent = false) {
   let current = path.parse(directory).root
   for (const part of path.relative(current, directory).split(path.sep).filter(Boolean)) {
     current = path.join(current, part)
@@ -35,7 +35,7 @@ function directoryAt(directory, create = false) {
     }
     const stat = lstatSync(current)
     if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('Image staging refuses symlink or junction directory components')
-    isolated(realpathSync(current))
+    isolated(realpathSync(current), persistent)
   }
   const stat = lstatSync(directory)
   return { real: realpathSync(directory), dev: stat.dev, ino: stat.ino }
@@ -67,14 +67,27 @@ function syncDirectory(directory) {
 }
 
 /** A private, bounded object container: metadata and bytes publish together. */
-export function createImageStagingStorage({ directory = process.env.KMT_IMAGE_STAGING_DIR, storeId = process.env.KMT_IMAGE_STAGING_STORE_ID, urlPrefix = null, checkpoint = async () => {} } = {}) {
-  const root = isolated(directory)
+export function createImageStagingStorage(options = {}) {
+  return createStorage(options, false)
+}
+
+// Separate production factory: the offline staging entry point still refuses
+// /data. The only persistent layout is a dedicated private directory, never a
+// static root. The HTTP layer must authorize each read independently.
+export function createPrivateImageStorage({ directory, ...options }) {
+  if (path.basename(directory ?? '') !== 'catalog-images-private') throw new TypeError('Private image directory must end in catalog-images-private')
+  return createStorage({ ...options, directory, storeId: 'catalog-images' }, true)
+}
+
+function createStorage({ directory = process.env.KMT_IMAGE_STAGING_DIR, storeId = process.env.KMT_IMAGE_STAGING_STORE_ID, urlPrefix = null, checkpoint = async () => {} } = {}, persistent) {
+  const root = isolated(directory, persistent)
+  const directories = (directory, create = false) => directoryAt(directory, create, persistent)
   if (typeof storeId !== 'string' || !/^[a-z0-9][a-z0-9-]{1,47}$/.test(storeId)) throw new TypeError('Image staging store id must be an explicit safe identifier')
   if (urlPrefix !== null) throw new TypeError('Image staging locators are bound to the persistent store identity')
   let rootIdentity
   let identity
   function guard(create = false) {
-    const current = directoryAt(root, create)
+    const current = directories(root, create)
     if (rootIdentity && (!sameNode(rootIdentity, current) || rootIdentity.real !== current.real)) throw new Error('Image staging root identity changed')
     rootIdentity ??= current
     return current
@@ -109,12 +122,12 @@ export function createImageStagingStorage({ directory = process.env.KMT_IMAGE_ST
   function location(key, create = false) {
     guard()
     const parent = path.join(root, 'images')
-    directoryAt(parent, create)
+    directories(parent, create)
     const file = path.join(root, key)
     if (path.relative(rootIdentity.real, realpathSync(parent)) !== 'images' || path.dirname(file) !== parent) throw new Error('Image staging object escaped its real root')
     return file
   }
-  function verify(file, expected) {
+  function verify(file, expected, withBytes = false) {
     const container = readRegular(file, MAX_BYTES + 4100)
     if (container.length < 4) throw new Error('Image staging object is corrupt')
     const size = container.readUInt32BE(0)
@@ -122,7 +135,7 @@ export function createImageStagingStorage({ directory = process.env.KMT_IMAGE_ST
     const actual = JSON.parse(container.subarray(4, size + 4))
     const bytes = container.subarray(size + 4)
     if (JSON.stringify(actual) !== JSON.stringify(expected) || bytes.length !== expected.bytes || sha256Bytes(bytes) !== expected.sha256) throw new Error('Image staging object is corrupt or maps to different immutable metadata')
-    return actual
+    return withBytes ? { metadata: actual, bytes: Buffer.from(bytes) } : actual
   }
   async function step(phase, signal) {
     await checkpoint(phase)
@@ -131,6 +144,12 @@ export function createImageStagingStorage({ directory = process.env.KMT_IMAGE_ST
   }
   return {
     root, storeId,
+    read(input) {
+      ensureRoot()
+      const expected = metadata(input)
+      if (input.storageUrl !== expected.storageUrl) throw new Error('Image reference belongs to another store')
+      return verify(location(input.storageKey), expected, true)
+    },
     async verify(input) {
       checkSignal(input.signal)
       ensureRoot(input.signal)
@@ -188,7 +207,7 @@ export function createImageStagingStorage({ directory = process.env.KMT_IMAGE_ST
         await handle?.close().catch(() => {})
         // Cleanup cannot erase a publication-won result. If the parent changed,
         // leave an unreferenced temp file rather than unlink through an alias.
-        try { guard(); directoryAt(path.dirname(file)); unlinkSync(temporary) }
+        try { guard(); directories(path.dirname(file)); unlinkSync(temporary) }
         catch { /* Unpublished temporary files are ignored by readers/retries. */ }
       }
     },

@@ -2,6 +2,7 @@ import { InputError } from './inventory.mjs'
 import { PUBLIC_BODY_LIMIT, clientIp, refuse } from './limits.mjs'
 import { SITE_COPY_FIELDS, SiteCopy, siteCopyDefaults } from './site-copy.mjs'
 import { SocialProof } from './social-proof.mjs'
+import { IMAGE_PUBLIC_PATH } from './image-manifest.mjs'
 
 /**
  * Exported as `readJsonBody` so the auth routes parse request bodies the same
@@ -105,6 +106,7 @@ const REQUEST_ACTIONS = ['/pay', '/cancel', '/preview']
  */
 export function isKnownApiPath(pathname) {
   return PUBLIC_API_PATHS.has(pathname) ||
+    IMAGE_PUBLIC_PATH.test(pathname) ||
     pathname === MAIL_STATUS_PATH ||
     pathname === PUBLIC_REQUEST_PREFIX ||
     pathname === PUBLIC_INQUIRIES_PATH ||
@@ -114,7 +116,8 @@ export function isKnownApiPath(pathname) {
 
 /** Whether this request is one of the public calls, by path and by method. */
 export function isPublicApiCall(method, pathname) {
-  // HEAD is public for the health check alone: uptime tools send it, and it
+  if (['GET', 'HEAD'].includes(method) && IMAGE_PUBLIC_PATH.test(pathname)) return true
+  // Apart from the image route above, HEAD is public for the health check: uptime tools send it, and it
   // is what the platform's own check would read as. Nothing HEADs a JSON
   // data endpoint, so /api/catalog stays GET-only on purpose.
   if (method === 'HEAD') return pathname === '/api/health'
@@ -166,9 +169,11 @@ export function createCatalogApi(inventory) {
       // unauthenticated caller -- it only shapes numbers the server itself
       // computes at submit time.
       const pricing = inventory.getPricingSettings()
+      // Once images exist, keep revocation-sensitive URLs out of browser/CDN
+      // caches forever, including after the final packet is revoked.
       response.writeHead(200, {
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=300',
+        'Cache-Control': inventory.hasImagePackets() ? 'no-store' : 'public, max-age=300',
       })
       response.end(JSON.stringify({ tires: inventory.catalog({ size }), disposalFee: pricing.disposalFee }))
     } catch (error) {

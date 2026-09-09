@@ -16,6 +16,8 @@ import { RateLimiter } from './limits.mjs'
 import { describeServiceArea, readServiceAreaConfig } from './service-area.mjs'
 import { Inquiries } from './inquiries.mjs'
 import { createInquiriesApi } from './inquiries-api.mjs'
+import { ImagePublication, imageDirectoryForDatabase } from './image-publication.mjs'
+import { createImageApi } from './image-api.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const filename = process.env.KMT_OWNER_DB || path.join(root, 'backend/data/owner.sqlite')
@@ -36,6 +38,8 @@ const api = createApi(inventory, refresher, new PageImporter(inventory), quotes,
 })
 // The customer catalog, served here too so the local flow matches the hosted one.
 const catalogApi = createCatalogApi(inventory)
+// Image approval always needs a real session: use server.mjs for owner review.
+const imageApi = createImageApi(new ImagePublication(inventory, { directory: imageDirectoryForDatabase(filename) }), null)
 const siteCopyApi = createSiteCopyApi(inventory)
 // The platform's health check, mounted here too so the local server and the
 // hosted one answer the same routes.
@@ -55,7 +59,7 @@ const inquiriesApi = createInquiriesApi(inquiries, { limiter: publicLimiter })
 const port = Number(process.env.KMT_OWNER_PORT || 4180)
 const vite = await createViteServer({ root, server: {
   middlewareMode: true,
-  fs: { deny: ['.env', '.env.*', '**/.git/**', '**/*.sqlite*', '**/backend/data/**'] },
+  fs: { deny: ['.env', '.env.*', '**/.git/**', '**/*.sqlite*', '**/backend/data/**', '**/catalog-images-private/**'] },
 }, appType: 'spa' })
 
 const server = createHttpServer(async (request, response) => {
@@ -66,6 +70,7 @@ const server = createHttpServer(async (request, response) => {
   if (await healthApi(request, response)) return
   if (await mailStatusApi(request, response)) return
   if (await catalogApi(request, response)) return
+  if (await imageApi(request, response)) return
   if (await siteCopyApi(request, response)) return
   if (await requestsApi(request, response)) return
   if (await inquiriesApi(request, response)) return

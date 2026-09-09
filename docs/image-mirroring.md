@@ -5,6 +5,14 @@ does not contact a supplier, download a real image, write production storage,
 or change customer rendering. The catalog continues to use its generic tire
 art fallback until an owner deliberately approves an asset.
 
+## Approved local-file publication
+
+The persistent local-file serving path is documented in
+[approved-product-images.md](approved-product-images.md). It accepts a private
+exact-five local-file packet, retains pending state until authenticated owner
+approval, and serves approved same-origin URLs. It does not enable the provider
+execution paths described below.
+
 ## What is durable
 
 `backend/image-assets.mjs` adds an `image_assets` table beside the supplier
