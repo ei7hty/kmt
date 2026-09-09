@@ -790,13 +790,14 @@ a detector in principle. A misread has an editing discipline. **The third has
 neither** -- only somebody going and looking at whether the mechanism does what
 the sentence says, once, at the moment it is written.
 
-**A fourth shape, moved here from `AGENTS.md` because this is where it belongs
-and it was written before this taxonomy was found: work that outran its
-record.** It looks like the first shape -- the world moved, the record did
-not -- and is caught by nothing the first shape's detector catches. `state.json`
-and the tracker are wrong about a count of the *same thing* they describe, so
-re-measuring that thing catches them: read the file, count the audits, compare.
-This shape is wrong about an *absence* -- "nobody owns X," "X is not done" --
+**A variant of the first shape belongs here too, moved from `AGENTS.md`
+because this is where it belongs and it was written before this taxonomy was
+found: work that outran its record.** It shares the first shape's
+mechanism -- the world moved, the record did not -- but is caught by nothing
+the first shape's detector catches. `state.json` and the tracker are wrong
+about a count of the *same thing* they describe, so re-measuring that thing
+catches them: read the file, count the audits, compare. This variant is
+wrong about an *absence* -- "nobody owns X," "X is not done" --
 and the only way to falsify an absence is to go and look somewhere else
 entirely, for work that may have already closed it. Seen three times in one
 repository: regression tests about to be rewritten that already existed, a
