@@ -70,26 +70,69 @@ export function prepareApprovedImageStagingRun(input) {
  * Real profiles never enter this path. Source snapshot bytes remain private.
  */
 export async function runOfflineImageStagingFixtures(input) {
-  try { return await runFixtures({ ...input }) } catch (error) {
+  try { return await runStaging({ ...input }, FIXTURE_MODE) } catch (error) {
     if (/^Offline staging run interrupted \([a-f0-9-]{36}\); inspect private provenance$/.test(error.message)) throw error
     throw refused()
   }
 }
 
-async function runFixtures(input) {
+// The byte-fixture transport: the same request/redirect/response shape the real
+// provider transport produces, served from a Map the caller supplied. It emits
+// the provenance events by hand because it IS the transport layer here.
+function offlineFixtureTransport(fixtures) {
+  return ({ advance, append }) => ({ fetch: async (originalUrl, options) => {
+    const current = advance()
+    append('candidate-start', { supplierId: current.supplierId, supplierSku: current.supplierSku,
+      revision: current.candidateRevision, sourceUrl: current.productUrl, originalUrl })
+    let url = originalUrl
+    const visited = new Set()
+    for (;;) {
+      options.signal?.throwIfAborted()
+      if (visited.has(url)) throw new ImageMirrorError('Offline redirect loop', 'provider-refusal', { refusal: true })
+      visited.add(url)
+      append('connect', { finalUrl: url, address: '93.184.216.34' })
+      // Synthetic public DNS assertion only. No socket or resolver is created.
+      options.onConnect({ url, address: '93.184.216.34' })
+      const fixture = fixtures.get(url)
+      if (!fixture) throw new Error('Offline fixture missing')
+      append('response', { finalUrl: url, status: fixture.status, sha256: sha256Bytes(fixture.bytes), bytes: fixture.bytes.length })
+      if (fixture.status >= 300 && fixture.status < 400 && fixture.redirect) {
+        const next = new URL(fixture.redirect, url).href
+        append('redirect', { finalUrl: url, redirectUrl: next })
+        options.onRedirect(next)
+        url = next
+        continue
+      }
+      return { status: fixture.status, headers: { 'content-type': fixture.contentType }, finalUrl: url, bytes: fixture.bytes }
+    }
+  } })
+}
+
+// The fixture mode: `.test` hosts only, a bounded byte Map, no pacing, and a
+// refusal message that never names a real provider because there was not one.
+const FIXTURE_MODE = {
+  delayMs: () => 0,
+  failureMessage: 'Offline image candidate refused',
+  prepare(input, plan) {
+    if (!plan.profile.allowedHosts.every(host => host.endsWith('.test'))) throw refused()
+    if (!(input.fixtures instanceof Map) || input.fixtures.size > 25) throw refused()
+    const fixtures = new Map()
+    for (const [url, fixture] of input.fixtures) {
+      assertAllowedImageUrl(url, plan.profile.allowedHosts)
+      if (!fixture || !keys(fixture, ['status', 'contentType', 'bytes', 'redirect']) ||
+          !Number.isInteger(fixture.status) || fixture.status < 100 || fixture.status > 599 ||
+          typeof fixture.contentType !== 'string' || fixture.contentType.length > 128 ||
+          !(fixture.bytes instanceof Uint8Array) || fixture.bytes.length > plan.profile.policy.maxBytes + 1 ||
+          fixture.redirect !== null && (typeof fixture.redirect !== 'string' || fixture.redirect.length > 4096)) throw refused()
+      fixtures.set(url, Object.freeze({ ...fixture, bytes: Buffer.from(fixture.bytes) }))
+    }
+    return offlineFixtureTransport(fixtures)
+  },
+}
+
+async function runStaging(input, mode) {
   const plan = planFrom(input)
-  if (!plan.profile.allowedHosts.every(host => host.endsWith('.test'))) throw refused()
-  if (!(input.fixtures instanceof Map) || input.fixtures.size > 25) throw refused()
-  const fixtures = new Map()
-  for (const [url, fixture] of input.fixtures) {
-    assertAllowedImageUrl(url, plan.profile.allowedHosts)
-    if (!fixture || !keys(fixture, ['status', 'contentType', 'bytes', 'redirect']) ||
-        !Number.isInteger(fixture.status) || fixture.status < 100 || fixture.status > 599 ||
-        typeof fixture.contentType !== 'string' || fixture.contentType.length > 128 ||
-        !(fixture.bytes instanceof Uint8Array) || fixture.bytes.length > plan.profile.policy.maxBytes + 1 ||
-        fixture.redirect !== null && (typeof fixture.redirect !== 'string' || fixture.redirect.length > 4096)) throw refused()
-    fixtures.set(url, Object.freeze({ ...fixture, bytes: Buffer.from(fixture.bytes) }))
-  }
+  const buildTransport = mode.prepare(input, plan)
   const inspect = createIsolatedImageDecoder({ python: input.python, memoryBytes: plan.profile.policy.memoryBytes })
   const runId = randomUUID()
   // Walk and validate every ancestor before creating descendants; storage is lazy.
@@ -131,34 +174,10 @@ async function runFixtures(input) {
       try { assertRoot(); log.append(type, { candidateId: current?.id, ...fields }) }
       catch (error) { controller.abort(); throw error }
     }
-    const transport = { fetch: async (originalUrl, options) => {
-      // Shared URLs are legal; select by the serial candidate cursor below.
-      current = candidates[cursor++]
-      append('candidate-start', { supplierId: current.supplierId, supplierSku: current.supplierSku,
-        revision: current.candidateRevision, sourceUrl: current.productUrl, originalUrl })
-      let url = originalUrl
-      const visited = new Set()
-      for (;;) {
-        options.signal?.throwIfAborted()
-        if (visited.has(url)) throw new ImageMirrorError('Offline redirect loop', 'provider-refusal', { refusal: true })
-        visited.add(url)
-        append('connect', { finalUrl: url, address: '93.184.216.34' })
-        // Synthetic public DNS assertion only. No socket or resolver is created.
-        options.onConnect({ url, address: '93.184.216.34' })
-        const fixture = fixtures.get(url)
-        if (!fixture) throw new Error('Offline fixture missing')
-        append('response', { finalUrl: url, status: fixture.status, sha256: sha256Bytes(fixture.bytes), bytes: fixture.bytes.length })
-        if (fixture.status >= 300 && fixture.status < 400 && fixture.redirect) {
-          const next = new URL(fixture.redirect, url).href
-          append('redirect', { finalUrl: url, redirectUrl: next })
-          options.onRedirect(next)
-          url = next
-          continue
-        }
-        return { status: fixture.status, headers: { 'content-type': fixture.contentType }, finalUrl: url, bytes: fixture.bytes }
-      }
-    } }
     let cursor = 0
+    // Shared URLs are legal; select by the serial candidate cursor.
+    const advance = () => { current = candidates[cursor++]; return current }
+    const transport = buildTransport({ advance, append })
     const tracedRepository = {
       findByHash: repository.findByHash,
       recordStored: (id, asset, expected) => {
@@ -169,11 +188,11 @@ async function runFixtures(input) {
       },
       recordFailure: (id, failure, expected) => {
         append('candidate-failure', { outcome: outcome(failure.state) })
-        return repository.recordFailure(id, { ...failure, message: 'Offline image candidate refused' }, expected)
+        return repository.recordFailure(id, { ...failure, message: mode.failureMessage }, expected)
       },
     }
     const result = await mirrorRemoteImages(candidates, {
-      ...plan.profile.policy, allowedHosts: plan.profile.allowedHosts, dryRun: false, delayMs: 0,
+      ...plan.profile.policy, allowedHosts: plan.profile.allowedHosts, dryRun: false, delayMs: mode.delayMs(plan),
       fetcher: createSafeImageFetcher(transport, plan.profile), repository: tracedRepository, storage,
       signal,
       inspectImage: async (bytes, options) => {
