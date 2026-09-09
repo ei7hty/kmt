@@ -15,10 +15,7 @@
 .social-profile-link:hover { border-color: #707078; background: #171717; }
 .social-profile-link:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 3px; }
 .social-profile-badge { display: grid; place-items: center; width: 44px; aspect-ratio: 1; border: 1px solid #55555c; border-radius: 50%; color: white; background: #252529; font-size: 12px; font-weight: 900; letter-spacing: -.2px; }
-.social-profile-instagram .social-profile-badge { background: linear-gradient(135deg, #833ab4, #e1306c 52%, #f77737); }
-.social-profile-youtube .social-profile-badge { background: #c9151b; }
-.social-profile-tiktok .social-profile-badge { border-color: #62cbd0; box-shadow: inset 2px 0 #ee1d52; }
-.social-profile-facebook .social-profile-badge { background: #2457a6; }
+.social-profile-badge img { display: block; width: 24px; height: 24px; }
 .social-profile-label { display: grid; gap: 3px; min-width: 0; }
 .social-profile-label strong { font-size: 14px; }
 .social-profile-label small { color: var(--muted); font-size: 11px; line-height: 1.35; }
