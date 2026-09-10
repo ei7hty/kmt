@@ -22,7 +22,7 @@ import { dedupe, hex, lum, measure, ratio } from './contrast-measure.mjs'
 import { QUOTE_STATUSES } from '../backend/quotes.mjs'
 
 const BASE = process.env.AUDIT_BASE
-if (!BASE) { console.error('Set AUDIT_BASE explicitly; the audits default to different ports and this one refuses to guess.'); process.exit(2) }
+if (!BASE) { console.error('Set AUDIT_BASE explicitly; this refuses to guess which target to audit.'); process.exit(2) }
 const EXCEPTION_TIRE = await exceptionTireFor(BASE)
 const VIEWPORT = { width: 375, height: 812 }
 
