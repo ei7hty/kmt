@@ -100,28 +100,38 @@ jobs:
         run: |
           node --test .forge/release-check.test.mjs
           node .forge/release-check.mjs
-      # Every backend test file, not one named file: a new suite that CI does not
-      # run is a suite that passes locally and guards nothing.
+      # Not a bare `node --test` but the count-guard, `.forge/test-count-check.mjs`,
+      # which runs these patterns AND holds the total against a pinned baseline
+      # (EXPECTED_TESTS in that file). Two failures it catches that `node --test`
+      # alone cannot:
       #
-      # `src/**` is here for the same reason, and was missing: `src/owner/
-      # inventory-grid.test.mjs` (29 tests) and `src/catalog-image.test.mjs`
-      # (3) had never once been executed by this pipeline, so every green check
-      # on the PRs that added them was silent about them.
+      #   - A suite that stops being COLLECTED -- renamed out of a pattern, moved,
+      #     an import removed -- leaves every remaining test passing and the exit
+      #     code at 0, because `node --test` exits 0 when a pattern matches NOTHING
+      #     (measured). A path that stops matching looks identical to one that
+      #     passes; the pinned total is the only thing that sees the drop. That is
+      #     how `src/`, nested `backend/`, `scripts/`, and
+      #     `.forge/restore-integrity-check.test.mjs` each sat with tests that had
+      #     never once run.
+      #   - It fails UPWARD too: an added test that does not bump the baseline lets
+      #     the number drift from the truth until a drop of forty cannot be told
+      #     from four months of additions.
       #
-      # BOTH PATTERNS ARE QUOTED SO NODE EXPANDS THEM, NOT BASH. Unquoted,
-      # `src/**/*.test.mjs` under bash without `globstar` means `src/*/` -- one
-      # directory deep -- and would match the owner test while silently missing
-      # the one at the top of `src/`. Node's own glob handles `**` the same way
-      # on every runner. Verified by the count rather than by reading the glob:
-      # 632 tests with `backend` alone and 666 with both, on the commit that
-      # widened this.
+      # THE PATTERNS ARE QUOTED SO NODE EXPANDS THEM, NOT BASH, and RECURSIVE
+      # (`**`): unquoted or one level deep, a test nested under `backend/` or a new
+      # file at the top of `src/` is silently missed. `scripts/**` matches nothing
+      # today and is declared anyway, so the next `scripts/` test lands INTO
+      # coverage instead of running nowhere until someone remembers.
+      # `.forge/restore-integrity-check.test.mjs` is named as a FILE, not a
+      # `.forge/*.test.mjs` glob, because that glob would also match `release-check`
+      # and `release-browser` (run by name at :101 and :250) and double-count them.
       #
-      # That matters because node exits 0 when a pattern matches NOTHING
-      # (measured) -- a path that stops matching looks identical here to one
-      # that passes. So if you change either pattern, run it and check the
-      # reported test count moved by what you expected; the count is the only
-      # thing that can tell you this step still runs what it claims to.
-      - run: node --test "backend/*.test.mjs" "src/**/*.test.mjs"
+      # THESE FOUR MUST BYTE-MATCH `BASELINE_PATTERNS` in test-count-check.mjs --
+      # the check refuses to vouch for a total measured against a different set.
+      # Change one, change both, in the same commit, and confirm the reported count
+      # moved by what you expected; the count is the only thing that can tell you
+      # this step still runs what it claims to.
+      - run: node .forge/test-count-check.mjs "backend/**/*.test.mjs" "src/**/*.test.mjs" "scripts/**/*.test.mjs" ".forge/restore-integrity-check.test.mjs"
       # The whole tree, not just src and backend: scripts/ and .forge/ are .mjs
       # too, and the audits under .forge/ are the files that decide whether
       # everything else is correct. An undefined name in one of them should fail
