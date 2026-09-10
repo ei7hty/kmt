@@ -538,9 +538,12 @@ jobs:
       # for a reason nobody asked for. The release-header check below is the one
       # step that objects, and only because
       # kmt.fly.dev happens to 301 to the canonical today: an accidental, unpinned
-      # safety, not one to depend on. This fails FIRST, naming the cause once,
-      # rather than leaving three curl URL-parse errors below for a reader to work
-      # backwards from. Read into an env var so the value cannot break the shell.
+      # safety, not one to depend on -- if that host ever served directly instead
+      # of redirecting, the release-header step would read the app's own matching
+      # release and pass, and nothing would object at all. This fails FIRST,
+      # naming the cause once, rather than leaving three curl URL-parse errors
+      # below for a reader to work backwards from. Read into an env var so the
+      # value cannot break the shell.
       - name: Refuse to verify an unnamed target
         env:
           DEPLOY_URL: ${{ vars.DEPLOY_URL }}
