@@ -259,15 +259,41 @@ test('page size is refused outside the allow-list, so no request is sent', async
 
 // ------------------------------------------------ a. partial bulk failure
 
-test('38 saved and 2 version-conflicts marks exactly those two rows and shows no success', async () => {
+/**
+ * A version-conflicting bulk save, all the way through the retry it invites.
+ *
+ * The stub is a real server for this one: it refuses an offer whose version is
+ * not the one it holds, and advances the version of every row it accepts. That
+ * matters because the first version of this test asserted the conflicted row
+ * KEPT its stale version (`offer.version, 1`) and stayed selected -- which
+ * pinned a defect as if it were the design. Selected plus stale means the
+ * retry the selection is inviting rebuilds a byte-identical body and fails
+ * identically, forever; the owner sees a Save button that does not work rather
+ * than data that moved. So the test now follows the retry through and requires
+ * that it can succeed.
+ */
+test('38 saved and 2 version-conflicts marks exactly those two rows, reloads, and lets the retry succeed', async () => {
   const pool = Array.from({ length: 40 }, (_, i) => makeItem(i + 1))
   const conflicted = ['sku-7', 'sku-19']
-  const { api } = makeApi({
+  // Rows are REPLACED, never mutated in place: the grid is holding the objects
+  // this pool handed it, so mutating one would move the screen's copy along
+  // with the server's and there would be no conflict left to test.
+  const write = (id, offer) => {
+    const index = pool.findIndex(item => item.id === id)
+    pool[index] = { ...pool[index], offer: { ...pool[index].offer, ...offer } }
+    return pool[index]
+  }
+  const { api, calls } = makeApi({
     pool,
     bulk: body => ({
-      results: body.offers.map(offer => conflicted.includes(offer.id)
-        ? { id: offer.id, ok: false, reason: 'version-conflict', message: 'This offer changed in another window.' }
-        : { id: offer.id, ok: true, version: offer.version + 1 }),
+      results: body.offers.map(offer => {
+        const row = pool.find(item => item.id === offer.id)
+        if (offer.version !== row.offer.version) {
+          return { id: offer.id, ok: false, reason: 'version-conflict', message: 'This offer changed in another window.' }
+        }
+        const saved = write(offer.id, { enabled: offer.enabled, version: offer.version + 1 })
+        return { id: offer.id, ok: true, version: saved.offer.version }
+      }),
     }),
   })
   const grid = createInventoryGrid({ api })
@@ -275,6 +301,11 @@ test('38 saved and 2 version-conflicts marks exactly those two rows and shows no
   grid.selectAllOnPage(true)
   assert.equal(grid.getState().selected.length, 40)
 
+  // ...and now those two rows move on in another window, after this page has
+  // already loaded them at version 1.
+  for (const id of conflicted) write(id, { version: 5 })
+
+  const loadsBefore = calls.filter(call => call.path.startsWith('inventory?')).length
   grid.requestBulk('offered', { enabled: true })
   await grid.confirmBulk()
   await settle()
@@ -284,18 +315,65 @@ test('38 saved and 2 version-conflicts marks exactly those two rows and shows no
   assert.deepEqual(failedIds.sort(), conflicted.slice().sort(), 'exactly the two rejected rows are marked')
   assert.equal(rowStatus['sku-7'].reason, 'version-conflict')
   assert.match(rowStatus['sku-7'].text, /another window/i)
+  assert.doesNotMatch(rowStatus['sku-7'].text, /reload before saving/i,
+    'the grid re-read the row for him, so the mark must not tell him to do it himself')
   assert.equal(notice.tone, 'error', 'a batch with any failure is never announced as a success')
   assert.match(notice.text, /2 of 40/)
   assert.match(notice.text, /38 saved/)
 
-  // The 38 that saved carry their new version; the 2 that failed do not.
+  // A version-conflict is followed by a reload, because a conflicted row's
+  // version on screen is stale by definition.
+  assert.equal(calls.filter(call => call.path.startsWith('inventory?')).length, loadsBefore + 1,
+    'a version-conflict must be followed by exactly one reload')
+
+  // The 38 that saved carry their new version, and the 2 that failed now carry
+  // the server's TRUE version rather than the one it just rejected.
   assert.equal(data.items.find(i => i.id === 'sku-1').offer.version, 2)
   assert.equal(data.items.find(i => i.id === 'sku-1').offer.enabled, true)
-  assert.equal(data.items.find(i => i.id === 'sku-7').offer.version, 1)
-  assert.equal(data.items.find(i => i.id === 'sku-7').offer.enabled, false)
+  assert.equal(data.items.find(i => i.id === 'sku-7').offer.version, 5,
+    'the conflicted row must come back at the version the server actually holds')
 
-  // Only the failures stay selected, so a retry needs no re-picking.
+  // The failures stay selected, so a retry needs no re-picking -- and because
+  // of the reload it is a retry that can work.
   assert.deepEqual(grid.getState().selected.slice().sort(), conflicted.slice().sort())
+
+  const firstAttempt = JSON.parse(calls.findLast(call => call.path === 'offers').options.body)
+  grid.requestBulk('offered', { enabled: true })
+  await grid.confirmBulk()
+  await settle()
+  const retry = JSON.parse(calls.findLast(call => call.path === 'offers').options.body)
+
+  const sentFor = (body, id) => body.offers.find(offer => offer.id === id)
+  assert.notDeepEqual(sentFor(retry, 'sku-7'), sentFor(firstAttempt, 'sku-7'),
+    'the retry must not resend the row the server just refused, byte for byte')
+  assert.deepEqual(retry.offers.map(offer => offer.version), [5, 5], 'the retry carries the versions the reload brought back')
+  assert.equal(grid.getState().notice.tone, 'success')
+  assert.match(grid.getState().notice.text, /2 rows saved/)
+  assert.equal(grid.getState().rowStatus['sku-7'].kind, 'saved')
+})
+
+test('a bulk failure with no version-conflict in it does not reload', async () => {
+  const pool = Array.from({ length: 10 }, (_, i) => makeItem(i + 1))
+  const { api, calls } = makeApi({
+    pool,
+    bulk: body => ({
+      results: body.offers.map(offer => offer.id === 'sku-3'
+        ? { id: offer.id, ok: false, reason: 'invalid', message: 'a price is required' }
+        : { id: offer.id, ok: true, version: offer.version + 1 }),
+    }),
+  })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+  grid.selectAllOnPage(true)
+  const loadsBefore = calls.filter(call => call.path.startsWith('inventory?')).length
+
+  grid.requestBulk('offered', { enabled: true })
+  await grid.confirmBulk()
+  await settle()
+
+  assert.equal(calls.filter(call => call.path.startsWith('inventory?')).length, loadsBefore,
+    'nothing stale is on screen, so nothing needs re-reading')
+  assert.equal(grid.getState().rowStatus['sku-3'].reason, 'invalid')
 })
 
 test('every reason code reads differently to the owner', () => {
@@ -459,6 +537,39 @@ test('a 409 on one row is reported on that row as a version conflict', async () 
   const status = grid.getState().rowStatus['sku-1']
   assert.equal(status.kind, 'error')
   assert.equal(status.reason, 'version-conflict')
+})
+
+/**
+ * Only a 400 is the owner's input being refused.
+ *
+ * Everything else used to collapse into `invalid`, so a 500 rendered "Rejected:
+ * Something went wrong." and an unreachable backend rendered "Rejected: The
+ * owner backend is not connected." -- both telling the owner his entry was
+ * refused when it never reached validation. `failed` is the code that exists to
+ * say the opposite, and the single-row path was not using it.
+ */
+test('a single row distinguishes what the owner typed from what the server did', async () => {
+  const cases = [
+    { label: 'a 400', reason: 'invalid', throw: () => { const e = new Error('a price is required'); e.status = 400; throw e } },
+    { label: 'a 500', reason: 'failed', throw: () => { const e = new Error('Something went wrong.'); e.status = 500; throw e } },
+    // `api()` throws this one BEFORE it reads a status, so `err.status` is
+    // undefined -- the shape a fetch that never landed actually arrives in.
+    { label: 'an unreachable backend', reason: 'failed', throw: () => { throw new Error('The owner backend is not connected.') } },
+  ]
+  for (const testCase of cases) {
+    const { api } = makeApi({ single: testCase.throw })
+    const grid = createInventoryGrid({ api })
+    await grid.load()
+    grid.editRow('sku-1', { price: '89.99' })
+    await grid.commitRow('sku-1')
+    const status = grid.getState().rowStatus['sku-1']
+    assert.equal(status.kind, 'error')
+    assert.equal(status.reason, testCase.reason, `${testCase.label} must be reported as ${testCase.reason}`)
+    if (testCase.reason === 'failed') {
+      assert.doesNotMatch(status.text, /rejected/i, `${testCase.label} is not the owner's input being rejected`)
+      assert.match(status.text, /try again/i, `${testCase.label} leaves him something to do`)
+    }
+  }
 })
 
 // ------------------------------------- the brand toggle invalidates versions

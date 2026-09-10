@@ -125,6 +125,18 @@ export function reasonLabel(reason, message) {
 }
 
 /**
+ * What a version-conflict row says once the grid has re-read it for him.
+ *
+ * `reasonLabel`'s version-conflict text ends "Reload before saving this row",
+ * which is right on the single-row path, where nothing reloads for him. A bulk
+ * save now reloads itself, so leaving that text up would be instructing the
+ * owner to do the thing that just happened -- and he would go looking for a
+ * control to do it with. The mark stays; only the words change.
+ */
+export const RELOADED_AFTER_CONFLICT =
+  'Changed in another window, so this row was re-read and your change was not applied. Check it and save again.'
+
+/**
  * Fold a bulk response back into the rows it came from.
  *
  * Partial success is the normal case, so this never speaks about the batch as a
@@ -424,7 +436,16 @@ export function createInventoryGrid({ api }) {
           },
         })
       } catch (err) {
-        const reason = err.status === 409 ? 'version-conflict' : err.status === 404 ? 'not-found' : 'invalid'
+        // Only a 400 is the owner's input being refused. A 500, or a fetch that
+        // never landed (no `status` at all -- `api()` throws the "backend is not
+        // connected" error before it reads one), is not: telling him his entry
+        // was "Rejected" attributes a server outage to something he typed, and
+        // there is nothing on the row for him to correct. That is the exact
+        // collapse the fourth reason code exists to prevent, and this is the
+        // single-row path where it was not being used.
+        const reason = err.status === 409 ? 'version-conflict'
+          : err.status === 404 ? 'not-found'
+            : err.status === 400 ? 'invalid' : 'failed'
         set({ rowStatus: setRowStatus(id, { kind: 'error', reason, text: reasonLabel(reason, err.message) }) })
       }
     },
@@ -508,6 +529,28 @@ export function createInventoryGrid({ api }) {
           selected: failed.map(failure => failure.id),
           notice: bulkNotice({ saved, failed }),
         })
+        // ...but a version-conflict row is stale BY DEFINITION, and the line
+        // above leaves it selected while `applyBulkResults` leaves its version
+        // at the value the server just rejected. Together those made the retry
+        // this selection invites rebuild a byte-identical body and fail
+        // identically, forever: an affordance saying "press me again" over data
+        // guaranteeing the press fails, which presents as a broken Save button
+        // rather than as data that moved. So reload. `load()` preserves
+        // `rowStatus` and leaves `notice` alone, and `intersectSelection`
+        // preserves the selection -- the marks and the picks survive, and only
+        // the versions change, to the true ones a retry needs.
+        const conflicts = failed.filter(failure => failure.reason === 'version-conflict')
+        if (conflicts.length) {
+          await load()
+          const reloaded = { ...state.rowStatus }
+          for (const conflict of conflicts) {
+            // Not any row the load has since said something newer about -- a
+            // dropped draft is a fresher fact about that row than this is.
+            if (reloaded[conflict.id]?.reason !== 'version-conflict') continue
+            reloaded[conflict.id] = { kind: 'error', reason: 'version-conflict', text: RELOADED_AFTER_CONFLICT }
+          }
+          set({ rowStatus: reloaded })
+        }
       } catch (err) {
         set({ busy: false, notice: { tone: 'error', text: err.message } })
       }
