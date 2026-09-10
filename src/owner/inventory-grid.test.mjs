@@ -298,9 +298,11 @@ test('38 saved and 2 version-conflicts marks exactly those two rows and shows no
   assert.deepEqual(grid.getState().selected.slice().sort(), conflicted.slice().sort())
 })
 
-test('the three reason codes read differently to the owner', () => {
-  const texts = ['version-conflict', 'not-found', 'invalid'].map(reason => reasonLabel(reason, 'a price is required'))
-  assert.equal(new Set(texts).size, 3, 'each reason code must say something distinct')
+test('every reason code reads differently to the owner', () => {
+  // Four, not the three the contract named: stage 1 also emits 'failed'.
+  const texts = ['version-conflict', 'not-found', 'invalid', 'failed'].map(reason => reasonLabel(reason, 'a price is required'))
+  assert.equal(new Set(texts).size, 4, 'each reason code must say something distinct')
+  assert.match(texts[3], /try again/i)
   assert.match(texts[0], /another window/i)
   assert.match(texts[1], /no longer/i)
   assert.match(texts[2], /a price is required/)

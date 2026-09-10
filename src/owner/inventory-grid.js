@@ -116,6 +116,11 @@ export function reasonLabel(reason, message) {
   if (reason === 'version-conflict') return 'Changed in another window since this page loaded. Reload before saving this row.'
   if (reason === 'not-found') return 'No longer in the supplier list, so nothing was saved.'
   if (reason === 'invalid') return message ? `Rejected: ${message}` : 'Rejected as invalid, so nothing was saved.'
+  // Stage 1 shipped a fourth code the agreed contract did not name: 'failed',
+  // for anything that is neither bad input nor a stale version -- a disk
+  // error, say. It is not the owner's mistake and there is nothing for him to
+  // correct, so it says to try again rather than blaming the row.
+  if (reason === 'failed') return message ? `Not saved: ${message} Try again.` : 'Not saved because of a server problem. Try again.'
   return message || 'Not saved.'
 }
 

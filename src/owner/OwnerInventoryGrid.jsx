@@ -173,7 +173,11 @@ function GridRow({ item, grid, state, expanded, onExpand }) {
         </button>
       </td>
       <td className="oi-g-cell-sku"><SupplierLink url={item.source?.url}>{item.source?.sku || item.id}</SupplierLink></td>
-      <td className="oi-g-cell-updated">{dateLabel(item.offer.updatedAt ?? item.lastSeen)}</td>
+      {/* `offerUpdatedAt`, top level -- stage 1 deliberately kept it OUT of
+          `offer`, which is the object this screen submits back. Reading it
+          from `offer.updatedAt` silently fell through to the supplier's
+          last-seen date instead, on a column headed "Updated". */}
+      <td className="oi-g-cell-updated">{item.offerUpdatedAt ? dateLabel(item.offerUpdatedAt) : '—'}</td>
     </tr>
     {status && <tr className={`oi-g-statusrow ${status.kind === 'error' ? 'is-error' : 'is-saved'}`}>
       <td colSpan={GRID_COLUMNS.length}>
