@@ -1,15 +1,72 @@
 # Private product-image operator workflow
 
-This change supplies a local-file ingestion and owner-approval path. It does
-not authorize or execute provider image acquisition. `IMAGE_EXECUTION_ENABLED`
-remains false, the provider approval registry remains empty, and the image
-mirror CLI still refuses execution. No pilot has been run by this change.
+This describes the local-file ingestion and owner-approval path. Parts of it
+were written when acquisition was switched off in code, and those parts are
+corrected below rather than left to mislead.
 
-The committed catalog currently has 1,083 rows, no image URLs and no valid
-product-page source URLs. Its source URLs are listing pages. The original
-seed-only validation command therefore cannot produce the required packet.
-Do not invent product URLs from IDs, change seeds to work around refusals, or
-substitute whichever products happen to succeed.
+**The two compiled-in gates this document used to cite are gone.**
+`IMAGE_EXECUTION_ENABLED` and the `PM_APPROVALS` registry were removed in #451,
+on the owner's ruling that *"approval lives in the owner screen"*. There is now
+a real acquisition command — `scripts/import-product-images.mjs`, added in #468
+— and the gate that remains is the one that matters: staging can only store
+candidates, and nothing reaches a customer until the owner approves it. A
+staging database is structurally unable to approve anything.
+
+`scripts/image-mirror.mjs --execute` **does** still exit with a wiring error,
+which is what the older wording was pointing at. Read it narrowly: that is a
+different command from the one that acquires images.
+
+## What the catalogue's source URLs actually are
+
+The committed catalogue has **1,083 rows and no image URLs**. It also has **no
+*valid* product-page source URLs**, and the precise reason matters:
+`productUrl()` requires a path beginning `/tires/`, and none of these do — they
+begin with the size.
+
+**An earlier version of this document said those URLs are listing pages. That
+is measurably false.** Parsed from `src/data/scraped-tires.json`, the same
+committed file the paragraph above describes:
+
+| | |
+| --- | --- |
+| rows | 1,083 |
+| rows carrying a `source.url` | 1,083 |
+| URLs containing `/tirecode/` | 1,083 |
+| **distinct** URLs | **1,083 — one per tire** |
+| URLs beginning `/tires/` | 0 |
+
+Sample: `https://www.giga-tires.com/205-65-15/waterfall-tires/quattro/tirecode/WT25`
+
+**The distinct count is the proof.** A listing page is shared by every tire in a
+size; there are four sizes, so a catalogue of listing pages would hold four
+URLs. It holds 1,083, each with its own `tirecode` and the brand and model in
+the path. These are per-product URLs.
+
+## Why the `/tires/` rule is not a bug to delete
+
+`scripts/giga-tires.mjs:14` records the reason: *"Their robots.txt allows
+/tires/. It disallows /cart, /checkout, /my-account, /price/calculate, the
+/tires/o/ deals pages, and any `?filtering=` faceted URL."* So the prefix check
+is a **courtesy guard** confining fetches to the path this project wrote down as
+permitted. Widening it is a decision about what we are allowed to fetch, not a
+fix — **do not relax it to make a mapping derivable.**
+
+**Three things nobody has established**, and the feature is waiting on the first:
+
+1. Whether those size-prefixed URLs resolve to a single tire's page. Reading
+   them means a request to a real host, which is the owner's call alone.
+2. Whether giga-tires also serves a `/tires/...` form for the same product. If
+   it does, the right change is to **canonicalize the stored URL into the
+   permitted shape** — same fetch target, same robots posture, no widening —
+   rather than to loosen the guard. That would be the cheapest outcome and
+   nobody has checked it.
+3. Whether the imported database (6,169 rows at the last count) stores the same
+   URL shape as the committed 1,083. The measurement above is like-for-like with
+   this document's own sentence and says nothing about the larger set.
+
+Until (1) is answered: do not invent product URLs from IDs, do not change seeds
+to work around refusals, and do not substitute whichever products happen to
+succeed.
 
 ## 1. Prepare an owner-reviewed exact-five mapping, locally
 
@@ -56,7 +113,7 @@ cannot silently replace current source data.
 
 The mapping's raw byte digest, baseline raw byte digest, seed and code SHA are
 retained in the resulting activation snapshot. Selection algorithm
-`owner-mapped-five-seeded-v1` applies the existing seeded shuffle to the frozen
+`owner-mapped-seeded-v2` applies the existing seeded shuffle to the frozen
 five explicit mappings; all five are requested in that recorded order. This
 is a versioned mapping-based workflow, not selection from the old listing URLs.
 
