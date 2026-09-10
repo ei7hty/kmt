@@ -532,9 +532,11 @@ jobs:
       # vars.DEPLOY_URL is the single declaration of what this job audits, set to
       # the canonical host. The steps below have no fallback on purpose: an unset
       # target is a reason to STOP, not to silently retarget to the Fly host and
-      # audit a site no customer uses -- where the wait step and the deployed-site
-      # audit would pass having reached only a redirect, not the app. The release-
-      # header check below is the one step that catches that, and only because
+      # audit a site no customer uses -- where the wait step would pass having
+      # reached only the redirect service, and the deployed-site audit would pass
+      # having FOLLOWED the redirect to the canonical: the right content, reached
+      # for a reason nobody asked for. The release-header check below is the one
+      # step that objects, and only because
       # kmt.fly.dev happens to 301 to the canonical today: an accidental, unpinned
       # safety, not one to depend on. This fails FIRST, naming the cause once,
       # rather than leaving three curl URL-parse errors below for a reader to work
@@ -601,6 +603,8 @@ jobs:
           # this build. This used to matter concretely -- a Fly-name base answered
           # 301 after the canonical flip -- but that fallback is gone; accepting a
           # redirect as "up" stays the right readiness semantic regardless.
+          # NOTE: the canonical answers 200, so the 3xx arm does not run in CI
+          # today -- a change to it will not be caught here.
           deadline=$(( SECONDS + 600 ))
           last=''
           while [ "$SECONDS" -lt "$deadline" ]; do
