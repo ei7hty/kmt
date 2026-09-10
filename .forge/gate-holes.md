@@ -190,7 +190,7 @@ local run: what would this look like on `ubuntu-latest`, from a worktree,
 from a shallow clone? Those three are now measured; more will surface the
 same way until they are checked instead of assumed.
 
-## 6. A command can ask something other than what you typed -- found by GATE ENGINEER
+## 6. A command can ask something other than what you typed
 
 Not the same shape as §5's three entries, and kept separate on purpose.
 Theirs is "a test can assert something about the machine running it": code
@@ -227,14 +227,13 @@ are affected the same way.
 running the test somewhere else. This is not caught by running the command
 somewhere else -- it is specific to this shell on this machine, present
 every time, and the only tell is a semicolon in a `fatal:` line that reads,
-at a glance, like any other missing-object error. Proving a test can fail
-is the discipline for §5; for this one, the discipline is knowing the
-platform-specific failure mode of the tool itself before trusting its
-answer.
+at a glance, like any other missing-object error.
 
-**What to do:** prefix every `<rev>:<path>` git command with
+**What to do, and this is the actionable half -- knowing the mechanism in
+advance is not:** prefix every `<rev>:<path>` git command with
 `MSYS_NO_PATHCONV=1` in this shell. When a git answer about whether
 something exists is surprising, cross-check with a form that takes no
 colon at all -- `git ls-tree <rev> <dir> --name-only`, or
 `gh api repos/ei7hty/kmt/contents/<path>?ref=main` -- neither can be
-mangled this way.
+mangled this way. That check needs no knowledge of MSYS at all; it only
+needs the habit of not trusting a colon-form answer alone.
