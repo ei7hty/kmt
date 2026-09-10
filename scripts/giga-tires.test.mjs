@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { productUrl } from './giga-tires.mjs'
+import { GIGA_SITEMAP_SAMPLE } from './fixtures/giga-sitemap-sample.mjs'
 
 /**
  * `productUrl()` is the guard between a scraped href and everything downstream
@@ -82,4 +83,20 @@ test('productUrl() accepts every real URL in the committed scrape snapshot', () 
     try { productUrl(url) } catch (error) { failures.push({ url, message: error.message }) }
   }
   assert.deepEqual(failures, [], `${failures.length} of ${urls.length} real URLs were refused`)
+})
+
+/**
+ * Stronger corroboration than the scrape snapshot: these 30 URLs are a sample
+ * of the supplier's OWN sitemap -- the addresses their robots.txt points a
+ * crawler at, not merely something this scraper happened to collect. Measured
+ * against the full 50,000-entry sitemap before this fixture was cut down: all
+ * 50,000 passed `productUrl()`, none started with `/tires/`, none were
+ * disallowed. See `scripts/fixtures/giga-sitemap-sample.mjs` for provenance.
+ */
+test('productUrl() accepts every URL in the sitemap sample', () => {
+  const failures = []
+  for (const url of GIGA_SITEMAP_SAMPLE) {
+    try { productUrl(url) } catch (error) { failures.push({ url, message: error.message }) }
+  }
+  assert.deepEqual(failures, [], `${failures.length} of ${GIGA_SITEMAP_SAMPLE.length} sitemap URLs were refused`)
 })

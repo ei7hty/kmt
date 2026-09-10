@@ -22,6 +22,13 @@
  * scraper's behaviour -- there is no live check, so nothing here would notice
  * on its own.
  *
+ * Corroborated, not just permitted: the owner separately authorised reading
+ * their sitemap index (also read live 2026-09-10, also now spent), and one of
+ * its two product sitemaps names 50,000 URLs, every one shaped exactly like
+ * `productUrl()` expects -- their own crawlers are pointed at this shape.
+ * `productUrl()`'s own comment on `DISALLOWED_PREFIXES` explains what that
+ * corpus does and does not license this file to assume.
+ *
  * The eight exclusions, verbatim from their file: `/cart`, `/checkout`,
  * `/my-account`, `/price/calculate` (each a path PREFIX, no wildcard needed
  * per robots convention), a wildcard path followed by `?filtering=` or
@@ -86,7 +93,27 @@ export function assertExpectedPage(url, html, kind) {
   if (!expected) throw new ProviderRefusalError(`Blocked or unexpected ${kind} page from ${url}`, { reason: 'unexpected-provider-page' })
 }
 
-/** Path prefixes their robots.txt disallows outright -- no wildcard needed, a bare prefix match. */
+/**
+ * Path prefixes their robots.txt disallows outright -- no wildcard needed, a
+ * bare prefix match.
+ *
+ * This function's whole shape is a warning to whoever edits it next: their
+ * sitemap's 50,000 product URLs (read live 2026-09-10, alongside robots.txt,
+ * same authorisation, now also spent) are EXACTLY five path segments every
+ * single time -- size, brand, model, `tirecode`, code. That is a real,
+ * measured regularity in their data, and it is deliberately NOT encoded here
+ * as a segment-count check, a required `{brand}-tires` second segment, or a
+ * required size-shaped first segment. An observed regularity is not a
+ * permission rule: the only things this guard refuses are what robots.txt
+ * actually disallows, plus our own `/tirecode/` requirement, plus the origin.
+ * `pathname.startsWith('/tires/')` existed for exactly this reason -- someone
+ * saw every real URL share a shape and hardened the shape into a refusal,
+ * which then rejected every one of those URLs the day the shape stopped
+ * matching a listing-page assumption that was never actually a rule. A guard
+ * that refuses a permitted URL is not safer for having done so; it is broken
+ * in the direction nobody notices until a feature that depends on it stops
+ * working for months.
+ */
 const DISALLOWED_PREFIXES = ['/cart', '/checkout', '/my-account', '/price/calculate']
 
 /**
