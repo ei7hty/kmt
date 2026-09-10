@@ -237,10 +237,13 @@ jobs:
       # they can sign in when the owner screen asks -- a hosted server always
       # asks, and a local one never does.
       #
-      # AUDIT_BASE is set explicitly because the three scripts default to
-      # different ports. Leave it unset and they quietly audit whatever else is
-      # listening, which fails in both directions: a false red, or a false green
-      # against a stale server.
+      # AUDIT_BASE is set explicitly because the three scripts below now refuse
+      # to run without it: #490 removed their per-script defaults. They used to
+      # default to different ports, so leaving it unset made them quietly audit
+      # whatever else was listening -- a false red, or a false green against a
+      # stale server. #490 removed those defaults rather than rely on this line
+      # to override them: a script that cannot name its target refuses instead
+      # of guessing. This line names it; the refusal is the backstop.
       - name: Audit the built frontend against the real server
         env:
           AUDIT_BASE: http://127.0.0.1:4173
