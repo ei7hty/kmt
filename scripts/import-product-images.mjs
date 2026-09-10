@@ -7,10 +7,25 @@
  * WHY THIS IS A COMMAND AND NEVER A ROUTE. The owner's ruling, verbatim:
  * *"its okAY if fetch happens from my local network i just dont want to do it
  * on the server."* So this runs where he runs it, and nothing a web request can
- * reach may call it. There is no export here that a server imports: the entry
- * point below is guarded on `process.argv[1]`, and the work is done by
- * `importProductImages`, which requires an absolute private directory the
- * server process does not have.
+ * reach may call it.
+ *
+ * BEING PRECISE ABOUT WHAT ENFORCES THAT, because a comfortable summary here
+ * would be the thing that eventually breaks it. This file EXPORTS SIX NAMES,
+ * and one of them -- `importProductImages` -- does reach the network. So the
+ * guarantee is NOT "nothing here is importable":
+ *
+ *   - Importing this module executes nothing: the entry point at the bottom is
+ *     guarded on `process.argv[1]` matching this file.
+ *   - `importProductImages` needs an ABSOLUTE private directory that
+ *     `privateDirectory` will accept -- no symlink in any ancestor, and no
+ *     `public`, `dist`, `data`, `deploy` or `production` segment -- plus a
+ *     packet on disk and its hosts confirmed on the command line. The server
+ *     process has none of that.
+ *   - AND NOTHING UNDER `backend/` IMPORTS THIS FILE. That last one is the
+ *     load-bearing one and it is a fact about the rest of the tree rather than
+ *     about this file, so it is asserted in `backend/image-import-cli.test.mjs`
+ *     rather than trusted. If you add an export here, that test is what tells
+ *     you whether it stayed out of the server.
  *
  * WHAT WAS MISSING, AND WHY THIS FILE IS SHORT. Everything else exists.
  * `runApprovedImageStaging` fetches over the real transport, `mirrorRemoteImages`

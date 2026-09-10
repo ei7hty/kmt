@@ -277,6 +277,32 @@ test('the run summary names both digests and the conversion, so an audit needs n
   assert.match(text, /converted from the packet's v2/)
 })
 
+// --------------------------------------------------------- the server boundary
+
+test('nothing the server runs imports the acquisition command', async () => {
+  // The owner's ruling is that this never runs on the server, and the argv
+  // guard only stops an import from EXECUTING the file -- `importProductImages`
+  // is exported and does reach the network, so the real guarantee is that no
+  // server module pulls it in. That is a fact about the rest of the tree, so it
+  // is checked here rather than asserted in a comment nobody re-reads.
+  const { readdir, readFile } = await import('node:fs/promises')
+  const { dirname, join } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const root = dirname(dirname(fileURLToPath(import.meta.url)))
+
+  const offenders = []
+  for (const directory of ['backend', 'src', 'src/owner', 'src/components']) {
+    let entries
+    try { entries = await readdir(join(root, directory)) } catch { continue }
+    for (const entry of entries) {
+      if (!/\.(mjs|js|jsx)$/.test(entry) || entry.includes('.test.')) continue
+      const source = await readFile(join(root, directory, entry), 'utf8')
+      if (source.includes('import-product-images')) offenders.push(`${directory}/${entry}`)
+    }
+  }
+  assert.deepEqual(offenders, [], 'a server-side import of the acquisition command would put the fetch on the server')
+})
+
 // ------------------------------------------------------------------ argument
 
 test('the command needs both directories and the hosts, in either flag form', () => {
