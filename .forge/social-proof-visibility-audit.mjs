@@ -2,7 +2,18 @@ import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import { signInIfAsked } from './audit-ui.mjs'
 
-const base = process.env.AUDIT_BASE || 'http://127.0.0.1:4180'
+// No default, on purpose -- see the same refusal in deployed-site-check.mjs.
+// A script that silently audits SOMETHING rather than refusing to audit
+// NOTHING answers confidently about a target nobody chose. #481 fixed three
+// of these and its claim row said "three instances, one root"; a grep for the
+// removed behaviour found six more, this among them. The count was a sample
+// read as a census.
+const base = process.env.AUDIT_BASE
+if (!base) {
+  console.error('Set AUDIT_BASE explicitly; this refuses to guess which server to audit.')
+  console.error('It used to default to 127.0.0.1:4180 -- a port several audits shared, which is how one session reached another session\u2019s server and produced a finding that had to be retracted.')
+  process.exit(2)
+}
 const localBase = ['localhost', '127.0.0.1'].includes(new URL(base).hostname)
 const ownerUrls = [
   { platform: 'instagram', url: 'https://www.instagram.com/kens_mobiletire/?hl=en', enabled: true },

@@ -5,7 +5,18 @@ import assert from 'node:assert/strict'
 // works too, with KMT_OWNER_PASSWORD (or a session minted with
 // scripts/mint-session.mjs, passed as KMT_OWNER_SESSION_COOKIE) set to what
 // it was started with.
-const base = process.env.AUDIT_BASE || 'http://127.0.0.1:4180'
+// No default, on purpose -- see the same refusal in deployed-site-check.mjs.
+// A script that silently audits SOMETHING rather than refusing to audit
+// NOTHING answers confidently about a target nobody chose. #481 fixed three
+// of these and its claim row said "three instances, one root"; a grep for the
+// removed behaviour found six more, this among them. The count was a sample
+// read as a census.
+const base = process.env.AUDIT_BASE
+if (!base) {
+  console.error('Set AUDIT_BASE explicitly; this refuses to guess which server to audit.')
+  console.error('It used to default to 127.0.0.1:4180 -- a port several audits shared, which is how one session reached another session\u2019s server and produced a finding that had to be retracted.')
+  process.exit(2)
+}
 
 /**
  * The detection half of the two-hour email outage (2026-09-06 23:49-01:52):

@@ -12,7 +12,18 @@
  * the thing being checked against itself.
  */
 
-const BASE = process.env.AUDIT_BASE || 'https://kmt.fly.dev';
+// No default, on purpose -- see the same refusal in deployed-site-check.mjs.
+// A script that silently audits SOMETHING rather than refusing to audit
+// NOTHING answers confidently about a target nobody chose. #481 fixed three
+// of these and its claim row said "three instances, one root"; a grep for the
+// removed behaviour found six more, this among them. The count was a sample
+// read as a census.
+const BASE = process.env.AUDIT_BASE;
+if (!BASE) {
+  console.error('Set AUDIT_BASE explicitly; this refuses to guess which host to audit.');
+  console.error('It used to default to the Fly host -- which is how a sibling check passed 69/69 against a host CI was not testing.');
+  process.exit(2);
+}
 
 /**
  * How many checks a complete run performs.
