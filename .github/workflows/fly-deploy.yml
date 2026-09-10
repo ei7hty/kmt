@@ -127,6 +127,21 @@ jobs:
       # what the build already wrote.
       - run: node .forge/bundle-leak-check.mjs
 
+      - name: Disable unrelated Chrome apt source
+        run: |
+          # Playwright's --with-deps invokes apt to install system libraries for
+          # its bundled Chromium. GitHub's hosted image also carries Google's
+          # Chrome repository, which this project does not use. On 2026-09-09
+          # that repo returned a Packages.gz Hash Sum mismatch and blocked the
+          # browser audits after tests, lint and build had already passed.
+          for source in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -e "$source" ] || continue
+            if grep -q 'dl.google.com/linux/chrome' "$source"; then
+              echo "Disabling unrelated Chrome apt source: $source"
+              sudo mv "$source" "$source.disabled-for-kmt-playwright"
+            fi
+          done
+          sudo apt-get clean
       - run: npx playwright install --with-deps chromium
 
       # The click paths, gated before merge rather than only after deploy.
@@ -447,6 +462,19 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Disable unrelated Chrome apt source
+        run: |
+          # Keep the deployed-site audit on Playwright's dependency installer,
+          # but do not let an unrelated Chrome apt index decide whether the KMT
+          # release can be audited.
+          for source in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -e "$source" ] || continue
+            if grep -q 'dl.google.com/linux/chrome' "$source"; then
+              echo "Disabling unrelated Chrome apt source: $source"
+              sudo mv "$source" "$source.disabled-for-kmt-playwright"
+            fi
+          done
+          sudo apt-get clean
       - run: npx playwright install --with-deps chromium
       - name: Wait for the new release to answer
         # The deployed origin, a repository variable so the cutover changes it in
