@@ -220,40 +220,67 @@ produces the packet. At 1,248 distinct brand+model rows that is 250 runs to
 cover the catalogue, so anyone planning coverage should count runs rather than
 tires.
 
-**IT IS HAND-AUTHORED BY DESIGN, NOT BY OMISSION**, and that is written down
-in a runbook this section did not previously point at:
-[`approved-product-images.md`](approved-product-images.md). Verbatim from it:
+**THE RUNBOOK SAYS THE DATA CANNOT SUPPORT THIS, AND THAT IS FALSE.**
+[`approved-product-images.md`](approved-product-images.md) opens by saying the
+catalogue has *"no valid product-page source URLs. Its source URLs are listing
+pages."* The committed catalogue is in this repository, so that is testable
+without contacting anything. Measured against `src/data/scraped-tires.json`:
 
-> The committed catalog currently has 1,083 rows, no image URLs and no valid
-> product-page source URLs. Its source URLs are listing pages.
+| | |
+| --- | --- |
+| rows | 1,083 |
+| rows carrying a `source.url` | 1,083 — all of them |
+| URLs containing `/tirecode/` | 1,083 — all of them |
+| **distinct** URLs | 1,083 — one per tire, none shared |
+| URLs starting with `/tires/` | **0** |
+| path prefixes | the four scraped sizes: `/225-50-17`, `/265-70-16`, `/215-60-16`, `/205-65-15` |
 
-> The owner must supply five real, distinct Giga product URLs and identify the
-> existing supplier row each belongs to. Obtain these through the owner's
-> authorized supplier access; this implementation does not discover them.
+Sample: `https://www.giga-tires.com/205-65-15/waterfall-tires/quattro/tirecode/WT25`
 
-So a command that derived the mapping from stored rows would not be filling a
-gap — it would be undoing a decision. The rows hold LISTING urls; `productUrl()`
-wants a product page; and discovery was deliberately left to the owner's own
-supplier access rather than built.
+**They are not listing pages.** A listing page is shared by every tire in a
+size — there would be four. There are 1,083 distinct URLs, each carrying its own
+`tirecode`, with brand and model in the path. Half of the runbook's sentence is
+right and half is wrong: there are no *valid* product URLs, and the reason is
+not that the data is missing.
 
-**READ THAT RUNBOOK, AND DO NOT TRUST ALL OF IT.** Three of its claims describe
-a system that no longer exists, verified against `main`:
+**THE ONE FAILING CONDITION IS THE `/tires/` PREFIX, AND IT IS A COURTESY GUARD
+RATHER THAN AN OVERSIGHT.** `productUrl()` requires the giga-tires origin, a
+`/tires/` prefix and a `/tirecode/` segment. Origin matches; `/tirecode/` is
+present on all 1,083; only the prefix fails. And `scripts/giga-tires.mjs:14`
+records why the prefix is there: *"Their robots.txt allows /tires/. It disallows
+/cart, /checkout, /my-account, /price/calculate, the /tires/o/ deals pages, and
+any `?filtering=` faceted URL."* So the check confines fetches to the path this
+project recorded as explicitly allowed. **Do not relax it to make the mapping
+derivable.** That would widen what we fetch on the strength of a convenience.
+
+Three things a person deciding this should have, all measured here:
+
+- The scraper already fetches **listing** pages at `${ORIGIN}/tires/{size}`
+  (`giga-tires.mjs:431`), which is inside the allowed prefix.
+- The product links **on those allowed pages** point outside it — that is the
+  site's own structure, not something this project constructed.
+- The disallow list recorded in our own comment does not mention size-prefixed
+  paths.
+
+None of that settles it. Whether `/{size}/{brand}/{model}/tirecode/{code}` is
+crawlable can only be read from giga-tires' live `robots.txt`, and fetching it
+is a request to a real host, which is the owner's call and nobody else's. **That
+question — not "can the mapping be derived" — is what this feature is waiting
+on.**
+
+**The runbook is stale in four ways**, each checked against `main`:
 
 | the runbook says | actually |
 | --- | --- |
-| "`IMAGE_EXECUTION_ENABLED` remains false" | the constant was removed in #451 |
-| "the provider approval registry remains empty" | `PM_APPROVALS` was removed with it |
-| the selection tag `owner-mapped-five-seeded-v1` | retired by #450; it is now `owner-mapped-seeded-v2` |
+| "`IMAGE_EXECUTION_ENABLED` remains false" | removed in #451; one match survives in `backend/`, a past-tense comment in a test |
+| "the provider approval registry remains empty" | `PM_APPROVALS` removed with it; zero matches |
+| the selection tag `owner-mapped-five-seeded-v1` | retired by #450; `IMAGE_SELECTION_TAG` is `'owner-mapped-seeded-v2'` |
+| "its source URLs are listing pages" | false against the same 1,083 rows it cites |
 
-**And its central claim carries a caveat worth stating.** It was written against
-a catalogue of **1,083 rows**; we now hold **6,169** from a later scrape. "Source
-URLs are listing pages" was measured against data we no longer have, so it is
-strong evidence about today rather than proof. The cheap way to re-check it
-without touching the supplier: `productUrl()` throws rather than filtering, and
-`selectValidationUrls` maps every stored `source.url` through it — so running
-`scrape-tires.mjs --validate-products` WITHOUT the packet flags against a current
-snapshot either succeeds, which would mean the rows now canonicalize, or fails
-with "Not a giga-tires product URL", which confirms the runbook still holds.
+Its remaining clause — *"the image mirror CLI still refuses execution"* — is
+**true**: `scripts/image-mirror.mjs --execute` exits 2 with a wiring error. It is
+also about a different command from the one that acquires images, so read it
+narrowly.
 
 **This is where the pipeline stops today**, and this section exists because that
 was hard to see. Five times in one night this feature was described as one step
