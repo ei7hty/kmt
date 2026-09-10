@@ -8,9 +8,10 @@ import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { sha256Bytes } from './image-assets.mjs'
-import { IMAGE_PILOT_POLICY } from './image-provider-profile.mjs'
+import { IMAGE_PILOT_POLICY, compileImageProviderProfile } from './image-provider-profile.mjs'
 import { createImageRunProvenance, verifyImageRunProvenance } from './image-run-provenance.mjs'
-import { prepareApprovedImageStagingRun, runOfflineImageStagingFixtures } from './image-staging-coordinator.mjs'
+import { createSafeImageFetcher } from '../scripts/image-mirror.mjs'
+import { PROVIDER_MODE, provenanceTransport, runApprovedImageStaging, runOfflineImageStagingFixtures } from './image-staging-coordinator.mjs'
 import { decoderPython, realImageFixtures, incompletePayloads } from './fixtures/image-provider/decoder-fixtures.mjs'
 
 const images = realImageFixtures()
@@ -137,12 +138,84 @@ test('a snapshot with fewer candidates stages fewer images rather than refusing'
   // invariant is that each attempt is accounted for, not that each is a file.
   assert.equal(result.stored + result.deduped, snapshot.candidates.length)
 })
-test('real host profile cannot run through fixture seam and approval entry point stays blocked', async t => {
+// This test's second half used to assert the provider entry point threw
+// /PROJECT MANAGER/, because a compiled-in approval registry stood in front of
+// it. That registry is gone on the owner's ruling that approval lives in the
+// owner screen, so the assertion moved rather than its expected value: what must
+// still hold is that the two seams cannot be crossed in either direction.
+test('the fixture seam and the provider seam cannot be crossed in either direction', async t => {
   const directory = await workspace(t)
   // A reserved example domain, never contacted.
   await assert.rejects(runOfflineImageStagingFixtures({ ...plan('cdn.example.com'), directory }))
-  assert.throws(() => prepareApprovedImageStagingRun({ ...plan(), directory }), /PROJECT MANAGER/)
+  // Fixtures handed to the provider run are a caller who believes they are
+  // offline while addressing the network. Refused, not ignored.
+  await assert.rejects(runApprovedImageStaging({ ...plan(), directory }))
   assert.deepEqual(await readdir(directory), [])
+})
+
+test('a snapshot over the politeness ceiling is refused before any filesystem work', async t => {
+  const directory = await workspace(t)
+  const input = plan(), snapshot = JSON.parse(input.snapshotBytes), one = snapshot.candidates[0]
+  snapshot.candidates = Array.from({ length: IMAGE_PILOT_POLICY.candidateLimit + 1 }, (_, i) => ({
+    ...one, supplierId: `over-${i}`, supplierSku: `sku-over-${i}`,
+    productUrl: `https://cdn.example.test/product/over-${i}`, originalUrl: `https://cdn.example.test/image/over-${i}`,
+  }))
+  input.snapshotBytes = Buffer.from(JSON.stringify(snapshot))
+  input.expectedSnapshotDigest = sha256Bytes(input.snapshotBytes)
+  // candidateLimit was enforced by assertApprovedImagePlan, which went with the
+  // approval registry. It is not an approval detail -- it is the load one run
+  // puts on somebody else's server -- so it moved into the plan.
+  await assert.rejects(runOfflineImageStagingFixtures({ ...input, directory }))
+  assert.deepEqual(await readdir(directory), [])
+})
+
+test('the provenance decorator records the trail without deciding anything', async () => {
+  const events = []
+  const append = (type, fields) => events.push([type, fields])
+  const advance = () => ({ supplierId: 'fixture-0', supplierSku: 'sku-0', candidateRevision: 'revision-1', productUrl: 'https://cdn.example.test/product/0' })
+  const seen = []
+  const inner = { fetch: async (url, options) => {
+    options.onConnect({ url, address: '93.184.216.34' })
+    options.onRedirect('https://cdn.example.test/image/moved')
+    options.onConnect({ url: 'https://cdn.example.test/image/moved', address: '93.184.216.34' })
+    return { status: 200, headers: {}, finalUrl: 'https://cdn.example.test/image/moved', bytes: Buffer.from('bytes') }
+  } }
+  const response = await provenanceTransport(inner, { advance, append }).fetch('https://cdn.example.test/image/0', {
+    onConnect: details => { seen.push(['connect', details.url]); return 'authorized' },
+    onRedirect: next => { seen.push(['redirect', next]); return next },
+  })
+  assert.equal(response.status, 200)
+  assert.deepEqual(events.map(([type]) => type), ['candidate-start', 'connect', 'redirect', 'connect', 'response'])
+  // The decorator must not swallow or rewrite the caller's authorization: every
+  // callback still reaches it, which is what keeps createSafeImageFetcher's host
+  // and resolved-address checks biting through the wrapper.
+  assert.deepEqual(seen, [['connect', 'https://cdn.example.test/image/0'],
+    ['redirect', 'https://cdn.example.test/image/moved'],
+    ['connect', 'https://cdn.example.test/image/moved']])
+  assert.equal(events.find(([type]) => type === 'redirect')[1].finalUrl, 'https://cdn.example.test/image/0',
+    'the redirect names the hop being left, not the one being entered')
+})
+
+test('an authorization throw from the caller is not absorbed by the decorator', async () => {
+  const advance = () => ({ supplierId: 'fixture-0', supplierSku: 'sku-0', candidateRevision: 'revision-1', productUrl: 'https://cdn.example.test/product/0' })
+  const inner = { fetch: async (url, options) => { options.onConnect({ url, address: '10.0.0.1' }); return { status: 200, headers: {}, finalUrl: url, bytes: Buffer.alloc(1) } } }
+  const decorated = provenanceTransport(inner, { advance, append: () => {} })
+  await assert.rejects(() => decorated.fetch('https://cdn.example.test/image/0', {
+    onConnect: () => { throw new Error('address refused') },
+  }), /address refused/)
+})
+
+test('the provider mode carries the profile pacing and a transport the safe fetcher accepts', () => {
+  const profile = compileImageProviderProfile({ version: 1, providerId: 'offline-fixture',
+    allowedHosts: ['cdn.example.test'], policy: structuredClone(IMAGE_PILOT_POLICY) })
+  assert.equal(PROVIDER_MODE.delayMs({ profile }), IMAGE_PILOT_POLICY.delayMs)
+  assert.notEqual(PROVIDER_MODE.delayMs({ profile }), 0, 'a provider run is paced; only the fixture harness is not')
+  assert.doesNotMatch(PROVIDER_MODE.failureMessage, /offline/i)
+  const transport = PROVIDER_MODE.prepare({}, { profile })({ advance: () => ({}), append: () => {} })
+  assert.equal(typeof transport.fetch, 'function')
+  // The decorator is a transport, not a replacement for the layer that
+  // authorizes hosts and resolved addresses.
+  assert.equal(typeof createSafeImageFetcher(transport, profile), 'function')
 })
 test('redirect trail and final URLs persist, forbidden redirects globally stop at one', async t => {
   const directory = await workspace(t), input = plan()

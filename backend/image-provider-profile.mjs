@@ -1,12 +1,17 @@
 import { isIP } from 'node:net'
 import { assertAllowedImageUrl, sha256Bytes } from './image-assets.mjs'
 
-export const IMAGE_EXECUTION_ENABLED = false
-// This reviewed source is the trust anchor. No env var, CLI flag, JSON boolean,
-// request field or caller-supplied digest can grant PROJECT MANAGER approval.
-// PM must supply the exact profile, snapshot digest and candidate IDs.
-// A separate reviewed change must populate this registry AND enable execution.
-const PM_APPROVALS = Object.freeze([])
+// This module compiles and pins an image provider profile. It no longer decides
+// whether a run may happen: the compiled-in execution switch and the PROJECT
+// MANAGER approval registry that used to sit here are gone, on the owner's
+// ruling that approval lives in the owner screen. The gate that remains is the
+// one that matters to a customer -- the owner's approve/revoke decision on
+// *publication*, in `image-publication.mjs`, with a staging trigger that makes
+// staging structurally unable to approve anything it stores.
+//
+// What this module still refuses is a relaxed policy. The budgets below are
+// exact and compiled in: no environment variable, CLI flag or profile field can
+// widen them, and changing one changes the digest a run is recorded under.
 // `candidateLimit` is the operational batch ceiling, and it is load on somebody
 // else's server: at `delayMs` 1500 a run of 250 is about six minutes of
 // one-at-a-time traffic against the supplier. It was 5 for the pilot batch.
@@ -50,12 +55,7 @@ export function compileImageProviderProfile(input) {
   return freeze({ ...profile, digest })
 }
 
-export function assertApprovedImagePlan(profile, snapshotDigest, candidateIds) {
-  if (!/^[a-f0-9]{64}$/.test(snapshotDigest) || !Array.isArray(candidateIds) ||
-      candidateIds.length < 1 || candidateIds.length > IMAGE_PILOT_POLICY.candidateLimit ||
-      new Set(candidateIds).size !== candidateIds.length) reject()
-  const approval = PM_APPROVALS.find(item => item.profileDigest === profile?.digest &&
-    item.snapshotDigest === snapshotDigest && JSON.stringify(item.candidateIds) === JSON.stringify(candidateIds))
-  if (!approval) throw new Error('Image execution blocked: exact PROJECT MANAGER approval is absent')
-  return approval
-}
+// `assertApprovedImagePlan` lived here and is gone with the registry it read.
+// Its one invariant that was never about approval -- a snapshot may not ask for
+// more candidates than `candidateLimit` -- moved into the coordinator's
+// `planFrom`, which is the only place a snapshot is parsed.

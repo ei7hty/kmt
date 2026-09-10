@@ -8,7 +8,7 @@ import { Inventory } from './inventory.mjs'
 import { ImagePublication, imageDirectoryForDatabase, verifyImageDecisions } from './image-publication.mjs'
 import { IMAGE_SELECTION_TAG, parseImagePacket, supplierImageRevision } from './image-manifest.mjs'
 import { sha256Bytes } from './image-assets.mjs'
-import { IMAGE_PILOT_POLICY, compileImageProviderProfile, IMAGE_EXECUTION_ENABLED } from './image-provider-profile.mjs'
+import { IMAGE_PILOT_POLICY, compileImageProviderProfile } from './image-provider-profile.mjs'
 import { createImageStagingStorage, createPrivateImageStorage } from './image-staging.mjs'
 import { createImageApi } from './image-api.mjs'
 import { createCatalogApi, readJsonBody, isPublicApiCall, isKnownApiPath } from './api.mjs'
@@ -64,7 +64,6 @@ test('real fixture import stays pending; explicit approval serves exact bytes; r
   assert.throws(() => images.readPublic(packet.url))
   assert.equal((await images.ingest(packet.input, packet.files)).action, 'revoked')
   assert.equal(verifyImageDecisions(inventory.db).count, 3)
-  assert.equal(IMAGE_EXECUTION_ENABLED, false)
 })
 
 test('same store and approval survive reopen on a volume-shaped data path', async t => {
