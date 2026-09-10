@@ -16,9 +16,11 @@ import path from 'node:path'
  * its `ROOT` from its own on-disk location (the git-common-dir of wherever
  * the file physically sits), not from `process.cwd()` -- so each test here
  * builds a completely throwaway bare "origin" repo plus a checkout with its
- * own copy of `claim.mjs`, and runs the CLI from inside that copy. Pushes,
- * rebases and even a broken-origin failure are all real git operations
- * against that throwaway remote, never against the shared kmt repo.
+ * own copy of `claim.mjs` (and its one dependency, `scripts/lib/git.mjs`,
+ * copied alongside it at the same relative path), and runs the CLI from
+ * inside that copy. Pushes, rebases and even a broken-origin failure are
+ * all real git operations against that throwaway remote, never against the
+ * shared kmt repo.
  */
 
 function makeSandbox(t) {
@@ -36,8 +38,9 @@ function makeSandbox(t) {
   execFileSync('git', ['commit', '--quiet', '-m', 'seed'], { cwd: checkout })
   execFileSync('git', ['push', '--quiet', 'origin', 'HEAD:main'], { cwd: checkout })
 
-  mkdirSync(path.join(checkout, 'scripts'), { recursive: true })
+  mkdirSync(path.join(checkout, 'scripts', 'lib'), { recursive: true })
   cpSync(path.resolve(import.meta.dirname, '..', 'scripts', 'claim.mjs'), path.join(checkout, 'scripts', 'claim.mjs'))
+  cpSync(path.resolve(import.meta.dirname, '..', 'scripts', 'lib', 'git.mjs'), path.join(checkout, 'scripts', 'lib', 'git.mjs'))
 
   const script = path.join(checkout, 'scripts', 'claim.mjs')
   const run = (args) => {
