@@ -7,11 +7,12 @@ import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { request as httpsRequest } from 'node:https'
 import { sha256Bytes } from './image-assets.mjs'
 import { IMAGE_PILOT_POLICY, compileImageProviderProfile } from './image-provider-profile.mjs'
 import { createImageRunProvenance, verifyImageRunProvenance } from './image-run-provenance.mjs'
 import { createSafeImageFetcher } from '../scripts/image-mirror.mjs'
-import { PROVIDER_MODE, provenanceTransport, runApprovedImageStaging, runOfflineImageStagingFixtures } from './image-staging-coordinator.mjs'
+import { PROVIDER_MODE, provenanceTransport, runApprovedImageStaging, runImageStagingWithInjectedTransport, runOfflineImageStagingFixtures } from './image-staging-coordinator.mjs'
 import { decoderPython, realImageFixtures, incompletePayloads } from './fixtures/image-provider/decoder-fixtures.mjs'
 
 const images = realImageFixtures()
@@ -286,4 +287,115 @@ test('abrupt coordinator process death preserves a verifiable incomplete provena
     assert.ok(integrity.events > 1); assert.equal(integrity.complete, false)
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM image_assets WHERE usage_status <> 'candidate'").get().n, 0)
   } finally { db.close() }
+})
+
+// ------------------------------------------------ the injected-transport seam
+//
+// `runImageStagingWithInjectedTransport` exists to let a controlled harness
+// prove the real coordinator wiring end to end against a local fixture, by
+// telling `assertSafeResolvedAddress` a public address while routing the real
+// socket to loopback -- the same trick `image-provider.test.mjs` already uses
+// at the transport layer, now reaching the full pipeline. These three tests
+// are the OWNER AGENT's binding conditions on that seam, and none of them are
+// about whether the fetch *works* -- they are about whether the fetch REFUSES
+// when it should, through the new code path exactly as through the old one.
+
+test('PINNING: the real runApprovedImageStaging still refuses a loopback target, with no seam involved at all', async t => {
+  // A raw IP-literal URL needs no DNS lookup at all -- assertAllowedImageUrl
+  // (backend/image-assets.mjs) rejects it by inspecting the URL's own
+  // hostname string, before planFrom finishes and before any transport is
+  // even constructed. This is a DIFFERENT guard from assertSafeResolvedAddress
+  // (which fires on a DNS-*resolved* address, tested on the seam itself
+  // below) -- both exist, and this test is specifically about the one that
+  // fires first, on the real export, with nothing injected.
+  const directory = await workspace(t)
+  // plan('127.0.0.1') already builds every candidate URL and the profile's
+  // allowedHosts from this one literal -- both point straight at loopback.
+  const input = plan('127.0.0.1')
+  await assert.rejects(runApprovedImageStaging({ ...input, directory }))
+  // The refusal is real and early: nothing was created on disk.
+  assert.deepEqual(await readdir(directory), [])
+})
+
+test('SEAM MUTATION: if the injected lookup reports a PRIVATE address, assertSafeResolvedAddress still refuses -- through the new seam, not around it', async t => {
+  // The candidate host here is a normal, allowlisted-looking name -- it
+  // passes assertAllowedImageUrl's string check cleanly, unlike the pinning
+  // test above. What is under test is specifically whether the SEAM lets a
+  // dishonest lookup answer slip past assertSafeResolvedAddress. It must not:
+  // the guard has to fire on whatever address lookupImpl actually reports,
+  // the same way it fires on a real DNS answer for the unmodified export.
+  //
+  // TWO THINGS CAUGHT BY RUNNING THIS, NOT BY REASONING ABOUT IT:
+  //
+  // First: a per-candidate address refusal does not make the coordinator
+  // THROW at all. `mirrorRemoteImages` catches a `provider-refusal` (which
+  // is exactly what `assertSafeResolvedAddress` throwing becomes, via
+  // `onConnect`) and reports it as `stoppedOnRefusal: true` in a normally
+  // RESOLVED result -- the same shape a real host's 403/429 refusal takes.
+  // A first draft of this test used `assert.rejects()` and failed outright
+  // once actually run, because there is nothing to reject: the guard firing
+  // is not an exception here, it is a reported outcome.
+  //
+  // Second: a `requestImpl` that just throws immediately, without ever
+  // calling the `lookup` option real `https.request` would have called as
+  // part of connecting, never reaches `lookupImpl` at all -- so a mutation
+  // that removed the hook-forwarding in the coordinator's `prepare()` still
+  // produced a "refusal" (for the unrelated reason that a reserved example
+  // domain also fails real DNS resolution on its own), and the test would
+  // have passed either way. Exactly the "green for the wrong reason" shape
+  // this whole night has been hunting -- fixed by using the REAL
+  // `https.request` as `requestImpl`, the same function
+  // `createHttpsImageTransport` defaults to when no override is given at
+  // all, so Node's own connection machinery is what invokes `lookupImpl`,
+  // not a hand-rolled stand-in.
+  const directory = await workspace(t)
+  let lookupCalled = false
+  const lookupImpl = (_host, options, done) => {
+    lookupCalled = true
+    const address = '10.0.0.1' // RFC1918 -- a real DNS answer could say this
+    if (options?.all) return done(null, [{ address, family: 4 }])
+    return done(null, address, 4)
+  }
+  const requestImpl = (options, callback) => httpsRequest(options, callback)
+  // plan()'s `fixtures` field is for the offline mode; this mode refuses any
+  // input that carries one, the same way runApprovedImageStaging does (a
+  // caller passing fixtures here believes it is offline while addressing
+  // the network) -- strip it so the run actually reaches the transport.
+  const input = plan()
+  delete input.fixtures
+  const result = await runImageStagingWithInjectedTransport({ ...input, directory }, { requestImpl, lookupImpl })
+  assert.equal(lookupCalled, true, 'the injected lookupImpl must actually have been consulted -- otherwise a stop here would be for an unrelated reason')
+  assert.equal(result.stoppedOnRefusal, true, 'a private resolved address must stop the run, the same way a real host refusal does')
+  assert.equal(result.stored, 0, 'nothing was ever fetched, so nothing was ever stored')
+  assert.equal(result.states[0].outcome, 'provider-refusal')
+})
+
+test('BOUNDARY: nothing under backend/ or src/ imports the injected-transport seam', async () => {
+  // Same shape as backend/image-import-cli.test.mjs's server-boundary test,
+  // the precedent OWNER AGENT named as what already works: a fact about the
+  // tree, checked directly, not a promise left in a comment. If this ever
+  // finds a hit, STOP -- per the binding condition, the seam does not ship
+  // with the boundary left unproven.
+  const { readdir: listDir, readFile: readSource } = await import('node:fs/promises')
+  const { dirname, join: joinPath } = await import('node:path')
+  const { fileURLToPath: toPath } = await import('node:url')
+  const root = dirname(dirname(toPath(import.meta.url)))
+
+  const offenders = []
+  for (const directory of ['backend', 'src', 'src/owner', 'src/components']) {
+    let entries
+    try { entries = await listDir(joinPath(root, directory)) } catch { continue }
+    for (const entry of entries) {
+      if (!/\.(mjs|js|jsx)$/.test(entry) || entry.includes('.test.')) continue
+      // image-staging-coordinator.mjs is where the seam is DEFINED, not an
+      // importer of it -- its own `export async function
+      // runImageStagingWithInjectedTransport` line legitimately contains the
+      // name. Every other file in these directories is a real importer if it
+      // matches, since none of them define the seam themselves.
+      if (directory === 'backend' && entry === 'image-staging-coordinator.mjs') continue
+      const source = await readSource(joinPath(root, directory, entry), 'utf8')
+      if (source.includes('runImageStagingWithInjectedTransport')) offenders.push(`${directory}/${entry}`)
+    }
+  }
+  assert.deepEqual(offenders, [], 'the seam must be reachable only from test files, never from anything the server or owner UI loads')
 })
