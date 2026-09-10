@@ -125,8 +125,9 @@ function compareRefSandbox(t) {
   execFileSync('git', ['add', 'seed.txt'], { cwd: repo })
   execFileSync('git', ['commit', '--quiet', '-m', 'commit B'], { cwd: repo }) // now HEAD, and NOT an ancestor of commitA
 
-  mkdirSync(path.join(repo, 'scripts'), { recursive: true })
+  mkdirSync(path.join(repo, 'scripts', 'lib'), { recursive: true })
   cpSync(SCRIPT, path.join(repo, 'scripts', 'worktree.mjs'))
+  cpSync(path.resolve(import.meta.dirname, '..', 'scripts', 'lib', 'git.mjs'), path.join(repo, 'scripts', 'lib', 'git.mjs'))
   const script = path.join(repo, 'scripts', 'worktree.mjs')
   const runInSandbox = (args) => {
     try {

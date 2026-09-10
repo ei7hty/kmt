@@ -32,6 +32,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, lstatSync, readlinkSync, rmdirSync, symlinkSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { git, gitProbe } from './lib/git.mjs'
 
 /**
  * The main checkout, wherever this is run from.
@@ -81,8 +82,6 @@ list     The registered worktrees.
 Never run \`git worktree remove --force\` on a tree whose node_modules is a
 link: it deletes through the link into the shared install.
 `.trimStart()
-
-const git = (args, cwd = ROOT) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 
 function fail(message) {
   console.error(message)
@@ -145,7 +144,9 @@ function commonDirOf(dir) {
 function registered() {
   const trees = new Map()
   let current = null
-  for (const line of git(['worktree', 'list', '--porcelain']).split('\n')) {
+  const listed = git(['worktree', 'list', '--porcelain'], ROOT)
+  if (!listed.ok) fail(listed.error)
+  for (const line of listed.stdout.split('\n')) {
     if (line.startsWith('worktree ')) { current = { path: path.resolve(line.slice(9)), branch: '' }; trees.set(current.path, current) }
     else if (line.startsWith('branch ') && current) current.branch = line.slice(7).replace(/^refs\/heads\//, '')
   }
@@ -193,7 +194,7 @@ function unlink(tree) {
   return true
 }
 
-const branchExists = (name) => { try { git(['rev-parse', '--verify', '--quiet', name]); return true } catch { return false } }
+const branchExists = (name) => gitProbe(['rev-parse', '--verify', '--quiet', name], ROOT)
 
 /**
  * `git worktree add <tree> -b <branch> <ref>`'s two effects -- creating the
@@ -230,17 +231,17 @@ function add({ name, branch, from }) {
       'or choose a different name.')
   }
 
-  let output
-  try {
-    git(['fetch', '--quiet', 'origin'])
-    output = git(['worktree', 'add', tree, '-b', branch, from])
-  } catch (error) {
-    console.error(String(error.stderr || error.message).trim())
-    if (branchExists(branch)) { git(['branch', '-D', branch]); console.error(`\nCleaned up branch ${branch}, which the failed attempt created; a retry starts clean.`) }
+  const fetched = git(['fetch', '--quiet', 'origin'], ROOT)
+  const created = fetched.ok ? git(['worktree', 'add', tree, '-b', branch, from], ROOT) : fetched
+  if (!created.ok) {
+    if (branchExists(branch)) {
+      git(['branch', '-D', branch], ROOT)
+      console.error(`\nCleaned up branch ${branch}, which the failed attempt created; a retry starts clean.`)
+    }
     console.error(`\n\`git worktree add\` failed; nothing was created at ${displayPath(tree)}.`)
     process.exit(1)
   }
-  console.log(output.split('\n').pop())
+  console.log(created.stdout.split('\n').pop())
   link(tree)
   console.log(`\n${displayPath(tree)} is on ${branch} from ${from}. Claim it in .forge/CLAIMS.md before you start.`)
 }
@@ -295,29 +296,32 @@ function remove({ name, compareRef = 'origin/main' }) {
   // both refuse the same case look redundant; they are not -- one of them is
   // the only thing standing between a dirty tree and that halfway state. If
   // this comment is ever separated from the check, say so again there.
-  const dirty = git(['status', '--porcelain'], tree)
-  if (dirty) fail(`${displayPath(tree)} has uncommitted changes, including possibly untracked files:\n${dirty}\nCommit or discard them first.`)
+  const status = git(['status', '--porcelain'], tree)
+  if (!status.ok) fail(status.error)
+  if (status.stdout) fail(`${displayPath(tree)} has uncommitted changes, including possibly untracked files:\n${status.stdout}\nCommit or discard them first.`)
 
-  const tip = known.branch ? git(['rev-parse', known.branch]) : ''
-  const unpushed = known.branch && tip
-    ? git(['log', '--oneline', `${compareRef}..${known.branch}`]).split('\n').filter(Boolean)
-    : []
+  let tip = '', unpushed = []
+  if (known.branch) {
+    const rev = git(['rev-parse', known.branch], ROOT)
+    if (!rev.ok) fail(rev.error)
+    tip = rev.stdout
+    const log = git(['log', '--oneline', `${compareRef}..${known.branch}`], ROOT)
+    if (!log.ok) fail(log.error)
+    unpushed = log.stdout.split('\n').filter(Boolean)
+  }
 
   unlink(tree)
-  try {
-    git(['worktree', 'remove', tree])
-  } catch (error) {
-    console.error(String(error.stderr || error.message).trim())
+  const removed = git(['worktree', 'remove', tree], ROOT)
+  if (!removed.ok) {
     console.error(`\ngit refused, so nothing was deleted. The node_modules link is gone; put it back with\n  node scripts/worktree.mjs link ${name}\nif you want to keep working there.`)
     process.exit(1)
   }
   console.log(`Removed ${displayPath(tree)}.`)
 
   if (!known.branch) return
-  let merged
-  try { git(['merge-base', '--is-ancestor', tip, compareRef]); merged = true } catch { merged = false }
+  const merged = gitProbe(['merge-base', '--is-ancestor', tip, compareRef], ROOT)
   if (merged) {
-    git(['branch', '-D', known.branch])
+    git(['branch', '-D', known.branch], ROOT)
     console.log(`Deleted local branch ${known.branch}; its tip ${tip.slice(0, 7)} is in ${compareRef}.`)
   } else {
     console.log(`Kept local branch ${known.branch}: ${unpushed.length} commit(s) on it are not in ${compareRef}.` +
