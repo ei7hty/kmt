@@ -593,7 +593,27 @@ async function main() {
     //                                      serious defect, not timing
     //   resolved, neither present       -> the gate is genuinely absent
     let waited = 'resolved';
-    await page.waitForSelector('.oi-signin, .oi-results', { timeout: 20000 })
+    // Wait for the screen to have DECIDED, not to have STARTED.
+    //
+    // `.oi-results` is the grid's container and it renders BEFORE authentication
+    // is known, so the old selector resolved on the arm that is always already
+    // true and the assertion ran against a screen that had not decided yet. Two
+    // consecutive main deploys failed on it, and the detail string added just
+    // before this caught both signatures against production:
+    //
+    //   wait resolved; .oi-signin 0, .oi-results 1   <- resolved on the container
+    //   wait resolved; .oi-signin 0, .oi-results 0   <- counted mid-remount
+    //
+    // Measured at ~10ms cadence: the container appears, lives about 20ms, is
+    // detached when the 401 flips the screen, and the gate mounts 8-13ms later.
+    // One sample never saw the container at all.
+    //
+    // `aria-busy` is the discriminator (OwnerInventoryGrid.jsx:240 renders
+    // `aria-busy={state.loading}`), so the loading container cannot match and
+    // only a settled screen can. This waits for a STATE rather than tightening a
+    // timing: an 80ms decision and an 8s decision are alike to it, which is why a
+    // cold machine needs no different fix.
+    await page.waitForSelector('.oi-signin, .oi-results[aria-busy="false"]', { timeout: 20000 })
       .catch(() => { waited = 'TIMED OUT after 20s'; });
     const signin = await page.locator('.oi-signin').count();
     const results = await page.locator('.oi-results').count();
