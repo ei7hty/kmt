@@ -139,6 +139,13 @@ if (total === null) {
 
 if (total !== null && total < EXPECTED_TESTS) {
   const short = EXPECTED_TESTS - total
+
+  // Set once for the whole block, not per branch. It was set per branch and the
+  // three short cases were added later without it, so a shortfall in an
+  // otherwise-healthy run printed FAIL and exited 0 -- this check reading as a
+  // plausible pass in the one case it exists for. Found by JUNIOR REPO AGENT
+  // reproducing it with two trivial passing files, not by anyone reading it.
+  problem = true
   // The third outcome: a shortfall this environment cannot help.
   //
   // It exits 1 like every other failure, deliberately. The exit code is the
