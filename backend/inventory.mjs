@@ -17,6 +17,73 @@ const CATALOGUE_LINE_BASES = ['perTire', 'perJob']
 const CATALOGUE_LINE_MODES = ['automatic', 'optional']
 const CATALOGUE_LINE_LIMIT = 25
 
+/**
+ * The supplier's cost arrives in DOLLARS and the owner's price in CENTS.
+ *
+ * `payload.$.price` is what the supplier's page quoted -- a float, in dollars.
+ * `offers.price_cents` is an integer this app stores. Subtracting them as they
+ * come is wrong by 100x, and a margin wrong by 100x still sorts into an order
+ * that looks entirely plausible, off a screen the owner prices tires from.
+ * Nothing in either column name says the units differ, which is why this says
+ * it here. The conversion lives in SQL, once: the value the list SELECTs and
+ * the value it ORDERs BY are the same expression and cannot drift apart.
+ */
+const MARGIN_CENTS = "o.price_cents - CAST(ROUND(json_extract(s.payload,'$.price') * 100) AS INTEGER)"
+
+/**
+ * Sort keys the owner screen may ask for, each mapped to a FIXED SQL fragment.
+ *
+ * The key is looked up, never interpolated -- an unknown key cannot reach the
+ * query -- and an unknown key falls back to the default order rather than
+ * raising, because a mistyped sort must not blank the owner's screen.
+ */
+const SORT_COLUMNS = Object.freeze({
+  size: 's.size',
+  name: "json_extract(s.payload,'$.name')",
+  supplierPrice: "json_extract(s.payload,'$.price')",
+  price: 'o.price_cents',
+  margin: MARGIN_CENTS,
+  enabled: 'COALESCE(o.enabled,0)',
+  updated: 'o.updated_at',
+})
+
+const DEFAULT_ORDER = "s.size, json_extract(s.payload,'$.name'), s.id"
+
+/** Page sizes the listing will serve. 24 stays the default so no existing caller moves. */
+const PAGE_SIZES = Object.freeze([24, 50, 100, 200])
+const DEFAULT_PAGE_SIZE = 24
+
+/** Rows one bulk offer write may carry, matching the largest page. */
+const BULK_OFFER_LIMIT = 200
+
+/** Per-row failure codes. The screen branches on these; the message is for the owner. */
+const BULK_REASONS = Object.freeze({ 404: 'not-found', 409: 'version-conflict', 400: 'invalid' })
+
+/**
+ * The ORDER BY for a listing, built from an allow-listed key.
+ *
+ * Two pieces here are load-bearing rather than tidy:
+ *
+ * `, s.id` last. LIMIT/OFFSET paging over a non-unique sort key is
+ * nondeterministic -- "sort by offered, page 2" can repeat rows page 1 already
+ * showed and skip others entirely. It is silent, it looks right, and it ends
+ * with the owner editing a row he never saw while another goes untouched.
+ *
+ * `<expr> IS NULL` first. Most supplier rows have no offer, so price, margin,
+ * enabled and updated are NULL for them, and SQLite sorts NULLs first when
+ * ascending. "Margin, ascending" -- the gesture this whole feature exists for
+ * -- would then open on thousands of tires that carry no price at all rather
+ * than the thin margins being hunted. Unpriced rows already have their own
+ * control in `filter=unselected`; a sort must not quietly become a worse copy
+ * of a filter that already exists.
+ */
+function orderBy(sort, dir) {
+  const column = Object.hasOwn(SORT_COLUMNS, sort) ? SORT_COLUMNS[sort] : null
+  if (!column) return { order: DEFAULT_ORDER, sort: null, dir: null }
+  const direction = dir === 'desc' ? 'DESC' : 'ASC'
+  return { order: `${column} IS NULL, ${column} ${direction}, s.id`, sort, dir: direction.toLowerCase() }
+}
+
 export class InputError extends Error {
   constructor(message, status = 400) { super(message); this.status = status }
 }
@@ -538,7 +605,7 @@ export class Inventory {
       .run(size, error, now())
   }
 
-  list({ search = '', size = '', filter = 'all', page = 1 } = {}) {
+  list({ search = '', size = '', filter = 'all', page = 1, sort = '', dir = '', pageSize: askedPageSize } = {}) {
     const conditions = [], args = []
     if (size) { conditions.push('s.size=?'); args.push(size) }
     if (search) {
@@ -551,16 +618,30 @@ export class Inventory {
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
     const from = `FROM supplier s LEFT JOIN offers o ON o.id=s.id ${where}`
     const total = this.db.prepare(`SELECT count(*) AS n ${from}`).get(...args).n
-    const pageSize = 24
+    const asked = Math.floor(Number(askedPageSize))
+    const pageSize = PAGE_SIZES.includes(asked) ? asked : DEFAULT_PAGE_SIZE
+    // The sort the query actually ran, not the one that was asked for. An
+    // unknown key silently falls back, so the caller has to be told which one
+    // it got: a header rendering an arrow on a column the server ignored is a
+    // screen lying about what it did.
+    const applied = orderBy(sort, dir)
     const currentPage = Math.max(1, Math.min(Math.floor(Number(page)) || 1, Math.max(1, Math.ceil(total / pageSize))))
-    const rows = this.db.prepare(`SELECT s.*, o.price_cents, o.shipping_cents, o.enabled, o.notes, o.version ${from}
-      ORDER BY s.size, json_extract(s.payload,'$.name'), s.id LIMIT ? OFFSET ?`)
+    const rows = this.db.prepare(`SELECT s.*, o.price_cents, o.shipping_cents, o.enabled, o.notes, o.version,
+        o.updated_at AS offer_updated_at, ${MARGIN_CENTS} AS margin_cents ${from}
+      ORDER BY ${applied.order} LIMIT ? OFFSET ?`)
       .all(...args, pageSize, (currentPage - 1) * pageSize)
     return { items: rows.map(row => ({
       ...JSON.parse(row.payload), lastSeen: row.last_seen, supplierActive: !!row.active,
+      // Derived, never stored, and deliberately OUTSIDE `offer`: that object is
+      // the shape the owner screen submits back, asserted field-for-field in
+      // four existing tests, and widening it would make a read-only column look
+      // like something to send. The margin the grid renders is the identical
+      // SQL expression the sort orders by, so the column and the order cannot
+      // disagree. NULL for a tire with no price.
+      marginCents: row.margin_cents ?? null, offerUpdatedAt: row.offer_updated_at ?? null,
       offer: { priceCents: row.price_cents ?? null, shippingCents: row.shipping_cents ?? null, enabled: !!row.enabled,
         notes: row.notes ?? '', version: row.version ?? 0 },
-    })), total, page: currentPage, pageSize }
+    })), total, page: currentPage, pageSize, sort: applied.sort, dir: applied.dir }
   }
 
   saveOffer(id, input) {
@@ -582,6 +663,57 @@ export class Inventory {
         .run(id, input.priceCents, shippingCents, Number(input.enabled), input.notes, input.version + 1, now())
       return { ...input, shippingCents, version: input.version + 1 }
     })
+  }
+
+  /**
+   * Save many offers in one call, each row on its own terms.
+   *
+   * PARTIAL SUCCESS IS THE NORMAL CASE here, and it is why this is a loop of
+   * transactions rather than one transaction around a loop. The obvious
+   * implementation wraps the whole batch, which quietly turns one stale row
+   * out of forty into forty rows that did not save -- so if you are tempted to
+   * "tidy" this into a single transaction later, that is the behaviour you
+   * would be changing. If 38 of 40 save, those 38 stay saved and the owner is
+   * told which 2 did not.
+   *
+   * Every row keeps the version check `saveOffer` makes. A bulk write that
+   * skipped it would be faster and would also be a safety regression across
+   * thousands of rows of the owner's pricing; the unconditional brand toggle
+   * below is a wart, not a precedent.
+   *
+   * Failures answer with a machine `reason` AND a human `message`. The code is
+   * the contract the screen marks rows from -- matching on message text means
+   * a copy edit to an error string silently stops failed rows rendering as
+   * failed.
+   *
+   * Three refusals reject the whole request instead of answering per row,
+   * because none of them is an outcome for a tire. Over the cap and a missing
+   * id are client bugs. A duplicate id is subtler: the second write to one
+   * tire is guaranteed to fail the version check the first just bumped, so it
+   * would report a mystery conflict on a row that saved perfectly.
+   */
+  saveOffers(input) {
+    const offers = input?.offers
+    if (!Array.isArray(offers) || !offers.length) throw new InputError('Send at least one offer to save.')
+    if (offers.length > BULK_OFFER_LIMIT) throw new InputError(`Save at most ${BULK_OFFER_LIMIT} tires at once.`)
+    const ids = offers.map(offer => offer?.id)
+    if (ids.some(id => typeof id !== 'string' || !id)) throw new InputError('Every offer needs a tire id.')
+    if (new Set(ids).size !== ids.length) throw new InputError('Send each tire once per request.')
+    return { results: offers.map(({ id, ...offer }) => {
+      try {
+        return { id, ok: true, version: this.saveOffer(id, offer).version }
+      } catch (error) {
+        // `failed` covers what is neither the owner's input nor a stale
+        // version -- a disk error, say. Reporting it per row rather than
+        // throwing keeps the answer honest about the rows that DID commit:
+        // abandoning the response mid-batch would leave the screen unable to
+        // tell which of them saved.
+        const reason = error instanceof InputError
+          ? BULK_REASONS[error.status] ?? 'invalid'
+          : 'failed'
+        return { id, ok: false, reason, message: error instanceof InputError ? error.message : 'This tire could not be saved.' }
+      }
+    }) }
   }
 
   /**
