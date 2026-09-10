@@ -3235,3 +3235,67 @@ not the document" test I had been applying to others all night, turned the other
 way: the safe conclusion held, and a quarter of it held for a reason I had not
 checked. Caught because the reader measured each file rather than trusting the
 class.
+
+## An absolute counter on shared state goes stale the instant anything else lands -- a delta of the same check would not, and doesn't fully solve it either
+
+2026-09-10, DB ADMIN, at OWNER AGENT's request, on a night `EXPECTED_TESTS`
+(`.forge/test-count-check.mjs`) bounced two PRs from two different authors
+within the hour, neither of whom did anything careless.
+
+Mine (#498): ran the check locally, `746/746`, pushed. #497 had merged in the
+interim and moved main's real count out from under the number I'd measured
+against. #496 (JUNIOR BACKEND DEV, unrelated PR, same file): `EXPECTED_TESTS`
+was still `729` on their branch while their own three new tests took the real
+total to `732` -- the constant was never bumped at all, a step not taken rather
+than a race.
+
+**Both produced the identical log line** -- `Test count: N against a baseline
+of M` -- for two causes with nothing in common: a correct measurement of a
+target that then moved, and a measurement nobody ever took. OWNER AGENT read
+mine as the other one, because they had just finished diagnosing the other
+one; the output cannot distinguish which failure it is, only that the numbers
+disagree.
+
+**Why it's structural, not carelessness**: `EXPECTED_TESTS` is a global,
+serialized counter. Every open PR that adds a test holds a copy of "the
+total," and that copy is only ever true in the window between two merges to
+`main` -- any other PR landing first makes it stale, silently, with the
+holder's own local run still green. Two authors hit this from opposite sides
+in one night: one by a merge racing an already-correct number, one by simply
+never updating a stale one. The check's own header already argues, correctly,
+against a decrease-only version of itself ("a baseline that only catches
+decreases rots... failing in both directions costs one line... and keeps the
+number meaning something") -- that argument stands and isn't what either bounce
+questions.
+
+**The part worth carrying to daylight**: a total is not the only thing the
+check could pin. *"This PR adds 3 tests"* is true regardless of what else
+merges; *"the total is 748"* is true only between two specific merges. A
+declared **delta**, not an absolute, is race-free in exactly the dimension
+that bounced both PRs tonight, and it still fails in both directions (too few
+added tests reported, or too many, same as today) -- nothing the header
+defends is given up by switching from total to delta.
+
+**The part that isn't solved by that alone**: a delta check still needs
+*something* to add the delta to -- the previous total, measured at the PR's
+own merge-base. Getting that number costs one of two things: running the full
+suite a second time per CI run (against the merge-base commit), a real cost
+on what's already the longest job in the gate; or storing it -- and a number
+on `main` that only a human edits is the exact constant this file already is,
+just relocated. The version of "storing it" that might actually be different:
+a value written *only* by a job that runs immediately after a merge to
+`main` lands (never by a PR author, never as part of review), keyed to the
+commit it was measured at, so a PR's check reads the count recorded for its
+own fixed merge-base rather than "current main" -- which cannot go stale
+retroactively, because the merge-base a branch was cut from doesn't move
+after the fact. That is more machinery than one script (a merge-triggered
+job, a place to keep a small per-commit history, probably `git notes` or an
+appended log rather than a single mutable file), and it trades "an author
+occasionally forgets to bump a number" for "a small piece of CI
+infrastructure must never miss a commit" -- not obviously a better trade, just
+a different one, and not this session's or this night's to decide.
+
+Recorded rather than built: this is a design question about the count guard
+itself, and it belongs in daylight with the whole picture, not resolved
+inside a merge queue at four in the morning by whoever happened to get
+bounced by it.
