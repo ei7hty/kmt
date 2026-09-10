@@ -16,7 +16,7 @@ function pilot() {
   const mapping = { version: 1, inputDigest: sha256Bytes(inputBytes), candidates: rows.map((row, i) => ({ supplierId: row.id,
     supplierSku: row.source.sku, revision: supplierImageRevision(row), productUrl: `https://www.giga-tires.com/tires/fixture/tirecode/${i}` })) }
   const mappingBytes = Buffer.from(JSON.stringify(mapping)), plan = prepareImagePilot(inputBytes, mappingBytes)
-  const urls = selectValidationUrls(mapping.candidates.map(c => ({ source: { url: c.productUrl } })), 20260907)
+  const urls = selectValidationUrls(mapping.candidates.map(c => ({ source: { url: c.productUrl } })), 20260907, 5)
   const html = sku => `<script type="application/ld+json">${JSON.stringify({ '@type': 'Product', sku,
     name: 'Fixture 215/60R16', image: 'https://images.fixture.test/photo.png', offers: { price: 80 } })}</script>`
   return { inputBytes, mappingBytes, mapping, plan, urls, html }
