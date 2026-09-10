@@ -101,6 +101,10 @@ function ImagesScreen({ navigate }) {
         {!loading && packets.map(packet => {
           const action = NEXT_ACTION[packet.action]
           const working = busy === packet.digest
+          // Approve is the one direction that can be blocked -- a supplier
+          // tire delisted or changed since import, say. Revoke has no such
+          // gate: taking photos down is always available once they are live.
+          const blocked = action === 'approved' && packet.eligibility && !packet.eligibility.approve
           return (
             <section className="ip-packet" key={packet.digest} data-testid="image-packet">
               <div className="ip-packet-head">
@@ -114,13 +118,18 @@ function ImagesScreen({ navigate }) {
                   <button
                     className={action === 'approved' ? 'btn btn-primary' : 'btn btn-neutral'}
                     data-testid={`image-${action}`}
-                    disabled={working}
+                    disabled={working || blocked}
                     onClick={() => decide(packet)}
                   >
                     {working ? 'Saving…' : ACTION_LABEL[action]}
                   </button>
                 )}
               </div>
+              {blocked && (
+                <ul className="ip-issues" data-testid="image-packet-issues">
+                  {packet.eligibility.issues.map(issue => <li key={issue}>{issue}</li>)}
+                </ul>
+              )}
 
               <ul className="ip-grid">
                 {(packet.assets || []).map((asset, index) => {
