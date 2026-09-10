@@ -148,3 +148,44 @@ GitHub refuses on our behalf. A review verdict has to live somewhere durable
 -- a PR comment, a `CLAIMS.md` row. This is why the gate itself (tests,
 lint, build, audits) matters more than it looks: it's the one thing here
 that can't be skipped by choice.
+
+## 5. Known local-vs-CI divergences -- a test that is green here can be red there
+
+Three PRs in one night each passed for their author's own machine and
+failed on CI, for three different reasons. None of the authors were
+careless -- the local environment differs from CI in ways nothing declares,
+so each was found only by a reviewer running it rather than reading it,
+at the cost of a full round trip every time.
+
+**A test's default venv resolves against the wrong root outside the main
+checkout.** `decoder-fixtures.mjs` looked for `decoder.local` relative to
+`process.cwd()`, which is the main checkout for whoever runs from there and
+a worktree -- with no venv -- for everyone following `AGENTS.md`. Passed in
+the main checkout, failed in every worktree. (Hole 2, above.)
+
+**A synthetic absolute path is only absolute on the OS that wrote it.**
+`#464`'s first draft built test fixtures with `path.join('C:', 'repo', ...)`
+and expected `path.resolve` to treat it as a Windows drive root. CI runs on
+`ubuntu-latest`; there, `'C:'` is a plain relative segment, and `path.resolve`
+silently prepended the runner's `process.cwd()` -- `/home/runner/work/kmt/kmt/C:/repo/...`
+instead of the intended path. Passed on the author's Windows machine, failed
+on Linux CI. Fix: build the synthetic path with the explicit `path.win32` /
+`path.posix` module for the platform under test, never the ambient `path`.
+
+**A test fixture assumes a ref the CI checkout never fetched.** `#467`'s
+`makeWorktree()` ran `git worktree add <dir> origin/main -b <branch>`.
+`fly-deploy.yml`'s "Tests, lint, build and audits" job checks out with plain
+`actions/checkout@v7` -- no `fetch-depth: 0` -- so that job's clone is
+depth-1 and single-ref: `origin/main` does not exist there at all. A full
+local clone always has it, so the test passed locally for exactly the
+reason it failed on CI. `HEAD` resolves either way and the test does not
+need real history, only a valid starting commit -- the fix is to stop
+hardcoding a ref the fixture does not actually need.
+
+**The pattern, so the next author checks a list instead of discovering one
+by having a PR bounced:** anything that hardcodes an OS-shaped string, a
+cwd-relative default, or a specific git ref in a test is asserting something
+about the machine running it, not just the code. Before trusting a green
+local run: what would this look like on `ubuntu-latest`, from a worktree,
+from a shallow clone? Those three are now measured; more will surface the
+same way until they are checked instead of assumed.
