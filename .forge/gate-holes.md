@@ -6,9 +6,14 @@ recorded before that session ends and takes them with it. Every claim below
 was checked against `origin/main` before being written, not copied from the
 assignment on trust -- one did not hold as given, and says so.
 
-Fixes for holes 1 and 2 belong to GATE & RELEASE ENGINEER (`local_881ff3b5`),
-who owns `.github/workflows/**` and `.forge/*.mjs`. This file documents; it
-does not fix.
+**Ownership as of 2026-09-10; verify against the roster before routing** --
+this file's own thesis (hole 3) is that a record can be true when written
+and wrong when read, with nothing marking the difference. Hole 1 (workflow
+wiring) is `local_881ff3b5`, who owns `.github/workflows/**`. Hole 2 (the
+unrunnable-suites check) and hole 4's fix are `.forge/*.mjs`, owned by GATE
+ENGINEER `local_4ba48b4c` -- they build the check that refuses to report
+success while a suite cannot run; `local_881ff3b5` wires it in. This file
+documents; it does not fix.
 
 ## 1. `src` tests are run by nothing
 
