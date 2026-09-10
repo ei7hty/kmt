@@ -63,8 +63,16 @@ import { decoderPython } from '../backend/fixtures/image-provider/decoder-fixtur
  */
 const EXPECTED_TESTS = 632
 
-/** What the three image suites contribute, measured: 632 with a decoder, 587 without. */
-const DECODER_SUITE_TESTS = 45
+/**
+ * The DIFFERENCE the three image suites make to the total: 632 with a decoder,
+ * 587 without.
+ *
+ * Not the number of tests they contain, which is 48. A file that dies at module
+ * load still registers one failing test, so three dead files leave 3 behind and
+ * the total drops by 45 rather than 48. Calling it a suite size invited
+ * exactly that confusion and the name is now the arithmetic it actually does.
+ */
+const DECODER_SUITE_DELTA = 45
 
 const files = process.argv.slice(2)
 if (!files.length) {
@@ -152,7 +160,7 @@ if (total !== null && total < EXPECTED_TESTS) {
   // Keyed on the decoder being ABSENT, not on the shortfall being 45. A number
   // that happens to match is not a diagnosis, and inferring a cause from a
   // coincidental count is the exact mistake this file exists to catch.
-  if (!decoderPython && short === DECODER_SUITE_TESTS) {
+  if (!decoderPython && short === DECODER_SUITE_DELTA) {
     console.error('')
     console.error(`FAIL: ${short} test(s) short, and this environment cannot run them.`)
     console.error('      KMT_IMAGE_DECODER_PYTHON is unset and no decoder.local resolves from here, so the three')
@@ -166,8 +174,8 @@ if (total !== null && total < EXPECTED_TESTS) {
   } else if (!decoderPython) {
     console.error('')
     console.error(`FAIL: ${short} test(s) short of the baseline (${total} of ${EXPECTED_TESTS}).`)
-    console.error(`      This environment has no image decoder, which accounts for ${DECODER_SUITE_TESTS} of that.`)
-    console.error(`      The remaining ${short - DECODER_SUITE_TESTS} is something else and is worth finding.`)
+    console.error(`      This environment has no image decoder, which accounts for ${DECODER_SUITE_DELTA} of that.`)
+    console.error(`      The remaining ${short - DECODER_SUITE_DELTA} is something else and is worth finding.`)
   } else {
     console.error(`\nFAIL: ${EXPECTED_TESTS - total} test(s) short of the baseline (${total} of ${EXPECTED_TESTS}).`)
     console.error('      A test that did not run did not pass. Before changing the number, find out which suite stopped:')
