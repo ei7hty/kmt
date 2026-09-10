@@ -79,19 +79,21 @@
 .ip-tile { margin: 0; }
 
 /* A fixed slot so a pending packet and an approved one occupy the same space:
-   approving must not make the page jump under the button just pressed. */
+   approving must not make the page jump under the button just pressed. The
+   explicit background is also what a photo shows while it is still loading, or
+   if it fails to load: a plain light square behind the alt text rather than
+   whatever the dark shell would otherwise put there. (.ip-photo-pending, the
+   hatched placeholder that used to stand in for an unapproved packet, is gone
+   -- every packet now renders its real photo.) */
 .ip-photo {
   display: block;
   width: 100%;
   aspect-ratio: 1 / 1;
   object-fit: contain;
   background: #f6f6f6;
+  color: #333333;
   border: 1px solid #e2e2e2;
   border-radius: 8px;
-}
-
-.ip-photo-pending {
-  background: repeating-linear-gradient(45deg, #f6f6f6, #f6f6f6 8px, #efefef 8px, #efefef 16px);
 }
 
 .ip-sku {

@@ -1,6 +1,13 @@
 import { IMAGE_PUBLIC_PATH, IMAGE_DIGEST } from './image-manifest.mjs'
 import { readJsonBody } from './api.mjs'
 
+// `<digest>/assets/<ordinal>` under the owner prefix. The digit run is capped
+// only to reject absurd input before it reaches the database -- it is not the
+// packet size. The real bound is the asset row: no row, no bytes, 404. Do not
+// narrow this to a range like ([0-4]); that caps every packet at five assets
+// and a regex that stops matching does not announce itself.
+const OWNER_ASSET_TAIL = /^([a-f0-9]{64})\/assets\/(\d{1,4})$/
+
 export function createImageApi(images, auth) {
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost'), pathname = url.pathname
@@ -27,7 +34,18 @@ export function createImageApi(images, auth) {
       if (!auth?.isAuthenticated(request)) { send(401, { error: 'Sign in to review images' }); return true }
       const tail = pathname.slice(ownerPath.length + 1)
       if (request.method === 'GET') {
+        const asset = OWNER_ASSET_TAIL.exec(tail)
         if (pathname === ownerPath) send(200, { packets: images.list() })
+        else if (asset) {
+          const { metadata, bytes } = images.readOwnerAsset(asset[1], Number(asset[2]))
+          // The same headers the public route sends. `no-store` above all: a
+          // revoked packet must not be left sitting in a cache, and this route
+          // serves revoked packets on purpose.
+          response.writeHead(200, { 'Content-Type': metadata.contentType, 'Content-Length': bytes.length,
+            'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin',
+            'Content-Disposition': 'inline', 'Content-Security-Policy': "default-src 'none'; sandbox" })
+          response.end(bytes)
+        }
         else if (IMAGE_DIGEST.test(tail)) send(200, images.review(tail))
         else send(404, { error: 'Image packet unavailable' })
       } else if (request.method === 'POST' && IMAGE_DIGEST.test(tail)) {

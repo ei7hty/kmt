@@ -19,25 +19,32 @@ import { sealImagePacket } from '../scripts/seal-image-packet.mjs'
 
 const fixtures = realImageFixtures()
 const profile = { version: 1, providerId: 'fixture', allowedHosts: ['provider.test'], policy: IMAGE_PILOT_POLICY }
-const baseRows = () => Array.from({ length: 5 }, (_, i) => ({ id: `giga-fixture-${i}`, name: `Fixture ${i}`, size: '215/60R16', price: 80,
+const baseRows = (count = 5) => Array.from({ length: count }, (_, i) => ({ id: `giga-fixture-${i}`, name: `Fixture ${i}`, size: '215/60R16', price: 80,
   inStock: true, category: 'All Season', description: '<p>Fixture</p>', source: { sku: `FIXTURE-${i}`, url: 'https://provider.test/listing' } }))
+// `bytes` and `format` also take an array, one entry per row, for a packet whose
+// assets are not all the same picture -- the only way a test can tell one
+// ordinal's bytes from another's. A single value still means one shared image,
+// which is what every caller below relies on.
 function packetFor(rows, bytes = fixtures.png, format = 'png', seed = 1) {
+  const bytesAt = i => (Array.isArray(bytes) ? bytes[i] : bytes)
+  const formatAt = i => (Array.isArray(format) ? format[i] : format)
   const candidates = rows.map(row => ({ supplierId: row.id, supplierSku: row.source.sku, productUrl: `https://provider.test/product/${row.id}`,
     originalUrl: `https://provider.test/photo/${row.id}`, revision: supplierImageRevision(row) }))
   const snapshot = { version: 2, candidates, provenance: { codeSha: 'a'.repeat(40), seed, inputDigest: 'b'.repeat(64), mappingDigest: 'c'.repeat(64),
     selection: IMAGE_SELECTION_TAG, productHosts: ['provider.test'], imageHosts: ['provider.test'],
     observations: candidates.map((c, i) => ({ supplierId: c.supplierId, requestedUrl: c.productUrl, finalUrl: c.productUrl, sku: c.supplierSku, size: rows[i].size, listingUrl: rows[i].source.url })) },
   enrichedRows: candidates.map((c, i) => ({ ...rows[i], source: { sku: c.supplierSku, url: c.productUrl }, imageUrls: [c.originalUrl] })) }
-  const snapshotBytes = Buffer.from(JSON.stringify(snapshot)), sha256 = sha256Bytes(bytes)
+  const snapshotBytes = Buffer.from(JSON.stringify(snapshot))
   const manifest = { version: 1, profileDigest: compileImageProviderProfile(profile).digest, snapshotDigest: sha256Bytes(snapshotBytes),
-    assets: candidates.map(c => ({ supplierId: c.supplierId, sha256, format })) }
+    assets: candidates.map((c, i) => ({ supplierId: c.supplierId, sha256: sha256Bytes(bytesAt(i)), format: formatAt(i) })) }
   const manifestBytes = Buffer.from(JSON.stringify(manifest))
+  const fileFor = i => `${sha256Bytes(bytesAt(i))}.${formatAt(i)}`
   return { input: { manifestBytes, snapshotBytes, profileBytes: Buffer.from(JSON.stringify(profile)), expectedManifestDigest: sha256Bytes(manifestBytes) },
-    files: new Map([[`${sha256}.${format}`, bytes]]), url: `/api/images/${sha256}.${format}`, snapshot, manifest }
+    files: new Map(candidates.map((c, i) => [fileFor(i), bytesAt(i)])), url: `/api/images/${fileFor(0)}`, snapshot, manifest }
 }
-async function setup(t) {
+async function setup(t, count = 5) {
   const directory = await mkdtemp(path.join(tmpdir(), 'kmt-publication-'))
-  const database = path.join(directory, 'owner.sqlite'), rows = baseRows()
+  const database = path.join(directory, 'owner.sqlite'), rows = baseRows(count)
   const inventory = new Inventory(database, ['215/60R16'])
   inventory.importSnapshot({ source: 'giga-tires.com', scrapedAt: '2026-09-08T00:00:00Z', tires: rows })
   const images = new ImagePublication(inventory, { directory: imageDirectoryForDatabase(database), python: decoderPython })
@@ -46,6 +53,26 @@ async function setup(t) {
   return { directory, database, inventory, images, rows, cleanup, packet: packetFor(rows) }
 }
 const approve = (images, digest) => images.decide(digest, { action: 'approved', expectedVersion: 1 }, 'owner:fixture')
+
+// The same mounting the server uses: auth first, then the image handler, then
+// the customer catalog. Returns a signed-in cookie so a test can ask the same
+// URL with and without one.
+async function ownerServer(t, images, inventory) {
+  const password = 'fixture-image-owner-password'
+  const auth = createAuth(readAuthConfig({ KMT_OWNER_PASSWORD: password }))
+  const handler = createImageApi(images, auth), catalog = createCatalogApi(inventory)
+  const server = createServer(async (req, res) => {
+    if (await auth.handle(req, res, new URL(req.url, 'http://localhost'), readJsonBody)) return
+    if (await handler(req, res) || await catalog(req, res)) return
+    res.writeHead(404); res.end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  const base = `http://127.0.0.1:${server.address().port}`
+  const login = await fetch(base + '/api/owner/login', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify({ password }) })
+  assert.equal(login.status, 200)
+  return { base, cookie: login.headers.get('set-cookie').split(';')[0] }
+}
 
 test('real fixture import stays pending; explicit approval serves exact bytes; revoke and retry cannot reactivate', async t => {
   const { inventory, images, packet } = await setup(t)
@@ -226,4 +253,85 @@ test('provenance commit failure rolls back the entire packet; retry does not imp
   inventory.db.exec('DROP TRIGGER fixture_fail')
   assert.equal((await images.ingest(packet.input, packet.files)).action, 'imported')
   assert.throws(() => images.readPublic(packet.url))
+})
+
+// The owner approval screen used to draw a grey placeholder for anything not
+// yet approved, because no owner-scoped route for the bytes existed: he was
+// asked to approve photos he could not see. These two tests hold the route
+// that fixes it, and the line the fix must not cross -- an owner preview must
+// not make unapproved bytes publicly reachable.
+test('the owner previews an unapproved packet; nobody else can, and the public route still refuses it', async t => {
+  const { images, inventory, packet } = await setup(t)
+  const digest = (await images.ingest(packet.input, packet.files)).digest
+  const { base, cookie } = await ownerServer(t, images, inventory)
+  const asset = index => `${base}/api/owner/images/${digest}/assets/${index}`
+
+  // Signed out: 401, and not one byte of the image.
+  const anonymous = await fetch(asset(0))
+  assert.equal(anonymous.status, 401)
+  assert.equal(anonymous.headers.get('content-type'), 'application/json')
+  const refused = Buffer.from(await anonymous.arrayBuffer())
+  assert.ok(!refused.includes(fixtures.png.subarray(0, 16)), 'the refusal must carry no image bytes')
+
+  // The security line: an owner route for unapproved bytes must not open the
+  // public one. Both the HTTP path and the projection behind it still refuse.
+  assert.equal((await fetch(base + packet.url)).status, 404)
+  assert.throws(() => images.readPublic(packet.url))
+  assert.equal(inventory.catalog().filter(row => row.imageUrl).length, 0)
+
+  // The defect itself: a packet still waiting on him shows its real photo.
+  const preview = await fetch(asset(0), { headers: { Cookie: cookie } })
+  assert.equal(preview.status, 200)
+  assert.equal(images.review(digest).action, 'imported')
+  assert.deepEqual(Buffer.from(await preview.arrayBuffer()), fixtures.png)
+  for (const [key, value] of [['content-type', 'image/png'], ['content-length', String(fixtures.png.length)],
+    ['cache-control', 'no-store'], ['x-content-type-options', 'nosniff'],
+    ['cross-origin-resource-policy', 'same-origin'], ['content-disposition', 'inline'],
+    ['content-security-policy', "default-src 'none'; sandbox"]]) assert.equal(preview.headers.get(key), value)
+
+  // An ordinal past the end of the packet is a 404, and so is a digest with no
+  // packet at all. Nothing anywhere declares how many assets a packet may have.
+  assert.equal((await fetch(asset(5), { headers: { Cookie: cookie } })).status, 404)
+  assert.equal((await fetch(asset(99), { headers: { Cookie: cookie } })).status, 404)
+  assert.equal((await fetch(`${base}/api/owner/images/${'0'.repeat(64)}/assets/0`, { headers: { Cookie: cookie } })).status, 404)
+  assert.throws(() => images.readOwnerAsset(digest, 5))
+  assert.throws(() => images.readOwnerAsset(digest, -1))
+  assert.throws(() => images.readOwnerAsset('not-a-digest', 0))
+
+  // Approve, then take it down. Looking back at what was revoked is the other
+  // half of reviewing: the bytes come back for the owner and stay gone publicly.
+  approve(images, digest)
+  assert.equal((await fetch(asset(0), { headers: { Cookie: cookie } })).status, 200)
+  images.decide(digest, { action: 'revoked', expectedVersion: 2 }, 'owner:fixture')
+  const revoked = await fetch(asset(0), { headers: { Cookie: cookie } })
+  assert.equal(revoked.status, 200)
+  assert.deepEqual(Buffer.from(await revoked.arrayBuffer()), fixtures.png)
+  assert.equal(revoked.headers.get('cache-control'), 'no-store')
+  assert.equal((await fetch(base + packet.url)).status, 404)
+})
+
+test('a six-photo packet previews its sixth photo: the packet bounds the ordinal, nothing else does', async t => {
+  const { images, inventory, rows } = await setup(t, 6)
+  // The last asset is a JPEG so ordinal 5 is distinguishable from 0-4 by bytes
+  // and by Content-Type -- a route capped at five would answer 404 here, and a
+  // route that quietly served the wrong row would answer with PNG.
+  const bytes = rows.map((_, i) => (i === 5 ? fixtures.jpeg : fixtures.png))
+  const formats = rows.map((_, i) => (i === 5 ? 'jpeg' : 'png'))
+  const packet = packetFor(rows, bytes, formats, 6)
+  const imported = await images.ingest(packet.input, packet.files)
+  assert.equal(imported.assets.length, 6)
+  // Left imported on purpose: approval is a separate gate with its own count
+  // rule, and previewing is exactly the thing that has to work before it.
+  const { base, cookie } = await ownerServer(t, images, inventory)
+  const asset = index => fetch(`${base}/api/owner/images/${imported.digest}/assets/${index}`, { headers: { Cookie: cookie } })
+
+  const sixth = await asset(5)
+  assert.equal(sixth.status, 200)
+  assert.equal(sixth.headers.get('content-type'), 'image/jpeg')
+  assert.deepEqual(Buffer.from(await sixth.arrayBuffer()), fixtures.jpeg)
+  const first = await asset(0)
+  assert.equal(first.headers.get('content-type'), 'image/png')
+  assert.deepEqual(Buffer.from(await first.arrayBuffer()), fixtures.png)
+  assert.equal((await asset(6)).status, 404)
+  assert.deepEqual(images.readOwnerAsset(imported.digest, 5).bytes, fixtures.jpeg)
 })
