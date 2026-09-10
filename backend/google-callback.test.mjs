@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuth, memorySessionStore } from './auth.mjs'
-import { OWNER_DOMAIN } from './google-auth.mjs'
+import { GOOGLE_REDIRECT_URI, OWNER_DOMAIN } from './google-auth.mjs'
 
 /**
  * The callback route around the verifier: `state`, the code exchange, and
@@ -135,6 +135,45 @@ test('an unconfigured server offers no Google route at all', async () => {
     assert.equal(await auth.handle(request, out, url, async () => ({})), true)
     assert.equal(out.sent.status, 404, `${path} must not exist without an OAuth client`)
   }
+})
+
+/**
+ * `GOOGLE_REDIRECT_URI` (google-auth.mjs, what Google is told to send the
+ * owner back to) and the route match inside `auth.handle` (what this
+ * process actually answers) are two independent literals. Nothing before
+ * this test tied them together: every other test here drives the route by
+ * its own hardcoded copy of the path, so renaming the route and fixing
+ * those callers -- an ordinary refactor -- left every existing test green
+ * while Google kept being told the old address. The failure is
+ * undetectable by a health probe (`/start` still returns a healthy 302)
+ * and surfaces only when a real person completes a sign-in.
+ *
+ * This derives the path from `GOOGLE_REDIRECT_URI` itself, never restates
+ * it, and drives `auth.handle` with exactly that path. A tenth hardcoded
+ * copy of the string would pass whether or not the two constants agree,
+ * which is the bug this exists to catch -- so the path used below MUST NOT
+ * be replaced with the literal, however stable it looks.
+ *
+ * `true` alone would not be enough: `auth.handle` also returns `true` for
+ * an unmatched path under some routes elsewhere in this file (a 404 is
+ * still "handled"). Driven with no state cookie and no code, a *genuine*
+ * match falls into the callback's own refusal path -- a 302 to
+ * `/owner?signin=refused`, the state-cookie clear, and a `Cache-Control`
+ * no-store on it -- which nothing but that branch produces. That is the
+ * second, independent signal that this really is the callback handler,
+ * not a coincidental match elsewhere.
+ */
+test('the route Google is actually told about is the one auth.handle recognises', async () => {
+  const auth = createAuth(config, { google, googleFetch: stubGoogle(validClaims()) })
+  const out = recorder()
+  const path = new URL(GOOGLE_REDIRECT_URI).pathname
+  const { request, url } = get(path)
+
+  assert.equal(await auth.handle(request, out, url, async () => ({})), true,
+    `auth.handle must recognise ${path} -- the exact path GOOGLE_REDIRECT_URI tells Google to use`)
+  assert.equal(out.sent.status, 302, 'a genuine match with no state cookie takes the refusal branch, not a 404 from an unmatched route')
+  assert.equal(out.sent.headers.Location, '/owner?signin=refused')
+  assert.match(String(out.sent.headers['Set-Cookie']), /^kmt_signin_state=;/, 'the refusal branch clears the state cookie')
 })
 
 test('the session endpoint says whether Google is available, without changing what authenticated means', async () => {
