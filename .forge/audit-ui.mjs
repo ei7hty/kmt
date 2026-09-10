@@ -41,6 +41,45 @@ const mintedSessionCookie = () => process.env.KMT_OWNER_SESSION_COOKIE || ''
  * the hosted shape and a developer runs the local one.
  */
 export async function signInIfAsked(page) {
+  // A minted session answers the question before the screen is asked it.
+  //
+  // This sat below the wait, which is the one place it cannot go: with a
+  // session in hand no sign-in form will ever render, so the wait below had
+  // nothing left to match on an owner screen that shows neither
+  // `.owner-content` nor `.oi-results` -- /owner/quotes -- and every call
+  // there burned its full 15s before falling through to a `return false` that
+  // was already knowable. Twice per viewport in owner-inventory-audit.mjs.
+  // Waiting for the gate is only worth doing when there might be a gate.
+  const minted = mintedSessionCookie()
+  if (minted) {
+    const separator = minted.indexOf('=')
+    if (separator < 1) throw new Error(`KMT_OWNER_SESSION_COOKIE must be "name=value"; got ${JSON.stringify(minted)}.`)
+    console.error('audit: using a minted session; the password sign-in path is not exercised')
+    // Scope the cookie to the origin, not to `page.url()`.
+    //
+    // Playwright derives a cookie's path from the URL it is given, by RFC
+    // 6265's default-path rule: strip the last segment. So the path a session
+    // got depended on which screen was open when it was minted -- measured,
+    // not inferred:
+    //
+    //   page.url() .../owner          -> path "/"        reaches /api/*
+    //   page.url() .../owner/quotes   -> path "/owner/"   does NOT
+    //
+    // A session that never reaches /api/* is one the owner screen cannot use:
+    // its first call comes back 401 and the gate renders again. And it does
+    // not fail here where it would be obvious -- the wait below still passes,
+    // because the gate does detach for a moment during the reload -- so it
+    // surfaces later as an audit that mysteriously lost its sign-in. The
+    // origin with a bare `/` is the whole site wherever it is minted.
+    const origin = new URL(page.url()).origin
+    await page.context().addCookies([{
+      name: minted.slice(0, separator), value: minted.slice(separator + 1), url: `${origin}/`,
+    }])
+    await page.reload()
+    await page.waitForSelector('.oi-signin', { state: 'detached', timeout: 15000 })
+    return true
+  }
+
   // Wait for the screen to decide what it is before asking whether it wants a
   // password. The gate appears only after the screen's first call comes back
   // 401, so checking immediately reads "no form" on a screen that is about to
@@ -51,19 +90,6 @@ export async function signInIfAsked(page) {
 
   const form = page.locator('.oi-signin')
   if (!(await form.count())) return false
-
-  const minted = mintedSessionCookie()
-  if (minted) {
-    const separator = minted.indexOf('=')
-    if (separator < 1) throw new Error(`KMT_OWNER_SESSION_COOKIE must be "name=value"; got ${JSON.stringify(minted)}.`)
-    console.error('audit: using a minted session; the password sign-in path is not exercised')
-    await page.context().addCookies([{
-      name: minted.slice(0, separator), value: minted.slice(separator + 1), url: page.url(),
-    }])
-    await page.reload()
-    await page.waitForSelector('.oi-signin', { state: 'detached', timeout: 15000 })
-    return true
-  }
 
   const password = ownerPassword()
   if (!password) {
