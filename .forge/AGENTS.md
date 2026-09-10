@@ -162,39 +162,54 @@ yours.
 
 A fresh worktree's `CLAIMS.md` holds your row and nothing else: no other
 session's edit to sweep up, discard, or reset over. That makes the collision
-structurally impossible rather than a matter of who notices. The recipe, every
-line earning its place because an earlier form of this rule failed at each:
+structurally impossible rather than a matter of who notices. Do it with the
+wrapper, `scripts/claim.mjs` — one call that runs the whole sequence and cannot
+leave a tree behind:
 
 ```bash
-git worktree add .worktrees/claim-tmp origin/main   # plain add, NOT scripts/worktree.mjs
-#   edit .forge/CLAIMS.md in that tree
-git -C .worktrees/claim-tmp add .forge/CLAIMS.md
-git -C .worktrees/claim-tmp commit -m "Claim <branch> (.forge/CLAIMS.md)"
-git -C .worktrees/claim-tmp fetch origin
-git -C .worktrees/claim-tmp rebase origin/main      # origin moves; re-sync first
-git -C .worktrees/claim-tmp push origin HEAD:main    # explicit refspec: HEAD is detached
-git worktree remove .worktrees/claim-tmp
+node scripts/claim.mjs -m "Claim <branch> (.forge/CLAIMS.md)" \
+  --file .forge/CLAIMS.md \
+  -- node -e "require('fs').appendFileSync('.forge/CLAIMS.md', '<your row>\n')"
 ```
 
-- **Plain `git worktree add`, never `scripts/worktree.mjs`.** The script links
-  the shared `node_modules` junction; a claims tree needs no dependencies and a
-  plain tree has none — which is what makes `remove` safe without `--force`
-  (`--force` through that junction is what once deleted into the shared install).
-- **`origin/main` gives a detached `HEAD`, so a bare `git push` fails** ("not
-  currently on a branch"). Push the explicit refspec `HEAD:main`.
-- **Expect a `! [rejected]` when the board is busy — that is the rule working,
-  not failing.** `origin/main` can move in the seconds between commit and push,
-  so the race now surfaces as a loud push rejection instead of a silent sweep.
-  On rejection, `fetch`, `rebase origin/main`, and push again — **re-read the
-  table and re-apply your row to the new tip; do not replay your edit** (the same
-  stale-branch trap the rebase note records). Read a rejection as "someone
-  claimed in parallel," never as "I did this wrong" — the second reading is what
-  sends people back to the shared checkout this rule exists to empty.
-- **On Windows, `git worktree remove` can fail `Permission denied` if that
-  directory was recently your shell's cwd;** `rm -rf` it then `git worktree
-  prune` — safe only because a plain tree has no junction to follow.
-- **Every command in this recipe is `git -C <path>`, never `cd <path> && git
-  ...`, and that is load-bearing, not a style choice.** A failed `cd` does not
+It makes a fresh disposable worktree off `origin/main`, runs your `-- <command>`
+**with its cwd set to that tree** (the command makes the edit there — write the
+file, do not print a diff), stages exactly the `--file` paths you named (never
+`-A`), commits with `-m`, rebases onto `origin/main`, pushes `HEAD:main`, and
+removes the tree in a `finally`. Every one of those was a manual line that could
+be — and was — skipped:
+
+- **Teardown is structural, not remembered.** The manual recipe's last line was
+  `git worktree remove`, and it was skipped often enough to leave 48 orphaned
+  claim trees in a single sweep — the push succeeds at the step before, attention
+  moves, and the removal never happens. The wrapper runs it in a `finally`: the
+  tree is gone whether the push succeeds, fails, or throws.
+- **It fails safe, never toward the shared checkout.** If it cannot create its
+  disposable tree it refuses loudly and exits non-zero — it never falls back to
+  editing the shared `main` checkout, which is exactly where a worktree-tooling
+  failure once left four of another session's files. The old worry that "a recipe
+  that does not run is worse than none" was true precisely because the manual
+  fallback was the unsafe path; the wrapper's fallback is a refusal, not a hazard.
+- **A rejected push is the rule working, and the wrapper handles the common case
+  for you.** `origin/main` moves in the seconds between commit and push, so a
+  `! [rejected]` means "someone claimed in parallel," never "I did this wrong."
+  Two end-of-file `CLAIMS.md` appends do not overlap, so the wrapper re-fetches,
+  rebases, and pushes again on its own, up to five times. A GENUINE conflict —
+  two edits to the *same existing row*, not two appends — it does NOT reconcile:
+  it aborts the rebase, refuses loudly, exits 1, and leaves nothing half-applied.
+  Then re-run the whole `claim.mjs` command: a fresh tree off the new tip, your
+  edit command re-run against *that* state. **Re-apply to the new tip; never
+  replay a stale edit** — the wrapper enforces this by re-running your command
+  rather than replaying a commit, and on a real conflict re-applying is your job
+  on the next invocation.
+- **It uses a plain worktree with no `node_modules` junction, and never
+  `--force`,** so its teardown cannot follow that junction into the shared
+  install the way a `--force` remove once did. It pushes the explicit refspec
+  `HEAD:main` (the tree is a detached `HEAD`, so a bare `git push` would fail
+  "not currently on a branch").
+- **When you run multi-step git by hand — a one-off the wrapper cannot express,
+  or any other direct-to-`main` work — use `git -C <path>`, never `cd <path> &&
+  git ...`; that is load-bearing, not a style choice.** A failed `cd` does not
   stop a `;`-joined chain — it may print an error you will not read while
   scanning for the next command's output, and the following statements then
   run from wherever the shell already was. That is exactly how one claim push
@@ -215,9 +230,10 @@ git worktree remove .worktrees/claim-tmp
 
 Use `.worktrees/` (`.gitignore` covers it), never a sibling that never gets
 cleaned up. The same holds for any direct-to-`main` commit: the shared `HEAD`
-and working tree are shared state, not yours alone to rewrite. A recipe that
-does not run is worse than none — it fails at the moment of use and the fallback
-is the unsafe path; this one is verified, not assumed.
+and working tree are shared state, not yours alone to rewrite. And the wrapper is
+verified, not assumed: its tests force the worktree-creation failure and confirm
+the shared checkout is byte-for-byte untouched, and force a permanently-rejected
+push and confirm it gives up loudly with the tree still removed.
 
 **To read what `main` currently says, fetch and read as one command — a ref is
 only as fresh as your last fetch.** Reading `origin/main:<path>` rather than your
