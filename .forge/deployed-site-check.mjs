@@ -27,7 +27,7 @@ import { candidateConfig, candidateFetch, candidateAsset, transferBudget, MAX_CA
 
 // No default, on purpose. A script that silently audits SOMETHING rather than
 // refusing to audit NOTHING answers confidently about a target nobody chose.
-// Three instances of that cost real work here: this file and
+// Three instances of that cost real work here: owner-inventory-audit and
 // owner-inquiries-audit defaulted to a shared local port, which is how one
 // session's audit reached another's server and produced a finding that had to
 // be retracted; and deployed-site-check defaulted to a host, so a run given
