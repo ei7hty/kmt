@@ -102,7 +102,26 @@ jobs:
           node .forge/release-check.mjs
       # Every backend test file, not one named file: a new suite that CI does not
       # run is a suite that passes locally and guards nothing.
-      - run: node --test backend/*.test.mjs
+      #
+      # `src/**` is here for the same reason, and was missing: `src/owner/
+      # inventory-grid.test.mjs` (29 tests) and `src/catalog-image.test.mjs`
+      # (3) had never once been executed by this pipeline, so every green check
+      # on the PRs that added them was silent about them.
+      #
+      # BOTH PATTERNS ARE QUOTED SO NODE EXPANDS THEM, NOT BASH. Unquoted,
+      # `src/**/*.test.mjs` under bash without `globstar` means `src/*/` -- one
+      # directory deep -- and would match the owner test while silently missing
+      # the one at the top of `src/`. Node's own glob handles `**` the same way
+      # on every runner. Verified by the count rather than by reading the glob:
+      # 632 tests with `backend` alone and 666 with both, on the commit that
+      # widened this.
+      #
+      # That matters because node exits 0 when a pattern matches NOTHING
+      # (measured) -- a path that stops matching looks identical here to one
+      # that passes. So if you change either pattern, run it and check the
+      # reported test count moved by what you expected; the count is the only
+      # thing that can tell you this step still runs what it claims to.
+      - run: node --test "backend/*.test.mjs" "src/**/*.test.mjs"
       # The whole tree, not just src and backend: scripts/ and .forge/ are .mjs
       # too, and the audits under .forge/ are the files that decide whether
       # everything else is correct. An undefined name in one of them should fail

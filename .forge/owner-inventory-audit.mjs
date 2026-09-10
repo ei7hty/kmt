@@ -86,18 +86,68 @@ try {
     page.on('pageerror', e => errors.push(e.message))
     await page.goto(base + '/owner')
     await signInIfAsked(page)
-    await page.locator('.oi-tire').first().waitFor()
+    await page.locator('.oi-g-row').first().waitFor()
     assert.equal(await page.locator('vite-error-overlay').count(), 0)
-    const card = page.locator('.oi-tire').first()
-    await card.getByLabel('Your price per tire ($)').fill('89.99')
-    await card.getByLabel('Offer this tire').check()
-    await card.getByLabel('Owner notes').fill('Owner UI verification')
-    await card.getByTestId('oi-save-offer').click()
-    await page.getByTestId('oi-save-notice').waitFor()
+
+    // The matrix, not the card list it replaced: a real table, sortable
+    // headers, a page-size control, and cells that commit on their own.
+    // Everything below is a plain assert, which crashes the run on failure --
+    // EXPECTED_CHECKS above counts only the size-filter `ok()` calls, and
+    // this change adds and removes none of those, so it stays at 6.
+    assert.equal(await page.locator('table.oi-g-table thead').count(), 1, 'the grid renders a real table head')
+    for (const key of ['size', 'name', 'supplierPrice', 'price', 'margin', 'enabled', 'updated']) {
+      assert.equal(await page.getByTestId('oi-sort-' + key).count(), 1, 'sortable header missing: ' + key)
+    }
+    assert.equal(await page.getByLabel('Rows per page').count(), 1)
+
+    const row = page.locator('.oi-g-row').first()
+    const price = row.getByLabel(/^Your price for /)
+    // A different value per viewport, deliberately. Filling a cell with the
+    // value it already holds fires no change event, so the grid records no
+    // edit and never saves -- and the run would then be asserting that a
+    // value the PREVIOUS viewport wrote is still there. That is a test that
+    // passes for the wrong reason, and it is what the first run of this
+    // block actually did.
+    const testPrice = viewport.width === 375 ? '79.99' : '89.99'
+    await price.fill(testPrice)
+    await price.press('Enter')
+    await page.getByTestId('oi-row-saved').first().waitFor()
+    await row.getByLabel(/^Offer /).check()
+    await page.getByTestId('oi-row-saved').first().waitFor()
+    // Notes live behind the row's expander, so the grid stays dense.
+    await row.locator('.oi-g-notes-toggle').click()
+    await page.getByLabel('Owner notes').fill('Owner UI verification at ' + viewport.width)
+    await page.getByLabel('Owner notes').blur()
+    await page.getByTestId('oi-row-saved').first().waitFor()
+
     await page.reload()
-    await page.locator('.oi-tire').first().waitFor()
-    assert.equal(await card.getByLabel('Your price per tire ($)').inputValue(), '89.99')
-    assert.equal(await card.getByLabel('Offer this tire').isChecked(), true)
+    await page.locator('.oi-g-row').first().waitFor()
+    assert.equal(await row.getByLabel(/^Your price for /).inputValue(), testPrice,
+      'an inline price edit survives a reload with no per-row Save button anywhere')
+    assert.equal(await row.getByLabel(/^Offer /).isChecked(), true)
+
+    // Selecting rows brings up the bulk bar, and a price change over them
+    // states its count and shows before/after BEFORE anything is sent.
+    await row.getByLabel(/^Select /).check()
+    await page.getByTestId('oi-bulk-bar').waitFor()
+    await page.getByTestId('oi-bulk-price').click()
+    await page.getByTestId('oi-bulk-confirm').waitFor()
+    assert.match(await page.getByTestId('oi-bulk-confirm').innerText(), /\$/,
+      'the price confirmation shows real money, not just a row count')
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    assert.equal(await page.getByTestId('oi-bulk-confirm').count(), 0)
+    assert.equal(await row.getByLabel(/^Your price for /).inputValue(), testPrice,
+      'cancelling a bulk price change leaves every price where it was')
+
+    // Selection must not survive a page change: an invisible selection on
+    // page 7 is how rows nobody looked at get mass-edited.
+    if (await page.locator('.oi-pagination').count()) {
+      await page.getByRole('button', { name: 'Next →' }).click()
+      await page.waitForTimeout(400)
+      assert.equal(await page.getByTestId('oi-bulk-bar').count(), 0, 'selection must be dropped on a page change')
+      await page.getByRole('button', { name: '← Previous' }).click()
+      await page.locator('.oi-g-row').first().waitFor()
+    }
     await page.evaluate(() => window.scrollTo(0, 0))
     await page.screenshot({path:'.forge/shots/owner-inventory-' + viewport.width + '.png'})
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
@@ -134,7 +184,7 @@ try {
     await signInIfAsked(page)
     await page.getByTestId('quote-requests-heading').waitFor()
     await page.getByTestId('nav-inventory').click()
-    await page.locator('.oi-tire').first().waitFor()
+    await page.locator('.oi-g-row').first().waitFor()
     await page.getByLabel('Search tires or SKU').fill('NO-SUCH-TIRE-XYZ')
     await page.getByTestId('oi-empty-state').waitFor()
     await page.goto(base + '/')

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import './OwnerInventory.css'
 import SignIn from './SignIn.jsx'
 import { useNoIndex } from '../noindex.js'
@@ -6,14 +6,21 @@ import { signOut } from './session.js'
 import { PrivacyFooter } from '../routes/Privacy.jsx'
 import MailAlert from '../components/MailAlert.jsx'
 import { InquiryNavButton } from './Inquiries.jsx'
-import { retailPrice } from '../markup.js'
+import OwnerInventoryGrid from './OwnerInventoryGrid.jsx'
+import { createInventoryGrid } from './inventory-grid.js'
 
-const dollars = cents => cents == null ? '—' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const dateLabel = value => value ? new Date(value).toLocaleString() : 'Never refreshed'
 
 /** Thrown on a 401 so callers can show the sign-in form instead of an error. */
 class NeedsSignIn extends Error {}
 
+/**
+ * Every error carries the status it came from.
+ *
+ * The grid distinguishes a 409 from a 404 from a rejected value when it marks
+ * a row, and a reason code the owner can act on -- "changed in another window"
+ * against "no longer listed" -- cannot be recovered from the message text.
+ */
 async function api(path, options = {}) {
   const response = await fetch(`/api/owner/${path}`, {
     ...options, headers: { 'Content-Type': 'application/json', ...options.headers },
@@ -21,18 +28,17 @@ async function api(path, options = {}) {
   const type = response.headers.get('content-type') || ''
   if (!type.includes('application/json')) throw new Error('The owner backend is not connected. Start the owner server to load inventory.')
   const data = await response.json()
-  if (response.status === 401) throw new NeedsSignIn(data.error || 'Sign in to continue.')
-  if (!response.ok) throw new Error(data.error || 'The request could not be completed.')
+  if (response.status === 401) {
+    const error = new NeedsSignIn(data.error || 'Sign in to continue.')
+    error.status = 401
+    throw error
+  }
+  if (!response.ok) {
+    const error = new Error(data.error || 'The request could not be completed.')
+    error.status = response.status
+    throw error
+  }
   return data
-}
-
-function SupplierLink({ url }) {
-  let allowed = false
-  try {
-    const parsed = new URL(url)
-    allowed = parsed.protocol === 'https:' && ['giga-tires.com', 'www.giga-tires.com'].includes(parsed.hostname)
-  } catch { /* Missing supplier URL. */ }
-  return allowed ? <a href={url} target="_blank" rel="noreferrer">View on Giga Tires ↗</a> : null
 }
 
 /**
@@ -389,88 +395,15 @@ function BrandOffers({ brands, onChanged }) {
   </section>
 }
 
-function TireOffer({ tire, markup, onSaved }) {
-  const [price, setPrice] = useState(tire.offer.priceCents == null ? '' : (tire.offer.priceCents / 100).toFixed(2))
-  const [shipping, setShipping] = useState(tire.offer.shippingCents == null ? '' : (tire.offer.shippingCents / 100).toFixed(2))
-  const [enabled, setEnabled] = useState(tire.offer.enabled)
-  const [notes, setNotes] = useState(tire.offer.notes)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const stock = tire.source?.stock
-  const stockLabel = !tire.supplierActive ? 'No longer listed' : stock == null ? 'Stock unconfirmed' : !tire.inStock || stock === 0 ? 'Out of stock' : `${stock.toLocaleString()} in stock`
-  const isAvailable = tire.supplierActive && tire.inStock && stock > 0
-  const parsedPrice = /^\d+(\.\d{1,2})?$/.test(price) ? Math.round(Number(price) * 100) : null
-  const parsedShipping = shipping === '' ? null : /^\d+(\.\d{1,2})?$/.test(shipping) ? Math.round(Number(shipping) * 100) : NaN
-  const spread = parsedPrice == null ? null : parsedPrice - Math.round(tire.price * 100)
-  // What this tire costs a customer today if the owner never touches it.
-  const suggestedPrice = markup?.rate ? retailPrice(tire.price, {
-    shippingPerTire: parsedShipping === null ? undefined : parsedShipping / 100,
-  }, markup) : null
-  const suggestedCents = suggestedPrice === null ? null : Math.round(suggestedPrice * 100)
-
-  async function save(event) {
-    event.preventDefault()
-    setError('')
-    if (price !== '' && (parsedPrice == null || parsedPrice <= 0)) {
-      setError('Enter a positive KMT price with up to two decimal places.'); return
-    }
-    if (Number.isNaN(parsedShipping) || parsedShipping < 0 || parsedShipping > 20000) {
-      setError('Enter a shipping override from $0 to $200, or leave it blank to use the default.'); return
-    }
-    setSaving(true)
-    try {
-      const offer = await api(`offers/${encodeURIComponent(tire.id)}`, {
-        method: 'PUT', body: JSON.stringify({ priceCents: parsedPrice, shippingCents: parsedShipping, enabled, notes, version: tire.offer.version }),
-      })
-      onSaved(tire.id, offer)
-    } catch (err) { setError(err.message) }
-    finally { setSaving(false) }
-  }
-
-  return <article className={`oi-tire ${tire.offer.enabled ? 'oi-tire-offered' : ''}`}>
-    <div className="oi-tire-main">
-      <div className="oi-tire-tags"><span>{tire.size}</span><span className={isAvailable ? 'oi-stock' : 'oi-attention'}>{stockLabel}</span><span className="oi-tire-price">Giga {dollars(Math.round(tire.price * 100))} / tire</span></div>
-      <h2>{tire.name}</h2>
-      <details className="oi-tire-more"><summary>Details</summary>
-      <p className="oi-description">{tire.description}</p>
-      <dl className="oi-specs">
-        <div><dt>Giga list price</dt><dd>{tire.source?.listPrice == null ? 'Not provided' : dollars(Math.round(tire.source.listPrice * 100))}</dd></div>
-        <div><dt>Category</dt><dd>{tire.category}</dd></div>
-        <div><dt>Segment</dt><dd>{tire.source?.segment || 'Not provided'}</dd></div>
-      </dl>
-      <details><summary>Supplier details</summary><dl className="oi-source">
-        <div><dt>SKU</dt><dd>{tire.source?.sku}</dd></div>
-        <div><dt>Last seen</dt><dd>{dateLabel(tire.lastSeen)}</dd></div>
-        <div><dt>Listing</dt><dd><SupplierLink url={tire.source?.url} /></dd></div>
-      </dl><details><summary>All imported fields</summary><pre>{JSON.stringify({ id: tire.id, name: tire.name, size: tire.size, price: tire.price, inStock: tire.inStock, category: tire.category, description: tire.description, source: tire.source }, null, 2)}</pre></details></details>
-      </details>
-    </div>
-    <form className="oi-offer" onSubmit={save}>
-      <p className="oi-kicker">KMT OFFER</p>
-      <div className="oi-offer-row">
-        <label className="oi-check"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} disabled={saving} />Offer this tire</label>
-        <div><label htmlFor={`price-${tire.id}`}>Your price per tire ($)</label>
-        <input id={`price-${tire.id}`} value={price} onChange={e => setPrice(e.target.value)} inputMode="decimal" placeholder="Set your price" disabled={saving} /></div>
-      </div>
-      <p className={spread != null && spread < 0 ? 'oi-attention oi-spread' : 'oi-spread'}>{spread == null ? 'Set independently from Giga’s price.' : `${dollars(spread)} ${spread < 0 ? 'below' : 'above'} Giga’s listed price`.replace('-$', '$')}</p>
-      <label htmlFor={`shipping-${tire.id}`}>Shipping override per tire ($)</label>
-      <input id={`shipping-${tire.id}`} value={shipping} onChange={e => setShipping(e.target.value)} inputMode="decimal" placeholder={`Default $${Number(markup?.shippingPerTire ?? 0).toFixed(2)}`} disabled={saving} />
-      {suggestedCents != null && tire.offer.priceCents == null && <p className="oi-spread oi-muted">
-        Markup offers this at {dollars(suggestedCents)} until you set a price.
-        <button type="button" className="oi-button oi-inline" onClick={() => setPrice((suggestedCents / 100).toFixed(2))} disabled={saving}>Use {dollars(suggestedCents)}</button>
-      </p>}
-      <label htmlFor={`notes-${tire.id}`}>Owner notes</label>
-      <textarea id={`notes-${tire.id}`} value={notes} onChange={e => setNotes(e.target.value)} maxLength={2000} rows={1} placeholder="Why this tire, pricing notes…" disabled={saving} />
-      <button type="submit" className="oi-button oi-primary" data-testid="oi-save-offer" disabled={saving}>{saving ? 'Saving…' : 'Save offer'}</button>
-      {error && <p role="alert" className="oi-error">{error}</p>}
-      {tire.offer.enabled && !isAvailable && <p className="oi-attention">Selected by KMT, but supplier availability needs review.</p>}
-    </form>
-  </article>
-}
-
 export default function OwnerInventory({ navigate }) {
   useNoIndex()
-  const [data, setData] = useState(null)
+  // The grid owns the list: the query it sends, the sort and page it asks for,
+  // the rows it got back, the selection, the uncommitted cell edits and every
+  // per-row result. It is a plain store rather than component state so those
+  // decisions can be tested against a stubbed API -- see inventory-grid.js.
+  const [grid] = useState(() => createInventoryGrid({ api }))
+  const state = useSyncExternalStore(grid.subscribe, grid.getState)
+
   const [search, setSearch] = useState('')
   const [size, setSize] = useState('')
   // What the owner has typed into the size filter. `size` is only ever a
@@ -478,12 +411,8 @@ export default function OwnerInventory({ navigate }) {
   // refresh request; the typed text commits to it on an exact match or a pick.
   const [sizeQuery, setSizeQuery] = useState('')
   const [filter, setFilter] = useState('all')
-  const [page, setPage] = useState(1)
-  const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [needsSignIn, setNeedsSignIn] = useState(false)
   // The refresh, import and markup tools sit folded above the list so the
   // first tire is within a screen of the top on a phone; whether the owner
   // left them open is remembered on this device only.
@@ -493,46 +422,33 @@ export default function OwnerInventory({ navigate }) {
     setToolsOpen(open)
     try { localStorage.setItem('kmt_owner_tools', open ? 'open' : 'closed') } catch { /* storage unavailable: forget, do not fail */ }
   }
-  const sequence = useRef(0)
-  const invalidate = useCallback(() => { sequence.current++ }, [])
-  const jobRunning = data?.summary.job?.status === 'running'
 
-  const load = useCallback(async () => {
-    const request = ++sequence.current
-    setLoading(true)
-    try {
-      const result = await api(`inventory?${new URLSearchParams({ search, size, filter, page })}`)
-      if (request !== sequence.current) return
-      setData(result); setError(''); setNeedsSignIn(false)
-    } catch (err) {
-      if (request !== sequence.current) return
-      // A 401 is not an error to report, it is a door to open.
-      if (err instanceof NeedsSignIn) { setNeedsSignIn(true); setError('') }
-      else setError(err.message)
-    }
-    finally { if (request === sequence.current) setLoading(false) }
-  }, [search, size, filter, page])
+  const data = state.data
+  const summary = data?.summary
+  const jobRunning = summary?.job?.status === 'running'
+
+  useEffect(() => { grid.load() }, [grid])
 
   useEffect(() => {
-    const timer = setTimeout(load, 200)
-    return () => { clearTimeout(timer); invalidate() }
-  }, [load, invalidate])
+    const timer = setTimeout(() => grid.setQuery({ search, size, filter }), 200)
+    return () => clearTimeout(timer)
+  }, [grid, search, size, filter])
 
   useEffect(() => {
     if (!jobRunning) return
-    const timer = setInterval(load, 2000)
+    const timer = setInterval(() => grid.reload(), 2000)
     return () => clearInterval(timer)
-  }, [jobRunning, load])
+  }, [grid, jobRunning])
 
   async function refresh() {
-    setBusy(true); setError(''); setNotice('')
+    setBusy(true); setNotice('')
     try {
       // One size from the filter may be anything the catalog supports. "Refresh
       // all" is the sizes that already have supplier data, which is the only
       // list the backend accepts in bulk; the full walk is a local scrape.
-      await api('refresh', { method: 'POST', body: JSON.stringify({ sizes: size ? [size] : data.summary.refreshableSizes }) })
-      await load()
-    } catch (err) { setError(err.message) }
+      await api('refresh', { method: 'POST', body: JSON.stringify({ sizes: size ? [size] : summary.refreshableSizes }) })
+      await grid.reload()
+    } catch (err) { setNotice(err.message) }
     finally { setBusy(false) }
   }
 
@@ -541,32 +457,23 @@ export default function OwnerInventory({ navigate }) {
     try {
       const result = await api('refresh/cancel', { method: 'POST', body: '{}' })
       setNotice(result.message)
-    } catch (err) { setError(err.message) }
+    } catch (err) { setNotice(err.message) }
     finally { setBusy(false) }
   }
 
   function markupSaved(markup) {
-    invalidate()
-    setData(previous => ({ ...previous, summary: { ...previous.summary, markup } }))
+    grid.patchSummary({ markup })
     setNotice(`Default markup saved. Tires you have not priced are now offered at supplier price × ${markup.rate}, plus $${markup.shippingPerTire} shipping.`)
   }
 
   function pricingSaved(pricing) {
-    setData(previous => ({ ...previous, summary: { ...previous.summary, pricing } }))
+    grid.patchSummary({ pricing })
     setNotice('Tax settings saved.')
   }
 
   function pricingLinesSaved(pricingLines) {
-    invalidate()
-    setData(previous => ({ ...previous, summary: { ...previous.summary, pricingLines } }))
+    grid.patchSummary({ pricingLines })
     setNotice('Pricing lines saved.')
-  }
-
-  function saved(id, offer) {
-    invalidate()
-    setData(previous => ({ ...previous, items: previous.items.map(tire => tire.id === id ? { ...tire, offer } : tire),
-      summary: { ...previous.summary, offeredCount: previous.summary.offeredCount + Number(offer.enabled) - Number(previous.items.find(t => t.id === id).offer.enabled) } }))
-    setNotice('Offer saved. Your selection and price are stored in the owner database.')
   }
 
   // Sign out ends the session on this device. Hosted, the cookie is cleared
@@ -574,13 +481,12 @@ export default function OwnerInventory({ navigate }) {
   // answers 404, so there is nothing to leave but the page (#96).
   const leave = async () => {
     const { hosted } = await signOut()
-    if (hosted) { setData(null); setNeedsSignIn(true) } else navigate('/')
+    if (hosted) grid.signedOut(); else navigate('/')
   }
 
-  if (needsSignIn) return <SignIn onSignedIn={load} navigate={navigate}
+  if (state.needsSignIn) return <SignIn onSignedIn={() => grid.load()} navigate={navigate}
     what="This workspace holds supplier costs and your prices." />
 
-  const summary = data?.summary
   const job = summary?.job
   const coverage = summary?.coverage.find(item => item.size === size)
 
@@ -597,15 +503,13 @@ export default function OwnerInventory({ navigate }) {
     setSizeQuery(text)
     const exact = sizes.find(value => compactSize(value) === compactSize(text))
     setSize(exact || '')
-    setPage(1)
   }
   function pickSize(value) {
     setSizeQuery(value)
     setSize(value)
-    setPage(1)
   }
   return <div className="oi-shell">
-    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}><img src="/brand/icon-64.png?v=2" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button><span>OWNER WORKSPACE</span><MailAlert navigate={navigate} /><InquiryNavButton navigate={navigate} className="oi-button" /><button className="oi-button" data-testid="nav-quote-requests" onClick={() => navigate('/owner/quotes')}>Quote requests →</button><button className="oi-button" data-testid="nav-images" onClick={() => navigate('/owner/images')}>Product photos</button><button className="oi-button" onClick={() => navigate('/owner/social-proof')}>Social proof</button><button className="oi-button" onClick={leave}>Sign out</button></nav>
+    <nav className="oi-nav"><button className="oi-brand" onClick={() => navigate('/')}><img src="/brand/icon-64.png?v=2" alt="" width="64" height="64" className="brand-mark-icon" />KEN&apos;S<span> MOBILE TIRE</span></button><span>OWNER WORKSPACE</span><MailAlert navigate={navigate} /><InquiryNavButton navigate={navigate} className="oi-button" /><button className="oi-button" data-testid="nav-quote-requests" onClick={() => navigate('/owner/quotes')}>Quote requests →</button><button className="oi-button" onClick={() => navigate('/owner/social-proof')}>Social proof</button><button className="oi-button" onClick={leave}>Sign out</button></nav>
     <main className="oi-content">
       <header className="oi-heading"><div><p className="oi-kicker">YOUR INVENTORY. YOUR PRICES.</p><h1>Build your tire offering</h1><p>Explore Giga Tires, choose what you want to offer, and set your price.</p></div><span className="oi-owner-badge">Owner only</span></header>
       <div className="oi-metrics">
@@ -628,32 +532,30 @@ export default function OwnerInventory({ navigate }) {
       {summary?.markup && <MarkupRule markup={summary.markup} onSaved={markupSaved} />}
       {summary?.pricingLines && <PricingLines lines={summary.pricingLines} onSaved={pricingLinesSaved} />}
       {summary?.pricing && <PricingSettings pricing={summary.pricing} onSaved={pricingSaved} />}
-      {summary?.brands?.length > 0 && <BrandOffers brands={summary.brands} onChanged={load} />}
+      {/* onChanged reloads rather than patching: the by-brand endpoint takes no
+          expected version and bumps every row it touches, so every `version`
+          on screen for that brand is stale the moment it returns. At 200 rows
+          a page that saved against them would be a guaranteed conflict storm. */}
+      {summary?.brands?.length > 0 && <BrandOffers brands={summary.brands} onChanged={() => grid.afterBrandToggle()} />}
         </div>
       </div>
       {job && <div className={`oi-job ${['failed', 'interrupted'].includes(job.status) ? 'oi-attention' : ''}`} role="status"><strong>{job.status.toUpperCase()}</strong><span>{job.message}</span><span>{job.completed} / {job.sizes.length} sizes · {job.tiresRead} tires · {job.pagesRead} pages</span>{job.failed?.length > 0 && <span>Earlier saved inventory and offers are preserved. Choose the failed size to retry.</span>}</div>}
       <div className="oi-filters">
-        <label>Search tires or SKU<input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Brand, model, supplier SKU…" /></label>
+        <label>Search tires or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Brand, model, supplier SKU…" /></label>
         <label>Tire size<input aria-label="Tire size" value={sizeQuery} onChange={e => typeSize(e.target.value)} placeholder="Any size · type to find, e.g. 205/55R16" autoComplete="off" spellCheck={false} /></label>
-        <label>Show<select aria-label="Show tires" value={filter} onChange={e => { setFilter(e.target.value); setPage(1) }}><option value="all">All supplier tires</option><option value="offered">Chosen for KMT</option><option value="unselected">Not yet chosen</option><option value="available">Supplier in stock</option></select></label>
-        <button className="oi-button" onClick={load} disabled={loading}>Reload inventory</button>
+        <label>Show<select aria-label="Show tires" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All supplier tires</option><option value="offered">Chosen for KMT</option><option value="unselected">Not yet chosen</option><option value="available">Supplier in stock</option></select></label>
       </div>
       {sizePending && <div className="oi-size-matches" role="status" aria-live="polite">
         {sizeMatches.length === 0
-          ? <span>No KMT size matches “{sizeQuery}”. Sizes read width/ratio R rim, like 205/55R16.</span>
+          ? <span>No KMT size matches &ldquo;{sizeQuery}&rdquo;. Sizes read width/ratio R rim, like 205/55R16.</span>
           : <>
             <span>{sizeMatches.length} of {sizes.length} sizes match{sizeMatches.length > SHOWN_MATCHES ? `, showing ${SHOWN_MATCHES} — keep typing` : ''}:</span>
             {sizeMatches.slice(0, SHOWN_MATCHES).map(value => <button type="button" key={value} className="oi-size-match" onClick={() => pickSize(value)}>{value}</button>)}
           </>}
       </div>}
-      {error && <div className="oi-error oi-notice" role="alert">{error}</div>}
-      {notice && <div className="oi-notice" role="status" data-testid="oi-save-notice">{notice}</div>}
-      <div className="oi-results-heading"><p>{data ? `${data.total} matching tires · page ${data.page} of ${Math.max(1, Math.ceil(data.total / data.pageSize))}` : 'Loading inventory…'}</p><span>{loading ? 'Updating…' : 'Selections and prices are saved, and offered tires reach the customer catalog.'}</span></div>
-      <div className="oi-results" aria-busy={loading}>
-        {data?.items.map(tire => <TireOffer key={`${tire.id}:${tire.offer.version}`} tire={tire} markup={summary?.markup} onSaved={saved} />)}
-        {data && !data.items.length && <div className="oi-empty" data-testid="oi-empty-state"><h2>No tires to show yet</h2><p>{size && !coverage ? 'Refresh this size to load supplier inventory.' : 'Try another search or filter, or refresh a size to add supplier inventory.'}</p></div>}
-      </div>
-      {data && data.total > data.pageSize && <nav className="oi-pagination" aria-label="Inventory pages"><button className="oi-button" disabled={data.page <= 1 || loading} onClick={() => setPage(data.page - 1)}>← Previous</button><span>Page {data.page} of {Math.ceil(data.total / data.pageSize)}</span><button className="oi-button" disabled={data.page * data.pageSize >= data.total || loading} onClick={() => setPage(data.page + 1)}>Next →</button></nav>}
+      {state.error && <div className="oi-error oi-notice" role="alert">{state.error}</div>}
+      {notice && <div className="oi-notice" role="status">{notice}</div>}
+      <OwnerInventoryGrid grid={grid} state={state} markup={summary?.markup} />
     </main>
     <PrivacyFooter navigate={navigate} />
   </div>
