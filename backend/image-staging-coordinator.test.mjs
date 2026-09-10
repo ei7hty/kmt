@@ -14,6 +14,7 @@ import { createImageRunProvenance, verifyImageRunProvenance } from './image-run-
 import { createSafeImageFetcher } from '../scripts/image-mirror.mjs'
 import { PROVIDER_MODE, provenanceTransport, runApprovedImageStaging, runImageStagingWithInjectedTransport, runOfflineImageStagingFixtures } from './image-staging-coordinator.mjs'
 import { decoderPython, realImageFixtures, incompletePayloads } from './fixtures/image-provider/decoder-fixtures.mjs'
+import { findSourceReferences } from './source-references.mjs'
 
 const images = realImageFixtures()
 function plan(host = 'cdn.example.test') {
@@ -371,31 +372,20 @@ test('SEAM MUTATION: if the injected lookup reports a PRIVATE address, assertSaf
 })
 
 test('BOUNDARY: nothing under backend/ or src/ imports the injected-transport seam', async () => {
-  // Same shape as backend/image-import-cli.test.mjs's server-boundary test,
-  // the precedent OWNER AGENT named as what already works: a fact about the
-  // tree, checked directly, not a promise left in a comment. If this ever
-  // finds a hit, STOP -- per the binding condition, the seam does not ship
-  // with the boundary left unproven.
-  const { readdir: listDir, readFile: readSource } = await import('node:fs/promises')
-  const { dirname, join: joinPath } = await import('node:path')
+  // Uses the same shared, recursive scan as backend/image-import-cli.test.mjs's
+  // server-boundary test -- see backend/source-references.mjs for why this is
+  // no longer a hardcoded directory list. If this ever finds a hit, STOP --
+  // per the binding condition, the seam does not ship with the boundary left
+  // unproven.
+  const { dirname } = await import('node:path')
   const { fileURLToPath: toPath } = await import('node:url')
   const root = dirname(dirname(toPath(import.meta.url)))
-
-  const offenders = []
-  for (const directory of ['backend', 'src', 'src/owner', 'src/components']) {
-    let entries
-    try { entries = await listDir(joinPath(root, directory)) } catch { continue }
-    for (const entry of entries) {
-      if (!/\.(mjs|js|jsx)$/.test(entry) || entry.includes('.test.')) continue
-      // image-staging-coordinator.mjs is where the seam is DEFINED, not an
-      // importer of it -- its own `export async function
-      // runImageStagingWithInjectedTransport` line legitimately contains the
-      // name. Every other file in these directories is a real importer if it
-      // matches, since none of them define the seam themselves.
-      if (directory === 'backend' && entry === 'image-staging-coordinator.mjs') continue
-      const source = await readSource(joinPath(root, directory, entry), 'utf8')
-      if (source.includes('runImageStagingWithInjectedTransport')) offenders.push(`${directory}/${entry}`)
-    }
-  }
+  const offenders = await findSourceReferences(root, 'runImageStagingWithInjectedTransport', {
+    // image-staging-coordinator.mjs is where the seam is DEFINED, not an
+    // importer of it -- its own `export async function
+    // runImageStagingWithInjectedTransport` line legitimately contains the
+    // name. Every other matching file is a real importer.
+    excludeFiles: ['backend/image-staging-coordinator.mjs'],
+  })
   assert.deepEqual(offenders, [], 'the seam must be reachable only from test files, never from anything the server or owner UI loads')
 })
