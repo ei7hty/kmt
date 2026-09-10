@@ -2,7 +2,17 @@ import { chromium } from 'playwright';
 import { cleanTireFor, exceptionTireFor, expandTireList, freshPage, openOwnerQuotes, waitForStatus } from './audit-ui.mjs';
 import { MOBILE_SERVICE_FEE } from '../src/pricing.js';
 
-const BASE = process.env.AUDIT_BASE || 'http://localhost:4179';
+// No default, on purpose -- see the same refusal in deployed-site-check.mjs.
+// A script that silently audits SOMETHING rather than refusing to audit
+// NOTHING answers confidently about a target nobody chose. #481 fixed three
+// of these and its claim row said "three instances, one root"; a grep for the
+// removed behaviour found six more, this among them. The count was a sample
+// read as a census.
+const BASE = process.env.AUDIT_BASE;
+if (!BASE) {
+  console.error('Set AUDIT_BASE explicitly; this refuses to guess which server to audit.');
+  process.exit(2);
+}
 
 /**
  * How many checks a complete run performs, across both viewports.
