@@ -220,21 +220,40 @@ produces the packet. At 1,248 distinct brand+model rows that is 250 runs to
 cover the catalogue, so anyone planning coverage should count runs rather than
 tires.
 
-**Whether that file can be generated instead is UNMEASURED, and this is the
-open question the feature currently rests on.** Four of the five fields derive
-mechanically from supplier rows already in the database. The fifth does not
-obviously: `productUrl()` requires the giga-tires origin, a path beginning
-`/tires/` and containing `/tirecode/`, while supplier rows store `source.url`
-**raw** from the listing anchor rather than canonicalized. Whether real stored
-values satisfy that check is not known here — the repository's own fixture
-(`/x/y/tirecode/1`) would fail it, fixtures therefore cannot answer it, and the
-owner's rules forbid anyone but him touching the live site to find out.
+**IT IS HAND-AUTHORED BY DESIGN, NOT BY OMISSION**, and that is written down
+in a runbook this section did not previously point at:
+[`approved-product-images.md`](approved-product-images.md). Verbatim from it:
 
-So: **do not assume the mapping is cheap to produce until that is settled.** If
-real URLs canonicalize, generating the mapping from a chosen size is a small
-command. If they do not, each tire's product page has to be *discovered*, which
-is a materially larger piece of work involving more requests to the supplier and
-a person judging bad matches.
+> The committed catalog currently has 1,083 rows, no image URLs and no valid
+> product-page source URLs. Its source URLs are listing pages.
+
+> The owner must supply five real, distinct Giga product URLs and identify the
+> existing supplier row each belongs to. Obtain these through the owner's
+> authorized supplier access; this implementation does not discover them.
+
+So a command that derived the mapping from stored rows would not be filling a
+gap — it would be undoing a decision. The rows hold LISTING urls; `productUrl()`
+wants a product page; and discovery was deliberately left to the owner's own
+supplier access rather than built.
+
+**READ THAT RUNBOOK, AND DO NOT TRUST ALL OF IT.** Three of its claims describe
+a system that no longer exists, verified against `main`:
+
+| the runbook says | actually |
+| --- | --- |
+| "`IMAGE_EXECUTION_ENABLED` remains false" | the constant was removed in #451 |
+| "the provider approval registry remains empty" | `PM_APPROVALS` was removed with it |
+| the selection tag `owner-mapped-five-seeded-v1` | retired by #450; it is now `owner-mapped-seeded-v2` |
+
+**And its central claim carries a caveat worth stating.** It was written against
+a catalogue of **1,083 rows**; we now hold **6,169** from a later scrape. "Source
+URLs are listing pages" was measured against data we no longer have, so it is
+strong evidence about today rather than proof. The cheap way to re-check it
+without touching the supplier: `productUrl()` throws rather than filtering, and
+`selectValidationUrls` maps every stored `source.url` through it — so running
+`scrape-tires.mjs --validate-products` WITHOUT the packet flags against a current
+snapshot either succeeds, which would mean the rows now canonicalize, or fails
+with "Not a giga-tires product URL", which confirms the runbook still holds.
 
 **This is where the pipeline stops today**, and this section exists because that
 was hard to see. Five times in one night this feature was described as one step
@@ -243,7 +262,7 @@ further out than the layer being looked at. The chain, end to end:
 
 | step | exists? |
 | --- | --- |
-| choose tires and write the mapping | **no — by hand, no command** |
+| choose tires and write the mapping | **by hand, by design — the owner supplies the product URLs; nothing derives them** |
 | read product pages, write a packet | yes — `scrape-tires.mjs --validate-products` |
 | fetch the images into staging | yes — `import-product-images.mjs` (#468) |
 | seal a packet, import it | yes — `seal-image-packet.mjs`, `import-images.mjs` |
