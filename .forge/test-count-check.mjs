@@ -13,8 +13,8 @@
  * ---------------------------------------------------------------------------
  * WHAT THIS CATCHES THAT `node --test` DOES NOT
  *
- * Not a suite that throws. Measured on origin/main, both sides: a worktree with
- * no decoder environment reports `587 tests / 584 pass / 3 fail`, marks each
+ * Not a suite that throws. Measured on origin/main, both sides: a checkout with
+ * no decoder environment reports `664 tests / 660 pass / 4 fail`, marks each
  * dead file with an X, and exits 1. Node already refuses to call that a pass,
  * and a guard on top of it would defend nothing.
  *
@@ -22,7 +22,7 @@
  * of the pattern, move it, delete an import that pulled it in -- and every
  * remaining test passes, no file is marked, and the process exits 0. The only
  * evidence is a number that got smaller, and until now nothing knew what the
- * number should be: 587 against 632 with no declaration of which is correct.
+ * number should be: 664 against 729 with no declaration of which is correct.
  *
  * ---------------------------------------------------------------------------
  * WHY IT FAILS UPWARD TOO
@@ -41,7 +41,7 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-// Imported, not re-derived. This is the exact value the three image suites
+// Imported, not re-derived. This is the exact value the image suites
 // consult, so this check cannot disagree with them about whether the decoder
 // is present -- the CATALOG_FIELDS lesson, applied before it could bite.
 import { decoderPython } from '../backend/fixtures/image-provider/decoder-fixtures.mjs'
@@ -50,11 +50,14 @@ import { BASELINE_PATTERNS } from './test-baseline.mjs'
 /**
  * The number of tests the named suites contain when every one of them can run.
  *
- * Measured on origin/main in the main checkout with the image decoder
- * environment present. A worktree without it reports 587, which is this same
- * baseline minus the three image suites that die at module load -- that gap is
- * the decoder defect (decoder.local resolves against process.cwd()), not a
- * miscount here.
+ * Measured on origin/main with the image decoder environment present. Without
+ * one the same command reports 664 -- this baseline minus the image suites that
+ * die at module load, which is DECODER_SUITE_DELTA below and not a miscount
+ * here.
+ *
+ * The gap USED to be the cwd-relative decoder defect. #464 fixed that, so a
+ * worktree now finds the shared venv and reports this same number; reaching the
+ * no-decoder state deliberately is described under DECODER_SUITE_DELTA.
  *
  * CHANGING THIS NUMBER: if the run came back LOWER, find the suite that stopped
  * running before you touch it. If it came back HIGHER because you added tests,
@@ -65,35 +68,43 @@ import { BASELINE_PATTERNS } from './test-baseline.mjs'
 const EXPECTED_TESTS = 729
 
 /**
- * The DIFFERENCE the three image suites make to the total: 632 with a decoder,
- * 587 without.
+ * The DIFFERENCE the image suites make to the total: 729 with a decoder, 664
+ * without. Measured 2026-09-10 at f5daa12.
  *
- * Not the number of tests they contain, which is 48. A file that dies at module
- * load still registers one failing test, so three dead files leave 3 behind and
- * the total drops by 45 rather than 48. Calling it a suite size invited
- * exactly that confusion and the name is now the arithmetic it actually does.
+ * Not the number of tests they contain. A file that dies at module load still
+ * registers one failing test, so the four dead files leave 4 behind and the
+ * total drops by 65 rather than by the 69 they hold. Calling it a suite size
+ * invited exactly that confusion once already, and the name is now the
+ * arithmetic it actually does.
  *
- * NOT VERIFIED SINCE #464, AND NOT CURRENTLY VERIFIABLE HERE. This number was
- * measured by running with and without a decoder, which used to mean setting or
- * unsetting `KMT_IMAGE_DECODER_PYTHON`. That no longer works: #464 made
- * `decoder-fixtures.mjs` resolve the shared venv from `import.meta.url` and walk
- * out of `.worktrees/` to the main checkout, so it finds `decoder.local` with no
- * environment variable at all. Measured 2026-09-10 -- the four patterns give an
- * identical 729 with the variable set and unset, and importing the module prints
- * a resolved interpreter path either way.
+ * WAS 45, MEASURED WHEN THREE SUITES DIED RATHER THAN FOUR. It went stale
+ * silently, and the reason is worth more than the number: since #464 the
+ * fixtures resolve the shared venv from `import.meta.url` and walk out of
+ * `.worktrees/` to the main checkout, so unsetting KMT_IMAGE_DECODER_PYTHON no
+ * longer produces the no-decoder state on any machine that has the venv. The
+ * branch below became unreachable on every developer machine here, so nothing
+ * exercised it and nothing contradicted the constant while a fourth image suite
+ * was added.
  *
- * So the no-decoder branch below is now reachable only where no venv exists,
- * which is CI. That is #464 working exactly as designed, and it is worth naming
- * the category: A FIX THAT REMOVES A FAILURE MODE LOCALLY ALSO REMOVES THE
- * ABILITY TO EXERCISE ITS GUARD LOCALLY. The guard did not get weaker; the
- * machine you would test it on stopped being able to reproduce the condition.
+ * NAME THE CATEGORY, because it is not specific to this constant: A FIX THAT
+ * REMOVES A FAILURE MODE LOCALLY ALSO REMOVES THE ABILITY TO EXERCISE ITS GUARD
+ * LOCALLY. #464 was correct and this is its cost. A guard that can only run in
+ * CI decays at the speed of whatever it guards.
  *
- * Treat 45 as measured-before-#464 rather than as verified. To re-measure it,
- * hide `decoder.local` deliberately -- do not infer the no-decoder state from an
- * unset variable that no longer means that. And if a run reports a shortfall
- * CITING the decoder, suspect this constant before suspecting EXPECTED_TESTS.
+ * HOW TO RE-MEASURE, since the obvious way no longer works. Do NOT rename the
+ * shared `decoder.local` -- other sessions run tests against it concurrently and
+ * you would break their runs, which is the shared-resource collision this
+ * repository has already paid for. Instead put a checkout OUTSIDE `.worktrees/`
+ * (a scratch directory is fine), junction `node_modules` in so the only
+ * difference is the decoder, and run there: the resolver walks up looking for a
+ * `.worktrees/` marker, finds none, and resolves `decoder.local` against that
+ * scratch root where it does not exist. Then run the SAME command in the SAME
+ * tree with KMT_IMAGE_DECODER_PYTHON set, so the two totals differ by the
+ * decoder and nothing else -- that control is what makes the subtraction mean
+ * anything. Remove the junction with `rmdir`, never `rm -rf`, which follows it
+ * into the shared install.
  */
-const DECODER_SUITE_DELTA = 45
+const DECODER_SUITE_DELTA = 65
 
 /**
  * The patterns EXPECTED_TESTS was measured against, and the whole reason this
@@ -202,26 +213,34 @@ if (!invocationMatches) {
   // every red run as noise or every red run as a crisis, and both end the
   // signal.
   //
-  // TRANSITIONAL. `decoder.local` resolves against process.cwd() and exists
-  // only in the main checkout, so following AGENTS.md's worktree rule is what
-  // produces this. Once that resolution is fixed a compliant worktree has the
-  // decoder and this branch stops firing for anyone following the rules --
-  // it is an affordance for a defect being fixed, not a permanent category.
+  // WAS TRANSITIONAL, AND THE TRANSITION HAPPENED. This existed because
+  // `decoder.local` resolved against process.cwd() and existed only in the main
+  // checkout, so following AGENTS.md's worktree rule was what produced the
+  // shortfall. #464 fixed that resolution, so a compliant worktree now finds the
+  // shared venv and this branch no longer fires for anyone following the rules.
   //
-  // Keyed on the decoder being ABSENT, not on the shortfall being 45. A number
+  // It is kept, not deleted, because CI has no venv and is exactly where it now
+  // fires -- but note what that cost: the branch became unreachable on every
+  // developer machine, nothing exercised it, and DECODER_SUITE_DELTA sat at a
+  // stale 45 through the addition of a fourth image suite until somebody
+  // reproduced the no-decoder state deliberately. A guard only CI can reach
+  // decays at the speed of whatever it guards.
+  //
+  // Keyed on the decoder being ABSENT, not on the shortfall being 65. A number
   // that happens to match is not a diagnosis, and inferring a cause from a
   // coincidental count is the exact mistake this file exists to catch.
   if (!decoderPython && short === DECODER_SUITE_DELTA) {
     console.error('')
     console.error(`FAIL: ${short} test(s) short, and this environment cannot run them.`)
-    console.error('      KMT_IMAGE_DECODER_PYTHON is unset and no decoder.local resolves from here, so the three')
+    console.error('      KMT_IMAGE_DECODER_PYTHON is unset and no decoder.local resolves from here, so the')
     console.error('      image suites died at module load. That is the whole shortfall -- nothing of yours is missing.')
     console.error('      Still exit 1: a suite that did not run did not pass, whoever is at fault.')
     console.error('      To run them, build the decoder the way CI does:')
     console.error('        python -m venv decoder.local')
     console.error('        decoder.local/Scripts/python -m pip install -r scripts/image-decoder-requirements.txt   # bin/python on POSIX')
     console.error('      or point KMT_IMAGE_DECODER_PYTHON at one you already have. Two agents each built their own')
-    console.error('      because neither could find the one the other had built; the cwd-relative lookup behind that is being fixed.')
+    console.error('      because neither could find the one the other had built; #464 fixed the cwd-relative lookup')
+    console.error('      behind that, so a venv in the main checkout is now found from every worktree.')
   } else if (!decoderPython) {
     console.error('')
     console.error(`FAIL: ${short} test(s) short of the baseline (${total} of ${EXPECTED_TESTS}).`)
