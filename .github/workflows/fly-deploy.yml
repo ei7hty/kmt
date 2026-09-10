@@ -237,10 +237,13 @@ jobs:
       # they can sign in when the owner screen asks -- a hosted server always
       # asks, and a local one never does.
       #
-      # AUDIT_BASE is set explicitly because the three scripts default to
-      # different ports. Leave it unset and they quietly audit whatever else is
-      # listening, which fails in both directions: a false red, or a false green
-      # against a stale server.
+      # AUDIT_BASE is set explicitly because the three scripts below now refuse
+      # to run without it: #490 removed their per-script defaults. They used to
+      # default to different ports, so leaving it unset made them quietly audit
+      # whatever else was listening -- a false red, or a false green against a
+      # stale server. #490 removed those defaults rather than rely on this line
+      # to override them: a script that cannot name its target refuses instead
+      # of guessing. This line names it; the refusal is the backstop.
       - name: Audit the built frontend against the real server
         env:
           AUDIT_BASE: http://127.0.0.1:4173
@@ -529,12 +532,18 @@ jobs:
       # vars.DEPLOY_URL is the single declaration of what this job audits, set to
       # the canonical host. The steps below have no fallback on purpose: an unset
       # target is a reason to STOP, not to silently retarget to the Fly host and
-      # audit a site no customer uses -- which passes, truthfully, about the wrong
-      # host, and with the canonical's own DNS failure surface (the apex-A/IPv6
-      # break this repo ate) manufactures a green verification of an unreachable
-      # site. This fails FIRST, naming the cause once, rather than leaving three
-      # curl URL-parse errors below for a reader to work backwards from. Read into
-      # an env var so the value cannot break the shell.
+      # audit a site no customer uses -- where the wait step would pass having
+      # reached only the redirect service, and the deployed-site audit would pass
+      # having FOLLOWED the redirect to the canonical: the right content, reached
+      # for a reason nobody asked for. The release-header check below is the one
+      # step that objects, and only because
+      # kmt.fly.dev happens to 301 to the canonical today: an accidental, unpinned
+      # safety, not one to depend on -- if that host ever served directly instead
+      # of redirecting, the release-header step would read the app's own matching
+      # release and pass, and nothing would object at all. This fails FIRST,
+      # naming the cause once, rather than leaving three curl URL-parse errors
+      # below for a reader to work backwards from. Read into an env var so the
+      # value cannot break the shell.
       - name: Refuse to verify an unnamed target
         env:
           DEPLOY_URL: ${{ vars.DEPLOY_URL }}
@@ -565,9 +574,11 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Wait for the new release to answer
         # The deployed origin, a repository variable so the cutover changes it in
-        # one place rather than in this file. Unset, it falls back to the Fly
-        # name that has been the deployed origin all along. Read into an env var,
-        # not inlined into the script, so the value cannot break the shell.
+        # one place rather than in this file -- set to the canonical host, and
+        # guaranteed non-empty here by the "Refuse to verify an unnamed target"
+        # step above (an unset value STOPS the job; it does not fall back). Read
+        # into an env var, not inlined into the script, so the value cannot break
+        # the shell.
         env:
           DEPLOY_URL: ${{ vars.DEPLOY_URL }}
         run: |
@@ -590,9 +601,13 @@ jobs:
           # answer rather than a premature one. QA measured real deploys at 4-8
           # minutes end to end, worst case under queue contention.
           #
-          # 3xx counts as answered. The app is up if it redirects: after the
-          # canonical flip a Fly-name base answers 301, and a check that reads
-          # that as "not up" would fail for the one reason we know is fine.
+          # 3xx counts as answered: a readiness probe only needs the host to
+          # respond, and the release-header check below is what verifies it serves
+          # this build. This used to matter concretely -- a Fly-name base answered
+          # 301 after the canonical flip -- but that fallback is gone; accepting a
+          # redirect as "up" stays the right readiness semantic regardless.
+          # NOTE: the canonical answers 200, so the 3xx arm does not run in CI
+          # today -- a change to it will not be caught here.
           deadline=$(( SECONDS + 600 ))
           last=''
           while [ "$SECONDS" -lt "$deadline" ]; do
