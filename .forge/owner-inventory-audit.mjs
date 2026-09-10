@@ -7,7 +7,17 @@ import { signInIfAsked } from './audit-ui.mjs'
 // AUDIT_BASE like the other three audits, so one server can serve the whole
 // gate. The fallback is the local dev server; a hosted-shape server on any
 // port works too, signed in the way the `session` block below describes.
-const base = process.env.AUDIT_BASE || 'http://127.0.0.1:4180'
+// No default, on purpose. A script that silently audits SOMETHING rather than
+// refusing to audit NOTHING answers confidently about a target nobody chose.
+// Three instances of that cost real work here: this file and
+// owner-inquiries-audit defaulted to a shared local port, which is how one
+// session's audit reached another's server and produced a finding that had to
+// be retracted; and deployed-site-check defaulted to a host, so a run given
+// DEPLOY_URL instead of AUDIT_BASE passed 69/69 against a host CI was not
+// testing and that pass was relayed as reassurance. AGENTS.md documents the
+// trap; a11y-85-measure was the only one already refusing.
+const base = process.env.AUDIT_BASE
+if (!base) { console.error('Set AUDIT_BASE explicitly; the audits default to different ports and this one refuses to guess.'); process.exit(2) }
 
 /**
  * How many of *this script's own* counted checks a complete run performs.

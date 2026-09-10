@@ -25,7 +25,21 @@ import { candidateConfig, candidateFetch, candidateAsset, transferBudget, MAX_CA
  * leaves the database exactly as it found it.
  */
 
-const BASE = process.env.AUDIT_BASE || 'https://kmt.fly.dev';
+// No default, on purpose. A script that silently audits SOMETHING rather than
+// refusing to audit NOTHING answers confidently about a target nobody chose.
+// Three instances of that cost real work here: this file and
+// owner-inquiries-audit defaulted to a shared local port, which is how one
+// session's audit reached another's server and produced a finding that had to
+// be retracted; and deployed-site-check defaulted to a host, so a run given
+// DEPLOY_URL instead of AUDIT_BASE passed 69/69 against a host CI was not
+// testing and that pass was relayed as reassurance. AGENTS.md documents the
+// trap; a11y-85-measure was the only one already refusing.
+const BASE = process.env.AUDIT_BASE;
+if (!BASE) {
+  console.error('Set AUDIT_BASE explicitly; this refuses to guess which host to audit.');
+  console.error('DEPLOY_URL is the workflow variable, not what this reads -- passing it leaves AUDIT_BASE unset.');
+  process.exit(2);
+}
 const CANDIDATE = candidateConfig();
 const fetch = CANDIDATE ? (url, options) => candidateFetch(CANDIDATE, url, options) : globalThis.fetch;
 const assetUrl = url => CANDIDATE ? candidateAsset(CANDIDATE, url, CANONICAL_HOST) : new URL(url, BASE).href;
