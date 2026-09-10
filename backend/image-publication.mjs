@@ -169,6 +169,28 @@ export class ImagePublication {
     })
   }
 
+  // The owner reviews photos before he decides about them, so this serves a
+  // packet in any state -- imported, approved or revoked. Withholding the
+  // bytes until approval is what made the review screen useless: it asked him
+  // to approve pictures he could not see. Revoked matters for the same reason
+  // in reverse -- looking back at what was taken down is only possible if the
+  // bytes come back. The route this feeds is owner-authenticated; the public
+  // route above is unchanged and still releases approved bytes only.
+  //
+  // The ordinal has no compiled-in upper bound, here or in the route: the
+  // packet's own rows are the bound, and an ordinal with no row is simply a
+  // 404. A range baked into a path pattern would silently cap a packet at
+  // however many the author had in mind the day they wrote it -- the exact
+  // hardcoded five that MAX_IMAGE_PACKET_ASSETS replaced in the manifest.
+  readOwnerAsset(digest, ordinal) {
+    if (!IMAGE_DIGEST.test(digest)) throw failure(404)
+    if (!Number.isSafeInteger(ordinal) || ordinal < 0) throw failure(404)
+    const row = this.db.prepare('SELECT metadata FROM image_packet_assets WHERE packet=? AND ordinal=?').get(digest, ordinal)
+    if (!row) throw failure(404)
+    const metadata = JSON.parse(row.metadata)
+    return this.storage.read({ ...metadata, byteLength: metadata.bytes })
+  }
+
   readPublic(url) {
     // Same customer eligibility as /api/catalog, including disabled offers.
     const tire = this.inventory.catalog().find(row => row.imageUrl === url)

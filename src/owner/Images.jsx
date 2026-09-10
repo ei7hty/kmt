@@ -127,15 +127,20 @@ function ImagesScreen({ navigate }) {
                   const candidate = packet.candidates?.[index]
                   return (
                     <li className="ip-tile" key={asset.sha256}>
-                      {/* Only an approved packet has a servable path; before that
-                          the bytes exist but the public route will not release
-                          them, so showing a frame is honest and a broken <img>
-                          is not. */}
-                      {packet.action === 'approved'
-                        ? <img className="ip-photo" loading="lazy" decoding="async"
-                            src={`/api/images/${asset.sha256}.${asset.format}`}
-                            alt={candidate?.supplierSku ? `Photo for ${candidate.supplierSku}` : 'Product photo'} />
-                        : <span className="ip-photo ip-photo-pending" aria-hidden="true" />}
+                      {/* Every packet shows its real photos, whatever state it is
+                          in. Approving a picture you cannot see is not a
+                          decision, and this screen exists to make the decision.
+                          The bytes come from the owner-only route, which is
+                          keyed by packet and ordinal and answers for imported,
+                          approved and revoked alike -- deliberately not the
+                          public `/api/images/...` path, which releases approved
+                          bytes only and stops answering the moment the supplier
+                          row moves underneath it. Using it here would leave the
+                          owner looking at a broken frame on a packet he had
+                          just approved. */}
+                      <img className="ip-photo" loading="lazy" decoding="async"
+                        src={`/api/owner/images/${packet.digest}/assets/${index}`}
+                        alt={candidate?.supplierSku ? `Photo for ${candidate.supplierSku}` : 'Product photo'} />
                       <p className="ip-sku">{candidate?.supplierSku || shortDigest(asset.sha256)}</p>
                     </li>
                   )
