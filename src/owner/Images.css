@@ -1,0 +1,107 @@
+/* Product photo review. Layout only -- colours, buttons and the shell come
+   from the owner workspace styles this screen shares with the other panels. */
+
+.ip-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.ip-heading h1 {
+  margin: 0 0 4px;
+  font-size: 1.5rem;
+}
+
+.ip-heading p {
+  margin: 0 0 20px;
+  max-width: 60ch;
+  opacity: 0.85;
+}
+
+.ip-error,
+.ip-notice,
+.ip-empty {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+}
+
+/* Every one of these sets its own colour rather than inheriting: the owner
+   shell is dark, these panels are light, and a colour that is only defined on
+   one of the two is the shape of the red-on-red defect that already shipped. */
+.ip-error { background: #fdecec; color: #7d1d1d; }
+.ip-notice { background: #e9f6ec; color: #1c5129; }
+.ip-empty { background: #f2f2f2; color: #333333; }
+
+.ip-packet {
+  border: 1px solid #dcdcdc;
+  border-radius: 10px;
+  padding: 16px;
+  margin: 0 0 20px;
+}
+
+.ip-packet-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.ip-packet-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.ip-state {
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* #d9121a on white is 5.4:1; the other two are darker still. The brand red is
+   never put on a red ground here -- that defect shipped once already. */
+.ip-state-imported { color: #7a4a00; }
+.ip-state-approved { color: #1c5129; }
+.ip-state-revoked { color: #5a5a5a; }
+
+.ip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 14px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ip-tile { margin: 0; }
+
+/* A fixed slot so a pending packet and an approved one occupy the same space:
+   approving must not make the page jump under the button just pressed. */
+.ip-photo {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  background: #f6f6f6;
+  border: 1px solid #e2e2e2;
+  border-radius: 8px;
+}
+
+.ip-photo-pending {
+  background: repeating-linear-gradient(45deg, #f6f6f6, #f6f6f6 8px, #efefef 8px, #efefef 16px);
+}
+
+.ip-sku {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+  opacity: 0.85;
+}
+
+@media (max-width: 480px) {
+  .ip-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+  .ip-packet-head { align-items: flex-start; }
+}
