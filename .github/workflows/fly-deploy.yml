@@ -126,12 +126,21 @@ jobs:
       # `.forge/*.test.mjs` glob, because that glob would also match `release-check`
       # and `release-browser` (run by name at :101 and :250) and double-count them.
       #
-      # THESE FOUR MUST BYTE-MATCH `BASELINE_PATTERNS` in test-count-check.mjs --
+      # THESE FOUR MUST BYTE-MATCH `BASELINE_PATTERNS` in test-baseline.mjs --
       # the check refuses to vouch for a total measured against a different set.
       # Change one, change both, in the same commit, and confirm the reported count
       # moved by what you expected; the count is the only thing that can tell you
       # this step still runs what it claims to.
       - run: node .forge/test-count-check.mjs "backend/**/*.test.mjs" "src/**/*.test.mjs" "scripts/**/*.test.mjs" ".forge/restore-integrity-check.test.mjs"
+      # The count guard above proves the tests it RUNS are all present; this proves
+      # no test file runs NOWHERE. Every *.test.mjs must be matched by a
+      # BASELINE_PATTERN or listed in RUN_ELSEWHERE (with the workflow line that
+      # runs it, which the check confirms actually invokes it). A file matching
+      # neither passes locally and is invisible to CI -- hole 1 in a fourth
+      # location, and how .forge/restore-integrity-check.test.mjs once sat with 11
+      # tests that had never run. Milliseconds, executes no test: it only asks
+      # where each one would run.
+      - run: node .forge/orphaned-test-check.mjs
       # The whole tree, not just src and backend: scripts/ and .forge/ are .mjs
       # too, and the audits under .forge/ are the files that decide whether
       # everything else is correct. An undefined name in one of them should fail
@@ -485,6 +494,23 @@ jobs:
     if: needs.image.outputs.ship == 'true'
     runs-on: ubuntu-latest
     steps:
+      # vars.DEPLOY_URL is the single declaration of what this job audits, set to
+      # the canonical host. The steps below have no fallback on purpose: an unset
+      # target is a reason to STOP, not to silently retarget to the Fly host and
+      # audit a site no customer uses -- which passes, truthfully, about the wrong
+      # host, and with the canonical's own DNS failure surface (the apex-A/IPv6
+      # break this repo ate) manufactures a green verification of an unreachable
+      # site. This fails FIRST, naming the cause once, rather than leaving three
+      # curl URL-parse errors below for a reader to work backwards from. Read into
+      # an env var so the value cannot break the shell.
+      - name: Refuse to verify an unnamed target
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL }}
+        run: |
+          [ -n "$DEPLOY_URL" ] || {
+            echo "::error::vars.DEPLOY_URL is unset; refusing to verify an unnamed target."
+            exit 1
+          }
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
@@ -511,7 +537,7 @@ jobs:
         # name that has been the deployed origin all along. Read into an env var,
         # not inlined into the script, so the value cannot break the shell.
         env:
-          DEPLOY_URL: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
+          DEPLOY_URL: ${{ vars.DEPLOY_URL }}
         run: |
           # Ten minutes, not 150 seconds, and the reason the old number was
           # right until it was not: it was sized for a code deploy, where Fly
@@ -573,7 +599,7 @@ jobs:
       # production password belongs in this workflow.
       - run: node .forge/deployed-site-check.mjs
         env:
-          AUDIT_BASE: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
+          AUDIT_BASE: ${{ vars.DEPLOY_URL }}
 
       # The one thing deployed-site-check cannot prove, because it is what this
       # run just built: that the release now answering is this commit. The
@@ -585,7 +611,7 @@ jobs:
       # rollover can still be answering from the old machine for a few seconds.
       - name: Confirm the deployed release answers as X-KMT-Release
         env:
-          DEPLOY_URL: ${{ vars.DEPLOY_URL || 'https://kmt.fly.dev' }}
+          DEPLOY_URL: ${{ vars.DEPLOY_URL }}
         run: |
           expected="${GITHUB_SHA::7}"
           got=''
