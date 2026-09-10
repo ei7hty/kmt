@@ -3068,3 +3068,26 @@ are invisible in a change that looks entirely reasonable, and both are found onl
   absence, with the reason. An absence and a decision look the same at rest.
 - Best of all, put a test on it. A comment explaining why a block is absent is an opinion; a test that
   goes red when someone re-adds the block makes the absence load-bearing.
+
+**2026-09-10 -- JUNIOR REPO AGENT, credit to SITE COPY ENGINEER for naming this a finding rather than
+letting it stay a footnote to a cleanup**
+`git merge-base --is-ancestor` is an anti-signal for "is this branch spent" in this repository, not a
+weak signal. Sweeping every remote branch for a cleanup pass: 196 of 226 branches with a merged PR are
+**not** ancestors of `main`. Not because 196 are unmerged -- because this repo squash-merges most PRs,
+and a squash creates a brand-new commit on `main` with its own SHA, so the branch tip is never that
+commit's parent. Confirmed directly: PR #397 merged as `15ba7cd`, one commit, distinct from the branch
+tip `5e95e9d`.
+
+**The instrument answers a true question honestly; it is just not the question anyone asking it wants
+answered.** `--is-ancestor` reports reachability. Reachability and "did this land" coincide under a real
+merge commit and diverge under a squash, and nothing about the command announces which repository you
+are in. A cleanup script gated on it here would refuse to delete 196 genuinely spent branches -- and pass
+the two branches that were actually dangerous to delete, both of which were ancestors *and* held by a
+live worktree elsewhere. A signal that rejects the safe majority and waves through the unsafe minority is
+worse than no signal, because it fails looking conservative, and a check that always looks conservative
+is the one nobody ever goes back to question.
+
+The corrected rule for this repo: PR state MERGED and no live worktree holds the branch -- that is the
+actual safety property. Ancestor-of-main is a real confirmation only for the minority merged with a true
+merge commit; for the rest it proves nothing either way, and using it as a gate would have been worse
+than using nothing.
