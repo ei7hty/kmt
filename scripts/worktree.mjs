@@ -229,9 +229,9 @@ function add({ name, branch, from }) {
       'or choose a different name.')
   }
 
-  git(['fetch', '--quiet', 'origin'])
   let output
   try {
+    git(['fetch', '--quiet', 'origin'])
     output = git(['worktree', 'add', tree, '-b', branch, from])
   } catch (error) {
     console.error(String(error.stderr || error.message).trim())
