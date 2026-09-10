@@ -11,9 +11,24 @@
  * browser buys us nothing and costs a lot. Playwright stays in devDependencies
  * as the fallback if that ever stops being true.
  *
- * Their robots.txt allows /tires/. It disallows /cart, /checkout, /my-account,
- * /price/calculate, the /tires/o/ deals pages, and any `?filtering=` faceted
- * URL -- this scraper touches none of those.
+ * Their robots.txt is allow-by-default: `User-agent: *` carries no `Disallow: /`
+ * and no `Allow: /tires/` either -- everything is permitted except eight named
+ * exclusions, and `/tires/` is merely one of the many things the list does not
+ * forbid, not a specific grant. Read live on 2026-09-10 (the owner's one
+ * authorised request, since spent -- no further live request to giga-tires.com
+ * is permitted; this comment is the record of what it said, not a standing
+ * belief to re-derive from). If they change robots.txt, this comment and
+ * `productUrl()`'s DISALLOWED_* constants below are what goes stale, not this
+ * scraper's behaviour -- there is no live check, so nothing here would notice
+ * on its own.
+ *
+ * The eight exclusions, verbatim from their file: `/cart`, `/checkout`,
+ * `/my-account`, `/price/calculate` (each a path PREFIX, no wildcard needed
+ * per robots convention), a wildcard path followed by `?filtering=` or
+ * `&filtering=` (a `filtering` query parameter, in any position), and
+ * `/tires/o/` plus the same page nested under a size segment (two rules, not
+ * one -- see `productUrl()` for why both are needed). This scraper touches
+ * none of those.
  */
 
 const ORIGIN = 'https://www.giga-tires.com'
@@ -71,10 +86,38 @@ export function assertExpectedPage(url, html, kind) {
   if (!expected) throw new ProviderRefusalError(`Blocked or unexpected ${kind} page from ${url}`, { reason: 'unexpected-provider-page' })
 }
 
+/** Path prefixes their robots.txt disallows outright -- no wildcard needed, a bare prefix match. */
+const DISALLOWED_PREFIXES = ['/cart', '/checkout', '/my-account', '/price/calculate']
+
+/**
+ * `/tires/o/` (the basic deals index) and the same page nested under a size
+ * segment are two separate robots.txt rules, not one written twice: a bare
+ * wildcard never matches a missing path segment, so checking only the sized
+ * form would miss the basic form `/tires/o/deals`, and checking only the
+ * basic form would miss a sized one like `/tires/205-65-15/o/x`. Both are
+ * checked here for that reason -- dropping either one silently re-opens the
+ * gap the other rule exists to close.
+ */
+const TIRES_O_BASIC = /^\/tires\/o\//
+const TIRES_O_STARRED = /^\/tires\/.+\/o\//
+
+/** True when `url` matches one of the eight things their robots.txt disallows. */
+function isDisallowedByRobots(url) {
+  if (DISALLOWED_PREFIXES.some(prefix => url.pathname.startsWith(prefix))) return true
+  if (url.searchParams.has('filtering')) return true
+  return TIRES_O_BASIC.test(url.pathname) || TIRES_O_STARRED.test(url.pathname)
+}
+
 export function productUrl(value) {
   let url
   try { url = new URL(value, ORIGIN) } catch { throw new Error(`Not a product URL: ${value}`) }
-  if (url.origin !== ORIGIN || !url.pathname.startsWith('/tires/') || !url.pathname.includes('/tirecode/')) {
+  // `/tirecode/` is OUR requirement for a product page, not a robots.txt rule --
+  // every real product URL carries it and a listing or category page does not.
+  // `username`/`password` catch embedded credentials (`user:pass@host`):
+  // `url.origin` never includes them, so the origin check alone would accept
+  // one silently -- the same shape `prepareImagePilot` (scripts/image-pilot-packet.mjs)
+  // already refuses at its own layer, refused here too rather than assumed.
+  if (url.origin !== ORIGIN || url.username || url.password || isDisallowedByRobots(url) || !url.pathname.includes('/tirecode/')) {
     throw new Error(`Not a giga-tires product URL: ${value}`)
   }
   url.hash = ''
