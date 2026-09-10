@@ -170,13 +170,28 @@ are waiting for you when you get back in.
 
 ## The Inventory screen, in one paragraph
 
-You do not need it in the first week. Every supplier tire is already priced
-for customers by the markup rule. If you want your own price on one tire:
-Inventory, type the size, find the tire, set the price, tick **Offer this
-tire**, **Save offer**. Two numbers at the top tell you the state of the
-catalogue: how many supplier tires are saved, and how many sizes have
-supplier tires. Pricing a whole size at once is coming; today it is one
-tire at a time, and a common size has a couple of hundred.
+You still do not need it in the first week — every supplier tire is already
+priced for customers by the markup rule. When you do want your own price on a
+tire: **Inventory**, type the size, then type the price straight into that
+tire's row and press Enter. There is no separate save button any more. The row
+tells you it saved, and tells you if it did not — if someone changed that tire
+in another window, it says so and asks you to reload rather than quietly
+overwriting them.
+
+**Margin** is the column worth knowing about. It is what you make on a tire
+over what the supplier charges, and you can sort by it, smallest first, to
+find the tires you are pricing worst. Across six thousand tires that is the
+quickest way to spot a mistake you would never find by looking. One thing to
+expect: right after you change a price, that row's margin marks itself out of
+date until you reload. It would rather say so than show you a number it has
+not been given.
+
+You can change a batch at once too: tick the tires you want, then set a price,
+set shipping, or offer and stop offering them together. Nothing is saved until
+you confirm, and the confirmation tells you how many tires it is about to
+change and shows each one's price now and after — all of them when there are
+only a few, a sample when there are many. Read that before you tap it. It is
+the only thing between a slip and two hundred wrong prices.
 
 ## Product photos
 
