@@ -189,3 +189,48 @@ about the machine running it, not just the code. Before trusting a green
 local run: what would this look like on `ubuntu-latest`, from a worktree,
 from a shallow clone? Those three are now measured; more will surface the
 same way until they are checked instead of assumed.
+
+**A fourth, different in kind -- found by GATE ENGINEER, not a code-vs-CI
+gap at all.** The three above are all "the code behaves differently on CI
+than here": a test is green in one environment and red in another, and the
+code under test is the thing in question. This one has no code under test.
+The instrument itself answers a different question than the one typed, on
+this machine specifically, and answers it cleanly and with a valid exit
+code -- there is nothing to distrust about the output until you already
+know to distrust it.
+
+Git Bash's MSYS layer rewrites a `<rev>:<path>` argument before git ever
+sees it. `git cat-file -e origin/main:.forge/shutdown-drain-check.mjs`
+becomes, from git's point of view, a check against `origin\main;.forge\shutdown-drain-check.mjs`
+-- MSYS reads the colon-joined form as a Windows path list and "corrects"
+it. Reproduced directly on this machine:
+
+```
+$ git cat-file -e origin/main:.forge/shutdown-drain-check.mjs
+fatal: Not a valid object name origin\main;.forge\shutdown-drain-check.mjs
+$ MSYS_NO_PATHCONV=1 git cat-file -e origin/main:.forge/shutdown-drain-check.mjs
+(exits 0)
+```
+
+REPO AGENT LEAD ran the mangled form, read a clean "not found," and nearly
+blocked a real, already-merged file (#409, on `main` since, 268 lines) as
+missing -- twice, because the false answer fit a plausible story ("it's on
+a throwaway branch that never merged") and nothing about the exit looked
+broken. `git show`, `git ls-tree`, and anything else taking the colon form
+are affected the same way.
+
+**Why this is worth separating from the other three:** those are caught by
+running the test somewhere else. This is not caught by running the command
+somewhere else -- it is specific to this shell on this machine, present
+every time, and the only tell is a semicolon in a `fatal:` line that reads,
+at a glance, like any other missing-object error. Proving a test can fail
+is the discipline for the first three; for this one, the discipline is
+knowing the platform-specific failure mode of the tool itself before
+trusting its answer.
+
+**What to do:** prefix every `<rev>:<path>` git command with
+`MSYS_NO_PATHCONV=1` in this shell. When a git answer about whether
+something exists is surprising, cross-check with a form that takes no
+colon at all -- `git ls-tree <rev> <dir> --name-only`, or
+`gh api repos/ei7hty/kmt/contents/<path>?ref=main` -- neither can be
+mangled this way.
