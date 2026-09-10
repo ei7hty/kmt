@@ -317,3 +317,16 @@ export async function deleteTestimonial(id) {
 export async function undoSocialProof() {
   return call('/api/owner/social-proof/undo', { method: 'POST', body: JSON.stringify({}) })
 }
+
+export async function ownerImagePackets() {
+  return call('/api/owner/images')
+}
+
+// `expectedVersion` is the decision version the screen was showing. The server
+// refuses the write if it has moved, so two tabs cannot both act on one packet
+// and the second is told rather than silently winning.
+export async function decideImagePacket(digest, action, expectedVersion) {
+  return call(`/api/owner/images/${encodeURIComponent(digest)}`, {
+    method: 'POST', body: JSON.stringify({ action, expectedVersion }),
+  })
+}
