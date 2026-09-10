@@ -8,6 +8,7 @@ import { sha256Bytes } from './image-assets.mjs'
 import { IMAGE_PILOT_POLICY } from './image-provider-profile.mjs'
 import { runOfflineImageStagingFixtures } from './image-staging-coordinator.mjs'
 import { decoderPython, realImageFixtures } from './fixtures/image-provider/decoder-fixtures.mjs'
+import { findSourceReferences } from './source-references.mjs'
 import {
   assertReviewedHosts, deriveStagingSnapshot, describeRun, importProductImages, parseArguments,
 } from '../scripts/import-product-images.mjs'
@@ -285,21 +286,19 @@ test('nothing the server runs imports the acquisition command', async () => {
   // is exported and does reach the network, so the real guarantee is that no
   // server module pulls it in. That is a fact about the rest of the tree, so it
   // is checked here rather than asserted in a comment nobody re-reads.
-  const { readdir, readFile } = await import('node:fs/promises')
-  const { dirname, join } = await import('node:path')
+  //
+  // Uses the shared, recursive scan (backend/source-references.mjs) rather
+  // than a hardcoded directory list -- this test's own former list
+  // (['backend', 'src', 'src/owner', 'src/components']) was the precedent
+  // the OWNER AGENT measured as holed: silently blind to
+  // backend/fixtures/image-provider, src/data, and src/routes (every page
+  // the app renders) the entire time. A scratch file dropped into
+  // src/routes/ referencing this needle was invisible to the old version of
+  // this test; it is not to this one.
+  const { dirname } = await import('node:path')
   const { fileURLToPath } = await import('node:url')
   const root = dirname(dirname(fileURLToPath(import.meta.url)))
-
-  const offenders = []
-  for (const directory of ['backend', 'src', 'src/owner', 'src/components']) {
-    let entries
-    try { entries = await readdir(join(root, directory)) } catch { continue }
-    for (const entry of entries) {
-      if (!/\.(mjs|js|jsx)$/.test(entry) || entry.includes('.test.')) continue
-      const source = await readFile(join(root, directory, entry), 'utf8')
-      if (source.includes('import-product-images')) offenders.push(`${directory}/${entry}`)
-    }
-  }
+  const offenders = await findSourceReferences(root, 'import-product-images')
   assert.deepEqual(offenders, [], 'a server-side import of the acquisition command would put the fetch on the server')
 })
 

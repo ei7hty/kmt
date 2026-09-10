@@ -154,6 +154,60 @@ export const PROVIDER_MODE = {
   },
 }
 
+/**
+ * A DISTINCT export, not a parameter on `runApprovedImageStaging` or
+ * `PROVIDER_MODE` -- deliberately. `runApprovedImageStaging`'s signature does
+ * not change by one character here, so every existing production caller keeps
+ * exactly the function it has today, and cannot be handed hooks by some future
+ * refactor that looks harmless. A separate, deliberately ugly name is
+ * greppable and assertable; an optional parameter on the main export is a
+ * thing that slips in quietly.
+ *
+ * WHAT THIS ACTUALLY ADDS, SAID OUT LOUD: a DNS-rebinding-shaped affordance.
+ * `lookupImpl` is told whatever address the caller wants `assertSafeResolvedAddress`
+ * (backend/image-assets.mjs) to see, while `requestImpl` is free to route the
+ * real socket somewhere else entirely -- structurally identical to what an
+ * attacker does with DNS rebinding. This is shipped anyway because the
+ * capability is INERT unless a caller supplies both hooks explicitly, no
+ * server-reachable code ever does (proven by the boundary test in
+ * backend/image-staging-coordinator.test.mjs, not asserted in a comment), and
+ * the alternative -- proving the pipeline end to end by patching the safety
+ * check itself, or by reimplementing its wiring in a parallel test harness
+ * that could silently drift from the real thing -- is worse: one proves the
+ * opposite of what it claims, the other is an instrument that can stop
+ * meaning anything and never go red.
+ *
+ * The safety check itself is NEVER bypassed here, and this must never be the
+ * change that makes it so: `assertSafeResolvedAddress` still fires on every
+ * hop, through the exact same `onConnect` path `requestOnce` (scripts/image-
+ * provider.mjs) already wires for the real mode -- it is satisfied honestly
+ * by whatever `lookupImpl` reports, never skipped. If `lookupImpl` ever
+ * reports a private/loopback/TEST-NET address, the run refuses exactly like
+ * a real one would; a dedicated test proves this on the seam itself, not by
+ * inspection.
+ */
+export async function runImageStagingWithInjectedTransport(input, { requestImpl, lookupImpl } = {}) {
+  if (typeof requestImpl !== 'function' || typeof lookupImpl !== 'function') {
+    throw new TypeError('runImageStagingWithInjectedTransport requires both requestImpl and lookupImpl')
+  }
+  const mode = {
+    label: 'Provider (injected transport)',
+    delayMs: plan => plan.profile.policy.delayMs,
+    failureMessage: 'Image candidate refused',
+    prepare(preparedInput, plan) {
+      if (preparedInput.fixtures !== undefined) throw refused()
+      const transport = createHttpsImageTransport({
+        maxRedirects: plan.profile.policy.maxRedirects,
+        timeoutMs: plan.profile.policy.timeoutMs,
+        requestImpl,
+        lookupImpl,
+      })
+      return ({ advance, append }) => provenanceTransport(transport, { advance, append })
+    },
+  }
+  return runThroughMode(input, mode)
+}
+
 // The byte-fixture transport: the same request/redirect/response shape the real
 // provider transport produces, served from a Map the caller supplied. It emits
 // the provenance events by hand because it IS the transport layer here.
