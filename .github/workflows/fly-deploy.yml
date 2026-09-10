@@ -149,6 +149,38 @@ jobs:
       - run: npx eslint .
       - run: npm run build
 
+      # A real SIGTERM drains in-flight mail (#285). Placed after the build
+      # because server.mjs will not start without dist/; it starts its own server
+      # on its own port with its own temp database, so no AUDIT_BASE and none of
+      # the shared-port class. Proven to FIRE, not just to pass: on a throwaway
+      # branch with `await drainMail(mailer)` removed it went red (baseline 0 /
+      # fault 1 / revert 0, run 34441965958). The point of its shape: with the
+      # drain gone the process STILL exited in 110ms and STILL inside Fly's 5000ms
+      # kill_timeout -- every timing assertion passed. Only the outbox assertion
+      # (`sent` carrying a provider_id, which only a provider supplies) caught the
+      # stranded mail. This checks that shutdown DID ITS JOB, not that it ran. It
+      # cannot run on the Windows box this project is developed on, so CI is the
+      # only place it has ever executed.
+      #
+      # exit 2 is handled FIRST and separately from exit 1 on purpose: 1 means the
+      # drain is broken, act now; 2 means the platform gate fired and the check has
+      # been reporting nothing while looking green -- a different emergency, and the
+      # one nobody would otherwise notice. Do not collapse them into a generic red.
+      - name: A real SIGTERM drains in-flight mail
+        run: |
+          set +e
+          node .forge/shutdown-drain-check.mjs
+          code=$?
+          set -e
+          if [ "$code" -eq 2 ]; then
+            echo "::error::UNDETERMINED on Linux. The platform gate fired where it never should -- this check has been reporting nothing while looking green. A finding about the check, not the drain."
+            exit 1
+          fi
+          if [ "$code" -ne 0 ]; then
+            echo "::error::A real SIGTERM did not drain in-flight mail (exit $code). Mail may be delivered and unrecorded -- see the FAIL lines above for the outbox rows."
+            exit 1
+          fi
+
       # The built bundle is public. Supplier data is not supposed to be in it.
       #
       # This ran red for real: the snapshot was imported straight into
