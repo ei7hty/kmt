@@ -22,7 +22,14 @@ export function createImageRunProvenance(db, { runId, profileDigest, snapshotDig
   const append = (type, fields = {}) => {
     if (!TYPES.has(type)) throw failure()
     // No raw Error objects, storage locators or local filesystem paths accepted.
-    const allowed = new Set(['candidateId', 'supplierId', 'supplierSku', 'revision', 'sourceUrl', 'originalUrl', 'finalUrl', 'redirectUrl', 'address', 'status', 'sha256', 'format', 'width', 'height', 'bytes', 'outcome', 'policy', 'selected', 'decoder', 'isolation', 'validation'])
+    // `sourceSnapshotDigest` records that the staged snapshot was DERIVED from
+    // another one, and from which. Every payload already carries
+    // `snapshotDigest` -- the bytes that were actually verified and fetched
+    // under -- but a packet's own snapshot is version 2 and staging takes
+    // version 1, so those are different digests for the same acquisition. With
+    // only the staged digest recorded, an auditor holding the packet has to
+    // infer the middle step, and inference is what this log exists to remove.
+    const allowed = new Set(['candidateId', 'supplierId', 'supplierSku', 'revision', 'sourceUrl', 'originalUrl', 'finalUrl', 'redirectUrl', 'address', 'status', 'sha256', 'format', 'width', 'height', 'bytes', 'outcome', 'policy', 'selected', 'decoder', 'isolation', 'validation', 'sourceSnapshotDigest'])
     if (!fields || Object.keys(fields).some(key => !allowed.has(key))) throw failure()
     const payload = JSON.stringify({ at: new Date().toISOString(), profileDigest, snapshotDigest, ...fields })
     if (Buffer.byteLength(payload) > 32768) throw failure()
