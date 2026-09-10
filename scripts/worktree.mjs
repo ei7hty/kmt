@@ -12,9 +12,20 @@
  * without --force, which refuses if anything in the tree would be lost.
  *
  *   node scripts/worktree.mjs add <name> [--branch <branch>] [--from origin/main]
- *   node scripts/worktree.mjs remove <name>
+ *   node scripts/worktree.mjs remove <name> [--compare-ref origin/main]
+ *   node scripts/worktree.mjs remove <path> [--compare-ref origin/main]
  *   node scripts/worktree.mjs link <name>
  *   node scripts/worktree.mjs list
+ *
+ * `remove` also takes a full or relative path, not only a `.worktrees/<name>`,
+ * so cleanup can reach a worktree registered anywhere on disk -- most of the
+ * ones this was built to clear live outside `.worktrees/` entirely (under
+ * `~/.codex/worktrees/...` and elsewhere). Additive only: a bare name (no
+ * path separator) still resolves exactly as before. Whichever form is given,
+ * the target must already be a worktree `git worktree list` reports for THIS
+ * repository -- checked against this file's own git-common-dir, so a path
+ * belonging to some other repository on the machine is refused outright,
+ * before anything is touched.
  */
 
 import { execFileSync } from 'node:child_process'
@@ -30,9 +41,10 @@ import { fileURLToPath } from 'node:url'
  * link them to a link. Git's common directory is the main checkout's .git
  * whichever tree asks, and the shared install sits beside it.
  */
-const ROOT = path.dirname(path.resolve(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+const OUR_COMMON_DIR = path.resolve(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
   cwd: path.dirname(fileURLToPath(import.meta.url)), encoding: 'utf8',
-}).trim()))
+}).trim())
+const ROOT = path.dirname(OUR_COMMON_DIR)
 const TREES = path.join(ROOT, '.worktrees')
 const SHARED = path.join(ROOT, 'node_modules')
 
@@ -42,17 +54,26 @@ the safe order.
 
 Usage:
   node scripts/worktree.mjs add <name> [--branch <branch>] [--from <ref>]
-  node scripts/worktree.mjs remove <name>
+  node scripts/worktree.mjs remove <name> [--compare-ref <ref>]
+  node scripts/worktree.mjs remove <path> [--compare-ref <ref>]
   node scripts/worktree.mjs link <name>
   node scripts/worktree.mjs list
 
 add      Fetches origin, creates .worktrees/<name> on a new branch (default:
          the same name) from <ref> (default: origin/main), and links the main
          checkout's node_modules into it.
-remove   Refuses if the tree has uncommitted changes to tracked files. Otherwise
-         unlinks node_modules first, then runs \`git worktree remove\` without
-         --force, so git still refuses if untracked files would be lost. The
-         local branch is deleted only if its tip is already in origin/main.
+remove   Takes a bare name (resolved under .worktrees/, as before) or a full
+         or relative path anywhere on disk. Either way the target must be a
+         worktree this repository's own git already knows about -- refused
+         otherwise, before anything is touched, whether that is because the
+         path belongs to a different repository or because it is not a
+         worktree at all. Refuses a dirty tree, including untracked files --
+         checked explicitly, not left to git's own (also real) refusal alone,
+         so the reason is named up front rather than surfacing as a bare git
+         error. Otherwise unlinks node_modules first, then runs
+         \`git worktree remove\` without --force, so git still has the final
+         say. The local branch is deleted only if its tip is already in
+         --compare-ref (default: origin/main).
 link     Recreates the node_modules link in an existing worktree, for a tree
          made by hand or one whose link was removed.
 list     The registered worktrees.
@@ -69,13 +90,14 @@ function fail(message) {
 }
 
 function parseArgs(argv) {
-  const options = { command: argv[0], name: '', branch: '', from: 'origin/main', help: false }
+  const options = { command: argv[0], name: '', branch: '', from: 'origin/main', compareRef: 'origin/main', help: false }
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i]
     const value = () => { if (i + 1 >= argv.length) fail(`${arg} needs a value`); return argv[++i] }
     if (arg === '--help' || arg === '-h') options.help = true
     else if (arg === '--branch') options.branch = value()
     else if (arg === '--from') options.from = value()
+    else if (arg === '--compare-ref') options.compareRef = value()
     else if (arg.startsWith('-')) fail(`Unknown option: ${arg}`)
     else if (!options.name) options.name = arg
     else fail(`Unexpected argument: ${arg}`)
@@ -91,6 +113,34 @@ function treePath(name) {
   return path.join(TREES, name)
 }
 
+/**
+ * What `remove` was actually pointed at: the existing `.worktrees/<name>`
+ * form for a bare name (unchanged), or a full/relative path for anything
+ * containing a path separator -- names never contain one, so the two forms
+ * cannot be confused with each other.
+ */
+function removeTarget(input) {
+  if (!input) fail('Give a worktree name or path. See --help.')
+  if (/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(input)) return treePath(input)
+  return path.resolve(process.cwd(), input)
+}
+
+/**
+ * The git-common-dir a directory's own worktree belongs to, or `null` if it
+ * is not inside a git worktree at all (missing path, not a repo, a plain
+ * directory). Never throws -- a target that fails this check is reported by
+ * `remove`'s own guard, not by an uncaught exception from here.
+ */
+function commonDirOf(dir) {
+  try {
+    return path.resolve(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim())
+  } catch {
+    return null
+  }
+}
+
 /** What git knows about, keyed by absolute path with forward slashes. */
 function registered() {
   const trees = new Map()
@@ -103,6 +153,12 @@ function registered() {
 }
 
 const isLink = (p) => existsSync(p) && lstatSync(p).isSymbolicLink()
+
+/** Relative to the main checkout when the path is under it, absolute otherwise -- the same rule `list` already uses. */
+const displayPath = (p) => {
+  const resolved = path.resolve(p)
+  return resolved === path.resolve(ROOT) || resolved.startsWith(path.resolve(ROOT) + path.sep) ? path.relative(ROOT, resolved) : resolved
+}
 
 function link(tree) {
   const target = path.join(tree, 'node_modules')
@@ -130,38 +186,121 @@ function unlink(tree) {
   const target = path.join(tree, 'node_modules')
   if (!isLink(target)) return false
   const resolved = path.resolve(tree, readlinkSync(target))
-  if (path.resolve(resolved) !== path.resolve(SHARED)) fail(`${path.relative(ROOT, target)} links to ${resolved}, not the shared install. Not touching it.`)
+  if (path.resolve(resolved) !== path.resolve(SHARED)) fail(`${displayPath(target)} links to ${resolved}, not the shared install. Not touching it.`)
   if (process.platform === 'win32') rmdirSync(target)
   else unlinkSync(target)
-  console.log(`Unlinked ${path.relative(ROOT, target)}; the shared install is untouched.`)
+  console.log(`Unlinked ${displayPath(target)}; the shared install is untouched.`)
   return true
 }
 
+const branchExists = (name) => { try { git(['rev-parse', '--verify', '--quiet', name]); return true } catch { return false } }
+
+/**
+ * `git worktree add <tree> -b <branch> <ref>`'s two effects -- creating the
+ * branch and attaching the worktree -- are not atomic with each other, and
+ * this failed here once in exactly the shape that matters: the branch got
+ * created, attaching the worktree did not, and the command threw an
+ * uncaught exception that printed as a bare Node.js stack ending in the
+ * runtime's own version banner -- no message, no clean exit code a caller
+ * chaining commands could key on. The caller's very next command then ran
+ * in whatever directory it already was, which on this machine is the
+ * shared main checkout by default -- the one directory every session's
+ * uncommitted work can be sitting in at once. A worktree tool whose
+ * failure mode is "silently keep operating on the shared checkout instead"
+ * is the most dangerous shape available here, worse than refusing loudly.
+ *
+ * Guarded two ways now. Before attempting anything: a branch of this name
+ * already existing with no worktree attached is exactly the state a
+ * previous failed `add` leaves behind, and retrying blindly into it used
+ * to fail a second, more confusing way ("a branch named ... already
+ * exists") instead of naming the actual situation. And the `git worktree
+ * add` call itself is no longer unguarded: on failure this prints the
+ * real git error, cleans up the branch if one was created along the way
+ * (so a retry starts clean rather than compounding), and exits with a
+ * message a caller can act on -- never an uncaught exception.
+ */
 function add({ name, branch, from }) {
   const tree = treePath(name)
-  if (existsSync(tree)) fail(`${path.relative(ROOT, tree)} already exists.`)
+  if (existsSync(tree)) fail(`${displayPath(tree)} already exists.`)
   branch = branch || name
-  git(['fetch', '--quiet', 'origin'])
-  console.log(git(['worktree', 'add', tree, '-b', branch, from]).split('\n').pop())
+
+  if (branchExists(branch)) {
+    fail(`Branch ${branch} already exists with no worktree at ${displayPath(tree)} -- most likely left behind by ` +
+      `a previous \`add\` that failed partway. Delete it first if it is not wanted (\`git branch -D ${branch}\`), ` +
+      'or choose a different name.')
+  }
+
+  let output
+  try {
+    git(['fetch', '--quiet', 'origin'])
+    output = git(['worktree', 'add', tree, '-b', branch, from])
+  } catch (error) {
+    console.error(String(error.stderr || error.message).trim())
+    if (branchExists(branch)) { git(['branch', '-D', branch]); console.error(`\nCleaned up branch ${branch}, which the failed attempt created; a retry starts clean.`) }
+    console.error(`\n\`git worktree add\` failed; nothing was created at ${displayPath(tree)}.`)
+    process.exit(1)
+  }
+  console.log(output.split('\n').pop())
   link(tree)
-  console.log(`\n${path.relative(ROOT, tree)} is on ${branch} from ${from}. Claim it in .forge/CLAIMS.md before you start.`)
+  console.log(`\n${displayPath(tree)} is on ${branch} from ${from}. Claim it in .forge/CLAIMS.md before you start.`)
 }
 
-function remove({ name }) {
-  const tree = treePath(name)
-  const known = registered().get(path.resolve(tree))
-  if (!known) fail(`${path.relative(ROOT, tree)} is not a registered worktree. See \`node scripts/worktree.mjs list\`.`)
+/**
+ * `compareRef` decides whether a removed branch's work has landed -- default
+ * `origin/main`, matching what "landed" means for real usage. Was hardcoded
+ * until this function's own tests, which spawn the real CLI to observe real
+ * disk effects (deliberately, per this file's other tests), turned out to
+ * need `origin/main` resolvable purely to pass a ref through -- and CI's
+ * "Tests, lint, build and audits" job checks out shallow and single-ref,
+ * where `origin/main` genuinely does not exist. The fix is not a deeper
+ * checkout (that satisfies the test at the cost of slowing every CI run
+ * forever, and leaves the assumption in place for the next caller); it is
+ * this function no longer assuming the ref exists at all -- the same shape
+ * as `defaultDecoderPython` no longer assuming `process.cwd()` was the repo
+ * root. A test can now pass a ref it created itself (`HEAD`, or a fixed
+ * fixture commit) and exercise the real merge logic without needing
+ * anything about the surrounding checkout to be true first.
+ */
+function remove({ name, compareRef = 'origin/main' }) {
+  const tree = removeTarget(name)
   if (path.resolve(tree) === path.resolve(ROOT)) fail('That is the main checkout.')
 
-  // Tracked changes are the work someone has not committed; refuse before
-  // touching anything. Untracked files are left to git, which refuses too
-  // without --force -- and --force is exactly what this script exists to avoid.
-  const dirty = git(['status', '--porcelain', '--untracked-files=no'], tree)
-  if (dirty) fail(`${path.relative(ROOT, tree)} has uncommitted changes to tracked files:\n${dirty}\nCommit or discard them first.`)
+  // A more specific refusal than "not registered" below, checked first: a
+  // path that resolves inside SOME git worktree, just not this repository's,
+  // is a different mistake (a typo landing in an unrelated checkout on the
+  // same machine) from a path that is not a worktree at all, and the message
+  // should say which. `commonDirOf` never throws, so a target that does not
+  // exist or is not a git repo at all simply falls through to the registered
+  // check next, unaffected.
+  const commonDir = commonDirOf(tree)
+  if (commonDir && commonDir !== OUR_COMMON_DIR) {
+    fail(`${displayPath(tree)} belongs to a different repository (git-common-dir ${commonDir}, not ${OUR_COMMON_DIR}). Refusing.`)
+  }
+
+  const known = registered().get(path.resolve(tree))
+  if (!known) fail(`${displayPath(tree)} is not a registered worktree of this repository. See \`node scripts/worktree.mjs list\`.`)
+
+  // Tracked AND untracked changes are refused explicitly, before touching
+  // anything -- untracked is exactly where unfinished work lives and it is
+  // invisible to a tracked-only check.
+  //
+  // This is NOT "a clearer message in front of git's own refusal" -- it is
+  // load-bearing on its own, because it runs BEFORE `unlink` below and git's
+  // refusal does not happen until after. Proved by deleting this check and
+  // rerunning the suite: with only git's own `git worktree remove` refusal
+  // left, `unlink` had already torn the node_modules link out by the time git
+  // refused on the untracked file -- a broken worktree (no dependencies,
+  // still dirty, still on disk) that git then declines to finish cleaning up,
+  // which is worse than either "removed" or "untouched". Two checks that
+  // both refuse the same case look redundant; they are not -- one of them is
+  // the only thing standing between a dirty tree and that halfway state. If
+  // this comment is ever separated from the check, say so again there.
+  const dirty = git(['status', '--porcelain'], tree)
+  if (dirty) fail(`${displayPath(tree)} has uncommitted changes, including possibly untracked files:\n${dirty}\nCommit or discard them first.`)
 
   const tip = known.branch ? git(['rev-parse', known.branch]) : ''
   const unpushed = known.branch && tip
-    ? git(['log', '--oneline', `origin/main..${known.branch}`]).split('\n').filter(Boolean)
+    ? git(['log', '--oneline', `${compareRef}..${known.branch}`]).split('\n').filter(Boolean)
     : []
 
   unlink(tree)
@@ -172,16 +311,16 @@ function remove({ name }) {
     console.error(`\ngit refused, so nothing was deleted. The node_modules link is gone; put it back with\n  node scripts/worktree.mjs link ${name}\nif you want to keep working there.`)
     process.exit(1)
   }
-  console.log(`Removed ${path.relative(ROOT, tree)}.`)
+  console.log(`Removed ${displayPath(tree)}.`)
 
   if (!known.branch) return
   let merged
-  try { git(['merge-base', '--is-ancestor', tip, 'origin/main']); merged = true } catch { merged = false }
+  try { git(['merge-base', '--is-ancestor', tip, compareRef]); merged = true } catch { merged = false }
   if (merged) {
     git(['branch', '-D', known.branch])
-    console.log(`Deleted local branch ${known.branch}; its tip ${tip.slice(0, 7)} is in origin/main.`)
+    console.log(`Deleted local branch ${known.branch}; its tip ${tip.slice(0, 7)} is in ${compareRef}.`)
   } else {
-    console.log(`Kept local branch ${known.branch}: ${unpushed.length} commit(s) on it are not in origin/main.` +
+    console.log(`Kept local branch ${known.branch}: ${unpushed.length} commit(s) on it are not in ${compareRef}.` +
       (unpushed.length ? `\n  ${unpushed.slice(0, 5).join('\n  ')}` : ''))
   }
 }
@@ -194,10 +333,19 @@ function list() {
   }
 }
 
-const options = parseArgs(process.argv.slice(2))
-if (options.help || !options.command) { console.log(HELP); process.exit(options.command ? 0 : 1) }
-if (options.command === 'add') add(options)
-else if (options.command === 'remove') remove(options)
-else if (options.command === 'link') link(treePath(options.name))
-else if (options.command === 'list') list()
-else fail(`Unknown command: ${options.command}. See --help.`)
+// Guarded so backend/worktree.test.mjs can import removeTarget/commonDirOf
+// for direct checks without the CLI running on import -- the four proofs
+// the rest of the suite demands (a real removal, a real refusal, a real
+// junction surviving) still spawn this file as a subprocess, which is the
+// only way to observe what it actually does to a real worktree on disk.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const options = parseArgs(process.argv.slice(2))
+  if (options.help || !options.command) { console.log(HELP); process.exit(options.command ? 0 : 1) }
+  if (options.command === 'add') add(options)
+  else if (options.command === 'remove') remove(options)
+  else if (options.command === 'link') link(treePath(options.name))
+  else if (options.command === 'list') list()
+  else fail(`Unknown command: ${options.command}. See --help.`)
+}
+
+export { removeTarget, commonDirOf, OUR_COMMON_DIR, TREES, ROOT }
