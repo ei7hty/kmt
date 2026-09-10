@@ -575,9 +575,32 @@ async function main() {
 
     // 6. The owner screen asks for the password rather than showing anything.
     await page.goto(`${BASE}/owner`, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.oi-signin, .oi-results', { timeout: 20000 }).catch(() => {});
-    check(await page.locator('.oi-signin').count() > 0,
-      '/owner shows the sign-in form to a visitor with no session');
+    // The wait's outcome is evidence, not noise.
+    //
+    // This swallowed its timeout and reported nothing, so a gate that is
+    // MISSING, a gate that was SLOW, and an app that never MOUNTED all produced
+    // the same bare FAIL. Two consecutive main deploys failed here at 68 of 69
+    // while production was independently verified healthy by three sessions,
+    // and the silence cost each of them an investigation and produced two wrong
+    // mechanisms. An instrument that will not say what it saw leaves a vacuum
+    // that a plausible false explanation fills.
+    //
+    // The detail below separates the states rather than describing one:
+    //   TIMED OUT                       -> slow, or not up yet; not a missing gate
+    //   resolved, #root 0               -> the app never mounted
+    //   resolved, .oi-results but no    -> the AUTHENTICATED screen rendered to a
+    //     .oi-signin                       visitor with no session: a real and
+    //                                      serious defect, not timing
+    //   resolved, neither present       -> the gate is genuinely absent
+    let waited = 'resolved';
+    await page.waitForSelector('.oi-signin, .oi-results', { timeout: 20000 })
+      .catch(() => { waited = 'TIMED OUT after 20s'; });
+    const signin = await page.locator('.oi-signin').count();
+    const results = await page.locator('.oi-results').count();
+    const mounted = await page.locator('#root').count();
+    check(signin > 0,
+      '/owner shows the sign-in form to a visitor with no session',
+      `wait ${waited}; .oi-signin ${signin}, .oi-results ${results}, #root ${mounted}`);
 
     // 7. A supplier-backed size lands on real tires. A size absent from the
     //    authoritative live catalog lands on the honest shortage state and
