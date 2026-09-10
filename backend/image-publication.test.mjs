@@ -335,3 +335,52 @@ test('a six-photo packet previews its sixth photo: the packet bounds the ordinal
   assert.equal((await asset(6)).status, 404)
   assert.deepEqual(images.readOwnerAsset(imported.digest, 5).bytes, fixtures.jpeg)
 })
+
+// --- eligibility: the same refusal decide() throws, named ahead of the click ---
+//
+// The defect this exists for: the owner screen offered Approve on every
+// imported packet regardless of whether decide() would actually accept it, so
+// pressing it was the only way to learn a packet was blocked. These mirror
+// decide()'s own checks (see `approvalIssues`) rather than re-deriving them,
+// so a preview that disagrees with the enforcement is not a risk this file
+// can silently grow.
+
+test('a clean imported packet is eligible to approve, with no issues to explain', async t => {
+  const { images, packet } = await setup(t)
+  const digest = (await images.ingest(packet.input, packet.files)).digest
+  const reviewed = images.review(digest)
+  assert.equal(reviewed.eligibility.approve, true)
+  assert.deepEqual(reviewed.eligibility.issues, [])
+})
+
+test('a delisted supplier blocks approval and names which one, before decide() is ever called', async t => {
+  const { images, inventory, packet } = await setup(t)
+  const digest = (await images.ingest(packet.input, packet.files)).digest
+  inventory.db.prepare('UPDATE supplier SET active=0 WHERE id=?').run('giga-fixture-4')
+  const reviewed = images.review(digest)
+  assert.equal(reviewed.eligibility.approve, false)
+  assert.ok(reviewed.eligibility.issues.some(issue => issue.includes('giga-fixture-4')), 'names the blocked row')
+  // The preview and the enforcement must actually agree.
+  assert.throws(() => approve(images, digest))
+})
+
+test('a supplier tire that changed since import blocks approval', async t => {
+  const { images, inventory, packet } = await setup(t)
+  const digest = (await images.ingest(packet.input, packet.files)).digest
+  const row = inventory.db.prepare('SELECT payload FROM supplier WHERE id=?').get('giga-fixture-2')
+  const tire = JSON.parse(row.payload)
+  inventory.db.prepare('UPDATE supplier SET payload=? WHERE id=?').run(JSON.stringify({ ...tire, price: tire.price + 5 }), 'giga-fixture-2')
+  const reviewed = images.review(digest)
+  assert.equal(reviewed.eligibility.approve, false)
+  assert.ok(reviewed.eligibility.issues.some(issue => issue.startsWith('giga-fixture-2:')))
+})
+
+test('once approved, eligibility offers revoke and stops explaining approval', async t => {
+  const { images, packet } = await setup(t)
+  const digest = (await images.ingest(packet.input, packet.files)).digest
+  approve(images, digest)
+  const reviewed = images.review(digest)
+  assert.equal(reviewed.eligibility.approve, false)
+  assert.equal(reviewed.eligibility.revoke, true)
+  assert.deepEqual(reviewed.eligibility.issues, [], 'a state with no Approve button has nothing to justify')
+})

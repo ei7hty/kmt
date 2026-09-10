@@ -83,6 +83,41 @@ export class ImagePublication {
     this.python = python
   }
 
+  // What `decide('approved', ...)` would refuse on, named rather than thrown.
+  // Kept as a literal mirror of the checks inside `decide` below -- computing
+  // this a different way would let the preview and the enforcement drift, and
+  // a preview the enforcement disagrees with is worse than no preview.
+  approvalIssues(digest, parsed) {
+    const records = this.db.prepare('SELECT * FROM image_packet_assets WHERE packet=? ORDER BY ordinal').all(digest)
+    if (!records.length) return ['No imported photos to approve.']
+    // The standalone import script passes a deliberately minimal inventory
+    // stub with no `catalog()` -- by design, so importing can never touch
+    // supplier/offer rows (see scripts/import-images.mjs). That path never
+    // renders `eligibility` to anyone; skip the one check that needs it
+    // rather than make every operator import require a real Inventory.
+    const eligible = typeof this.inventory.catalog === 'function'
+      ? new Set(this.inventory.catalog().map(row => row.id)) : null
+    const issues = []
+    for (const row of records) {
+      if (eligible && !eligible.has(row.supplier_id)) { issues.push(`${row.supplier_id}: not currently eligible for the customer catalog`); continue }
+      const source = this.db.prepare('SELECT payload, active FROM supplier WHERE id=?').get(row.supplier_id)
+      if (!source?.active) { issues.push(`${row.supplier_id}: no longer listed`); continue }
+      let tire
+      try { tire = JSON.parse(source.payload) } catch { issues.push(`${row.supplier_id}: supplier data unreadable`); continue }
+      if (supplierImageRevision(tire) !== row.source_hash) { issues.push(`${row.supplier_id}: supplier tire changed since this packet was imported`); continue }
+      let metadata
+      try { metadata = JSON.parse(row.metadata) } catch { issues.push(`${row.supplier_id}: imported asset metadata is unreadable`); continue }
+      const expected = parsed.assets[row.ordinal], candidate = parsed.candidates[row.ordinal]
+      if (expected?.supplierId !== row.supplier_id || candidate?.revision !== row.source_hash ||
+          metadata.sha256 !== expected.sha256 || metadata.format !== expected.format) {
+        issues.push(`${row.supplier_id}: packet asset no longer matches its candidate`); continue
+      }
+      try { this.storage.read({ ...metadata, byteLength: metadata.bytes }) }
+      catch { issues.push(`${row.supplier_id}: local image file is missing or corrupt`) }
+    }
+    return issues
+  }
+
   review(digest) {
     if (!IMAGE_DIGEST.test(digest)) throw failure(404)
     const packet = this.db.prepare('SELECT * FROM image_packets WHERE digest=?').get(digest)
@@ -90,8 +125,18 @@ export class ImagePublication {
     // Rehash the stored raw documents on every review/approval.
     const parsed = parseImagePacket({ manifestBytes: packet.manifest, profileBytes: packet.profile, snapshotBytes: packet.snapshot, expectedManifestDigest: digest })
     const decision = this.db.prepare('SELECT version, action, actor, at FROM image_decisions WHERE packet=? ORDER BY version DESC LIMIT 1').get(digest)
+    // Only the state that could actually approve pays for checking it: an
+    // approved or revoked packet has no Approve button, so there is nothing
+    // for the issue list to explain.
+    const issues = decision?.action === 'imported' ? this.approvalIssues(digest, parsed) : []
     return { digest, profileDigest: parsed.profile.digest, snapshotDigest: parsed.snapshot.digest,
-      candidates: parsed.candidates, assets: parsed.assets, ...decision }
+      candidates: parsed.candidates, assets: parsed.assets,
+      eligibility: {
+        approve: decision?.action === 'imported' && issues.length === 0,
+        revoke: decision?.action === 'approved',
+        issues,
+      },
+      ...decision }
   }
 
   list() {
