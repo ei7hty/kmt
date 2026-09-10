@@ -11,10 +11,12 @@ Fill in before handing this over: **[maintainer's name and number]** and
 
 ## Where requests arrive
 
-Open **kensmobiletire.com/owner/quotes** on your phone and sign in with the
-owner password. Nothing emails or texts you yet, so the page is the only
-place a new request shows up; check it between jobs. Sign out when you are
-done if the phone is ever out of your hands.
+Open **kensmobiletire.com/owner/quotes** on your phone and tap **Sign in with
+Google**. Use the same Google account as your business email — that is the
+only account the site lets in. There is no separate password to remember.
+Nothing emails or texts you yet, so the page is the only place a new request
+shows up; check it between jobs. Sign out when you are done if the phone is
+ever out of your hands.
 
 Five tabs, each with a count:
 
@@ -143,11 +145,18 @@ phone makes it worse. Customers can still call the shop; take the request
 the old way and enter nothing later — the site has no way to add a request
 by hand.
 
+**If the site is up but Google will not let you in**, that is a different
+problem and there is a written way back: **[owner-recovery.md](owner-recovery.md)**.
+Customers are unaffected while it happens — their requests keep arriving and
+are waiting for you when you get back in.
+
 ## Do not
 
-- **Share the owner password**, or type it anywhere but the site's own
-  sign-in. There is one password and one owner. Nobody who builds or runs
-  the site will ever ask you for it.
+- **Give anyone a Google code or password.** Your Google account is now the
+  only way into the site, so it is the thing worth protecting. Nobody who
+  builds or runs the site will ever ask you for a Google password, or for a
+  code Google texts you. Anyone who does is trying to rob you, however
+  convincing the reason sounds and whoever they say they are.
 - **Approve a quote whose stock line you have not read.** The one thing the
   site cannot do is know whether the tires exist this morning.
 - **Run a supplier refresh from your phone** on the Inventory screen. It
