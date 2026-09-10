@@ -100,9 +100,17 @@ jobs:
         run: |
           node --test .forge/release-check.test.mjs
           node .forge/release-check.mjs
-      # Every backend test file, not one named file: a new suite that CI does not
-      # run is a suite that passes locally and guards nothing.
-      - run: node --test backend/*.test.mjs
+      # Every backend AND src test file, not one named file: a new suite that CI
+      # does not run is a suite that passes locally and guards nothing -- src/
+      # was exactly that until this line ran it (a 507-line grid suite and
+      # src/catalog-image.test.mjs were invisible to the gate). src tests are
+      # pure node:test logic tests -- there is no jsdom or JSX test runner in
+      # the tree -- so this runs logic coverage only; it does NOT make component
+      # tests runnable, and a widened glob must not be read as component
+      # coverage. globstar so src/**/*.test.mjs reaches nested files (src/owner/).
+      - run: |
+          shopt -s globstar
+          node --test backend/*.test.mjs src/**/*.test.mjs
       # The whole tree, not just src and backend: scripts/ and .forge/ are .mjs
       # too, and the audits under .forge/ are the files that decide whether
       # everything else is correct. An undefined name in one of them should fail
