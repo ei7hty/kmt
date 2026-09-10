@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { compileImageProviderProfile, assertApprovedImagePlan, IMAGE_EXECUTION_ENABLED, IMAGE_PILOT_POLICY } from './image-provider-profile.mjs'
+import * as profileModule from './image-provider-profile.mjs'
+import { compileImageProviderProfile, IMAGE_PILOT_POLICY } from './image-provider-profile.mjs'
 
 const profile = () => ({ version: 1, providerId: 'synthetic-fixture', allowedHosts: ['cdn.example.test'], policy: structuredClone(IMAGE_PILOT_POLICY) })
 test('profile copies, canonicalizes and deeply freezes exact pilot policy', () => {
@@ -23,10 +24,23 @@ test('profile refuses relaxed limits and injected approval fields', () => {
   }
   assert.throws(() => compileImageProviderProfile({ ...profile(), approved: true }))
 })
-test('no caller, environment switch or matching digest grants PM approval', () => {
-  const compiled = compileImageProviderProfile(profile())
-  assert.equal(IMAGE_EXECUTION_ENABLED, false)
+// This test used to assert `IMAGE_EXECUTION_ENABLED === false` and that no
+// caller could satisfy the PROJECT MANAGER approval registry. Both are gone on
+// the owner's ruling that approval lives in the owner screen, so what is left to
+// hold is the part that was never about approval: this module compiles a policy
+// and nothing in the environment can widen it. The approve/revoke gate that a
+// customer actually depends on is `image-publication.mjs`, tested there.
+test('the profile module carries no execution switch, and no environment relaxes the politeness budget', () => {
+  assert.deepEqual(Object.keys(profileModule).sort(), ['IMAGE_PILOT_POLICY', 'compileImageProviderProfile'])
   process.env.KMT_IMAGE_EXECUTE = 'true'
-  try { assert.throws(() => assertApprovedImagePlan({ ...compiled, approved: true }, 'a'.repeat(64), ['1', '2', '3', '4', '5']), /PROJECT MANAGER/) }
-  finally { delete process.env.KMT_IMAGE_EXECUTE }
+  process.env.KMT_IMAGE_DELAY_MS = '0'
+  process.env.KMT_IMAGE_CANDIDATE_LIMIT = '5000'
+  try {
+    const compiled = compileImageProviderProfile(profile())
+    assert.equal(compiled.policy.delayMs, 1500)
+    assert.equal(compiled.policy.candidateLimit, 250)
+    assert.equal(compiled.digest, compileImageProviderProfile(profile()).digest)
+  } finally {
+    delete process.env.KMT_IMAGE_EXECUTE; delete process.env.KMT_IMAGE_DELAY_MS; delete process.env.KMT_IMAGE_CANDIDATE_LIMIT
+  }
 })

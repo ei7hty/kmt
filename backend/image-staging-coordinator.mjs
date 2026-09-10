@@ -5,9 +5,10 @@ import { randomUUID } from 'node:crypto'
 import { assertAllowedImageUrl, createImageAssetRepository, reconcileImageCandidates, sha256Bytes } from './image-assets.mjs'
 import { createImageStagingStorage } from './image-staging.mjs'
 import { createIsolatedImageDecoder } from './image-decoder.mjs'
-import { compileImageProviderProfile, assertApprovedImagePlan, IMAGE_EXECUTION_ENABLED } from './image-provider-profile.mjs'
+import { compileImageProviderProfile } from './image-provider-profile.mjs'
 import { createImageRunProvenance, verifyImageRunProvenance } from './image-run-provenance.mjs'
 import { createSafeImageFetcher, mirrorRemoteImages, ImageMirrorError } from '../scripts/image-mirror.mjs'
+import { createHttpsImageTransport } from '../scripts/image-provider.mjs'
 
 const refused = () => new Error('Image staging plan refused')
 const outcome = value => typeof value === 'string' && /^[a-z-]{1,64}$/.test(value) ? value : 'failed'
@@ -38,7 +39,13 @@ function planFrom({ profile: rawProfile, snapshotBytes, expectedSnapshotDigest }
   const snapshotDigest = sha256Bytes(snapshot)
   if (snapshotDigest !== expectedSnapshotDigest) throw refused()
   const data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(snapshot))
-  if (!keys(data, ['version', 'candidates']) || data.version !== 1 || !Array.isArray(data.candidates) || !data.candidates.length) throw refused()
+  // The candidate ceiling used to be checked by `assertApprovedImagePlan`, which
+  // is gone with the PROJECT MANAGER approval registry. It is not an approval
+  // detail: `candidateLimit` is the politeness budget -- at `delayMs` 1500 a run
+  // of 250 is about six minutes of traffic against somebody else's server -- and
+  // the snapshot byte cap alone would let a snapshot ask for thousands.
+  if (!keys(data, ['version', 'candidates']) || data.version !== 1 || !Array.isArray(data.candidates) ||
+      !data.candidates.length || data.candidates.length > profile.policy.candidateLimit) throw refused()
   const ids = new Set()
   for (const item of data.candidates) {
     if (!keys(item, ['supplierId', 'supplierSku', 'productUrl', 'originalUrl', 'revision'])) throw refused()
@@ -56,24 +63,95 @@ function planFrom({ profile: rawProfile, snapshotBytes, expectedSnapshotDigest }
   return Object.freeze({ profile, snapshotDigest, snapshot, candidates: Object.freeze(data.candidates), ids: Object.freeze([...ids]) })
 }
 
-/** Production activation deliberately has no executable path in this revision. */
-export function prepareApprovedImageStagingRun(input) {
-  let plan
-  try { plan = planFrom(input) } catch { throw refused() }
-  assertApprovedImagePlan(plan.profile, plan.snapshotDigest, plan.ids)
-  if (!IMAGE_EXECUTION_ENABLED) throw new Error('Image execution disabled pending independent review')
-  throw new Error('Provider execution wiring requires a separately reviewed activation change')
+const interrupted = (label, runId) => `${label} staging run interrupted (${runId}); inspect private provenance`
+const wasInterrupted = (label, message) =>
+  new RegExp(`^${label} staging run interrupted \\([a-f0-9-]{36}\\); inspect private provenance$`).test(message)
+
+// One run identifier survives a failure -- it names the private provenance
+// database to inspect. Everything else about a refusal stays inside.
+async function runThroughMode(input, mode) {
+  try { return await runStaging({ ...input }, mode) } catch (error) {
+    if (wasInterrupted(mode.label, error.message)) throw error
+    throw refused()
+  }
 }
 
-/** The sole executable coordinator is a .test-only, byte-fixture harness.
+/** The provider run: the real HTTPS transport, the profile's own pacing.
+ * There is no approval registry in front of this any more -- the owner ruled
+ * that approval lives in the owner screen -- and that is not a gate removed so
+ * much as a gate moved to where it can be operated. Staging only ever stores
+ * candidates: the `staging_no_approval` trigger installed below makes a staging
+ * database structurally unable to approve anything, and `image-publication.mjs`
+ * holds the owner's approve/revoke decision. Nothing this function stores can
+ * reach a customer until the owner approves it there.
+ */
+export async function runApprovedImageStaging(input) {
+  return runThroughMode(input, PROVIDER_MODE)
+}
+
+/** The offline coordinator: a .test-only, byte-fixture harness.
  * It cannot take a transport, database handle/path, repository or network callback.
  * Real profiles never enter this path. Source snapshot bytes remain private.
  */
 export async function runOfflineImageStagingFixtures(input) {
-  try { return await runStaging({ ...input }, FIXTURE_MODE) } catch (error) {
-    if (/^Offline staging run interrupted \([a-f0-9-]{36}\); inspect private provenance$/.test(error.message)) throw error
-    throw refused()
-  }
+  return runThroughMode(input, FIXTURE_MODE)
+}
+
+// A real transport is the network, not the provenance log: `createHttpsImageTransport`
+// calls `onConnect` and `onRedirect` so the caller can authorize a hop, but it
+// appends nothing. Wrap it so a provider run writes the same
+// candidate-start/connect/redirect/response trail the fixture transport writes
+// by hand. Appending never decides anything: every callback's return value and
+// every throw reaches the inner transport unchanged, so the authorization
+// `createSafeImageFetcher` performs still bites through this decorator.
+//
+// One event a fixture run has that a provider run cannot: the fixture transport
+// appends a `response` for a 3xx hop because it sees the status. A real redirect
+// surfaces only as `onRedirect(location)`, so a provider run marks each hop with
+// its `connect`/`redirect` pair and records a `response` for the final one only.
+export function provenanceTransport(inner, { advance, append }) {
+  if (!inner || typeof inner.fetch !== 'function') throw refused()
+  return { fetch: async (originalUrl, options = {}) => {
+    const current = advance()
+    append('candidate-start', { supplierId: current.supplierId, supplierSku: current.supplierSku,
+      revision: current.candidateRevision, sourceUrl: current.productUrl, originalUrl })
+    // The hop being left, for the redirect event: `onRedirect` is told where it
+    // is going and not where it is coming from.
+    let hopUrl = originalUrl
+    const response = await inner.fetch(originalUrl, { ...options,
+      onConnect: details => {
+        hopUrl = details.url
+        append('connect', { finalUrl: details.url, address: details.address })
+        return options.onConnect?.(details)
+      },
+      onRedirect: next => {
+        append('redirect', { finalUrl: hopUrl, redirectUrl: next })
+        return options.onRedirect?.(next)
+      },
+    })
+    append('response', { finalUrl: response.finalUrl, status: response.status,
+      sha256: sha256Bytes(response.bytes), bytes: response.bytes.length })
+    return response
+  } }
+}
+
+// The provider mode: real HTTPS, the profile's pacing, and a refusal message
+// that names no host. `prepare` refuses fixture input rather than ignoring it --
+// a caller who passes a fixture Map believes they are running offline, and this
+// mode is the network. The transport is built here, before any filesystem work,
+// so a policy the transport will not accept fails before a database exists.
+export const PROVIDER_MODE = {
+  label: 'Provider',
+  delayMs: plan => plan.profile.policy.delayMs,
+  failureMessage: 'Image candidate refused',
+  prepare(input, plan) {
+    if (input.fixtures !== undefined) throw refused()
+    const transport = createHttpsImageTransport({
+      maxRedirects: plan.profile.policy.maxRedirects,
+      timeoutMs: plan.profile.policy.timeoutMs,
+    })
+    return ({ advance, append }) => provenanceTransport(transport, { advance, append })
+  },
 }
 
 // The byte-fixture transport: the same request/redirect/response shape the real
@@ -111,6 +189,7 @@ function offlineFixtureTransport(fixtures) {
 // The fixture mode: `.test` hosts only, a bounded byte Map, no pacing, and a
 // refusal message that never names a real provider because there was not one.
 const FIXTURE_MODE = {
+  label: 'Offline',
   delayMs: () => 0,
   failureMessage: 'Offline image candidate refused',
   prepare(input, plan) {
@@ -215,6 +294,6 @@ async function runStaging(input, mode) {
       failed: result.failures.length, stoppedOnRefusal: result.stoppedOnRefusal, integrity, states: Object.freeze(states) })
   } catch {
     try { log?.append('run-interrupted', { outcome: 'failed' }) } catch { /* leave incomplete prefix for review */ }
-    throw new Error(`Offline staging run interrupted (${runId}); inspect private provenance`)
+    throw new Error(interrupted(mode.label, runId))
   } finally { if (!closed) db.close() }
 }
