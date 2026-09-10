@@ -623,6 +623,13 @@ export function createApi(inventory, refresher, importer = null, quotes = null, 
         send(200, await mailer.resend(decodeURIComponent(raw)))
       } else if (request.method === 'GET' && url.pathname === '/api/owner/inventory') {
         send(200, { ...inventory.list(Object.fromEntries(url.searchParams)), summary: inventory.summary() })
+      } else if (request.method === 'PUT' && url.pathname === '/api/owner/offers') {
+        // Bulk save. Checked before the two paths below, which both key on a
+        // trailing slash, so this exact path cannot be read as a supplier id.
+        // Answers 200 with a per-row result even when every row failed:
+        // partial success is the normal case, so a bare status could not say
+        // which rows landed.
+        send(200, inventory.saveOffers(await readJsonBody(request)))
       } else if (request.method === 'PUT' && url.pathname.startsWith('/api/owner/offers/by-brand/')) {
         // Checked before the single-offer route below: that one treats
         // everything after 'offers/' as one id, and 'by-brand/hankook' would

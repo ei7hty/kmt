@@ -279,6 +279,167 @@ test('the bulk by-brand route is matched before the single-offer route, over rea
   })).status, 404)
 })
 
+/** Three tires with known costs, so a margin is arithmetic rather than a guess. */
+function priced(t) {
+  const db = new Inventory(':memory:', [SIZE, otherSize])
+  t.after(() => db.close())
+  db.importSnapshot(snapshot([
+    tire('giga-a', { price: 50 }),
+    tire('giga-b', { price: 100 }),
+    tire('giga-c', { price: 20 }),
+  ]))
+  db.saveOffer('giga-a', offer({ priceCents: 8999 }))   // margin 8999 - 5000 = 3999
+  db.saveOffer('giga-b', offer({ priceCents: 12000 }))  // margin 12000 - 10000 = 2000
+  return db                                             // giga-c has no offer at all: margin null
+}
+
+test('margin is computed across two different units, and sorts on that value rather than the raw columns', t => {
+  const db = priced(t)
+  const byId = Object.fromEntries(db.list().items.map(row => [row.id, row.marginCents]))
+  assert.deepEqual(byId, { 'giga-a': 3999, 'giga-b': 2000, 'giga-c': null },
+    'supplier cost is dollars and the owner price is cents: subtracting them as they come is wrong by 100x')
+
+  const ascending = db.list({ sort: 'margin', dir: 'asc' }).items.map(row => row.id)
+  assert.deepEqual(ascending, ['giga-b', 'giga-a', 'giga-c'],
+    'thinnest real margin first -- and were the units not converted, giga-a would sort ahead of giga-b')
+
+  const descending = db.list({ sort: 'margin', dir: 'desc' }).items.map(row => row.id)
+  assert.deepEqual(descending, ['giga-a', 'giga-b', 'giga-c'],
+    'the unpriced tire stays last when the direction reverses, rather than heading a list of margins')
+})
+
+test('an unknown sort falls back to the default order instead of erroring or reaching the query', t => {
+  const db = priced(t)
+  const fallback = db.list({ sort: 'margin; DROP TABLE offers--', dir: 'desc' })
+  assert.deepEqual(fallback.items.map(row => row.id), db.list().items.map(row => row.id),
+    'an unrecognised sort key is not interpolated and does not blank the screen')
+  assert.equal(fallback.sort, null, 'the response says which sort actually ran, not which was asked for')
+  assert.equal(db.list({ sort: 'constructor' }).sort, null, 'inherited object properties are not sort keys')
+  assert.equal(db.list().total, 3, 'the offers table is still there')
+
+  const applied = db.list({ sort: 'price', dir: 'desc' })
+  assert.equal(applied.sort, 'price')
+  assert.equal(applied.dir, 'desc', 'an applied sort is echoed so a header cannot show an arrow the server ignored')
+})
+
+test('pageSize is an allow-list, not a number the caller picks', t => {
+  const db = priced(t)
+  assert.equal(db.list().pageSize, 24, 'the default is unchanged for every existing caller')
+  assert.equal(db.list({ pageSize: 100 }).pageSize, 100)
+  assert.equal(db.list({ pageSize: 7 }).pageSize, 24, 'an off-list size falls back rather than being honoured')
+  assert.equal(db.list({ pageSize: 100000 }).pageSize, 24, 'and a caller cannot ask for the whole table')
+  assert.equal(db.list({ pageSize: 'lots' }).pageSize, 24)
+})
+
+test('a tied sort key is broken by id, so the two pages are a defined window rather than a scan order', t => {
+  const db = new Inventory(':memory:', [SIZE, otherSize])
+  t.after(() => db.close())
+  // Thirty tires, none offered, sorted by a column identical for every one of
+  // them -- and INSERTED IN REVERSE, so storage order and id order disagree.
+  // That disagreement is the whole test: with the tiebreak, page 1 is the 24
+  // lowest ids whatever the rows' physical order; without it, the pages are
+  // whatever the scan happens to hand back, which is what makes LIMIT/OFFSET
+  // paging over ties unsafe. An assertion that merely counted the union would
+  // pass either way -- one query plan is self-consistent even when it is
+  // arbitrary -- so it would have been a test that cannot fail.
+  const ids = Array.from({ length: 30 }, (unused, i) => 'giga-' + String(i).padStart(2, '0'))
+  db.importSnapshot(snapshot([...ids].reverse().map(id => tire(id))))
+  const query = { sort: 'enabled', dir: 'asc', pageSize: 24 }
+  const first = db.list({ ...query, page: 1 }).items.map(row => row.id)
+  const second = db.list({ ...query, page: 2 }).items.map(row => row.id)
+  assert.deepEqual(first, ids.slice(0, 24), 'page 1 is the 24 lowest ids, not the 24 rows stored first')
+  assert.deepEqual(second, ids.slice(24), 'and page 2 is the remainder, with nothing repeated or skipped')
+})
+
+test('a bulk offer save keeps the per-row version check and reports each row on its own', t => {
+  const db = priced(t)
+  const current = Object.fromEntries(db.list().items.map(row => [row.id, row.offer.version]))
+  const { results } = db.saveOffers({ offers: [
+    { id: 'giga-a', ...offer({ priceCents: 9500, version: current['giga-a'] }) },
+    { id: 'giga-b', ...offer({ priceCents: 9500, version: current['giga-b'] - 1 }) },
+    { id: 'giga-nope', ...offer({ priceCents: 9500, version: 0 }) },
+    { id: 'giga-c', ...offer({ priceCents: -5, version: 0 }) },
+  ] })
+
+  assert.deepEqual(results.map(row => [row.id, row.ok, row.reason]), [
+    ['giga-a', true, undefined],
+    ['giga-b', false, 'version-conflict'],
+    ['giga-nope', false, 'not-found'],
+    ['giga-c', false, 'invalid'],
+  ], 'a machine code per row, so a screen marks failures without matching on message text')
+  assert.equal(results[0].version, current['giga-a'] + 1, 'the bumped version comes back so the grid patches in place')
+  assert.ok(results[1].message.length, 'and a human message rides along for the owner')
+
+  const saved = Object.fromEntries(db.list().items.map(row => [row.id, row.offer.priceCents]))
+  assert.equal(saved['giga-a'], 9500, 'the row that succeeded stays saved even though three others failed')
+  assert.equal(saved['giga-b'], 12000, 'the stale row is untouched rather than silently overwritten')
+})
+
+// The three refusals below reject the WHOLE request rather than answering per
+// row, and each gets its own test on purpose: sharing one would mean deleting
+// either guard reddens the same test, and neither could be shown to be carrying
+// its own weight.
+test('a failure that is neither bad input nor a stale version reports as failed, without leaking the error', t => {
+  const db = priced(t)
+  // Not a seam in shipped code: the instance property shadows the prototype
+  // method for this test only. What is under test is the MAPPING -- everything
+  // that is not an InputError has to land on `failed`, because `failed` is what
+  // the grid renders as "this did not save and it was not your fault". Collapse
+  // it into `invalid` and the screen tells the owner his input was bad when the
+  // disk hiccuped, and he re-types a price that was never wrong.
+  db.saveOffer = () => { throw new Error('disk on fire') }
+  const { results } = db.saveOffers({ offers: [{ id: 'giga-a', ...offer({ version: 0 }) }] })
+
+  assert.equal(results[0].ok, false)
+  assert.equal(results[0].reason, 'failed', 'not invalid: nothing about the owner\'s input was wrong')
+  assert.equal(results[0].message, 'This tire could not be saved.')
+  assert.doesNotMatch(results[0].message, /disk on fire/, 'a raw error never reaches the owner\'s screen')
+})
+
+test('a bulk offer save is capped, so one request cannot walk the table', t => {
+  const db = priced(t)
+  const rows = count => Array.from({ length: count }, (unused, i) => ({ id: 'giga-' + i, ...offer({ version: 0 }) }))
+  assert.throws(() => db.saveOffers({ offers: rows(201) }), /at most 200/)
+  assert.equal(db.saveOffers({ offers: rows(200) }).results.length, 200, 'the cap itself is allowed')
+})
+
+test('a bulk offer save refuses a duplicate tire rather than reporting a mystery conflict', t => {
+  const db = priced(t)
+  assert.throws(() => db.saveOffers({ offers: [
+    { id: 'giga-a', ...offer({ version: 0 }) }, { id: 'giga-a', ...offer({ version: 1 }) },
+  ] }), /each tire once/, 'the second write would fail the version the first just bumped')
+})
+
+test('a bulk offer save refuses an empty batch', t => {
+  const db = priced(t)
+  assert.throws(() => db.saveOffers({ offers: [] }), /at least one offer/)
+  assert.throws(() => db.saveOffers({}), /at least one offer/)
+})
+
+test('the bulk offers route answers 200 with per-row results, over real HTTP', async t => {
+  const db = priced(t)
+  const api = createApi(db, new Refresher(db))
+  const server = createServer((req, res) => api(req, res))
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  const base = 'http://127.0.0.1:' + server.address().port + '/api/owner'
+
+  const response = await fetch(base + '/offers', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ offers: [
+      { id: 'giga-a', ...offer({ priceCents: 10100, version: 1 }) },
+      { id: 'giga-b', ...offer({ priceCents: 10100, version: 99 }) },
+    ] }) })
+  assert.equal(response.status, 200, 'partial success is the normal case, so it is not an error status')
+  const { results } = await response.json()
+  assert.deepEqual(results.map(row => row.ok), [true, false],
+    'the bare path is not swallowed by the single-offer route, and one stale row does not undo the other')
+
+  const listed = await (await fetch(base + '/inventory?sort=margin&dir=asc&pageSize=50')).json()
+  assert.equal(listed.pageSize, 50)
+  assert.equal(listed.sort, 'margin')
+  assert.equal(listed.items[0].marginCents, 2000, 'the grid reads the same derived value the sort ordered by')
+})
+
 test('markup starts as the shared placeholder and survives being saved', t => {
   const db = setup(t)
   const initial = db.getMarkup()
