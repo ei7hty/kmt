@@ -78,7 +78,18 @@ test('OS CPU limit terminates an isolated noncooperative worker', () => {
 s=importlib.util.spec_from_file_location('worker',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
 m.constrain(128*1024*1024,1000)
 while True: pass`
-  const result = spawnSync(decoderPython, ['-I', '-B', '-c', code, worker], { encoding: 'utf8', timeout: 8000, windowsHide: true })
+  // The 1000ms passed to constrain() is a Windows Job Object PROCESS_TIME
+  // limit -- CPU time actually consumed, not wall-clock elapsed -- and its
+  // enforcement is not sub-second on Windows regardless of load: measured
+  // standalone (no added contention) at 4.5-7s to kill a worker with a 1s
+  // CPU budget, and up to 14s with ~20 CPU-bound processes competing for 12
+  // cores (the noncooperative worker needs actual scheduled CPU seconds to
+  // reach its 1000ms budget, and contention is what withholds them). GATE
+  // ENGINEER caught the previous 8000ms ceiling losing this race by 4ms
+  // under nothing worse than Node's own parallel test-file execution --
+  // this raises the margin, not the CPU budget, so the assertion below
+  // keeps testing exactly what it always has: the OS must still win.
+  const result = spawnSync(decoderPython, ['-I', '-B', '-c', code, worker], { encoding: 'utf8', timeout: 20000, windowsHide: true })
   assert.equal(result.error, undefined, 'OS must terminate before the test harness timeout')
   assert.notEqual(result.status, 0)
 })
