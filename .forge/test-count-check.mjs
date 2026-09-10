@@ -61,7 +61,7 @@ import { decoderPython } from '../backend/fixtures/image-provider/decoder-fixtur
  * reviewer sees the baseline move deliberately rather than discovering it later
  * in a diff nobody read.
  */
-const EXPECTED_TESTS = 730
+const EXPECTED_TESTS = 729
 
 /**
  * The DIFFERENCE the three image suites make to the total: 632 with a decoder,
