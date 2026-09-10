@@ -41,6 +41,10 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+// Imported, not re-derived. This is the exact value the three image suites
+// consult, so this check cannot disagree with them about whether the decoder
+// is present -- the CATALOG_FIELDS lesson, applied before it could bite.
+import { decoderPython } from '../backend/fixtures/image-provider/decoder-fixtures.mjs'
 
 /**
  * The number of tests the named suites contain when every one of them can run.
@@ -58,6 +62,9 @@ import path from 'node:path'
  * in a diff nobody read.
  */
 const EXPECTED_TESTS = 632
+
+/** What the three image suites contribute, measured: 632 with a decoder, 587 without. */
+const DECODER_SUITE_TESTS = 45
 
 const files = process.argv.slice(2)
 if (!files.length) {
@@ -123,12 +130,50 @@ if (total === null) {
 }
 
 if (total !== null && total < EXPECTED_TESTS) {
-  console.error(`\nFAIL: ${EXPECTED_TESTS - total} test(s) short of the baseline (${total} of ${EXPECTED_TESTS}).`)
-  console.error('      A test that did not run did not pass. Before changing the number, find out which suite stopped:')
-  console.error('        - a file renamed or moved out of the pattern shows up ONLY as this number, since node was never given it;')
-  console.error('        - a suite that threw at module load is named with an X in the output above, and is a different problem;')
-  console.error('        - three image suites need KMT_IMAGE_DECODER_PYTHON, and their absence accounts for exactly 45.')
-  problem = true
+  const short = EXPECTED_TESTS - total
+  // The third outcome: a shortfall this environment cannot help.
+  //
+  // It exits 1 like every other failure, deliberately. The exit code is the
+  // enforcement and the message is the diagnosis, and coupling them is how a
+  // check dies: an agent who learns that this wording means "proceed" will
+  // proceed the day a real forty-five-test drop happens to wear it.
+  //
+  // What it buys is that a worktree agent can tell "I broke something" from
+  // "my environment cannot run this". Without that distinction they treat
+  // every red run as noise or every red run as a crisis, and both end the
+  // signal.
+  //
+  // TRANSITIONAL. `decoder.local` resolves against process.cwd() and exists
+  // only in the main checkout, so following AGENTS.md's worktree rule is what
+  // produces this. Once that resolution is fixed a compliant worktree has the
+  // decoder and this branch stops firing for anyone following the rules --
+  // it is an affordance for a defect being fixed, not a permanent category.
+  //
+  // Keyed on the decoder being ABSENT, not on the shortfall being 45. A number
+  // that happens to match is not a diagnosis, and inferring a cause from a
+  // coincidental count is the exact mistake this file exists to catch.
+  if (!decoderPython && short === DECODER_SUITE_TESTS) {
+    console.error('')
+    console.error(`FAIL: ${short} test(s) short, and this environment cannot run them.`)
+    console.error('      KMT_IMAGE_DECODER_PYTHON is unset and no decoder.local resolves from here, so the three')
+    console.error('      image suites died at module load. That is the whole shortfall -- nothing of yours is missing.')
+    console.error('      Still exit 1: a suite that did not run did not pass, whoever is at fault.')
+    console.error('      To run them, build the decoder the way CI does:')
+    console.error('        python -m venv decoder.local')
+    console.error('        decoder.local/Scripts/python -m pip install -r scripts/image-decoder-requirements.txt   # bin/python on POSIX')
+    console.error('      or point KMT_IMAGE_DECODER_PYTHON at one you already have. Two agents each built their own')
+    console.error('      because neither could find the one the other had built; the cwd-relative lookup behind that is being fixed.')
+  } else if (!decoderPython) {
+    console.error('')
+    console.error(`FAIL: ${short} test(s) short of the baseline (${total} of ${EXPECTED_TESTS}).`)
+    console.error(`      This environment has no image decoder, which accounts for ${DECODER_SUITE_TESTS} of that.`)
+    console.error(`      The remaining ${short - DECODER_SUITE_TESTS} is something else and is worth finding.`)
+  } else {
+    console.error(`\nFAIL: ${EXPECTED_TESTS - total} test(s) short of the baseline (${total} of ${EXPECTED_TESTS}).`)
+    console.error('      A test that did not run did not pass. Before changing the number, find out which suite stopped:')
+    console.error('        - a file renamed or moved out of the pattern shows up ONLY as this number, since node was never given it;')
+    console.error('        - a suite that threw at module load is named with an X in the output above, and is a different problem.')
+  }
 } else if (total !== null && total > EXPECTED_TESTS) {
   console.error(`\nFAIL: ${total - EXPECTED_TESTS} test(s) more than the baseline (${total} of ${EXPECTED_TESTS}).`)
   console.error('      This is what adding tests looks like, and it is not an error in your work.')
