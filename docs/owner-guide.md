@@ -177,3 +177,24 @@ tire**, **Save offer**. Two numbers at the top tell you the state of the
 catalogue: how many supplier tires are saved, and how many sizes have
 supplier tires. Pricing a whole size at once is coming; today it is one
 tire at a time, and a common size has a couple of hundred.
+
+## Product photos
+
+Tires can carry a photo now. It shows on the card a customer picks from.
+
+Getting the photos is a job somebody runs from a computer. The site does not
+go and fetch them on its own, and that is deliberate — your website should
+never be the thing knocking on a supplier's door.
+
+When photos come in they wait for you at
+**kensmobiletire.com/owner/images** — worth bookmarking. You see each one
+before you decide. Nothing reaches a customer until you approve it, and
+anything you approve you can take down again later.
+
+**The first time this is run it may come back refused, and that is worth
+knowing rather than worrying about.** Suppliers sometimes turn down a request
+that is not a person with a browser. If that happens the job stops and says
+exactly what it saw. Nobody has run this against a real supplier yet, so that
+first attempt is how we find out. Pass on what it said to
+**[maintainer's name and number]** — that message is the useful part. It is
+not something to run again and again hoping for a different answer.
