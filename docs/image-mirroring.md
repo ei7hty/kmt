@@ -180,11 +180,74 @@ wiring cannot land quietly.
 node scripts/import-product-images.mjs ABS_PACKET_DIR ABS_STAGING_DIR --confirm-hosts cdn.example,shop.example
 ```
 
-`ABS_PACKET_DIR` holds the pilot's `snapshot.json` and `profile.json`.
+`ABS_PACKET_DIR` holds the pilot's `snapshot.json` and `profile.json` — see
+**Where a packet comes from**, immediately below, because this command takes a
+packet and does not make one.
 `ABS_STAGING_DIR` is a private directory outside the repository: no symlink in
 any ancestor, and no `public`, `dist`, `data`, `deploy` or `production` segment
 in the path, or it is refused. The decoder comes from `--python` or
 `KMT_IMAGE_DECODER_PYTHON` (see **Real decoder runtime** below).
+
+### Where a packet comes from, and where this pipeline actually stops
+
+The producing command exists and is wired:
+
+```text
+node scripts/scrape-tires.mjs --validate-products \
+  --validation-input ABS_MAPPING.json --validation-output ABS_PACKET_DIR
+```
+
+It reads each product page through a **visible, non-headless, document-only
+browser** at 2–5 second pacing, refuses to run against a dirty checkout, and
+writes `snapshot.json` and `profile.json` into the output directory. `--dry-run`
+validates the inputs and makes no provider requests. On any failure it stops
+without retrying, substituting, downloading an image or activating anything.
+
+**IT NEEDS A MAPPING FILE, AND NOTHING GENERATES ONE.** `--validation-input`
+points at JSON an operator writes by hand: a digest of the tires snapshot plus,
+for every tire that is to get a photo, its `supplierId`, `supplierSku`,
+`productUrl` and `revision`. `prepareImagePilot` then checks it hard — each
+`supplierId` must match exactly one row in the snapshot, each `supplierSku`
+must equal that row's `source.sku`, each `revision` must equal
+`supplierImageRevision(row)`, each `productUrl` must canonicalize to itself, and
+no id or URL may repeat. Authored by a person, checked by machine.
+
+**A packet is FIVE TIRES, still.** `selectValidationUrls(rows, seed, count = 5)`
+in `scrape-tires.mjs` hard-caps the selection, and the packet path calls it
+without overriding the count. The compiled-in five that #450 removed from
+`image-manifest.mjs` is still live *here*, one layer out, in the command that
+produces the packet. At 1,248 distinct brand+model rows that is 250 runs to
+cover the catalogue, so anyone planning coverage should count runs rather than
+tires.
+
+**Whether that file can be generated instead is UNMEASURED, and this is the
+open question the feature currently rests on.** Four of the five fields derive
+mechanically from supplier rows already in the database. The fifth does not
+obviously: `productUrl()` requires the giga-tires origin, a path beginning
+`/tires/` and containing `/tirecode/`, while supplier rows store `source.url`
+**raw** from the listing anchor rather than canonicalized. Whether real stored
+values satisfy that check is not known here — the repository's own fixture
+(`/x/y/tirecode/1`) would fail it, fixtures therefore cannot answer it, and the
+owner's rules forbid anyone but him touching the live site to find out.
+
+So: **do not assume the mapping is cheap to produce until that is settled.** If
+real URLs canonicalize, generating the mapping from a chosen size is a small
+command. If they do not, each tire's product page has to be *discovered*, which
+is a materially larger piece of work involving more requests to the supplier and
+a person judging bad matches.
+
+**This is where the pipeline stops today**, and this section exists because that
+was hard to see. Five times in one night this feature was described as one step
+from finished, and each time the missing piece turned out to be one layer
+further out than the layer being looked at. The chain, end to end:
+
+| step | exists? |
+| --- | --- |
+| choose tires and write the mapping | **no — by hand, no command** |
+| read product pages, write a packet | yes — `scrape-tires.mjs --validate-products` |
+| fetch the images into staging | yes — `import-product-images.mjs` (#468) |
+| seal a packet, import it | yes — `seal-image-packet.mjs`, `import-images.mjs` |
+| owner approves, customer sees it | yes — the owner screen, and #444's rendering |
 
 **Every host has to be typed out.** The confirmed list must equal the profile's
 reviewed `allowedHosts` exactly -- not a subset, not a superset. The transport
