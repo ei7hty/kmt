@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import path, { resolve } from 'node:path'
+import path from 'node:path'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { crc32, deflateSync, inflateSync } from 'node:zlib'
@@ -36,13 +36,31 @@ import { crc32, deflateSync, inflateSync } from 'node:zlib'
  * (`fly-deploy.yml`), non-recursive, so a test nested under this directory
  * would never run; this stays a plain export for that test to import flat
  * from `backend/`.
+ *
+ * The `platform` argument picks `path.win32` or `path.posix` for the WHOLE
+ * computation -- resolve, `sep`, the `.worktrees` marker -- not only the
+ * `Scripts/python.exe` vs `bin/python` suffix at the end. In production
+ * `platform` defaults to `process.platform`, so the module picked always
+ * matches the ambient `node:path` the host would have used anyway; nothing
+ * changes there. What this buys is genuine testability: a synthetic
+ * Windows-shaped path asserted with `platform: 'win32'` now means the same
+ * thing on any CI runner, because it is parsed by `path.win32` rather than
+ * by whichever OS happens to be running the test. The first version of this
+ * mixed ambient `node:path` (host-native) with a platform-keyed suffix --
+ * correct in production, where the two always agree, and wrong the moment a
+ * test asserted a Windows-shaped path against Linux CI's POSIX-native
+ * `path.resolve`, which does not recognise `C:\...` as absolute and silently
+ * anchors it to `process.cwd()` instead. Found by CI itself, not by local
+ * testing, which is exactly the failure mode this note exists to prevent
+ * the next reader from reintroducing.
  */
 export function defaultDecoderPython(moduleDir, platform = process.platform) {
-  const repoRoot = path.resolve(moduleDir, '..', '..', '..')
-  const worktreeMarker = `${path.sep}.worktrees${path.sep}`
+  const p = platform === 'win32' ? path.win32 : path.posix
+  const repoRoot = p.resolve(moduleDir, '..', '..', '..')
+  const worktreeMarker = `${p.sep}.worktrees${p.sep}`
   const worktreeIndex = repoRoot.indexOf(worktreeMarker)
   const mainCheckoutRoot = worktreeIndex === -1 ? repoRoot : repoRoot.slice(0, worktreeIndex)
-  return resolve(mainCheckoutRoot, 'decoder.local', platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+  return p.resolve(mainCheckoutRoot, 'decoder.local', platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
 }
 
 const local = defaultDecoderPython(path.dirname(fileURLToPath(import.meta.url)))
