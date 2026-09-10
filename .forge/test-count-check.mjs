@@ -72,6 +72,26 @@ const EXPECTED_TESTS = 729
  * load still registers one failing test, so three dead files leave 3 behind and
  * the total drops by 45 rather than 48. Calling it a suite size invited
  * exactly that confusion and the name is now the arithmetic it actually does.
+ *
+ * NOT VERIFIED SINCE #464, AND NOT CURRENTLY VERIFIABLE HERE. This number was
+ * measured by running with and without a decoder, which used to mean setting or
+ * unsetting `KMT_IMAGE_DECODER_PYTHON`. That no longer works: #464 made
+ * `decoder-fixtures.mjs` resolve the shared venv from `import.meta.url` and walk
+ * out of `.worktrees/` to the main checkout, so it finds `decoder.local` with no
+ * environment variable at all. Measured 2026-09-10 -- the four patterns give an
+ * identical 729 with the variable set and unset, and importing the module prints
+ * a resolved interpreter path either way.
+ *
+ * So the no-decoder branch below is now reachable only where no venv exists,
+ * which is CI. That is #464 working exactly as designed, and it is worth naming
+ * the category: A FIX THAT REMOVES A FAILURE MODE LOCALLY ALSO REMOVES THE
+ * ABILITY TO EXERCISE ITS GUARD LOCALLY. The guard did not get weaker; the
+ * machine you would test it on stopped being able to reproduce the condition.
+ *
+ * Treat 45 as measured-before-#464 rather than as verified. To re-measure it,
+ * hide `decoder.local` deliberately -- do not infer the no-decoder state from an
+ * unset variable that no longer means that. And if a run reports a shortfall
+ * CITING the decoder, suspect this constant before suspecting EXPECTED_TESTS.
  */
 const DECODER_SUITE_DELTA = 45
 

@@ -34,7 +34,23 @@
  *   2. Every RUN_ELSEWHERE entry names a file that exists. A row outlives the
  *      file it excuses, and then it is excusing nothing while looking like
  *      coverage.
- *   3. No RUN_ELSEWHERE entry is ALSO matched by a pattern. That file would run
+ *
+ * EXPECT SILENCE. There are zero orphans in this repository today, so a green
+ * run is the correct result and not evidence that this does nothing. That is
+ * worth saying in the file rather than only in the pull request, because a check
+ * whose correct initial state is silence is exactly the one deleted in six
+ * months by someone who has never seen it fire. Its proof that it fires is a
+ * planted orphan, run deliberately: see the pull request that added it.
+ *   3. Every RUN_ELSEWHERE entry's named workflow ACTUALLY INVOKES it. The
+ *      entry cites a workflow file, never a line number: a stored line number
+ *      is a second copy of a fact the workflow already holds, and it drifts the
+ *      moment anyone adds a comment above the invocation (which happened here
+ *      within an hour of the first draft -- #482 moves release-browser's
+ *      invocation from :250 to :260). This searches for the invocation and
+ *      reports the line it found, so the number is true by construction rather
+ *      than by maintenance, and a row whose runner has been deleted fails loudly
+ *      instead of quietly excusing a file that now runs nowhere.
+ *   4. No RUN_ELSEWHERE entry is ALSO matched by a pattern. That file would run
  *      twice -- once in its own job, once in the baseline invocation -- which is
  *      the exact thing the `.forge/restore-integrity-check.test.mjs` comment in
  *      `test-baseline.mjs` explains the named-file form to avoid. Silent double
@@ -49,7 +65,7 @@
  *      stopped working looks exactly like a check that is happy
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, globSync } from 'node:fs'
+import { existsSync, globSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BASELINE_PATTERNS, RUN_ELSEWHERE } from './test-baseline.mjs'
@@ -115,11 +131,35 @@ const elsewhere = new Map(RUN_ELSEWHERE.map(entry => [toPosix(entry.file), entry
 
 const orphans = tracked.filter(file => !covered.has(file) && !elsewhere.has(file))
 const missing = [...elsewhere.values()].filter(entry => !existsSync(path.join(REPO_ROOT, entry.file)))
+/**
+ * Confirm each cited workflow really invokes the file, and derive the line.
+ *
+ * A substring search for the path, not a YAML parse. The invocation is a shell
+ * line inside a `run:` block, so YAML structure would not get us closer to the
+ * question -- and parsing would be the sort of coupling that turns a
+ * millisecond check into a fragile one. What matters is that the workflow
+ * mentions the file on some line; the line number is then observed, not stored.
+ */
+const uninvoked = []
+const citations = new Map()
+for (const entry of RUN_ELSEWHERE) {
+  const workflowPath = path.join(REPO_ROOT, entry.runBy)
+  if (!existsSync(workflowPath)) {
+    uninvoked.push({ ...entry, why: 'the named workflow does not exist' })
+    continue
+  }
+  const lines = readFileSync(workflowPath, 'utf8').split('\n')
+  const index = lines.findIndex(line => line.includes(entry.file))
+  if (index === -1) uninvoked.push({ ...entry, why: 'that workflow never mentions this file' })
+  else citations.set(toPosix(entry.file), `${entry.runBy}:${index + 1}`)
+}
+
 const doubled = [...elsewhere.keys()].filter(file => covered.has(file))
 
 console.log(`Test files tracked: ${tracked.length}`)
 console.log(`  matched by a baseline pattern: ${covered.size}`)
 console.log(`  declared as run elsewhere:     ${elsewhere.size}`)
+for (const [file, where] of citations) console.log(`    ${file} -> ${where}`)
 
 let problem = false
 
@@ -146,10 +186,20 @@ if (missing.length) {
   console.error('      and would silently re-excuse a future file that lands at that path.')
 }
 
+if (uninvoked.length) {
+  problem = true
+  console.error(`\nFAIL: ${uninvoked.length} RUN_ELSEWHERE entr(ies) are not actually run by the workflow they name.`)
+  for (const entry of uninvoked) console.error(`        ${entry.file} cites ${entry.runBy} -- ${entry.why}`)
+  console.error('\n      The row claims this file runs somewhere and it does not, which is the one')
+  console.error('      thing this check exists to make impossible: it reads as deliberate coverage')
+  console.error('      while the file runs nowhere at all. Either restore the invocation, or drop')
+  console.error('      the row and let the file be reported as the orphan it now is.')
+}
+
 if (doubled.length) {
   problem = true
   console.error(`\nFAIL: ${doubled.length} file(s) are both matched by a baseline pattern and declared run elsewhere.`)
-  for (const file of doubled) console.error(`        ${file} (also declared run by ${elsewhere.get(file).runBy})`)
+  for (const file of doubled) console.error(`        ${file} (also run by ${citations.get(file) ?? elsewhere.get(file).runBy})`)
   console.error('\n      That file runs twice per CI run. Beyond the wasted minutes, its tests are')
   console.error('      counted twice in the total EXPECTED_TESTS is measured against, so the next')
   console.error('      person to re-measure the baseline would pin the duplication as the number')

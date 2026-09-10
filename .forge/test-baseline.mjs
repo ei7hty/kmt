@@ -43,21 +43,34 @@ export const BASELINE_PATTERNS = [
  * Test files deliberately run somewhere OTHER than the baseline invocation.
  *
  * Not an exemption list and not a place to silence a finding. Every entry names
- * the line that runs it, because the whole value of the orphan check is the
+ * the WORKFLOW that runs it, because the whole value of the orphan check is the
  * claim "every test file in this tree runs somewhere", and an entry without a
  * runner turns that claim into "every test file is either run or listed here",
  * which is worth nothing.
  *
+ * NOTE WHAT IS ABSENT: a line number. An earlier draft of this file cited
+ * `fly-deploy.yml:250`, and REPO AGENT LEAD pointed out within the hour that
+ * #482 adds ten comment lines above it and moves that invocation to :260 -- so
+ * the citation would have been stale the moment their PR landed. The proposed
+ * fix was to have the check verify the number. The better fix is to not store a
+ * number that can disagree with anything: `orphaned-test-check.mjs` SEARCHES the
+ * named workflow for the invocation and reports the line it found. There is
+ * nothing to keep in sync, so nothing can drift, and the error message carries a
+ * line number that is true by construction rather than by maintenance.
+ *
+ * That is the same move as this module itself, one level down -- the defect was
+ * never "the copies disagree", it was "there are two copies".
+ *
  * If you are about to add a row because a new test is reported as an orphan:
  * that report is almost certainly correct, and the fix is a pattern above or a
  * workflow line, not a row here. A row here is only honest once the workflow
- * line exists and you can cite it.
+ * actually invokes the file -- which the check now confirms rather than trusts.
  *
  * These two are genuine: both run in earlier jobs, against a built release
  * rather than the source tree, and both would run TWICE if a `.forge/*.test.mjs`
  * glob picked them up alongside the baseline invocation.
  */
 export const RUN_ELSEWHERE = [
-  { file: '.forge/release-check.test.mjs', runBy: '.github/workflows/fly-deploy.yml:101' },
-  { file: '.forge/release-browser.test.mjs', runBy: '.github/workflows/fly-deploy.yml:250' },
+  { file: '.forge/release-check.test.mjs', runBy: '.github/workflows/fly-deploy.yml' },
+  { file: '.forge/release-browser.test.mjs', runBy: '.github/workflows/fly-deploy.yml' },
 ]
