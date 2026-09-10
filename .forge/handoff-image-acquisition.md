@@ -253,6 +253,34 @@ all** — `pragma/**/table_list` and `pragma/**/table_info(offers)` work;
 
 ---
 
+## Open follow-up: disabled-button contrast in `src/owner/Images.css`
+
+**2026-09-10, OWNER OPERATIONS ENGINEER, ruled on by the OWNER AGENT — not a
+blocker, not touched in #462.** The Approve button's disabled state
+(`.ip-packet .btn:disabled`, no dedicated rule today — it inherits the
+button's own colours under `opacity: 0.5`) measures **3.18:1 effective
+contrast**, blending that opacity against the real painted background behind
+it (`oi-shell`'s `rgb(8,8,8)` — `.ip-packet-head`/`.ip-packet`/`.ip-main` are
+all transparent). That is below the 4.5:1 AA text minimum, but WCAG 1.4.3
+exempts inactive controls, so it is spec-legal as shipped.
+
+**Why it wasn't fixed on the spot:** `opacity: 0.5` dims text and background
+together toward the page, which is what costs the ratio; explicit disabled
+colours (e.g. a fixed muted red/grey pair, not opacity) would keep the text
+crisper while still reading as disabled. That is a real improvement and it
+was scope creep on a PR (#462) scoped tightly to eligibility gating alone.
+
+**Why it is worth doing anyway, not just leaving:** Ken works out of a van.
+3.18:1 is fine indoors; on a phone screen in daylight it is the first thing
+to get lost. Not urgent — the disabled state's faintness is doing real work
+(it signals "not available" while the actual *reason* lives in the legible
+`.ip-issues` box beside it, which was measured to wrap cleanly with no
+overflow at 375px) — but worth an explicit-colour pass next time this file
+is open rather than another opacity-based disabled state being copied
+forward from it.
+
+---
+
 ## Who to talk to
 
 **PROJECT MANAGER (`local_5b6d8402`)** — placement, sequencing, readers. Ranking
