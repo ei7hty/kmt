@@ -623,15 +623,18 @@ export function createAuth(config, {
         // over unchanged: the same signed cookie, the same expiry, the same
         // row that logout deletes and the sweep collects.
         //
-        // The verified address is not recorded on the session yet. That is
-        // owner_sessions.actor, BUG FIXER's #374, still open at the time of
-        // writing -- `create` takes only an expiry on main. When it lands, the
-        // actor argument is added here and NOWHERE else: this is the one place
-        // a real identity enters the system, and the chain it feeds is
-        // session.actor -> the auth layer surfacing it -> the decide handler
-        // threading it into moveTo's `actor` -> quotes.decided_by. Storing it
-        // without wiring that chain leaves decided_by null, which collapses
-        // back into exactly the unattributable era this work exists to end.
+        // The verified address becomes the session's actor -- owner_sessions.actor,
+        // landed in #374. This is the one place a real identity enters the system,
+        // and the actor argument belongs here and NOWHERE else. The chain it feeds:
+        // session.actor -> `actorFor` on the auth layer -> the decide handler
+        // threading it into moveTo's `actor` -> quotes.decided_by.
+        //
+        // That chain is wired and covered end to end. If any link ever yields
+        // null, the quote-action handler answers 401 rather than recording a
+        // blank attribution -- quotes.test.mjs's "refuses a valid session whose
+        // stored actor is null" pins that, asserting the quote never leaves
+        // `draft`. An unattributed decision does not happen; it is not merely
+        // unlabelled.
         const expiresAt = Date.now() + config.ttlMs
         const id = sessions.create(expiresAt, decision.email)
         response.writeHead(302, {
