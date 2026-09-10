@@ -219,6 +219,25 @@ and working tree are shared state, not yours alone to rewrite. A recipe that
 does not run is worse than none — it fails at the moment of use and the fallback
 is the unsafe path; this one is verified, not assumed.
 
+**To read what `main` currently says, fetch and read as one command — a ref is
+only as fresh as your last fetch.** Reading `origin/main:<path>` rather than your
+working tree is right: the tree may hold uncommitted edits, or be a checkout
+hours stale. But `git show origin/main:<path>` shows whatever your last fetch
+left in the ref, and `main` moves ~6 commits an hour here, so an unfetched read
+is confidently wrong — both near-misses that nearly filed a false finding one
+night were exactly this. Put the fetch in the read, every time:
+
+```bash
+git fetch -q origin main && git show origin/main:<path>
+git fetch -q origin main && git grep <pattern> origin/main
+```
+
+Refs live in the one shared `.git`, so any worktree's fetch freshens the ref for
+every checkout — but carry your own fetch rather than trusting someone else ran
+one. No git hook can do this for you: none fires on a read (`NOTES.md` records
+why the obvious post-checkout hook and the background daemon were both weighed
+and rejected), so the fetch has to live in the command you actually run.
+
 **A subagent has no row of its own.** Work you spawn as a subagent — not a new
 session — has no session id, cannot be messaged, and cannot hold a `CLAIMS.md`
 row in its own name. So the session that spawns it owns the subagent's claim
