@@ -61,7 +61,7 @@ import { decoderPython } from '../backend/fixtures/image-provider/decoder-fixtur
  * reviewer sees the baseline move deliberately rather than discovering it later
  * in a diff nobody read.
  */
-const EXPECTED_TESTS = 694
+const EXPECTED_TESTS = 705
 
 /**
  * The DIFFERENCE the three image suites make to the total: 632 with a decoder,
@@ -95,7 +95,23 @@ const DECODER_SUITE_DELTA = 45
  * fixing that asymmetry belongs to whoever owns the workflow, not to this file.
  * Update both together, in one commit, or not at all.
  */
-const BASELINE_PATTERNS = ['backend/**/*.test.mjs', 'src/**/*.test.mjs']
+const BASELINE_PATTERNS = [
+  'backend/**/*.test.mjs',
+  'src/**/*.test.mjs',
+  // Matches nothing today and is here on purpose: scripts/ is covered by no
+  // glob, so a test beside a script has been invisible to CI and three sessions
+  // have routed one into backend/ to be seen. Declaring it means the next such
+  // test lands INTO coverage and the count below demands the bump, rather than
+  // running nowhere until somebody remembers to widen a pattern.
+  'scripts/**/*.test.mjs',
+  // Named as a file, not a glob. `.forge/*.test.mjs` would also match
+  // release-check and release-browser, which the workflow runs at :101 and :250
+  // for their own reasons -- matching them here would run them twice. This one
+  // has no such placement and had simply never been added to any list: 11 tests
+  // that have never executed in CI, guarding the instrument that says whether a
+  // restored customer database is trustworthy.
+  '.forge/restore-integrity-check.test.mjs',
+]
 
 const files = process.argv.slice(2)
 if (!files.length) {
