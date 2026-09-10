@@ -3163,3 +3163,75 @@ distance, and do not run it on `base.sha`.
 that only running it could find, and produced the number that makes "do not
 build" a measured result rather than a matter of taste. A negative result
 measured properly outranks a positive one asserted.)
+
+## Fresh refs: no hook fires on a read, and the daemon that would is worse than the gap
+
+2026-09-10, REPO AGENT LEAD. A decision with its evidence, paired with the
+fetch-and-read rule it produced in `AGENTS.md`. Recorded because the hook is the
+obvious first reach and the daemon the obvious second, and both fail for reasons
+only clear once measured.
+
+**The failure.** "Read from `origin/main`, not your working tree" is right, but a
+ref is only as fresh as the last fetch, and `main` drifts ~6 commits an hour here
+(measured: a checkout went 14 behind, was fast-forwarded, and was 6 behind again
+within the hour). Both near-misses that nearly filed a false finding were
+`git show origin/main:<path>` / `git grep origin/main` run in the SHARED CHECKOUT,
+14 commits stale, hours after anyone last checked anything out in it.
+
+**Death 1 — the post-checkout / post-merge hook does not fire where the failure
+is.** The event list is the whole answer: post-checkout fires on a branch switch
+or `git worktree add` (a worktree's BIRTH), post-merge on merge/pull, post-rewrite
+on rebase/amend. The failure sequence — an existing checkout, alive for hours,
+runs `git show origin/main:<path>` and files a finding — triggers NONE of them,
+and git has no read hook at all. The fetch would land at worktree creation,
+minutes-to-hours before the read, and the ref ages the whole time. (There is a
+real partial value worth naming so the next person does not think it revives the
+hook: because every worktree shares one `.git`, a fetch from ANY worktree creation
+freshens the ref globally, and worktree churn here is high — 23 claim trees in one
+night — so the shared checkout does get freshened as a side effect. But "as fresh
+as the last time anyone happened to create a worktree" is not "fresh at the read,"
+and the fix below is fresh at the read for free.)
+
+**Death 2 — the periodic daemon fires at read time but trades the gap for a worse
+one.** A background `git fetch` every N minutes is clock-driven, so it is fresh at
+read time regardless of what the agent does — the one thing the hook cannot claim.
+But it dies silently, and a dead refresher is worse than none: an agent who has
+STOPPED fetching because they trust it reads stale WITH CONFIDENCE. It converts
+deterministic staleness the agent can fix with one command into false confidence
+in a thing that looks alive — the stopped-instrument pattern one level up, and
+this one has no liveness signal at all. The general form: any background mechanism
+that makes people stop doing the thing themselves is only as good as its own
+liveness signal, and a silent fetch daemon has none.
+
+**What actually works — put the fetch inside the read.** Not a mechanism, a
+documented command: `git fetch -q origin main && git show origin/main:<path>` as
+one pair, so FOLLOWING the advice IS fetching. No `.githooks`, no `core.hooksPath`,
+no install, no residue, nothing that can stop silently. It is still skippable — an
+agent can run a bare `git show` — but the default, copied command is fresh, and
+unlike a hook or daemon it makes no promise it cannot keep. The backstop under it:
+a stale `git show origin/main` is DETERMINISTIC (a specific old version), one fetch
+from correct, not silently wrong — so the residual risk is bounded and
+self-correcting once noticed. (Verified: forcing `refs/remotes/origin/main` back
+three commits and running `git fetch -q origin main` moves it to the current tip,
+so the pair works as written; the install-free form needs no `git fetch -q origin`
+widening.)
+
+Two mechanisms proposed and two killed by their own measurement, the same night as
+the overlap gate a few entries up. The reliable part is the question, asked before
+building: does it fire where the failure happens?
+
+## "Safe by class" can be safe by luck — measure each file, not the pattern
+
+2026-09-10, REPO AGENT LEAD. I assessed the four files the worktree-tooling
+incident left in the shared checkout as "all already-merged #464/#465 work,
+redundant." Measured each instead of the class, three held; the fourth,
+`backend/worktree.test.mjs`, is NOT merged — it exists only on the open #467
+branch, so discarding it is safe solely because #467 was pushed. **Redundant was
+true, one quarter of it by luck rather than by the assessment given.** The class
+held for three of four, which is exactly when checking the fourth feels
+unnecessary and a class-level claim hides a file-level exception — safe by luck of
+someone else's pushed branch, not by the reasoning I gave. The same "read the code,
+not the document" test I had been applying to others all night, turned the other
+way: the safe conclusion held, and a quarter of it held for a reason I had not
+checked. Caught because the reader measured each file rather than trusting the
+class.
