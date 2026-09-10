@@ -61,7 +61,7 @@ import { decoderPython } from '../backend/fixtures/image-provider/decoder-fixtur
  * reviewer sees the baseline move deliberately rather than discovering it later
  * in a diff nobody read.
  */
-const EXPECTED_TESTS = 632
+const EXPECTED_TESTS = 671
 
 /**
  * The DIFFERENCE the three image suites make to the total: 632 with a decoder,
@@ -74,12 +74,39 @@ const EXPECTED_TESTS = 632
  */
 const DECODER_SUITE_DELTA = 45
 
+/**
+ * The patterns EXPECTED_TESTS was measured against, and the whole reason this
+ * file can claim anything.
+ *
+ * A total is only true for one command, and nothing tied this one to a command.
+ * The first baseline here was 632, measured against `backend/*.test.mjs` alone,
+ * while the workflow runs both patterns below and totals 671. Run with the
+ * narrower set against the wider baseline and the tool reports a shortfall that
+ * is not a shortfall -- and the next person either hunts a suite that never
+ * vanished or raises the number to clear the red. Both done carefully.
+ *
+ * So a different invocation is not a failing count, it is a REFUSAL: this tool
+ * declines to judge a run its baseline was not measured for. That is the honest
+ * answer and it makes widening the patterns a deliberate act, because the
+ * refusal forces a re-measure at the moment the baseline stops being true.
+ *
+ * Kept here rather than owning the globs outright so the workflow still decides
+ * WHAT runs -- `backend/*` is non-recursive while `src/**` is recursive, and
+ * fixing that asymmetry belongs to whoever owns the workflow, not to this file.
+ * Update both together, in one commit, or not at all.
+ */
+const BASELINE_PATTERNS = ['backend/*.test.mjs', 'src/**/*.test.mjs']
+
 const files = process.argv.slice(2)
 if (!files.length) {
   console.error('Usage: node .forge/test-count-check.mjs <test files...>')
   console.error('Refuses to guess a pattern: a harness that defaults to a target audits whatever it finds.')
   process.exit(2)
 }
+
+/** Same patterns, same order, as strings -- the workflow quotes them so node expands them, not the shell. */
+const invocationMatches = files.length === BASELINE_PATTERNS.length
+  && files.every((pattern, index) => pattern === BASELINE_PATTERNS[index])
 
 const tapDir = mkdtempSync(path.join(tmpdir(), 'kmt-test-count-'))
 const tapPath = path.join(tapDir, 'run.tap')
@@ -137,7 +164,18 @@ if (total === null) {
   console.log(`\nTest count: ${total} against a baseline of ${EXPECTED_TESTS}.`)
 }
 
-if (total !== null && total < EXPECTED_TESTS) {
+if (!invocationMatches) {
+  // A refusal, not a verdict. The count below is real; what this tool cannot do
+  // is tell you whether it is RIGHT, because the baseline was not measured for
+  // what you ran. Saying nothing would be better than saying the wrong thing,
+  // and saying why is better than both.
+  console.error('')
+  console.error('REFUSING TO JUDGE: this baseline was not measured for the patterns you ran.')
+  console.error(`      measured for: ${BASELINE_PATTERNS.map(x => JSON.stringify(x)).join(' ')}`)
+  console.error(`      you ran:      ${files.map(x => JSON.stringify(x)).join(' ')}`)
+  console.error('      The test result above stands; the COUNT means nothing against this baseline.')
+  console.error('      Run the workflow line, or re-measure and update BASELINE_PATTERNS and EXPECTED_TESTS together.')
+} else if (total !== null && total < EXPECTED_TESTS) {
   const short = EXPECTED_TESTS - total
 
   // Set once for the whole block, not per branch. It was set per branch and the
@@ -200,4 +238,10 @@ if (testExit !== 0) {
   console.error(`\nThe test run itself failed (exit ${testExit}${failed ? `, ${failed} failing` : ''}). That is reported above by node; this check does not restate it.`)
 }
 
-process.exitCode = testExit !== 0 || problem ? 1 : 0
+// Three outcomes, kept distinct on purpose:
+//   1 -- judged, and something is wrong (a real test failure, or a count that moved)
+//   2 -- could not judge (no patterns given, or a set this baseline was not measured for)
+//   0 -- judged, and the count is exactly right
+// A failing test run always wins, because that is a verdict this tool can reach
+// whatever its baseline was measured against.
+process.exitCode = testExit !== 0 ? 1 : !invocationMatches ? 2 : problem ? 1 : 0
