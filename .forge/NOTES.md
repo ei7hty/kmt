@@ -3091,3 +3091,75 @@ The corrected rule for this repo: PR state MERGED and no live worktree holds the
 actual safety property. Ancestor-of-main is a real confirmation only for the minority merged with a true
 merge commit; for the rest it proves nothing either way, and using it as a gate would have been worse
 than using nothing.
+
+## The overlap gate that its own calibration killed — distance and base.sha are both wrong, and the rate is ~0
+
+2026-09-10, REPO AGENT LEAD. A decision with its evidence, not a TODO, because
+someone will propose this again and the useful thing is not "we decided no" — it
+is the measurement and the two traps, so the next attempt does not spend a night
+rediscovering both.
+
+**The idea, and why it appeals.** A gate that flags a PR whose diff was written
+against a version of a file that `main` has since changed — to catch the branch
+that was correct when written and silently reverts live work when merged. The
+fear was concrete: an OWNER OPERATIONS ENGINEER branch, 38 files and −1676 lines,
+branch point before four merges that touched the same files, would have reverted
+the live photo feature.
+
+**Trap 1 — distance is the wrong measurement.** "N commits behind `main`" does not
+separate danger from noise. #455 merged five commits behind, every one a
+`CLAIMS.md` edit — harmless. #458 passed at TWENTY-TWO commits behind while
+touching none of the files those 22 changed — also harmless, and a distance gate
+would have failed it as stale. Distance measures staleness; the defect is
+overlap. Whatever else is decided here, distance is not the measurement.
+
+**Trap 2 — `github.event.pull_request.base.sha` is the wrong base.** It is the base
+branch's tip at the PR's last sync, and it fails two ways. (a) SELF-POLLUTION:
+once the PR merges, its own commit is the last to touch its files, so
+`base.sha..origin/main` reports the PR overlapping itself — every merged PR
+"fires" forever. (b) MIS-FRAMING while open: `base.sha` can predate work the head
+already incorporated. Measured on #462: with `base.sha` it "overlapped" #453 on
+four files; with the correct base — `git merge-base <head> origin/main` — the
+overlap was zero, because #462 had already incorporated #453. `base...head`
+(three-dot) already uses the merge-base for the *touched* set; the trap is the
+other leg, the *main-changed* set, which must be framed off merge-base too.
+Anyone reaching for this idea will reach for `base.sha` first, as the gate's own
+specification did.
+
+**The deciding number — overlap at merge time is ~0 here.** Run correctly
+(merge-base; append-only `.forge/CLAIMS.md` and `.forge/NOTES.md` excluded) over
+the last 20 merged PRs: ZERO fired. And not for want of a sample — four of the
+twenty (#462, #460, #449, #452) had main-windows of 11 to 18 files changed
+underneath them while they were based, and still touched none of them. Genuinely
+disjoint work, not empty windows.
+
+**Why not even a warning.** A check that fires zero times on twenty samples has no
+measured value — and a check that never fires is indistinguishable from one that
+is broken. This repository proved that hours earlier: `test-count-check` printed
+"FAIL: short of the baseline" and exited 0, and only someone building throwaway
+test files noticed the exit code was wrong. This night found four instruments
+that ran and proved nothing. An always-silent warning has that property
+permanently, with no natural moment when anyone would check it. The gate would be
+the fifth, shipped already known to be silent.
+
+**What it would have uniquely added, and why it is not enough.** git already
+blocks the textual case — a real conflict fails the merge (the OWNER OPS branch
+hit exactly that on rebase and was abandoned: the system working, no new gate
+needed). The gate's only unique contribution is the SEMANTIC case: a clean
+three-way merge of non-overlapping regions of overlapping files, where the
+author's code assumed something a concurrent change altered. Real — and observed
+zero times in twenty PRs. #462 is the pattern: four files overlapped, git
+composed the regions, nothing was lost. "The file changed" is a far weaker signal
+than "the thing this diff assumed changed," and the gate can only see the former.
+
+**The revisit condition.** The ~0 rate is a property of this team's shape — small
+PRs, serialized merges, work that rarely lands on the same files at once. If that
+changes — more agents on the same files, longer-lived branches, less rebasing
+before merge — the rate could rise and this is worth re-measuring. Re-run the
+measurement above, with the merge-base as the base. Do not rebuild it on
+distance, and do not run it on `base.sha`.
+
+(Not wasted work: running the specification found a defect in it — `base.sha` —
+that only running it could find, and produced the number that makes "do not
+build" a measured result rather than a matter of taste. A negative result
+measured properly outranks a positive one asserted.)
