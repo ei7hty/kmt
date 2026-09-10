@@ -379,6 +379,23 @@ test('a bulk offer save keeps the per-row version check and reports each row on 
 // row, and each gets its own test on purpose: sharing one would mean deleting
 // either guard reddens the same test, and neither could be shown to be carrying
 // its own weight.
+test('a failure that is neither bad input nor a stale version reports as failed, without leaking the error', t => {
+  const db = priced(t)
+  // Not a seam in shipped code: the instance property shadows the prototype
+  // method for this test only. What is under test is the MAPPING -- everything
+  // that is not an InputError has to land on `failed`, because `failed` is what
+  // the grid renders as "this did not save and it was not your fault". Collapse
+  // it into `invalid` and the screen tells the owner his input was bad when the
+  // disk hiccuped, and he re-types a price that was never wrong.
+  db.saveOffer = () => { throw new Error('disk on fire') }
+  const { results } = db.saveOffers({ offers: [{ id: 'giga-a', ...offer({ version: 0 }) }] })
+
+  assert.equal(results[0].ok, false)
+  assert.equal(results[0].reason, 'failed', 'not invalid: nothing about the owner\'s input was wrong')
+  assert.equal(results[0].message, 'This tire could not be saved.')
+  assert.doesNotMatch(results[0].message, /disk on fire/, 'a raw error never reaches the owner\'s screen')
+})
+
 test('a bulk offer save is capped, so one request cannot walk the table', t => {
   const db = priced(t)
   const rows = count => Array.from({ length: count }, (unused, i) => ({ id: 'giga-' + i, ...offer({ version: 0 }) }))
