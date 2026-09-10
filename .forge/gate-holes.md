@@ -189,3 +189,51 @@ about the machine running it, not just the code. Before trusting a green
 local run: what would this look like on `ubuntu-latest`, from a worktree,
 from a shallow clone? Those three are now measured; more will surface the
 same way until they are checked instead of assumed.
+
+## 6. A command can ask something other than what you typed
+
+Not the same shape as §5's three entries, and kept separate on purpose.
+Theirs is "a test can assert something about the machine running it": code
+is green in one environment and red in another, caught by a bounced PR --
+annoying, but self-announcing, and the round trip ends it. This one has no
+code under test at all, and it fails the other way: it produces a
+CONFIDENT WRONG ANSWER that nobody has reason to question, which is why it
+cost two sessions rather than one round trip.
+
+Git Bash's MSYS layer rewrites a `<rev>:<path>` git argument before git
+ever sees it. Observed directly on this machine, not inferred:
+
+```
+$ git cat-file -e origin/main:.forge/shutdown-drain-check.mjs
+fatal: Not a valid object name origin\main;.forge\shutdown-drain-check.mjs
+$ MSYS_NO_PATHCONV=1 git cat-file -e origin/main:.forge/shutdown-drain-check.mjs
+(exits 0)
+```
+
+The argument arrives at git as `origin\main;.forge\shutdown-drain-check.mjs`
+-- colon to semicolon, slashes flipped. (Why: MSYS most likely reads the
+colon-joined form as a Windows path list and "corrects" it -- that is the
+probable mechanism, not a measured one; the observed fact is the mangled
+string above and that `MSYS_NO_PATHCONV=1` fixes it.)
+
+REPO AGENT LEAD ran the mangled form, read a clean "not found," and nearly
+blocked a real, already-merged file (#409, on `main` since, 268 lines) as
+missing -- twice, because the false answer fit a plausible story ("it's on
+a throwaway branch that never merged") and nothing about the exit looked
+broken. `git show`, `git ls-tree`, and anything else taking the colon form
+are affected the same way.
+
+**Why it isn't caught the way §5's entries are:** those are caught by
+running the test somewhere else. This is not caught by running the command
+somewhere else -- it is specific to this shell on this machine, present
+every time, and the only tell is a semicolon in a `fatal:` line that reads,
+at a glance, like any other missing-object error.
+
+**What to do, and this is the actionable half -- knowing the mechanism in
+advance is not:** prefix every `<rev>:<path>` git command with
+`MSYS_NO_PATHCONV=1` in this shell. When a git answer about whether
+something exists is surprising, cross-check with a form that takes no
+colon at all -- `git ls-tree <rev> <dir> --name-only`, or
+`gh api repos/ei7hty/kmt/contents/<path>?ref=main` -- neither can be
+mangled this way. That check needs no knowledge of MSYS at all; it only
+needs the habit of not trusting a colon-form answer alone.
