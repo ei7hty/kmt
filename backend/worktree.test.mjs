@@ -44,7 +44,13 @@ const run = (args) => {
 function makeWorktree(t, { dirty = null } = {}) {
   const dir = path.join(mkdtempSync(path.join(tmpdir(), 'kmt-worktree-test-')), 'tree')
   const branch = `worktree-test-tmp-${path.basename(dir)}-${Math.random().toString(36).slice(2, 8)}`
-  execFileSync('git', ['worktree', 'add', dir, 'origin/main', '-b', branch], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  // HEAD, not origin/main: this fixture needs *a* valid starting commit, not
+  // real history, and CI's own checkout for this job is depth-1/single-ref
+  // (no fetch-depth: 0), where origin/main is not a resolvable ref at all --
+  // confirmed on PR #467 by JUNIOR REPO AGENT, "invalid reference: origin/main"
+  // on the runner despite passing locally against a full clone. HEAD always
+  // resolves regardless of checkout depth.
+  execFileSync('git', ['worktree', 'add', dir, 'HEAD', '-b', branch], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
   t.after(() => {
     // Best-effort: most tests remove it themselves via the tool under test.
     // If a test fails before that, this still gets the fixture off disk and
@@ -143,7 +149,7 @@ test('the shared node_modules install survives a real removal through a real lin
 
   const dir = path.join(mkdtempSync(path.join(tmpdir(), 'kmt-worktree-test-junction-')), 'tree')
   const branch = `worktree-test-junction-tmp-${Math.random().toString(36).slice(2, 8)}`
-  execFileSync('git', ['worktree', 'add', dir, 'origin/main', '-b', branch], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  execFileSync('git', ['worktree', 'add', dir, 'HEAD', '-b', branch], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) // HEAD, not origin/main -- see makeWorktree's comment above
   t.after(() => {
     try { execFileSync('git', ['worktree', 'remove', '--force', dir], { cwd: ROOT, stdio: 'ignore' }) } catch { /* removed by the test itself, normally */ }
     try { execFileSync('git', ['branch', '-D', branch], { cwd: ROOT, stdio: 'ignore' }) } catch { /* already gone */ }
@@ -194,7 +200,7 @@ test('add refuses cleanly when a branch of the target name already exists with n
   // is invoked at all, rather than letting `git worktree add` fail a second,
   // more confusing way ("a branch named ... already exists").
   const name = `worktree-test-orphan-branch-${Math.random().toString(36).slice(2, 8)}`
-  execFileSync('git', ['branch', name, 'origin/main'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
+  execFileSync('git', ['branch', name, 'HEAD'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] }) // HEAD, not origin/main -- see makeWorktree's comment above
   t.after(() => {
     try { execFileSync('git', ['branch', '-D', name], { cwd: ROOT, stdio: 'ignore' }) } catch { /* removed by the test itself, normally */ }
   })
