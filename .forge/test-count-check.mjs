@@ -61,7 +61,7 @@ import { decoderPython } from '../backend/fixtures/image-provider/decoder-fixtur
  * reviewer sees the baseline move deliberately rather than discovering it later
  * in a diff nobody read.
  */
-const EXPECTED_TESTS = 671
+const EXPECTED_TESTS = 694
 
 /**
  * The DIFFERENCE the three image suites make to the total: 632 with a decoder,
@@ -95,7 +95,7 @@ const DECODER_SUITE_DELTA = 45
  * fixing that asymmetry belongs to whoever owns the workflow, not to this file.
  * Update both together, in one commit, or not at all.
  */
-const BASELINE_PATTERNS = ['backend/*.test.mjs', 'src/**/*.test.mjs']
+const BASELINE_PATTERNS = ['backend/**/*.test.mjs', 'src/**/*.test.mjs']
 
 const files = process.argv.slice(2)
 if (!files.length) {
