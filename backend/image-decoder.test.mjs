@@ -78,7 +78,22 @@ test('OS CPU limit terminates an isolated noncooperative worker', () => {
 s=importlib.util.spec_from_file_location('worker',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
 m.constrain(128*1024*1024,1000)
 while True: pass`
-  const result = spawnSync(decoderPython, ['-I', '-B', '-c', code, worker], { encoding: 'utf8', timeout: 8000, windowsHide: true })
+  // The 1000ms passed to constrain() is a Windows Job Object PROCESS_TIME
+  // limit -- CPU time actually consumed, not wall-clock elapsed -- and its
+  // enforcement is not sub-second on Windows regardless of load: the
+  // noncooperative worker has to be SCHEDULED to burn CPU seconds, so
+  // contention withholds exactly the resource the limit is denominated in.
+  // Measured (this machine): 4.5-7s standalone with only ambient load from
+  // other concurrent sessions, up to 14s with ~20 CPU-bound processes
+  // deliberately competing for 12 cores. GATE ENGINEER caught the previous
+  // 8000ms ceiling losing this race by 4ms under nothing worse than Node's
+  // own parallel test-file execution -- it was set against the 1000ms
+  // budget rather than against how long delivery actually takes.
+  // 20000ms below is that 14s measured worst case plus margin, not a round
+  // number chosen independently of it -- rerun this file's own timing (this
+  // test, standalone and under load) before changing it, the same way 705
+  // silently going stale is exactly what an unrecorded measurement invites.
+  const result = spawnSync(decoderPython, ['-I', '-B', '-c', code, worker], { encoding: 'utf8', timeout: 20000, windowsHide: true })
   assert.equal(result.error, undefined, 'OS must terminate before the test harness timeout')
   assert.notEqual(result.status, 0)
 })
