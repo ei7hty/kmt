@@ -49,6 +49,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { rmSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { git } from './lib/git.mjs'
 
 const MAX_PUSH_ATTEMPTS = 5
 
@@ -101,19 +102,18 @@ function parseArgs(argv) {
   return options
 }
 
-const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
-
 function removeDisposableTree(tree) {
-  try {
-    git(['worktree', 'remove', tree], ROOT)
-    return
-  } catch { /* fall through to the documented Windows fallback below */ }
+  if (git(['worktree', 'remove', tree], ROOT).ok) return
+  // Windows: `git worktree remove` can fail if this directory was recently
+  // this shell's cwd. A plain tree has no junction to follow (unlike a
+  // worktree.mjs-managed one), so rm -rf here is safe.
   try {
     rmSync(tree, { recursive: true, force: true })
-    git(['worktree', 'prune'], ROOT)
   } catch {
     console.error(`Warning: could not remove the disposable worktree at ${tree}; remove it by hand (git worktree remove ${tree}).`)
+    return
   }
+  git(['worktree', 'prune'], ROOT) // best-effort; the directory is already gone either way
 }
 
 /**
@@ -129,51 +129,45 @@ function attempt(tree, files, message, command) {
   if (edit.error || edit.status !== 0) {
     return { ok: false, message: `Edit command failed (${edit.error ? edit.error.message : `exit ${edit.status}`}); nothing committed.` }
   }
-  try {
-    // Checks that something actually changed, not that the file exists --
-    // deleting a --file is a legitimate edit, and `git status --porcelain`
-    // reports it same as a modification, just with a `D ` prefix instead of
-    // `M `/`??`. Existence would reject exactly the delete case.
-    for (const file of files) {
-      if (!git(['status', '--porcelain', '--', file], tree)) {
-        return { ok: false, message: `${file} is unchanged after the edit command ran; nothing committed.` }
-      }
-    }
-    git(['add', ...files], tree)
-    git(['commit', '-m', message], tree)
-  } catch (error) {
-    return { ok: false, message: `Could not stage/commit ${files.join(', ')}: ${String(error.stderr || error.message).trim()}` }
+
+  // Checks that something actually changed, not that the file exists --
+  // deleting a --file is a legitimate edit, and `git status --porcelain`
+  // reports it same as a modification, just with a `D ` prefix instead of
+  // `M `/`??`. Existence would reject exactly the delete case.
+  for (const file of files) {
+    const status = git(['status', '--porcelain', '--', file], tree)
+    if (!status.ok) return { ok: false, message: `Could not check ${file}'s status: ${status.error}` }
+    if (!status.stdout) return { ok: false, message: `${file} is unchanged after the edit command ran; nothing committed.` }
   }
+  const staged = git(['add', ...files], tree)
+  if (!staged.ok) return { ok: false, message: `Could not stage ${files.join(', ')}: ${staged.error}` }
+  const committed = git(['commit', '-m', message], tree)
+  if (!committed.ok) return { ok: false, message: `Could not commit ${files.join(', ')}: ${committed.error}` }
 
   for (let pushAttempt = 1; pushAttempt <= MAX_PUSH_ATTEMPTS; pushAttempt++) {
-    try {
-      git(['fetch', '--quiet', 'origin'], tree)
-    } catch (error) {
-      return { ok: false, message: `Could not fetch origin -- this did NOT land on main.\n${String(error.stderr || error.message).trim()}` }
-    }
-    try {
-      git(['rebase', 'origin/main'], tree)
-    } catch (error) {
-      try { git(['rebase', '--abort'], tree) } catch { /* best effort */ }
+    const fetched = git(['fetch', '--quiet', 'origin'], tree)
+    if (!fetched.ok) return { ok: false, message: `Could not fetch origin -- this did NOT land on main.\n${fetched.error}` }
+
+    const rebased = git(['rebase', 'origin/main'], tree)
+    if (!rebased.ok) {
+      git(['rebase', '--abort'], tree) // best effort
       return {
         ok: false,
         message: 'Rebase onto origin/main conflicted -- this needs a human/agent judgment call, not an automatic replay ' +
-          `(.forge/AGENTS.md is explicit about this). Nothing was pushed. Re-run with the edit re-applied against the new tip.\n${String(error.stderr || error.message).trim()}`,
+          `(.forge/AGENTS.md is explicit about this). Nothing was pushed. Re-run with the edit re-applied against the new tip.\n${rebased.error}`,
       }
     }
-    try {
-      git(['push', 'origin', 'HEAD:main'], tree)
-      return { ok: true, message: `Pushed to main: ${message}` }
-    } catch (error) {
-      if (pushAttempt === MAX_PUSH_ATTEMPTS) {
-        return {
-          ok: false,
-          message: `PUSH FAILED after ${MAX_PUSH_ATTEMPTS} attempts -- this did NOT land on main. ` +
-            `Re-run the same command from scratch once the board is quieter.\n${String(error.stderr || error.message).trim()}`,
-        }
+
+    const pushed = git(['push', 'origin', 'HEAD:main'], tree)
+    if (pushed.ok) return { ok: true, message: `Pushed to main: ${message}` }
+    if (pushAttempt === MAX_PUSH_ATTEMPTS) {
+      return {
+        ok: false,
+        message: `PUSH FAILED after ${MAX_PUSH_ATTEMPTS} attempts -- this did NOT land on main. ` +
+          `Re-run the same command from scratch once the board is quieter.\n${pushed.error}`,
       }
-      console.error(`Push rejected (attempt ${pushAttempt}/${MAX_PUSH_ATTEMPTS}) -- someone else landed on main first, as expected in a repo this busy. Re-fetching and retrying.`)
     }
+    console.error(`Push rejected (attempt ${pushAttempt}/${MAX_PUSH_ATTEMPTS}) -- someone else landed on main first, as expected in a repo this busy. Re-fetching and retrying.`)
   }
 }
 
@@ -181,14 +175,11 @@ function main() {
   const { message, files, command } = parseArgs(process.argv.slice(2))
 
   // FAIL SAFE, NOT FAIL OPEN: this is the only git command in this file that
-  // targets ROOT for anything but worktree administration. If it throws,
+  // targets ROOT for anything but worktree administration. If it fails,
   // nothing has been created for `finally` to clean up, and nothing below
   // this point -- which all runs inside the disposable tree -- ever executes.
   const tree = path.join(ROOT, '.worktrees', `claim-tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
-  try {
-    git(['worktree', 'add', tree, 'origin/main'], ROOT)
-  } catch (error) {
-    console.error(String(error.stderr || error.message).trim())
+  if (!git(['worktree', 'add', tree, 'origin/main'], ROOT).ok) {
     fail('\nCould not create a disposable worktree; refusing to fall back to the shared main checkout. Nothing was changed.')
   }
 
