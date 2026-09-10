@@ -1,17 +1,17 @@
 import { mkdirSync, openSync, writeFileSync, fsyncSync, closeSync, lstatSync, realpathSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { sha256Bytes, assertAllowedImageUrl } from '../backend/image-assets.mjs'
-import { supplierImageRevision } from '../backend/image-manifest.mjs'
+import { IMAGE_SELECTION_TAG, supplierImageRevision } from '../backend/image-manifest.mjs'
 import { IMAGE_PILOT_POLICY, compileImageProviderProfile } from '../backend/image-provider-profile.mjs'
 import { parseProductPage, productUrl } from './giga-tires.mjs'
 
-const reject = () => { throw new Error('Private exact-five pilot input or outcome refused') }
+const reject = () => { throw new Error('Private pilot input or outcome refused') }
 const parse = bytes => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
 export function prepareImagePilot(inputBytes, mappingBytes) {
   if (!(inputBytes instanceof Uint8Array) || inputBytes.length > 8 * 1024 * 1024 ||
       !(mappingBytes instanceof Uint8Array) || mappingBytes.length > 65536) reject()
   const input = parse(inputBytes), mapping = parse(mappingBytes)
-  if (Object.keys(mapping).sort().join(',') !== 'candidates,inputDigest,version' || mapping.version !== 1 || mapping.inputDigest !== sha256Bytes(inputBytes) || !Array.isArray(mapping.candidates) || mapping.candidates.length !== 5) reject()
+  if (Object.keys(mapping).sort().join(',') !== 'candidates,inputDigest,version' || mapping.version !== 1 || mapping.inputDigest !== sha256Bytes(inputBytes) || !Array.isArray(mapping.candidates) || !mapping.candidates.length) reject()
   const ids = new Set(), urls = new Set(), baseline = new Map()
   for (const item of mapping.candidates) {
     if (Object.keys(item).sort().join(',') !== 'productUrl,revision,supplierId,supplierSku') reject()
@@ -26,7 +26,7 @@ export function prepareImagePilot(inputBytes, mappingBytes) {
 }
 
 export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, delayForNext, now = Date.now, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }, fetchPage) {
-  if (!/^[a-f0-9]{40}$/.test(codeSha) || !Number.isSafeInteger(seed) || orderedUrls.length !== 5 || new Set(orderedUrls).size !== 5 || orderedUrls.some(url => !plan.baseline.has(url))) reject()
+  if (!/^[a-f0-9]{40}$/.test(codeSha) || !Number.isSafeInteger(seed) || !orderedUrls.length || new Set(orderedUrls).size !== orderedUrls.length || orderedUrls.some(url => !plan.baseline.has(url))) reject()
   const candidates = [], observations = [], enrichedRows = []
   let lastStart
   for (const requestedUrl of orderedUrls) {
@@ -57,7 +57,7 @@ export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, dela
   const profile = { version: 1, providerId: 'giga-tires', allowedHosts: [...new Set([...productHosts, ...imageHosts])].sort(), policy: IMAGE_PILOT_POLICY }
   const profileDigest = compileImageProviderProfile(profile).digest
   const snapshot = { version: 2, candidates, provenance: { codeSha, seed, inputDigest: plan.inputDigest, mappingDigest: plan.mappingDigest,
-    selection: 'owner-mapped-five-seeded-v1', productHosts, imageHosts, observations }, enrichedRows }
+    selection: IMAGE_SELECTION_TAG, productHosts, imageHosts, observations }, enrichedRows }
   const snapshotBytes = Buffer.from(JSON.stringify(snapshot))
   if (snapshotBytes.length > 65536) reject()
   return { snapshotBytes, profileBytes: Buffer.from(JSON.stringify(profile)), profileDigest, snapshotDigest: sha256Bytes(snapshotBytes),

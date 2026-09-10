@@ -26,12 +26,31 @@ test('explicit owner mapping is required, digest-bound and never invents product
   const f = pilot()
   assert.equal(f.plan.baseline.size, 5)
   assert.throws(() => prepareImagePilot(Buffer.concat([f.inputBytes, Buffer.from(' ')]), f.mappingBytes))
-  for (const change of [m => m.candidates.pop(), m => m.candidates[0].productUrl = 'https://www.giga-tires.com/tires/listing',
+  for (const change of [m => m.candidates[0].productUrl = 'https://www.giga-tires.com/tires/listing',
     m => m.candidates[0].supplierSku = 'OTHER', m => m.candidates[0].revision = 'supplier-payload-v1:' + '0'.repeat(64),
-    m => m.candidates[0] = m.candidates[1]]) {
+    m => m.candidates[0] = m.candidates[1], m => m.candidates.length = 0]) {
     const mapping = structuredClone(f.mapping); change(mapping)
     assert.throws(() => prepareImagePilot(f.inputBytes, Buffer.from(JSON.stringify(mapping))))
   }
+})
+
+// `m.candidates.pop()` used to belong in the list above, because the packet size
+// was fixed at five and a short mapping could only mean a truncated one. It is
+// now a legitimate four-image run, so the assertion moved rather than its
+// expected value: a shorter mapping is ACCEPTED and yields a smaller baseline.
+// What still protects a truncated file is unchanged and is not the count --
+// `inputDigest` pins the scraped input, every candidate must resolve to exactly
+// one real input row with a matching sku and revision, `mappingDigest` is bound
+// by the sealing step, and the manifest later requires every parallel array to
+// agree on one count. An empty mapping is still refused: a run of nothing is a
+// mistake, not a smaller run.
+test('a shorter owner mapping is a smaller run, not a truncated one', () => {
+  const f = pilot()
+  const mapping = structuredClone(f.mapping)
+  mapping.candidates.pop()
+  const plan = prepareImagePilot(f.inputBytes, Buffer.from(JSON.stringify(mapping)))
+  assert.equal(plan.baseline.size, 4)
+  assert.equal(plan.inputDigest, f.plan.inputDigest)
 })
 
 test('five actual response identities produce ordered immutable provenance with serial pacing and no image fetch', async t => {

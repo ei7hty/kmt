@@ -13,7 +13,7 @@ export function sealImagePacket(directory, bindingsFile) {
   const profileBytes = readPrivateImageInput(path.join(directory, 'profile.json'), 65536)
   const snapshot = JSON.parse(snapshotBytes), profile = compileImageProviderProfile(JSON.parse(profileBytes))
   const bindings = JSON.parse(readPrivateImageInput(bindingsFile, 65536))
-  if (!Array.isArray(bindings) || bindings.length !== 5 || snapshot.candidates?.length !== 5) throw new Error('Exact-five bindings required')
+  if (!Array.isArray(bindings) || !bindings.length || snapshot.candidates?.length !== bindings.length) throw new Error('Bindings must match the snapshot candidate count')
   const files = new Map()
   const assets = bindings.map((binding, i) => {
     if (Object.keys(binding).sort().join(',') !== 'format,path,supplierId' || binding.supplierId !== snapshot.candidates[i].supplierId || !['png', 'jpeg'].includes(binding.format)) throw new Error('Ordered bindings refused')
@@ -36,7 +36,7 @@ export function sealImagePacket(directory, bindingsFile) {
   for (const [name, bytes] of files) write(name, bytes)
   write('manifest.json', manifestBytes) // completeness marker published last
   if (process.platform !== 'win32') { const fd = openSync(directory, 'r'); try { fsyncSync(fd) } finally { closeSync(fd) } }
-  return { manifestDigest: digest, count: 5 }
+  return { manifestDigest: digest, count: assets.length }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
