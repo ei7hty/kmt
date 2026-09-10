@@ -1770,14 +1770,19 @@ test('the quote-action handler refuses a valid session whose stored actor is nul
 })
 
 /**
- * The seam #290's sign-in half fills.
+ * The seam #290's sign-in half fills -- now filled.
  *
- * `moveTo` takes an actor so that, once a verified Google identity exists,
- * the decision carries the person rather than the credential. Nothing passes
- * one today, which is why every test above sees the fallback -- but the seam
- * has to work before the sign-in work depends on it.
+ * `moveTo` takes an actor so that a verified Google identity makes the
+ * decision carry the person rather than the credential. `api.mjs` passes one
+ * today -- `actorFor(request)` threaded into `decide` -- and no fallback
+ * remains: an owner decision records the actor it was given, and a null one is
+ * refused upstream rather than written. The tests above that still expect
+ * SHARED_PASSWORD_ACTOR pass it explicitly; nothing supplies it by default.
+ *
+ * This pins `moveTo` in isolation, which stays worth keeping separate from the
+ * route that feeds it.
  */
-test('moveTo records a supplied actor instead of the fallback', t => {
+test('moveTo records a supplied actor', t => {
   const { quotes } = setup(t)
   const { request } = quotes.submit(form())
 
