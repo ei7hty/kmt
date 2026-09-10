@@ -30,6 +30,50 @@
  * a real send completed *and was recorded* is `status='sent'` carrying a
  * **`provider_id`**, which only a provider can supply.
  *
+ * ## HOW TO RE-PROVE THIS FIRES, IF YOU CHANGE IT
+ *
+ * This check cannot be exercised on the Windows machine this project is
+ * developed on, so a local run tells you nothing: it exits 2, UNDETERMINED. If
+ * you change what it asserts, the only way to know it still catches a real
+ * defect is a fault injection on CI's Linux box, and the recipe is here rather
+ * than in a branch somebody has to remember -- the branch that first did this
+ * was deleted the day it succeeded.
+ *
+ * Push a throwaway branch with a workflow that runs THREE steps in one job:
+ *
+ *   1. BASELINE  unmodified tree                                   expect exit 0
+ *   2. FAULT     comment out `await drainMail(mailer)` in           expect NON-ZERO
+ *                backend/server.mjs's shutdown(), assert the edit
+ *                actually applied before running
+ *   3. REVERT    restore                                           expect exit 0
+ *
+ * `npm run build` MUST precede all three: server.mjs refuses to start without
+ * dist/, and the failure it produces -- "the server never answered
+ * /api/health" -- reads exactly like a drain finding and is not one. That cost
+ * a full run the first time.
+ *
+ * Three things the workflow has to assert itself, or it can pass while proving
+ * nothing:
+ *   - the fault TEXT applied (a regex that silently missed leaves step 2
+ *     running an unmodified tree and reporting a comfortable red-free pass)
+ *   - exit 2 on Linux is an ERROR, not a pass and not an ordinary failure: the
+ *     platform gate firing in CI would mean this check has been reporting
+ *     nothing while looking green
+ *   - step 2 going GREEN is a FAILURE of the proof -- if the check cannot see
+ *     the drain removed, it cannot see the thing it exists to see
+ *
+ * Pick the fault AGAINST THE ASSERTION, not against the feature. Removing the
+ * drain works because the assertion is about outbox state. A fault the
+ * assertion cannot observe produces a false "does not fire" exactly as reliably
+ * as a weak assertion produces a false pass.
+ *
+ * A throwaway branch has its own `concurrency` group (keyed by ref), so this
+ * never contends with main's deploy queue.
+ *
+ * Done 2026-09-10 at run 34441965958: baseline 0, fault 1, revert 0. First
+ * green CI exercise on a correct tree came with the wiring, run 34443356747:
+ * `7 OK, 0 FAIL -- 7 of 7 expected checks ran`.
+ *
  * ## MEASURED: WHY THE OBVIOUS SHAPE CANNOT WORK
  *
  * If you are about to simplify this to a lifecycle assertion -- "the process
