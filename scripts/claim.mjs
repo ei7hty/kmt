@@ -129,17 +129,16 @@ function attempt(tree, files, message, command) {
   if (edit.error || edit.status !== 0) {
     return { ok: false, message: `Edit command failed (${edit.error ? edit.error.message : `exit ${edit.status}`}); nothing committed.` }
   }
-  // Checks that something actually changed, not that the file exists --
-  // deleting a --file is a legitimate edit, and `git status --porcelain`
-  // reports it same as a modification, just with a `D ` prefix instead of
-  // `M `/`??`. Existence would reject exactly the delete case.
-  for (const file of files) {
-    if (!git(['status', '--porcelain', '--', file], tree)) {
-      return { ok: false, message: `${file} is unchanged after the edit command ran; nothing committed.` }
-    }
-  }
-
   try {
+    // Checks that something actually changed, not that the file exists --
+    // deleting a --file is a legitimate edit, and `git status --porcelain`
+    // reports it same as a modification, just with a `D ` prefix instead of
+    // `M `/`??`. Existence would reject exactly the delete case.
+    for (const file of files) {
+      if (!git(['status', '--porcelain', '--', file], tree)) {
+        return { ok: false, message: `${file} is unchanged after the edit command ran; nothing committed.` }
+      }
+    }
     git(['add', ...files], tree)
     git(['commit', '-m', message], tree)
   } catch (error) {
