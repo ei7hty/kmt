@@ -68,6 +68,21 @@ Until (1) is answered: do not invent product URLs from IDs, do not change seeds
 to work around refusals, and do not substitute whichever products happen to
 succeed.
 
+## Five per packet is current, not leftover
+
+This document says **"Supply exactly five entries"** in two places, and unlike
+the four corrections above **that five has not moved**: `selectValidationUrls`
+in `scripts/giga-tires.mjs`'s caller takes `count = 5`
+(`scripts/scrape-tires.mjs:182`) and the packet path calls it without an
+override (`:491`). So a packet is five tires, still.
+
+Worth knowing because a different five *was* removed: #450 took the compiled-in
+packet size out of `backend/image-manifest.mjs`, and it is easy to assume the
+constraint went with it. It did not — it sits one layer out, in the command that
+produces the packet rather than the one that reads it. At 1,248 distinct
+brand+model rows that is roughly 250 runs to cover the catalogue, so plan in
+runs rather than in tires.
+
 ## 1. Prepare an owner-reviewed exact-five mapping, locally
 
 The owner must supply five real, distinct Giga product URLs and identify the
