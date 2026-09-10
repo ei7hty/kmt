@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ROOT, commonDirOf, removeTarget } from '../scripts/worktree.mjs'
@@ -97,22 +97,64 @@ test('removes a registered worktree by full path -- the actual new capability', 
   assert.doesNotMatch(stillRegistered, new RegExp(dir.replace(/\\/g, '\\\\')), 'git no longer lists it either')
 })
 
+/**
+ * A fully isolated, throwaway repo with a copy of worktree.mjs inside it,
+ * used ONLY by the --compare-ref "kept" test below. That test needs a
+ * controlled two-commit ancestry (a ref that is definitely NOT an ancestor
+ * of the worktree branch's tip) -- reaching for `HEAD~1` on the outer repo
+ * seemed like the obvious way to get that, and it worked locally, but CI's
+ * "Tests, lint, build and audits" job checks out depth-1: there IS no
+ * parent commit there, so `HEAD~1` failed the same way `origin/main` had
+ * twice before it -- same root cause (a shallow CI checkout), a third
+ * different symptom. This sandbox makes its own two commits, so the
+ * ancestry it tests depends on nothing about the checkout that happens to
+ * be running the suite. Mirrors the pattern already proven out in
+ * backend/claim.test.mjs and backend/git-lib.test.mjs.
+ */
+function compareRefSandbox(t) {
+  const repo = mkdtempSync(path.join(tmpdir(), 'kmt-worktree-compareref-test-'))
+  t.after(() => { try { rmSync(repo, { recursive: true, force: true }) } catch { /* best effort on Windows locks */ } })
+  execFileSync('git', ['init', '--quiet', '--initial-branch=main', repo])
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repo })
+  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo })
+  writeFileSync(path.join(repo, 'seed.txt'), 'A\n')
+  execFileSync('git', ['add', 'seed.txt'], { cwd: repo })
+  execFileSync('git', ['commit', '--quiet', '-m', 'commit A'], { cwd: repo })
+  const commitA = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()
+  writeFileSync(path.join(repo, 'seed.txt'), 'B\n')
+  execFileSync('git', ['add', 'seed.txt'], { cwd: repo })
+  execFileSync('git', ['commit', '--quiet', '-m', 'commit B'], { cwd: repo }) // now HEAD, and NOT an ancestor of commitA
+
+  mkdirSync(path.join(repo, 'scripts'), { recursive: true })
+  cpSync(SCRIPT, path.join(repo, 'scripts', 'worktree.mjs'))
+  const script = path.join(repo, 'scripts', 'worktree.mjs')
+  const runInSandbox = (args) => {
+    try {
+      const stdout = execFileSync('node', [script, ...args], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      return { code: 0, stdout, stderr: '' }
+    } catch (error) {
+      return { code: error.status ?? 1, stdout: error.stdout || '', stderr: error.stderr || String(error.message) }
+    }
+  }
+  return { repo, commitA, run: runInSandbox }
+}
+
 test('--compare-ref changes what "landed" means: a branch not reachable from it is kept, not deleted', t => {
-  // makeWorktree's branch tip is HEAD with no further commits, so it is
-  // trivially an ancestor of HEAD (the case above) but NOT an ancestor of
-  // HEAD's own parent -- an ancestor relationship that only ever points one
-  // way. This proves --compare-ref is actually consulted, not merely parsed:
-  // the same worktree that gets auto-deleted against HEAD is kept against a
-  // ref its work has not landed in.
-  const { dir, branch } = makeWorktree(t)
-  const result = run(['remove', dir, '--compare-ref', 'HEAD~1'])
+  // This proves --compare-ref is actually consulted, not merely parsed: the
+  // worktree branch's tip is commit B (HEAD); commit A predates it, so B is
+  // NOT an ancestor of A -- ancestry only ever points one way. Against A as
+  // --compare-ref, this branch's work has not "landed" and must be kept.
+  const { repo, commitA, run: runInSandbox } = compareRefSandbox(t)
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'kmt-worktree-compareref-tree-')), 'tree')
+  const branch = `worktree-test-compareref-${Math.random().toString(36).slice(2, 8)}`
+  t.after(() => { try { rmSync(path.dirname(dir), { recursive: true, force: true }) } catch { /* already gone */ } })
+  execFileSync('git', ['worktree', 'add', dir, 'HEAD', '-b', branch], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+
+  const result = runInSandbox(['remove', dir, '--compare-ref', commitA])
   assert.equal(result.code, 0, result.stderr)
-  assert.match(result.stdout, /Kept local branch/, 'not an ancestor of HEAD~1, so this must NOT be treated as landed')
+  assert.match(result.stdout, /Kept local branch/, 'not an ancestor of commit A, so this must NOT be treated as landed')
   assert.equal(existsSync(dir), false, 'the worktree directory is still removed either way -- only the branch decision differs')
-  assert.equal(execFileSync('git', ['branch', '--list', branch], { cwd: ROOT, encoding: 'utf8' }).trim() !== '', true, 'the branch itself must survive')
-  // No extra cleanup needed here -- makeWorktree's own t.after already
-  // deletes the branch as a best-effort fallback, which is exactly what
-  // fires in this specific case since remove() deliberately left it behind.
+  assert.notEqual(execFileSync('git', ['branch', '--list', branch], { cwd: repo, encoding: 'utf8' }).trim(), '', 'the branch itself must survive')
 })
 
 test('refuses a path that is not a worktree at all -- nonexistent and a plain directory', t => {
