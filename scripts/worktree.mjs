@@ -12,8 +12,8 @@
  * without --force, which refuses if anything in the tree would be lost.
  *
  *   node scripts/worktree.mjs add <name> [--branch <branch>] [--from origin/main]
- *   node scripts/worktree.mjs remove <name>
- *   node scripts/worktree.mjs remove <path>
+ *   node scripts/worktree.mjs remove <name> [--compare-ref origin/main]
+ *   node scripts/worktree.mjs remove <path> [--compare-ref origin/main]
  *   node scripts/worktree.mjs link <name>
  *   node scripts/worktree.mjs list
  *
@@ -54,8 +54,8 @@ the safe order.
 
 Usage:
   node scripts/worktree.mjs add <name> [--branch <branch>] [--from <ref>]
-  node scripts/worktree.mjs remove <name>
-  node scripts/worktree.mjs remove <path>
+  node scripts/worktree.mjs remove <name> [--compare-ref <ref>]
+  node scripts/worktree.mjs remove <path> [--compare-ref <ref>]
   node scripts/worktree.mjs link <name>
   node scripts/worktree.mjs list
 
@@ -73,7 +73,7 @@ remove   Takes a bare name (resolved under .worktrees/, as before) or a full
          error. Otherwise unlinks node_modules first, then runs
          \`git worktree remove\` without --force, so git still has the final
          say. The local branch is deleted only if its tip is already in
-         origin/main.
+         --compare-ref (default: origin/main).
 link     Recreates the node_modules link in an existing worktree, for a tree
          made by hand or one whose link was removed.
 list     The registered worktrees.
@@ -90,13 +90,14 @@ function fail(message) {
 }
 
 function parseArgs(argv) {
-  const options = { command: argv[0], name: '', branch: '', from: 'origin/main', help: false }
+  const options = { command: argv[0], name: '', branch: '', from: 'origin/main', compareRef: 'origin/main', help: false }
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i]
     const value = () => { if (i + 1 >= argv.length) fail(`${arg} needs a value`); return argv[++i] }
     if (arg === '--help' || arg === '-h') options.help = true
     else if (arg === '--branch') options.branch = value()
     else if (arg === '--from') options.from = value()
+    else if (arg === '--compare-ref') options.compareRef = value()
     else if (arg.startsWith('-')) fail(`Unknown option: ${arg}`)
     else if (!options.name) options.name = arg
     else fail(`Unexpected argument: ${arg}`)
@@ -244,7 +245,23 @@ function add({ name, branch, from }) {
   console.log(`\n${displayPath(tree)} is on ${branch} from ${from}. Claim it in .forge/CLAIMS.md before you start.`)
 }
 
-function remove({ name }) {
+/**
+ * `compareRef` decides whether a removed branch's work has landed -- default
+ * `origin/main`, matching what "landed" means for real usage. Was hardcoded
+ * until this function's own tests, which spawn the real CLI to observe real
+ * disk effects (deliberately, per this file's other tests), turned out to
+ * need `origin/main` resolvable purely to pass a ref through -- and CI's
+ * "Tests, lint, build and audits" job checks out shallow and single-ref,
+ * where `origin/main` genuinely does not exist. The fix is not a deeper
+ * checkout (that satisfies the test at the cost of slowing every CI run
+ * forever, and leaves the assumption in place for the next caller); it is
+ * this function no longer assuming the ref exists at all -- the same shape
+ * as `defaultDecoderPython` no longer assuming `process.cwd()` was the repo
+ * root. A test can now pass a ref it created itself (`HEAD`, or a fixed
+ * fixture commit) and exercise the real merge logic without needing
+ * anything about the surrounding checkout to be true first.
+ */
+function remove({ name, compareRef = 'origin/main' }) {
   const tree = removeTarget(name)
   if (path.resolve(tree) === path.resolve(ROOT)) fail('That is the main checkout.')
 
@@ -283,7 +300,7 @@ function remove({ name }) {
 
   const tip = known.branch ? git(['rev-parse', known.branch]) : ''
   const unpushed = known.branch && tip
-    ? git(['log', '--oneline', `origin/main..${known.branch}`]).split('\n').filter(Boolean)
+    ? git(['log', '--oneline', `${compareRef}..${known.branch}`]).split('\n').filter(Boolean)
     : []
 
   unlink(tree)
@@ -298,12 +315,12 @@ function remove({ name }) {
 
   if (!known.branch) return
   let merged
-  try { git(['merge-base', '--is-ancestor', tip, 'origin/main']); merged = true } catch { merged = false }
+  try { git(['merge-base', '--is-ancestor', tip, compareRef]); merged = true } catch { merged = false }
   if (merged) {
     git(['branch', '-D', known.branch])
-    console.log(`Deleted local branch ${known.branch}; its tip ${tip.slice(0, 7)} is in origin/main.`)
+    console.log(`Deleted local branch ${known.branch}; its tip ${tip.slice(0, 7)} is in ${compareRef}.`)
   } else {
-    console.log(`Kept local branch ${known.branch}: ${unpushed.length} commit(s) on it are not in origin/main.` +
+    console.log(`Kept local branch ${known.branch}: ${unpushed.length} commit(s) on it are not in ${compareRef}.` +
       (unpushed.length ? `\n  ${unpushed.slice(0, 5).join('\n  ')}` : ''))
   }
 }

@@ -80,13 +80,39 @@ test('removes a registered worktree by full path -- the actual new capability', 
   const { dir } = makeWorktree(t)
   assert.ok(existsSync(dir))
 
-  const result = run(['remove', dir])
+  // --compare-ref HEAD, not the default origin/main: this test's own fixture
+  // never fetches origin, and CI's "Tests, lint, build and audits" job
+  // checks out shallow and single-ref, where origin/main is not a resolvable
+  // ref at all -- confirmed by JUNIOR REPO AGENT on PR #467. remove()'s
+  // merge-check no longer assumes a ref nobody guarantees it; this test now
+  // supplies one it knows is real (its own worktree's tip IS HEAD, since
+  // makeWorktree creates the branch from HEAD with no further commits).
+  const result = run(['remove', dir, '--compare-ref', 'HEAD'])
   assert.equal(result.code, 0, result.stderr)
   assert.match(result.stdout, /Removed/)
+  assert.match(result.stdout, /Deleted local branch/, 'the branch\'s tip IS --compare-ref (HEAD), so it counts as landed and is cleaned up')
   assert.equal(existsSync(dir), false, 'the directory itself is gone')
 
   const stillRegistered = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: ROOT, encoding: 'utf8' })
   assert.doesNotMatch(stillRegistered, new RegExp(dir.replace(/\\/g, '\\\\')), 'git no longer lists it either')
+})
+
+test('--compare-ref changes what "landed" means: a branch not reachable from it is kept, not deleted', t => {
+  // makeWorktree's branch tip is HEAD with no further commits, so it is
+  // trivially an ancestor of HEAD (the case above) but NOT an ancestor of
+  // HEAD's own parent -- an ancestor relationship that only ever points one
+  // way. This proves --compare-ref is actually consulted, not merely parsed:
+  // the same worktree that gets auto-deleted against HEAD is kept against a
+  // ref its work has not landed in.
+  const { dir, branch } = makeWorktree(t)
+  const result = run(['remove', dir, '--compare-ref', 'HEAD~1'])
+  assert.equal(result.code, 0, result.stderr)
+  assert.match(result.stdout, /Kept local branch/, 'not an ancestor of HEAD~1, so this must NOT be treated as landed')
+  assert.equal(existsSync(dir), false, 'the worktree directory is still removed either way -- only the branch decision differs')
+  assert.equal(execFileSync('git', ['branch', '--list', branch], { cwd: ROOT, encoding: 'utf8' }).trim() !== '', true, 'the branch itself must survive')
+  // No extra cleanup needed here -- makeWorktree's own t.after already
+  // deletes the branch as a best-effort fallback, which is exactly what
+  // fires in this specific case since remove() deliberately left it behind.
 })
 
 test('refuses a path that is not a worktree at all -- nonexistent and a plain directory', t => {
@@ -161,7 +187,7 @@ test('the shared node_modules install survives a real removal through a real lin
   else symlinkSync(shared, target, 'dir')
   assert.ok(existsSync(path.join(target, 'vite')), 'sanity: the junction/symlink actually resolves into the shared install before removal')
 
-  const result = run(['remove', dir])
+  const result = run(['remove', dir, '--compare-ref', 'HEAD']) // see the comment on the first --compare-ref use above
   assert.equal(result.code, 0, result.stderr)
   assert.equal(existsSync(dir), false)
 
