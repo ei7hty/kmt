@@ -32,37 +32,25 @@
 .oi-brand-summary p { font-size: 12px; line-height: 1.7; }
 .oi-brand-confirm { display: grid; gap: 8px; }
 .oi-job { display: flex; flex-wrap: wrap; gap: 8px 20px; background: #171717; padding: 12px 16px; font-size: 12px; border: 1px solid #3e3e42; border-radius: 4px; margin-bottom: 16px; }
-.oi-filters { display: grid; grid-template-columns: 2fr 1fr 1fr auto; align-items: end; gap: 14px; padding: 18px 0; }
+.oi-filters { display: grid; grid-template-columns: 2fr 1fr 1fr; align-items: end; gap: 14px; padding: 18px 0; }
 .oi-shell label { font-size: 12px; font-weight: 600; display: grid; gap: 7px; color: #dedee3; }
 .oi-shell input:not([type=checkbox]), .oi-shell select, .oi-shell textarea { width: 100%; min-width: 0; border: 1px solid #56565c; border-radius: 4px; padding: 11px 12px; color: #f5f5f5; background: #121212; font-size: 13px; }
 .oi-shell select { min-height: 44px; color-scheme: dark; }
 .oi-shell input::placeholder, .oi-shell textarea::placeholder { color: #909094; }
 .oi-shell textarea { resize: vertical; }
-.oi-results-heading { display: flex; gap: 12px; justify-content: space-between; margin: 18px 0; font-size: 12px; }
-.oi-results-heading span { color: #a3a3ab; }
-.oi-results { display: grid; gap: 16px; }
-.oi-tire { display: grid; grid-template-columns: minmax(0, 1fr) 300px; border: 1px solid #303033; background: #121212; border-radius: 7px; overflow: hidden; }
-.oi-tire-offered { border-left: 3px solid #64c696; }
-.oi-tire-main { padding: 24px; min-width: 0; }
-.oi-tire-tags { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; margin-bottom: 10px; }
-.oi-tire-tags > span:first-child { color: white; letter-spacing: .5px; }
+.oi-results { display: block; }
 .oi-stock { color: #73dba3; }
 .oi-attention { color: #edbf6d; }
 .oi-description { color: #a3a3ab; font-size: 13px; }
-.oi-specs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 22px 0; }
 .oi-shell dt { font-size: 11px; color: #a3a3ab; margin-bottom: 5px; }
 .oi-shell dd { font-size: 13px; margin: 0; color: #dedee3; overflow-wrap: anywhere; }
-.oi-specs > div:first-child dd { font-size: 22px; font-weight: 650; }
 .oi-shell details { font-size: 12px; color: #a3a3ab; }
 .oi-shell summary { padding: 7px 0; }
 .oi-source { display: grid; gap: 12px; }
 .oi-shell a { color: #ff7278; }
 .oi-shell pre { overflow: auto; background: #080808; padding: 14px; font-size: 11px; max-height: 240px; }
-.oi-offer { padding: 24px; display: grid; align-content: start; gap: 10px; border-left: 1px solid #303033; background: #171717; }
 .oi-shell .oi-check { display: flex; align-items: center; gap: 9px; font-size: 14px; margin-bottom: 4px; }
 .oi-check input { accent-color: #ed1c24; width: 18px; height: 18px; }
-.oi-spread { font-size: 11px; margin-top: -3px; }
-.oi-offer > .oi-attention { font-size: 11px; }
 .oi-error { color: #ff9d9d; font-size: 12px; }
 .oi-notice { padding: 12px 16px; border: 1px solid #56565c; background: #171717; margin: 12px 0; font-size: 13px; }
 .oi-size-matches { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -6px 0 14px; font-size: 12px; }
@@ -78,9 +66,6 @@
   .oi-filters > label:first-child { grid-column: 1 / -1; }
   .oi-refresh { align-items: stretch; flex-direction: column; gap: 14px; }
   .oi-brand-summary { max-width: none; }
-  .oi-tire { grid-template-columns: 1fr; }
-  .oi-offer { border-left: 0; border-top: 1px solid #303033; }
-  .oi-results-heading { flex-direction: column; gap: 4px; }
 }
 @media (max-width: 480px) {
   .oi-content { padding: 26px 16px; }
@@ -91,8 +76,6 @@
   .oi-metrics > div { padding: 14px 10px; }
   .oi-metrics strong { font-size: 23px; }
   .oi-metrics span { font-size: 10px; line-height: 1.4; }
-  .oi-specs { grid-template-columns: 1fr 1fr; }
-  .oi-tire-main, .oi-offer { padding: 18px; }
 }
 
 /* Inline "use the suggested price" action, sized to sit in a caption line. */
@@ -141,11 +124,6 @@
 .oi-tools-body { display: grid; gap: 16px; padding-top: 16px; }
 .oi-tools:not(.is-open) > .oi-tools-body { height: 0; padding: 0; overflow: hidden; }
 .oi-tools .oi-refresh { margin-bottom: 0; }
-.oi-tire-price { color: #dedee3; font-weight: 600; }
-.oi-tire-more { margin-top: 8px; }
-.oi-tire-more > summary { color: #dedee3; }
-.oi-offer-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: end; }
-.oi-offer-row > .oi-check { margin-bottom: 11px; }
 
 /* PricingLines (#354): a repeatable list, unlike every other .oi-refresh
    section's single fixed-width form, so it overrides the vertical centering
@@ -167,12 +145,6 @@
   .oi-metrics { margin-bottom: 14px; }
   .oi-metrics > div { padding: 10px 8px; }
   .oi-metrics strong { font-size: 20px; }
-  .oi-tire-main, .oi-offer { padding: 14px; }
-  .oi-offer { gap: 8px; }
-  .oi-offer > .oi-kicker { display: none; }
-  .oi-shell .oi-tire h2 { font-size: 16px; margin-bottom: 4px; }
-  .oi-tire-tags { margin-bottom: 6px; }
-  .oi-results-heading { margin: 12px 0; }
   .oi-filters { padding: 12px 0; gap: 10px; }
   .oi-line-row { grid-template-columns: 1fr; }
 }
@@ -195,11 +167,129 @@
    still giving the link box itself the full 44px tap height. */
 .oi-import-steps a { display: inline-flex; align-items: center; min-height: 44px; }
 
-/* At desktop width one card per row left most of each row empty and 24 cards
-   ran to 10,953px. Two cards per row, each stacked main over offer, the way
-   the card already stacks at phone width. */
-@media (min-width: 1100px) {
-  .oi-results { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .oi-tire { grid-template-columns: 1fr; }
-  .oi-offer { border-left: 0; border-top: 1px solid #303033; }
+/* ---------------------------------------------------------------------------
+   The inventory matrix (#stage 2).
+
+   Replaces the card list: 6,169 supplier rows priced 24 at a time, with no
+   sorting and a Save button per row, is not a screen anybody can price stock
+   on. Every colour here is set explicitly -- the owner shell is dark and a
+   panel that inherits half a palette is the shape of the red-on-red defect
+   this workspace has already shipped once.
+   ------------------------------------------------------------------------- */
+
+.oi-g-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 10px; font-size: 12px; color: #a3a3ab; }
+.oi-g-count { color: #dedee3; }
+.oi-shell .oi-g-pagesize { display: flex; align-items: center; gap: 8px; color: #dedee3; font-size: 12px; }
+.oi-shell .oi-g-pagesize select { width: auto; min-width: 78px; }
+
+/* Screen-reader-only: the grid leans on icons and single glyphs for density,
+   and every one of them says what it means to a screen reader here. */
+.oi-g-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* The scroller. Both axes on purpose: a sticky header only sticks against the
+   element that actually scrolls, and `overflow-x: auto` alone computes
+   `overflow-y` to auto anyway -- so the vertical scroll is bounded here and
+   the header stays put, rather than the page scrolling and the header leaving.
+   The page body itself never scrolls sideways, which is what the 375px
+   responsive audit measures. */
+.oi-g-scroll { overflow: auto; max-height: min(72vh, 900px); border: 1px solid #303033; border-radius: 7px; background: #121212; }
+.oi-g-table { width: 100%; min-width: 1080px; border-collapse: collapse; background: #121212; color: #dedee3; font-size: 13px; }
+/* `position: relative` is load-bearing, not decoration. The .oi-g-sr spans
+   below are `position: absolute`, and an absolutely positioned box whose
+   containing block sits OUTSIDE this horizontal scroller is not clipped by
+   it: each one resolved against the viewport instead, at its static x inside
+   a 960px-wide table, and pushed the document's own scrollWidth to 824px at
+   a 375px viewport. The grid scrolled correctly and the page scrolled
+   sideways anyway. Making every cell a containing block keeps them inside
+   the box that clips them. */
+.oi-g-table td, .oi-g-table th { position: relative; padding: 2px 10px; text-align: left; vertical-align: middle; background: #121212; color: #dedee3; border-bottom: 1px solid #262629; }
+.oi-g-table thead th { position: sticky; top: 0; z-index: 2; padding: 0 10px; background: #1c1c1f; color: #f5f5f5; border-bottom: 1px solid #4a4a50; white-space: nowrap; }
+.oi-g-sort { display: flex; align-items: center; justify-content: flex-start; gap: 6px; width: 100%; min-height: 44px; padding: 0; border: 0; background: none; color: #f5f5f5; font-size: 11px !important; font-weight: 700 !important; letter-spacing: 1px; text-transform: uppercase; text-align: left; }
+.oi-g-sort:hover { color: #ff9298; }
+.oi-g-sort[data-sorted="asc"], .oi-g-sort[data-sorted="desc"] { color: #ff7278; }
+.oi-g-arrow { font-size: 12px; }
+.oi-g-table thead th.oi-g-num { text-align: right; }
+.oi-g-table thead th.oi-g-num .oi-g-sort { justify-content: flex-end; text-align: right; }
+.oi-g-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.oi-g-row td, .oi-g-row th { height: 48px; }
+.oi-g-row.is-selected td, .oi-g-row.is-selected th { background: #1e1e26; }
+.oi-g-row.has-error td, .oi-g-row.has-error th { background: #211416; }
+.oi-g-row.is-offered td:first-child { box-shadow: inset 3px 0 0 0 #64c696; }
+.oi-g-cell-select, .oi-g-cell-check { width: 46px; padding: 0 !important; }
+.oi-g-cell-size { white-space: nowrap; color: #fafafa; }
+.oi-g-cell-name { min-width: 190px; max-width: 320px; font-weight: 400; }
+.oi-g-name { display: block; color: #fafafa; font-weight: 600; }
+.oi-g-stock { display: block; margin-top: 1px; font-size: 11px; }
+.oi-g-margin { color: #fafafa; font-weight: 650; }
+/* A margin the server has not recomputed since the last save. Amber and a
+   marker rather than a number this screen guessed at: margin is derived
+   server-side and the save responses do not carry a new one. */
+.oi-g-margin.is-stale { color: #edbf6d; font-weight: 500; }
+.oi-g-cell-input { width: 116px; }
+.oi-shell .oi-g-table input.oi-g-input { width: 100%; min-height: 44px; padding: 8px 9px; border: 1px solid #56565c; border-radius: 4px; background: #0d0d0d; color: #f5f5f5; font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.oi-shell .oi-g-table input.oi-g-input:hover { border-color: #77777a; }
+.oi-shell .oi-g-check { display: flex; align-items: center; justify-content: center; gap: 0; min-width: 44px; min-height: 44px; margin: 0; padding: 0; }
+.oi-g-check input[type="checkbox"] { width: 20px; height: 20px; accent-color: #ed1c24; }
+/* #a3a3ab, not the #77777a this first shipped as: that measured 4.2:1 on
+   the #121212 cell and AA needs 4.5:1. The audit reads the glyph AND the
+   visually-hidden label inside the button, so both had to move. */
+.oi-g-notes-toggle { min-width: 44px; min-height: 44px; padding: 0; border: 0; background: none; color: #a3a3ab; font-size: 15px; }
+.oi-g-notes-toggle.has-notes { color: #ff7278; }
+.oi-g-notes-toggle:hover { color: #ff9298; }
+/* A floor as well as a ceiling. Without the floor the table shared its
+   1080px between the columns and squeezed this one to 29px at a 375px
+   viewport -- the SKU link wrapped one character per line and failed the
+   44px tap target on its WIDTH, which reads nothing like a width problem
+   in the audit output. */
+.oi-g-cell-sku { min-width: 152px; max-width: 190px; overflow-wrap: anywhere; }
+.oi-g-cell-sku a, .oi-g-cell-sku span { display: inline-flex; align-items: center; min-width: 44px; min-height: 44px; font-size: 12px; white-space: nowrap; }
+.oi-g-cell-sku span { color: #a3a3ab; }
+.oi-g-cell-updated { white-space: nowrap; color: #a3a3ab; font-size: 12px; }
+
+/* Per-row results. A bulk write is normally a partial success, so a rejection
+   is reported on the row it happened to, with its own reason -- never as one
+   banner over rows that saved perfectly well. */
+.oi-g-statusrow td { padding: 8px 12px; font-size: 12px; border-bottom: 1px solid #303033; }
+.oi-g-statusrow.is-error td { background: #2a1215; color: #ff9d9d; }
+.oi-g-statusrow.is-saved td { background: #10201a; color: #73dba3; }
+.oi-g-detailrow > td { padding: 16px; background: #0d0d0d; border-bottom: 1px solid #303033; }
+.oi-g-detail { display: grid; gap: 10px; }
+.oi-g-detail .oi-source { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* The bulk bar. Only ever visible with a selection, and every one of its
+   actions confirms before it writes. */
+.oi-g-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin: 12px 0; padding: 12px 16px; border: 1px solid #3e3e42; border-left: 3px solid #cc1821; border-radius: 6px; background: #171717; color: #dedee3; font-size: 12px; }
+.oi-g-bulk-count { color: #dedee3; }
+.oi-g-bulk-count strong { color: #fafafa; font-size: 15px; }
+.oi-g-bulk-group { display: flex; align-items: center; gap: 8px; }
+.oi-shell .oi-g-bulk label { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: 0; color: #dedee3; font-size: 12px; white-space: nowrap; }
+.oi-shell .oi-g-bulk input:not([type=checkbox]) { width: 108px; min-height: 44px; }
+
+/* The confirmation. A price change over up to 200 rows is a destructive write
+   over the owner's livelihood, so it states the count and shows real
+   before/after numbers off his own rows before anything is sent. */
+.oi-g-confirm { margin: 12px 0; padding: 16px; border: 1px solid #cc1821; border-radius: 6px; background: #1b1113; color: #f0f0f2; }
+.oi-g-confirm-title { color: #fafafa; font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+.oi-g-sample { border-collapse: collapse; margin: 10px 0; font-size: 12px; color: #dedee3; }
+.oi-g-sample th, .oi-g-sample td { padding: 6px 14px 6px 0; text-align: left; border-bottom: 1px solid #3e3e42; color: #dedee3; }
+.oi-g-sample th { color: #a3a3ab; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; }
+.oi-g-sample .oi-g-num { text-align: right; padding-right: 0; padding-left: 14px; }
+.oi-g-after { color: #73dba3; font-weight: 700; }
+.oi-g-confirm-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+
+.oi-results .oi-empty { margin-top: 12px; }
+
+@media (max-width: 800px) {
+  .oi-g-controls { justify-content: flex-start; }
+  .oi-g-detail .oi-source { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 480px) {
+  /* The table keeps its width and scrolls inside its own box. Reflowing a
+     matrix into stacked cards at phone width would take back the one thing
+     this screen exists to give: costs, prices and margins side by side. */
+  .oi-g-scroll { max-height: 68vh; }
+  .oi-g-table td, .oi-g-table th { padding: 2px 8px; }
+  .oi-g-bulk { gap: 8px 12px; padding: 10px 12px; }
+  .oi-g-bulk-group { flex-wrap: wrap; }
 }
