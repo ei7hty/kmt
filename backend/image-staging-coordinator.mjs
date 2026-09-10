@@ -211,6 +211,9 @@ const FIXTURE_MODE = {
 
 async function runStaging(input, mode) {
   const plan = planFrom(input)
+  // Validated here rather than trusted: it reaches an append-only log.
+  const sourceSnapshotDigest = input.sourceSnapshotDigest
+  if (sourceSnapshotDigest !== undefined && !/^[a-f0-9]{64}$/.test(sourceSnapshotDigest)) throw refused()
   const buildTransport = mode.prepare(input, plan)
   const inspect = createIsolatedImageDecoder({ python: input.python, memoryBytes: plan.profile.policy.memoryBytes })
   const runId = randomUUID()
@@ -243,7 +246,16 @@ async function runStaging(input, mode) {
     db.exec(`CREATE TRIGGER staging_no_approval BEFORE UPDATE OF usage_status ON image_assets
       WHEN NEW.usage_status <> 'candidate' BEGIN SELECT RAISE(ABORT, 'staging never approves'); END;`)
     log = createImageRunProvenance(db, { runId, profileDigest: plan.profile.digest, snapshotDigest: plan.snapshotDigest })
-    log.append('run-start', { policy: plan.profile.policy, selected: plan.ids })
+    // The snapshot staging verified is not always the snapshot a person
+    // approved: a pilot packet carries version 2 and `planFrom` takes version
+    // 1, so the caller derives one from the other and passes the original's
+    // digest here. Recorded once, on run-start, beside the derived digest every
+    // payload already carries -- so the chain reads approved -> converted ->
+    // staged without anybody inferring the middle link. Absent when the caller
+    // staged a snapshot it did not derive, which is the honest thing to record
+    // for a run where no conversion happened.
+    log.append('run-start', { policy: plan.profile.policy, selected: plan.ids,
+      ...(sourceSnapshotDigest ? { sourceSnapshotDigest } : {}) })
     const candidates = repository.list()
     if (candidates.length !== plan.ids.length || candidates.some(row => row.usageStatus !== 'candidate')) throw refused()
     let current
