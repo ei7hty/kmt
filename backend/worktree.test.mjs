@@ -176,3 +176,52 @@ test('the bare-name form is unaffected -- add, then remove by name, exactly as b
   assert.equal(removed.code, 0, removed.stderr)
   assert.equal(existsSync(path.join(ROOT, '.worktrees', name)), false)
 })
+
+/**
+ * `add`'s hardening: `git worktree add <tree> -b <branch> <ref>` creates the
+ * branch and attaches the worktree as two separate, non-atomic effects, and
+ * a real failure here once left a branch behind with no worktree, then
+ * crashed as an uncaught exception on retry instead of naming the actual
+ * situation. Reproduced directly against the unfixed code before writing the
+ * fix (a pre-created branch, then `add` of the same name, threw the exact
+ * raw Node.js stack GATE ENGINEER reported) -- these two tests are that same
+ * reproduction, now against the fixed code.
+ */
+
+test('add refuses cleanly when a branch of the target name already exists with no worktree attached', t => {
+  // This is exactly the state a previous `add` that failed partway leaves
+  // behind: a branch, no tree. The pre-flight check catches it before git
+  // is invoked at all, rather than letting `git worktree add` fail a second,
+  // more confusing way ("a branch named ... already exists").
+  const name = `worktree-test-orphan-branch-${Math.random().toString(36).slice(2, 8)}`
+  execFileSync('git', ['branch', name, 'origin/main'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
+  t.after(() => {
+    try { execFileSync('git', ['branch', '-D', name], { cwd: ROOT, stdio: 'ignore' }) } catch { /* removed by the test itself, normally */ }
+  })
+
+  const result = run(['add', name])
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /already exists with no worktree/)
+  assert.equal(existsSync(path.join(ROOT, '.worktrees', name)), false, 'no worktree directory was created')
+})
+
+test('add refuses cleanly (no raw stack trace) when the ref does not exist, and leaves nothing behind', () => {
+  // Mirrors a manual reproduction against the real CLI: `git worktree add`
+  // validates the ref before creating a branch, so this specific failure
+  // never reaches the try/catch's own branch-cleanup line -- confirmed by
+  // checking `git branch --list` after the failure found none. That cleanup
+  // line (deleting a branch the failed attempt created) is verified by
+  // inspection instead: it is a plain `if (branchExists(branch))` guard
+  // around the same `branchExists` this file already exercises above, and
+  // forcing git itself into "branch created, attach failed" deterministically
+  // would mean tampering with permissions on the shared .worktrees/
+  // directory while other sessions may be creating trees there concurrently
+  // -- not a safe trade for covering one conditional delete.
+  const name = `worktree-test-badref-${Math.random().toString(36).slice(2, 8)}`
+  const result = run(['add', name, '--from', 'origin/this-branch-does-not-exist-at-all'])
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /`git worktree add` failed/)
+  assert.doesNotMatch(result.stderr, /\bat \S+ \(/, 'must not be a raw Node.js stack trace')
+  assert.equal(existsSync(path.join(ROOT, '.worktrees', name)), false)
+  assert.equal(execFileSync('git', ['branch', '--list', name], { cwd: ROOT, encoding: 'utf8' }).trim(), '', 'no branch left behind either')
+})

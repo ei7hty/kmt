@@ -192,14 +192,56 @@ function unlink(tree) {
   return true
 }
 
+const branchExists = (name) => { try { git(['rev-parse', '--verify', '--quiet', name]); return true } catch { return false } }
+
+/**
+ * `git worktree add <tree> -b <branch> <ref>`'s two effects -- creating the
+ * branch and attaching the worktree -- are not atomic with each other, and
+ * this failed here once in exactly the shape that matters: the branch got
+ * created, attaching the worktree did not, and the command threw an
+ * uncaught exception that printed as a bare Node.js stack ending in the
+ * runtime's own version banner -- no message, no clean exit code a caller
+ * chaining commands could key on. The caller's very next command then ran
+ * in whatever directory it already was, which on this machine is the
+ * shared main checkout by default -- the one directory every session's
+ * uncommitted work can be sitting in at once. A worktree tool whose
+ * failure mode is "silently keep operating on the shared checkout instead"
+ * is the most dangerous shape available here, worse than refusing loudly.
+ *
+ * Guarded two ways now. Before attempting anything: a branch of this name
+ * already existing with no worktree attached is exactly the state a
+ * previous failed `add` leaves behind, and retrying blindly into it used
+ * to fail a second, more confusing way ("a branch named ... already
+ * exists") instead of naming the actual situation. And the `git worktree
+ * add` call itself is no longer unguarded: on failure this prints the
+ * real git error, cleans up the branch if one was created along the way
+ * (so a retry starts clean rather than compounding), and exits with a
+ * message a caller can act on -- never an uncaught exception.
+ */
 function add({ name, branch, from }) {
   const tree = treePath(name)
-  if (existsSync(tree)) fail(`${path.relative(ROOT, tree)} already exists.`)
+  if (existsSync(tree)) fail(`${displayPath(tree)} already exists.`)
   branch = branch || name
+
+  if (branchExists(branch)) {
+    fail(`Branch ${branch} already exists with no worktree at ${displayPath(tree)} -- most likely left behind by ` +
+      `a previous \`add\` that failed partway. Delete it first if it is not wanted (\`git branch -D ${branch}\`), ` +
+      'or choose a different name.')
+  }
+
   git(['fetch', '--quiet', 'origin'])
-  console.log(git(['worktree', 'add', tree, '-b', branch, from]).split('\n').pop())
+  let output
+  try {
+    output = git(['worktree', 'add', tree, '-b', branch, from])
+  } catch (error) {
+    console.error(String(error.stderr || error.message).trim())
+    if (branchExists(branch)) { git(['branch', '-D', branch]); console.error(`\nCleaned up branch ${branch}, which the failed attempt created; a retry starts clean.`) }
+    console.error(`\n\`git worktree add\` failed; nothing was created at ${displayPath(tree)}.`)
+    process.exit(1)
+  }
+  console.log(output.split('\n').pop())
   link(tree)
-  console.log(`\n${path.relative(ROOT, tree)} is on ${branch} from ${from}. Claim it in .forge/CLAIMS.md before you start.`)
+  console.log(`\n${displayPath(tree)} is on ${branch} from ${from}. Claim it in .forge/CLAIMS.md before you start.`)
 }
 
 function remove({ name }) {
@@ -223,15 +265,19 @@ function remove({ name }) {
 
   // Tracked AND untracked changes are refused explicitly, before touching
   // anything -- untracked is exactly where unfinished work lives and it is
-  // invisible to a tracked-only check. `git worktree remove` also refuses on
-  // its own without --force (confirmed separately), so this is not the only
-  // thing standing between an agent and lost work -- but it is not merely a
-  // clearer message layered over a backstop, either: this check runs BEFORE
-  // `unlink` below. Proved by removing it and rerunning the suite: with only
-  // git's own refusal left, `unlink` had already torn out the node_modules
-  // link by the time `git worktree remove` refused on the untracked file --
-  // a worse halfway state (no dependencies, still dirty, still there) than
-  // simply refusing up front.
+  // invisible to a tracked-only check.
+  //
+  // This is NOT "a clearer message in front of git's own refusal" -- it is
+  // load-bearing on its own, because it runs BEFORE `unlink` below and git's
+  // refusal does not happen until after. Proved by deleting this check and
+  // rerunning the suite: with only git's own `git worktree remove` refusal
+  // left, `unlink` had already torn the node_modules link out by the time git
+  // refused on the untracked file -- a broken worktree (no dependencies,
+  // still dirty, still on disk) that git then declines to finish cleaning up,
+  // which is worse than either "removed" or "untouched". Two checks that
+  // both refuse the same case look redundant; they are not -- one of them is
+  // the only thing standing between a dirty tree and that halfway state. If
+  // this comment is ever separated from the check, say so again there.
   const dirty = git(['status', '--porcelain'], tree)
   if (dirty) fail(`${displayPath(tree)} has uncommitted changes, including possibly untracked files:\n${dirty}\nCommit or discard them first.`)
 
