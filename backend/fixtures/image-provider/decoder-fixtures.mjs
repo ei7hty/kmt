@@ -1,12 +1,80 @@
 import { spawnSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import path from 'node:path'
 import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { crc32, deflateSync, inflateSync } from 'node:zlib'
 
-const local = resolve('decoder.local', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+/**
+ * The default `decoder.local` venv, found without `KMT_IMAGE_DECODER_PYTHON`.
+ *
+ * Was `resolve('decoder.local', ...)` -- resolved against `process.cwd()`,
+ * not this file, so it only ever found a venv when node happened to be
+ * invoked from the repo root. Every agent here works from a `.worktrees/`
+ * checkout per AGENTS.md, so `process.cwd()` is the worktree, `decoder.local`
+ * is untracked (`.gitignore`'s `*.local`) and does not exist there, and
+ * `decoderPython` came back `null` -- silently, since a missing default is
+ * not itself an error. Two agents independently built their own venv the
+ * same night, in two different places, because neither could see the
+ * other's: not carelessness, the documented practice (a worktree, a
+ * cwd-relative default) producing the failure.
+ *
+ * Resolved from `import.meta.url` instead, which fixes the cwd dependency
+ * but -- on its own -- would still land inside whichever worktree this file
+ * is running from, since a worktree is a real checkout with its own path.
+ * So: if this file is running from inside `.worktrees/<name>/` (this repo's
+ * own convention, `AGENTS.md`), the search continues past it to the main
+ * checkout one level up, where `docs/image-mirroring.md` documents creating
+ * the venv. One `decoder.local`, built once in the main checkout, is then
+ * found by every worktree without anyone exporting
+ * `KMT_IMAGE_DECODER_PYTHON` by hand -- the sharing both agents were
+ * building toward, from the location the docs already name.
+ *
+ * A pure function of this file's own directory (never `process.cwd()`) and
+ * the platform, so `backend/decoder-fixtures.test.mjs` can check it against
+ * synthetic worktree-shaped paths without touching the filesystem or
+ * spawning a process -- `backend/*.test.mjs` is CI's actual glob
+ * (`fly-deploy.yml`), non-recursive, so a test nested under this directory
+ * would never run; this stays a plain export for that test to import flat
+ * from `backend/`.
+ *
+ * The `platform` argument picks `path.win32` or `path.posix` for the WHOLE
+ * computation -- resolve, `sep`, the `.worktrees` marker -- not only the
+ * `Scripts/python.exe` vs `bin/python` suffix at the end. In production
+ * `platform` defaults to `process.platform`, so the module picked always
+ * matches the ambient `node:path` the host would have used anyway; nothing
+ * changes there. What this buys is genuine testability: a synthetic
+ * Windows-shaped path asserted with `platform: 'win32'` now means the same
+ * thing on any CI runner, because it is parsed by `path.win32` rather than
+ * by whichever OS happens to be running the test. The first version of this
+ * mixed ambient `node:path` (host-native) with a platform-keyed suffix --
+ * correct in production, where the two always agree, and wrong the moment a
+ * test asserted a Windows-shaped path against Linux CI's POSIX-native
+ * `path.resolve`, which does not recognise `C:\...` as absolute and silently
+ * anchors it to `process.cwd()` instead. Found by CI itself, not by local
+ * testing, which is exactly the failure mode this note exists to prevent
+ * the next reader from reintroducing.
+ */
+export function defaultDecoderPython(moduleDir, platform = process.platform) {
+  const p = platform === 'win32' ? path.win32 : path.posix
+  const repoRoot = p.resolve(moduleDir, '..', '..', '..')
+  const worktreeMarker = `${p.sep}.worktrees${p.sep}`
+  const worktreeIndex = repoRoot.indexOf(worktreeMarker)
+  const mainCheckoutRoot = worktreeIndex === -1 ? repoRoot : repoRoot.slice(0, worktreeIndex)
+  return p.resolve(mainCheckoutRoot, 'decoder.local', platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+}
+
+const local = defaultDecoderPython(path.dirname(fileURLToPath(import.meta.url)))
 export const decoderPython = process.env.KMT_IMAGE_DECODER_PYTHON || (existsSync(local) ? local : null)
 export function realImageFixtures() {
-  if (!decoderPython) throw new Error('Real decoder tests require KMT_IMAGE_DECODER_PYTHON with scripts/image-decoder-requirements.txt installed')
+  if (!decoderPython) {
+    throw new Error(
+      'Real decoder tests require a Python interpreter with scripts/image-decoder-requirements.txt ' +
+      `installed. Looked for the shared venv at ${local} and found none. Either build it there ` +
+      '(docs/image-mirroring.md: `python -m venv decoder.local` in the main checkout, then ' +
+      'install the pinned requirements) so every worktree finds the same one, or set ' +
+      'KMT_IMAGE_DECODER_PYTHON to an absolute interpreter path of your own.',
+    )
+  }
   const script = `import io,json,base64
 from PIL import Image
 result = {}
