@@ -220,21 +220,57 @@ produces the packet. At 1,248 distinct brand+model rows that is 250 runs to
 cover the catalogue, so anyone planning coverage should count runs rather than
 tires.
 
-**Whether that file can be generated instead is UNMEASURED, and this is the
-open question the feature currently rests on.** Four of the five fields derive
-mechanically from supplier rows already in the database. The fifth does not
-obviously: `productUrl()` requires the giga-tires origin, a path beginning
-`/tires/` and containing `/tirecode/`, while supplier rows store `source.url`
-**raw** from the listing anchor rather than canonicalized. Whether real stored
-values satisfy that check is not known here — the repository's own fixture
-(`/x/y/tirecode/1`) would fail it, fixtures therefore cannot answer it, and the
-owner's rules forbid anyone but him touching the live site to find out.
+**IT WAS MEASURABLE ALL ALONG, AND IT HAS NOW BEEN MEASURED.** The committed
+catalogue is in this repository, so the claim that stopped this feature never
+needed the owner, production access, or the supplier. Parsed from
+`src/data/scraped-tires.json`:
 
-So: **do not assume the mapping is cheap to produce until that is settled.** If
-real URLs canonicalize, generating the mapping from a chosen size is a small
-command. If they do not, each tire's product page has to be *discovered*, which
-is a materially larger piece of work involving more requests to the supplier and
-a person judging bad matches.
+| | |
+| --- | --- |
+| rows | 1,083 |
+| rows carrying a `source.url` | 1,083 — all of them |
+| URLs containing `/tirecode/` | 1,083 — all of them |
+| **distinct** URLs | **1,083 — one per tire, none shared** |
+| URLs beginning `/tires/` | **0** |
+| path prefixes | the four scraped sizes |
+
+Sample: `https://www.giga-tires.com/205-65-15/waterfall-tires/quattro/tirecode/WT25`
+
+Two agents measured this independently, without having seen each other's
+figures, and got the same numbers.
+
+**The operator runbook says these are listing pages. They are not.** A listing
+page is shared by every tire in a size; four sizes would give four URLs. There
+are 1,083 distinct ones, each carrying its own `tirecode` with the brand and
+model in the path. See [`approved-product-images.md`](approved-product-images.md),
+which is corrected — and note that several of its other claims describe a system
+that no longer exists.
+
+**The single failing condition is the `/tires/` prefix, and it is a courtesy
+guard rather than an oversight.** Origin matches and `/tirecode/` is present on
+all 1,083; only the prefix fails. `scripts/giga-tires.mjs:14` records why:
+*"Their robots.txt allows /tires/. It disallows /cart, /checkout, /my-account,
+/price/calculate, the /tires/o/ deals pages, and any `?filtering=` faceted
+URL."* **Do not relax it to make a mapping derivable** — that widens what this
+project fetches on the strength of a convenience.
+
+Three measured facts for whoever decides:
+
+- The scraper already fetches **listing** pages at `${ORIGIN}/tires/{size}`
+  (`giga-tires.mjs:431`), inside the allowed prefix.
+- The product links **on those allowed pages** point outside it. That is the
+  site's own structure rather than anything this project constructed — which is
+  an argument about who chose the shape, **not** about what is permitted.
+- The disallow list our own comment records does not mention size-prefixed
+  paths, and robots.txt is deny-by-exception: a path absent from it is not
+  implicitly forbidden.
+
+None of that settles it. Whether those paths are crawlable is readable only from
+giga-tires' live `robots.txt`, and that is a request to a real host — the owner's
+call. **That question, not "can the mapping be derived", is what this feature is
+waiting on.** If the site also serves a `/tires/...` form for the same product,
+the cheapest answer is to canonicalize the stored URL into the permitted shape
+rather than loosen the guard; nobody has checked.
 
 **This is where the pipeline stops today**, and this section exists because that
 was hard to see. Five times in one night this feature was described as one step
