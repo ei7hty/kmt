@@ -45,6 +45,7 @@ import path from 'node:path'
 // consult, so this check cannot disagree with them about whether the decoder
 // is present -- the CATALOG_FIELDS lesson, applied before it could bite.
 import { decoderPython } from '../backend/fixtures/image-provider/decoder-fixtures.mjs'
+import { BASELINE_PATTERNS } from './test-baseline.mjs'
 
 /**
  * The number of tests the named suites contain when every one of them can run.
@@ -71,47 +72,36 @@ const EXPECTED_TESTS = 729
  * load still registers one failing test, so three dead files leave 3 behind and
  * the total drops by 45 rather than 48. Calling it a suite size invited
  * exactly that confusion and the name is now the arithmetic it actually does.
+ *
+ * NOT VERIFIED SINCE #464, AND NOT CURRENTLY VERIFIABLE HERE. This number was
+ * measured by running with and without a decoder, which used to mean setting or
+ * unsetting `KMT_IMAGE_DECODER_PYTHON`. That no longer works: #464 made
+ * `decoder-fixtures.mjs` resolve the shared venv from `import.meta.url` and walk
+ * out of `.worktrees/` to the main checkout, so it finds `decoder.local` with no
+ * environment variable at all. Measured 2026-09-10 -- the four patterns give an
+ * identical 729 with the variable set and unset, and importing the module prints
+ * a resolved interpreter path either way.
+ *
+ * So the no-decoder branch below is now reachable only where no venv exists,
+ * which is CI. That is #464 working exactly as designed, and it is worth naming
+ * the category: A FIX THAT REMOVES A FAILURE MODE LOCALLY ALSO REMOVES THE
+ * ABILITY TO EXERCISE ITS GUARD LOCALLY. The guard did not get weaker; the
+ * machine you would test it on stopped being able to reproduce the condition.
+ *
+ * Treat 45 as measured-before-#464 rather than as verified. To re-measure it,
+ * hide `decoder.local` deliberately -- do not infer the no-decoder state from an
+ * unset variable that no longer means that. And if a run reports a shortfall
+ * CITING the decoder, suspect this constant before suspecting EXPECTED_TESTS.
  */
 const DECODER_SUITE_DELTA = 45
 
 /**
  * The patterns EXPECTED_TESTS was measured against, and the whole reason this
- * file can claim anything.
- *
- * A total is only true for one command, and nothing tied this one to a command.
- * The first baseline here was 632, measured against `backend/*.test.mjs` alone,
- * while the workflow runs both patterns below and totals 671. Run with the
- * narrower set against the wider baseline and the tool reports a shortfall that
- * is not a shortfall -- and the next person either hunts a suite that never
- * vanished or raises the number to clear the red. Both done carefully.
- *
- * So a different invocation is not a failing count, it is a REFUSAL: this tool
- * declines to judge a run its baseline was not measured for. That is the honest
- * answer and it makes widening the patterns a deliberate act, because the
- * refusal forces a re-measure at the moment the baseline stops being true.
- *
- * Kept here rather than owning the globs outright so the workflow still decides
- * WHAT runs -- `backend/*` is non-recursive while `src/**` is recursive, and
- * fixing that asymmetry belongs to whoever owns the workflow, not to this file.
- * Update both together, in one commit, or not at all.
+ * file can claim anything -- now declared in `test-baseline.mjs`, because
+ * `orphaned-test-check.mjs` needs the identical list to ask the opposite
+ * question (nothing outside these patterns) and two copies of one fact is the
+ * defect that check exists to prevent.
  */
-const BASELINE_PATTERNS = [
-  'backend/**/*.test.mjs',
-  'src/**/*.test.mjs',
-  // Matches nothing today and is here on purpose: scripts/ is covered by no
-  // glob, so a test beside a script has been invisible to CI and three sessions
-  // have routed one into backend/ to be seen. Declaring it means the next such
-  // test lands INTO coverage and the count below demands the bump, rather than
-  // running nowhere until somebody remembers to widen a pattern.
-  'scripts/**/*.test.mjs',
-  // Named as a file, not a glob. `.forge/*.test.mjs` would also match
-  // release-check and release-browser, which the workflow runs at :101 and :250
-  // for their own reasons -- matching them here would run them twice. This one
-  // has no such placement and had simply never been added to any list: 11 tests
-  // that have never executed in CI, guarding the instrument that says whether a
-  // restored customer database is trustworthy.
-  '.forge/restore-integrity-check.test.mjs',
-]
 
 const files = process.argv.slice(2)
 if (!files.length) {
