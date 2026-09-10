@@ -159,14 +159,20 @@ function validateEnrichmentOptions(options) {
 
 // The most pages one --validation-count run may request. A downstream safety
 // bound, not a business rule: each selected page becomes one enriched row in the
-// packet's snapshot.json, which scripts/import-images.mjs reads under a hard
-// 65536-byte cap (an inline literal there: readPrivateImageInput(..., 'snapshot.json'), 65536).
-// Measured 2026-09-10 against src/data/scraped-tires.json (1083 rows: ~362 B/row
-// avg, 573 max) -- ~166 of the largest raw rows fit under 65536, and the enriched
-// form (candidates + per-URL provenance) lowers the practical ceiling to ~120-150.
-// 100 stays under that with headroom for the owner's 37-model target. INVALIDATED
-// BY a change to that 65536 cap in import-images.mjs, or growth in per-row size --
-// re-measure both, do not just raise this.
+// packet's snapshot.json, which the CLI the owner actually runs to import that
+// packet -- scripts/import-product-images.mjs, the #468 caller -- reads under
+// MAX_PACKET_FILE_BYTES (65536) in readPacketInputs. (scripts/import-images.mjs:35
+// caps the same file at an inline 65536 too; same number, a second import path.)
+// Measured 2026-09-10 against src/data/scraped-tires.json with JSON.stringify --
+// the bytes the packet actually writes, not json.dumps pretty-printed, which runs
+// ~10% high (1083 rows: ~362 B/row avg, 573 max) -- ~166 of the largest raw rows
+// fit under 65536, and the enriched form (candidates + per-URL provenance) lowers
+// the practical ceiling to ~120-150. 100 stays under that with headroom for the
+// owner's 37-model target. INVALIDATED BY a change to ANY of the 65536 packet-file
+// caps -- 8 sites as of 2026-09-10 (`git grep 65536 -- scripts/ backend/`), only
+// import-product-images.mjs's MAX_PACKET_FILE_BYTES named and the rest inline, so
+// raising one leaves the others silently disagreeing: grep the class, do not trust
+// one file. Or growth in per-row size. Re-measure; do not just raise this.
 export const MAX_VALIDATION_COUNT = 100
 
 function validateValidationOptions(options) {
