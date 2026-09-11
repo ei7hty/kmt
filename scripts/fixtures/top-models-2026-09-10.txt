@@ -1,0 +1,71 @@
+# The owner's top 37 models by row count, as measured against the LIVE
+# CATALOGUE -- not the committed scrape snapshot, which only covers 4 sizes
+# and cannot answer this question on its own (703 distinct models in the
+# snapshot, 478 of them appearing exactly once; the top 37 there overlaps
+# the real top 37 by only 2 of 37 models).
+#
+# Derived by OWNER AGENT: ranked by row count in the live catalogue (6,052
+# rows, 1,332 distinct models at read time), restricted to models that have
+# at least one row in the committed snapshot (src/data/scraped-tires.json)
+# -- a model absent from every scraped size can't get a photo from this
+# pipeline regardless of its catalogue popularity. Read live 2026-09-10.
+# These top 37 cover 1,446 of 6,052 catalogue rows (23.9%).
+#
+# THIS IS A SNAPSHOT OF A RANKING, NOT A STANDING TRUTH. The live catalogue
+# moved between two reads the same night (6,155 rows, then 6,052 -- stock
+# changes), so this file will drift from the real ranking over time. There
+# is no live check that re-derives it; re-running the catalogue-side
+# measurement above and regenerating this file is the only way to know if
+# it still matches. Nothing in this repository fetches anything to verify
+# it, and nothing should.
+#
+# WHY A COMMITTED FILE, NOT A RANKING HEURISTIC IN THE SCRIPT: which models
+# matter is a business decision. A script that reconstructs "the top models"
+# from whatever data happens to be on disk buries that decision where it is
+# unauditable and can silently produce a different list from what anyone
+# reviewed -- exactly what scripts/build-image-mapping.mjs's row-count-in-
+# the-snapshot heuristic did on this exact question before this file
+# existed. An explicit, reviewed list is reproducible: the same 37 lines
+# read twice always select the same 37 tires.
+#
+# Format: one exact model name per line, matching the `name` field in
+# src/data/scraped-tires.json byte-for-byte. Blank lines and lines starting
+# with `#` are ignored. Consumed by:
+#   node scripts/build-image-mapping.mjs --models-file <this file> --out ABS_PATH
+Royal Black Racing Trac
+Aplus Pro Racing
+Lanvigator Excite
+Atlas Force UHP
+Arroyo Grand Sport A/S
+American Road Star Sport A/S
+Rockblade Staminarace
+Accelera Iota ST68
+Ferentino Eternopresa
+Roadtrack Terrena UHP
+Pegasus HPX SPORT AS
+Leao Lion Sport 3
+Accelera Iota EVT
+Royal Black Touring HP
+Aplus Comfort HP
+Atlas Force HP
+Evoluxx Capricorn UHP
+Lanvigator Fastone
+Landspider Citytraxx H/P
+Royal Black Milage SUV/CUV
+Forceland Vitality F22
+Accelera Eco Plush
+Evoluxx Capricorn 4X4 HP
+Rockblade Multifresh Touring
+Aplus Performax SUV/CUV
+Arroyo Eco Pro A/S
+Leao Lion Sport HP3
+Evoluxx Capricorn HP
+General AltiMAX RT45
+Groundspeed Voyager GT-AS
+Landspider Citytraxx G/P
+Atlander Xsport-86
+Lancaster LR-66
+Montreal Eco-2
+Rockblade Rapidawn H/T
+Zenna Sport Line
+Arisun ZG02
