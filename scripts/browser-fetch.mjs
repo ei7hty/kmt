@@ -21,9 +21,25 @@ import { assertExpectedPage, assertProviderResponse, productUrl, ProviderRefusal
 
 const READY_SELECTOR = '.plp-list__item-container'
 
-// Metadata pilot: one exact main-document request, no redirects, subresources,
-// popups, scripts, XHR, images, fonts or media. A page requiring any of those
-// fails; the pilot never relaxes policy or retries to obtain a result.
+// Metadata pilot: one exact main-document request, no redirects, popups,
+// images, fonts, media or third-party anything.
+//
+// It used to admit NO subresources at all -- not even the page's own scripts.
+// Measured against the real supplier on 2026-09-10, that made the pilot
+// incapable of ever succeeding here: giga-tires answers a product URL with
+// HTTP 202 and a 1,997-byte shell, and the tire's markup exists only once the
+// page's own code runs. Held under the document-only policy for 20 seconds,
+// two different product pages stayed at exactly 1,997 bytes -- no JSON-LD, not
+// one occurrence of `tirecode`. The old comment said "a page requiring any of
+// those fails", and it was right; what nobody had measured was that EVERY page
+// at this supplier requires them.
+//
+// So the page's own first-party code is now allowed to run, and nothing else
+// is. That is what a person opening the URL in a browser already does. It is
+// not a stealth technique, not a spoofed agent, and not a retry: still one
+// navigation, still the real user agent, still 2-5s between pages, still no
+// redirects, still no images or fonts, still nothing from another origin.
+const RENDER_RESOURCE_TYPES = new Set(['script', 'xhr', 'fetch'])
 export function productDocumentPolicy(expectedUrl) {
   let used = false
   return request => {
@@ -150,10 +166,28 @@ export async function createBrowserFetcher(options = {}) {
       try {
         if (productMetadataOnly) {
           const allow = productDocumentPolicy(url)
-          await productPage.route('**/*', route => routeProductDocument(route, allow).catch(async error => {
-            documentError = error
-            await route.abort().catch(() => {})
-          }))
+          const origin = new URL(url).origin
+          await productPage.route('**/*', async route => {
+            const request = route.request()
+            // The one main document keeps the strict path: exactly one fetch,
+            // no redirects, size-capped. `allow` only consumes itself on a
+            // match, so calling it per request is safe.
+            if (allow(request)) {
+              return routeProductDocument(route, () => true).catch(async error => {
+                documentError = error
+                await route.abort().catch(() => {})
+              })
+            }
+            // The page's own rendering code, same origin only. Everything
+            // else -- images, fonts, media, stylesheets, and every third
+            // party -- is still aborted.
+            let sameOrigin = false
+            try { sameOrigin = new URL(request.url()).origin === origin } catch { sameOrigin = false }
+            if (sameOrigin && RENDER_RESOURCE_TYPES.has(request.resourceType())) {
+              return route.continue().catch(async () => { await route.abort().catch(() => {}) })
+            }
+            return route.abort().catch(() => {})
+          })
         }
         const response = await productPage.goto(url, { waitUntil: 'domcontentloaded', timeout })
         if (documentError) throw documentError
