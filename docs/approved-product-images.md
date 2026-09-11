@@ -18,10 +18,11 @@ different command from the one that acquires images.
 
 ## What the catalogue's source URLs actually are
 
-The committed catalogue has **1,083 rows and no image URLs**. It also has **no
-*valid* product-page source URLs**, and the precise reason matters:
-`productUrl()` requires a path beginning `/tires/`, and none of these do — they
-begin with the size.
+The committed catalogue has **1,083 rows and no image URLs**, but every row
+carries a **valid product-page source URL**. An earlier version of this section
+said otherwise, because `productUrl()` then required a path beginning
+`/tires/` and none of these do — they begin with the size. That requirement was
+the bug, not the data (see the next section); all 1,083 pass today.
 
 **An earlier version of this document said those URLs are listing pages. That
 is measurably false.** Parsed from `src/data/scraped-tires.json`, the same
@@ -42,52 +43,110 @@ size; there are four sizes, so a catalogue of listing pages would hold four
 URLs. It holds 1,083, each with its own `tirecode` and the brand and model in
 the path. These are per-product URLs.
 
-## Why the `/tires/` rule is not a bug to delete
+## The `/tires/` rule was a paraphrase, and it was wrong
 
-`scripts/giga-tires.mjs:14` records the reason: *"Their robots.txt allows
-/tires/. It disallows /cart, /checkout, /my-account, /price/calculate, the
-/tires/o/ deals pages, and any `?filtering=` faceted URL."* So the prefix check
-is a **courtesy guard** confining fetches to the path this project wrote down as
-permitted. Widening it is a decision about what we are allowed to fetch, not a
-fix — **do not relax it to make a mapping derivable.**
+**This section previously argued that the prefix check must not be relaxed. That
+argument was mistaken, and the correction is the most useful thing in this
+document.**
 
-**Three things nobody has established**, and the feature is waiting on the first:
+`scripts/giga-tires.mjs:14` used to record: *"Their robots.txt allows /tires/."*
+True, and a misreading. Their robots.txt is **allow-by-default**: no
+`Disallow: /`, no `Allow:` line at all, just eight named exclusions. `/tires/`
+was never *granted* — it was one of the many paths the list does not forbid.
 
-1. Whether those size-prefixed URLs resolve to a single tire's page. Reading
-   them means a request to a real host, which is the owner's call alone.
-2. Whether giga-tires also serves a `/tires/...` form for the same product. If
-   it does, the right change is to **canonicalize the stored URL into the
-   permitted shape** — same fetch target, same robots posture, no widening —
-   rather than to loosen the guard. That would be the cheapest outcome and
-   nobody has checked it.
-3. Whether the imported database (6,169 rows at the last count) stores the same
-   URL shape as the committed 1,083. The measurement above is like-for-like with
-   this document's own sentence and says nothing about the larger set.
+That paraphrase hardened into `productUrl()`'s `startsWith('/tires/')`, which
+refused **every real product URL in the catalogue**. The guard was stricter than
+the rule it claimed to enforce, and the feature it blocked was the entire photo
+pipeline.
 
-Until (1) is answered: do not invent product URLs from IDs, do not change seeds
-to work around refusals, and do not substitute whichever products happen to
-succeed.
+Read live on 2026-09-10, on the owner's explicit one-time authorisation, and
+verbatim from their file:
 
-## Five per packet is current, not leftover
+```text
+User-agent: *
+Disallow: /cart
+Disallow: /checkout
+Disallow: /my-account
+Disallow: /price/calculate
+Disallow: /*?filtering=
+Disallow: /*&filtering=
+Disallow: /tires/o/
+Disallow: /tires/*/o/
+Sitemap: https://www.giga-tires.com/sitemap.xml
+```
 
-This document says **"Supply exactly five entries"** in two places, and unlike
-the four corrections above **that five has not moved**: `selectValidationUrls`
-in `scripts/giga-tires.mjs`'s caller takes `count = 5`
-(`scripts/scrape-tires.mjs:182`) and the packet path calls it without an
-override (`:491`). So a packet is five tires, still.
+No `Crawl-delay`. Our 2–5s pacing is voluntary and far above anything asked.
 
-Worth knowing because a different five *was* removed: #450 took the compiled-in
-packet size out of `backend/image-manifest.mjs`, and it is easy to assume the
-constraint went with it. It did not — it sits one layer out, in the command that
-produces the packet rather than the one that reads it. At 1,248 distinct
-brand+model rows that is roughly 250 runs to cover the catalogue, so plan in
-runs rather than in tires.
+**Their own sitemap settles it.** The sitemap index names two product sitemaps;
+the first holds **50,000 product URLs, 100% carrying `/tirecode/` and 0%
+beginning `/tires/`** — every one of the exact shape the old guard refused. The
+supplier publishes these addresses *asking* crawlers to fetch them.
 
-## 1. Prepare an owner-reviewed exact-five mapping, locally
+`productUrl()` now encodes the eight actual disallows plus our own `/tirecode/`
+requirement plus the origin (#497), verified against all 50,000 with controls
+confirming it still refuses the disallowed shapes (#498 keeps a 30-URL sample as
+a permanent offline fixture).
 
-The owner must supply five real, distinct Giga product URLs and identify the
-existing supplier row each belongs to. Obtain these through the owner's
-authorized supplier access; this implementation does not discover them.
+**The trap this section now exists to prevent:** all 50,000 URLs share a shape —
+five path segments, a `{brand}-tires` segment in the middle. *Do not encode
+that.* An observed regularity is not a permission rule, and turning one into a
+refusal is precisely how the `/tires/` bug was born. The rule is the source's own
+constraints plus our own explicitly-labelled requirements, and nothing inferred
+from the shape of the data.
+
+## A packet is no longer five
+
+**This section previously argued that five per packet "has not moved," citing
+`count = 5` at `scripts/scrape-tires.mjs:182` and a call site that passed no
+override. #499 falsified both.**
+
+`--validation-count N` now sets the batch, defaulting to 5 so every existing
+invocation is unchanged. The default lives in one place (`parseArgs`);
+`selectValidationUrls` requires the count and fails closed rather than carrying
+its own copy.
+
+**A second five was hiding on a different axis.** `createValidationOptions`
+set `enrichLimit: 5`, and `enrichRows` slices its input to it — so a run that
+correctly *selected* 37 pages would have quietly *processed five* and reported
+success. Not a crash: a smaller-than-asked-for success that reads as fine.
+#499 threads the count through both.
+
+`MAX_VALIDATION_COUNT = 100` caps a run, refused early and by name. It is a
+downstream safety bound, not a business rule: each selected page becomes one
+enriched row in the packet's `snapshot.json`, which is read under a 65536-byte
+cap. Its provenance and invalidation condition are recorded beside the constant
+in `scripts/scrape-tires.mjs` — re-measure, do not just raise it.
+
+**Three separate ceilings exist and raising one alone will not widen a run.**
+Measured on `origin/main`, 2026-09-10:
+
+| value | where | what it bounds |
+| --- | --- | --- |
+| **100** | `MAX_VALIDATION_COUNT`, `scripts/scrape-tires.mjs` | pages one run may select — **the binding one** |
+| 250 | `IMAGE_PILOT_POLICY.candidateLimit`, `backend/image-provider-profile.mjs` | politeness budget; raising it changes the profile digest on purpose |
+| 500 | `MAX_IMAGE_PACKET_ASSETS`, `backend/image-manifest.mjs` | manifest sanity limit, so a malformed packet cannot claim an unbounded run |
+
+They are consistent today (100 < 250 < 500). Raise the first past 250 and the
+coordinator refuses; past 500 and the manifest does. Check all three.
+
+At 1,353 distinct models in the live catalogue, a 100-per-run batch is roughly
+14 runs to cover everything, not 250. Plan in runs, but the runs are now large.
+
+## 1. Build the owner-reviewed mapping, locally
+
+**This no longer has to be typed by hand.** Every field below derives
+mechanically from a row already in `src/data/scraped-tires.json`: `supplierId`
+is `row.id`, `supplierSku` is `row.source.sku`, `productUrl` is
+`row.source.url`, and `revision` is `supplierImageRevision(row)` — a pure
+function of the row, no I/O.
+
+The product URL was never missing; it has been in `source.url` all along. It was
+unusable only because `productUrl()` refused it, and that guard is fixed. The
+"hand-authored mapping" requirement was a consequence of the defect and outlived
+it in these notes by months.
+
+Entries must still be distinct per supplier row and per URL, and the owner still
+reviews what goes in.
 Keep the mapping, baseline snapshot, logs, returned product metadata and image
 files in a private directory outside Git checkouts, static roots and build
 contexts. On Windows, use an owner-only ACL; POSIX outputs use modes 0700/0600.
@@ -109,7 +168,8 @@ The UTF-8 mapping JSON has this shape (placeholders are deliberately unusable):
 }
 ```
 
-Supply exactly five entries. `supplierImageRevision(tire)`, exported by
+Supply one entry per tire, up to `--validation-count` (max 100).
+`supplierImageRevision(tire)`, exported by
 `backend/image-manifest.mjs`, calculates the revision. Representation v1 first
 normalizes description with `cleanCatalogDescription`, then recursively sorts
 object keys, preserves array order and JSON-serializes the entire supplier
@@ -188,7 +248,8 @@ Prepare a private bindings JSON array in exactly the snapshot candidate order:
 [{"supplierId":"EXISTING_ID","format":"png","path":"ABS_LOCAL_IMAGE_FILE"}]
 ```
 
-Supply exactly five entries, with format `png` or `jpeg`. Then:
+Supply exactly one entry per snapshot candidate, in the same order, with
+format `png` or `jpeg`. Then:
 
 ```text
 node scripts/seal-image-packet.mjs ABS_PRIVATE_PACKET_DIRECTORY ABS_PRIVATE_BINDINGS_JSON
