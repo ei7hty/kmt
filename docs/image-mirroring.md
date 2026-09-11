@@ -9,8 +9,9 @@ art fallback until an owner deliberately approves an asset.
 
 The persistent local-file serving path is documented in
 [approved-product-images.md](approved-product-images.md). It accepts a private
-exact-five local-file packet, retains pending state until authenticated owner
-approval, and serves approved same-origin URLs. It does not enable the provider
+local-file packet — **no longer exactly five**, see the note near the end of this
+file — retains pending state until authenticated owner approval, and serves
+approved same-origin URLs. It does not enable the provider
 execution paths described below.
 
 ## What is durable
