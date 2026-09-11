@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { rankModels, pickRepresentativeTire, buildCandidate } from './build-image-mapping.mjs'
+import { rankModels, pickRepresentativeTire, buildCandidate, namesFromFile, selectByNames } from './build-image-mapping.mjs'
 import { prepareImagePilot } from './image-pilot-packet.mjs'
 import { sha256Bytes } from '../backend/image-assets.mjs'
 import { supplierImageRevision } from '../backend/image-manifest.mjs'
@@ -209,4 +209,97 @@ test('duplicate model names in the snapshot are one model, not two -- rows still
   const mapping = JSON.parse(readFileSync(out))
   assert.equal(mapping.candidates.length, 1)
   assert.equal(mapping.candidates[0].supplierId, 'dup-0') // lexicographically first id
+})
+
+// ---------------------------------------------------------------------------
+// --models-file: an explicit, provenanced list of names, not a heuristic
+// ranking over whatever data happens to be on disk (2026-09-10: --models N's
+// own ranking is only over the snapshot, which measurably diverges from
+// live-catalogue popularity almost completely -- 2 of 37 overlap).
+
+test('namesFromFile ignores blank lines and #-comments, preserves order', () => {
+  const bytes = Buffer.from('# header\n\nFirst Model\n  Second Model  \n# a comment\nThird Model\n')
+  assert.deepEqual(namesFromFile(bytes), ['First Model', 'Second Model', 'Third Model'])
+})
+
+test('selectByNames splits requested names into found (in request order) and missing (by name)', () => {
+  const byName = new Map([['A', ['rowA']], ['B', ['rowB']]])
+  const { selected, missing } = selectByNames(byName, ['B', 'A', 'Nonexistent'])
+  assert.deepEqual(selected.map(([name]) => name), ['B', 'A'])
+  assert.deepEqual(missing, ['Nonexistent'])
+})
+
+test('--models and --models-file are mutually exclusive', t => {
+  const dir = sandbox(t)
+  const snapshotFile = writeSnapshot(dir, snapshotWithModels([{ name: 'M', sizes: 1 }]))
+  const listFile = path.join(dir, 'list.txt')
+  writeFileSync(listFile, 'M\n')
+  const result = run(['--models', '1', '--models-file', listFile, '--snapshot', snapshotFile, '--out', path.join(dir, 'mapping.json')])
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /mutually exclusive/)
+})
+
+test('neither --models nor --models-file is a required-argument error', t => {
+  const dir = sandbox(t)
+  const snapshotFile = writeSnapshot(dir, snapshotWithModels([{ name: 'M', sizes: 1 }]))
+  const result = run(['--snapshot', snapshotFile, '--out', path.join(dir, 'mapping.json')])
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /Exactly one of --models or --models-file is required/)
+})
+
+test('--models-file selects the named models, in file order, ignoring row count', t => {
+  const dir = sandbox(t)
+  const snapshotFile = writeSnapshot(dir, snapshotWithModels([
+    { name: 'Popular', sizes: 9 }, { name: 'Rare', sizes: 1 }, { name: 'Unrequested', sizes: 5 },
+  ]))
+  const listFile = path.join(dir, 'list.txt')
+  writeFileSync(listFile, '# only these two, rare one first on purpose\nRare\nPopular\n')
+  const out = path.join(dir, 'mapping.json')
+  const result = run(['--models-file', listFile, '--snapshot', snapshotFile, '--out', out])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Selected 2 model\(s\)/)
+  assert.doesNotMatch(result.stdout, /Unrequested/)
+
+  const mappingBytes = readFileSync(out)
+  const inputBytes = readFileSync(snapshotFile)
+  const plan = prepareImagePilot(inputBytes, mappingBytes) // the proof again, not a hand check
+  assert.equal(plan.baseline.size, 2)
+})
+
+test('--models-file refuses by name when a listed model has no snapshot row, unless --allow-fewer', t => {
+  const dir = sandbox(t)
+  const snapshotFile = writeSnapshot(dir, snapshotWithModels([{ name: 'Exists', sizes: 1 }]))
+  const listFile = path.join(dir, 'list.txt')
+  writeFileSync(listFile, 'Exists\nDoes Not Exist\n')
+  const out = path.join(dir, 'mapping.json')
+
+  const refused = run(['--models-file', listFile, '--snapshot', snapshotFile, '--out', out])
+  assert.notEqual(refused.status, 0)
+  assert.match(refused.stderr, /1 requested model\(s\) have no row in the snapshot/)
+  assert.match(refused.stderr, /Does Not Exist/)
+  assert.equal(existsSync(out), false)
+
+  const allowed = run(['--models-file', listFile, '--allow-fewer', '--snapshot', snapshotFile, '--out', out])
+  assert.equal(allowed.status, 0, allowed.stderr)
+  const mapping = JSON.parse(readFileSync(out))
+  assert.equal(mapping.candidates.length, 1)
+})
+
+test('the committed top-models fixture selects 37 distinct candidates from the real snapshot, accepted by prepareImagePilot', t => {
+  const dir = sandbox(t)
+  const listFile = path.join(REPO_ROOT, 'scripts', 'fixtures', 'top-models-2026-09-10.txt')
+  const snapshotFile = path.join(REPO_ROOT, 'src', 'data', 'scraped-tires.json')
+  const out = path.join(dir, 'mapping.json')
+  const result = run(['--models-file', listFile, '--snapshot', snapshotFile, '--out', out])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Selected 37 model\(s\)/)
+
+  const mappingBytes = readFileSync(out)
+  const mapping = JSON.parse(mappingBytes)
+  assert.equal(mapping.candidates.length, 37)
+  assert.equal(new Set(mapping.candidates.map(c => c.supplierId)).size, 37)
+  assert.equal(new Set(mapping.candidates.map(c => c.productUrl)).size, 37)
+
+  const plan = prepareImagePilot(readFileSync(snapshotFile), mappingBytes)
+  assert.equal(plan.baseline.size, 37)
 })

@@ -26,23 +26,41 @@
  * snapshot. The one piece of judgment here is SELECTION -- which tires get a
  * photo this run -- and that is stated plainly below, not hidden in a helper.
  *
- * ## Selection: one photo per model, ranked by how many sizes it has
+ * ## Selection: one photo per model -- from a list, or a quick approximation
  *
  * The packet's whole point is one representative photo per MODEL, not one per
- * SKU -- a model sold in nine sizes needs one picture, not nine. `--models N`
- * ranks every distinct `name` in the snapshot by how many rows share it
- * (ties broken alphabetically by name, stated so a re-run is reproducible
- * without reading this file), takes the top N, and picks exactly one row per
- * chosen model (the row whose `id` sorts first -- also stated so it's not a
- * silent implementation detail).
+ * SKU -- a model sold in nine sizes needs one picture, not nine. Whichever
+ * selects the models, exactly one row per chosen model is picked (the row
+ * whose `id` sorts first -- stated so it's not a silent implementation
+ * detail).
  *
- * DELIBERATELY NOT ENCODED: no assumption about how many models exist, what
- * their names look like, or how many sizes a "normal" model has. `--models N`
- * asking for more than the snapshot actually contains is reported loudly (see
- * below), never silently satisfied with fewer -- the same principle
- * `--validation-count` was fixed to respect in scripts/scrape-tires.mjs
- * (#499): a count flag that quietly does less than it says is the trap, not
- * the size of the shortfall.
+ * `--models-file ABS_PATH` names the exact models, one per line, in the order
+ * a person or process decided they matter -- WHICH models get a photo is a
+ * business decision, not something this script should guess at, and burying
+ * that decision in a ranking heuristic makes it unauditable and liable to
+ * silently change when the underlying data does. See
+ * scripts/fixtures/top-models-2026-09-10.txt for the shape of such a list and
+ * how one gets derived and provenanced.
+ *
+ * `--models N` is the "just give me some models" mode: ranks every distinct
+ * `name` IN THIS SNAPSHOT ONLY by how many rows share it (ties broken
+ * alphabetically by name, stated so a re-run is reproducible without reading
+ * this file), takes the top N. THIS IS NOT CATALOGUE POPULARITY -- it is
+ * popularity within whichever 4 sizes happen to be scraped, and the two can
+ * diverge almost completely (measured 2026-09-10: the top 37 by snapshot row
+ * count overlapped the top 37 by live-catalogue row count in only 2 of 37
+ * models, because 478 of the snapshot's 703 models appear in it exactly once
+ * -- nearly all ties). Good enough for "does the mapping mechanism work at
+ * all," not a substitute for an actual priority list.
+ *
+ * DELIBERATELY NOT ENCODED, either mode: no assumption about how many models
+ * exist, what their names look like, or how many sizes a "normal" model has.
+ * A requested model with no snapshot row -- whether that's `--models N`
+ * asking for more distinct models than exist, or `--models-file` naming one
+ * that isn't there -- is reported loudly, by name where a name exists, never
+ * silently satisfied with fewer. Same principle `--validation-count` was
+ * fixed to respect in scripts/scrape-tires.mjs (#499): a count or list that
+ * quietly does less than it says is the trap, not the size of the shortfall.
  *
  * ## The proof
  *
@@ -90,11 +108,27 @@ Options:
                     exists (delete it first to regenerate).
   --snapshot PATH  Scrape snapshot to read (default: src/data/scraped-tires.json,
                     this repository's committed one).
-  --allow-fewer    If the snapshot has fewer than N distinct models, proceed
-                    with all of them instead of refusing. Without this flag,
-                    a shortfall is a hard error, named exactly -- never a
-                    silent smaller run.
+  --allow-fewer    If some requested models have no row in the snapshot (or,
+                    for --models, fewer than N distinct models exist at all),
+                    proceed with whatever's available instead of refusing.
+                    Without this flag, any shortfall is a hard error, every
+                    missing model named -- never a silent smaller run.
   --help           This message.
+
+--models and --models-file are mutually exclusive; exactly one is required.
+
+--models N ranks models by ROW COUNT IN THIS SNAPSHOT ONLY, most first, ties
+broken alphabetically. THIS IS NOT CATALOGUE POPULARITY: the snapshot covers
+only 4 sizes, most models appear in it once or twice, and the top N by
+snapshot count can overlap the real top N by live-catalogue count almost not
+at all (measured 2026-09-10: 2 of 37) -- a "just give me some models" mode,
+not a business ranking. For an actual priority list, use --models-file.
+
+--models-file ABS_PATH names the exact models to use, one per line (blank
+lines and #-comment lines ignored), in file order -- the ranking is then
+whatever business decision produced that file, not a heuristic guessed from
+whatever data happens to be on disk. See scripts/fixtures/top-models-2026-09-10.txt
+for the shape and an example of how one such file is derived and provenanced.
 
 Every candidate is verified by feeding the generated mapping through the real
 prepareImagePilot() before anything is written; a mapping that function
@@ -102,12 +136,13 @@ refuses is never saved.
 `.trimStart()
 
 function parseArgs(argv) {
-  const options = { models: null, out: null, snapshot: DEFAULT_SNAPSHOT, allowFewer: false, help: false }
+  const options = { models: null, modelsFile: null, out: null, snapshot: DEFAULT_SNAPSHOT, allowFewer: false, help: false }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--help' || arg === '-h') options.help = true
     else if (arg === '--allow-fewer') options.allowFewer = true
     else if (arg === '--models') options.models = Number(argv[++i])
+    else if (arg === '--models-file') options.modelsFile = path.resolve(argv[++i])
     else if (arg === '--out') options.out = argv[++i]
     else if (arg === '--snapshot') options.snapshot = path.resolve(argv[++i])
     else throw new Error(`Unknown argument ${arg}. Run with --help.`)
@@ -116,8 +151,34 @@ function parseArgs(argv) {
 }
 
 function validateOptions(options) {
-  if (!Number.isInteger(options.models) || options.models < 1) throw new Error('--models must be a positive integer.')
+  if (options.models !== null && options.modelsFile !== null) throw new Error('--models and --models-file are mutually exclusive.')
+  if (options.models === null && options.modelsFile === null) throw new Error('Exactly one of --models or --models-file is required.')
+  if (options.models !== null && (!Number.isInteger(options.models) || options.models < 1)) throw new Error('--models must be a positive integer.')
   if (typeof options.out !== 'string' || !options.out) throw new Error('--out is required.')
+}
+
+/** Newline-delimited model names -- blank lines and `#`-comment lines ignored, order preserved. */
+export function namesFromFile(bytes) {
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    .split(/\r\n|\n/)
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith('#'))
+}
+
+/**
+ * Splits a requested list of model names against what's actually in the
+ * snapshot (`byName`, from `rankModels`) -- `selected` in the order
+ * requested, `missing` named exactly. The one place both `--models` and
+ * `--models-file` funnel through, so a shortfall is reported identically
+ * regardless of which produced the request.
+ */
+export function selectByNames(byName, names) {
+  const selected = [], missing = []
+  for (const name of names) {
+    if (byName.has(name)) selected.push([name, byName.get(name)])
+    else missing.push(name)
+  }
+  return { selected, missing }
 }
 
 /**
@@ -209,22 +270,47 @@ function main() {
   const tires = Array.isArray(snapshot.tires) ? snapshot.tires : []
 
   const ranking = rankModels(tires)
+  const byName = new Map(ranking)
   console.log(`${ranking.length} distinct model(s) in ${options.snapshot}.`)
 
-  if (options.models > ranking.length) {
-    const message = `Requested --models ${options.models}; only ${ranking.length} distinct models exist in the snapshot.`
+  // Requested names: from the file, in file order; or the top N by snapshot
+  // row count, which for --models is ALWAYS a subset of `ranking`'s own
+  // names, so selectByNames below can never find one of these "missing" --
+  // only a genuine --models-file entry with no snapshot row can be.
+  let requestedNames
+  if (options.modelsFile) {
+    requestedNames = namesFromFile(readFileSync(options.modelsFile))
+  } else {
+    if (options.models > ranking.length) {
+      const message = `Requested --models ${options.models}; only ${ranking.length} distinct models exist in the snapshot.`
+      if (!options.allowFewer) {
+        console.error(message)
+        console.error('Refusing to silently produce fewer than requested. Pass --allow-fewer to proceed with all available models instead.')
+        process.exitCode = 1
+        return
+      }
+      console.error(`${message} Proceeding with all ${ranking.length}, per --allow-fewer.`)
+    }
+    requestedNames = ranking.slice(0, options.models).map(([name]) => name)
+  }
+
+  const { selected, missing } = selectByNames(byName, requestedNames)
+
+  if (missing.length) {
+    console.error(`${missing.length} requested model(s) have no row in the snapshot:`)
+    for (const name of missing) console.error(`  ${name}`)
     if (!options.allowFewer) {
-      console.error(message)
-      console.error('Refusing to silently produce fewer than requested. Pass --allow-fewer to proceed with all available models instead.')
+      console.error('Refusing to silently drop a requested model. Pass --allow-fewer to proceed with only the models that do exist.')
       process.exitCode = 1
       return
     }
-    console.error(`${message} Proceeding with all ${ranking.length}, per --allow-fewer.`)
+    console.error(`Proceeding with the ${selected.length} model(s) that do exist, per --allow-fewer.`)
   }
 
-  const selected = ranking.slice(0, Math.min(options.models, ranking.length))
   console.log(`Selected ${selected.length} model(s):`)
   for (const [name, rows] of selected) console.log(`  ${name} (${rows.length} size${rows.length === 1 ? '' : 's'} in snapshot)`)
+
+  if (!selected.length) throw new Error('No models selected -- refusing to write an empty mapping.')
 
   const candidates = selected.map(([, rows]) => buildCandidate(pickRepresentativeTire(rows)))
 
@@ -239,7 +325,7 @@ function main() {
   const mappingBytes = Buffer.from(JSON.stringify(mapping))
 
   if (mappingBytes.length > MAX_MAPPING_BYTES) {
-    console.error(`Generated mapping is ${mappingBytes.length} bytes, over prepareImagePilot's ${MAX_MAPPING_BYTES}-byte limit. Use fewer --models.`)
+    console.error(`Generated mapping is ${mappingBytes.length} bytes, over prepareImagePilot's ${MAX_MAPPING_BYTES}-byte limit. Request fewer models.`)
     process.exitCode = 1
     return
   }
