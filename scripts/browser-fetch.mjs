@@ -21,9 +21,14 @@ import { assertExpectedPage, assertProviderResponse, productUrl, ProviderRefusal
 
 const READY_SELECTOR = '.plp-list__item-container'
 
-// Metadata pilot: one exact main-document request, no redirects, subresources,
-// popups, scripts, XHR, images, fonts or media. A page requiring any of those
-// fails; the pilot never relaxes policy or retries to obtain a result.
+// Metadata pilot: ONE exact main-document navigation, no redirects, no popups,
+// no second document. That part is unchanged and is what this policy is for.
+//
+// Subresources are NOT refused any more. They were, and it made the pilot
+// incapable of ever succeeding against this supplier -- see the note on
+// `javaScriptEnabled` in createBrowserFetcher. Images, fonts and media are
+// still dropped, matching the size scrape. The pilot still never retries, never
+// substitutes, and never follows a redirect to obtain a result.
 export function productDocumentPolicy(expectedUrl) {
   let used = false
   return request => {
@@ -94,8 +99,25 @@ export async function createBrowserFetcher(options = {}) {
     : []
 
   const browser = await chromium.launch({ headless, executablePath, args })
+  // JavaScript stays ON for the pilot, as it already is for the size scrape.
+  //
+  // It used to be off (`javaScriptEnabled: false` when productMetadataOnly),
+  // for minimum footprint. Measured 2026-09-11: with scripts disabled, a
+  // product URL answers HTTP 202 and a 1,997-byte shell that never fills --
+  // held for 20 seconds it stays at 1,997 bytes, no JSON-LD, not one
+  // occurrence of `tirecode`. The shell's only request is to
+  // `token.awswaf.com`: this host's AWS WAF wants a browser to behave like a
+  // browser before it serves the page, exactly as the header above describes
+  // for the listing scrape.
+  //
+  // So the pilot could never have worked. Turning scripts on is not stealth
+  // and not a bypass -- it is the same honest posture `fetchSizePage` has
+  // used all along: a visible window, the real user agent, no fingerprint
+  // patching, no token replay, and a pause between pages. What it gives up is
+  // only the pilot's original "absolute minimum footprint" goal, which cost
+  // the feature its entire reason to exist.
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, userAgent,
-    serviceWorkers: 'block', ...(productMetadataOnly ? { javaScriptEnabled: false } : {}) })
+    serviceWorkers: 'block' })
   const page = await context.newPage()
 
   // Images and fonts are most of the bytes on a listing page and none of the
@@ -150,10 +172,25 @@ export async function createBrowserFetcher(options = {}) {
       try {
         if (productMetadataOnly) {
           const allow = productDocumentPolicy(url)
-          await productPage.route('**/*', route => routeProductDocument(route, allow).catch(async error => {
-            documentError = error
-            await route.abort().catch(() => {})
-          }))
+          await productPage.route('**/*', async route => {
+            // The MAIN DOCUMENT keeps every guard it ever had: exactly one
+            // navigation, fetched with maxRedirects 0 so a redirect is refused
+            // rather than followed, and capped at 4MB. `allow` only consumes
+            // itself on a match, so calling it per request is safe.
+            if (allow(route.request())) {
+              return routeProductDocument(route, () => true).catch(async error => {
+                documentError = error
+                await route.abort().catch(() => {})
+              })
+            }
+            // Everything else follows `fetchSizePage`'s rule, which has been
+            // in production against this supplier all along: drop the bytes
+            // that are not data, let the page be a page. Aborting subresources
+            // here is what left the pilot staring at a 1,997-byte WAF shell.
+            const type = route.request().resourceType()
+            if (type === 'image' || type === 'font' || type === 'media') return route.abort().catch(() => {})
+            return route.continue().catch(async () => { await route.abort().catch(() => {}) })
+          })
         }
         const response = await productPage.goto(url, { waitUntil: 'domcontentloaded', timeout })
         if (documentError) throw documentError
