@@ -51,10 +51,12 @@ Options:
                      maximum 50). Required bounding applies across all URLs.
   --concurrency N    Product-page workers (default 1, maximum 4).
   --product-delay MS Minimum delay between product-page starts (default 1500).
-  --validate-products Validate exactly five seeded random product pages from
-                     the existing snapshot; read-only, serial and fail-closed.
+  --validate-products Validate seeded random product pages from the snapshot;
+                     read-only, serial and fail-closed. Count via --validation-count.
   --validation-seed N Required integer seed for reproducible page selection.
-  --validation-input ABS_PATH  Private exact-five owner product-URL mapping.
+  --validation-count N Pages to select (default 5; an over-cap value is refused,
+                     naming the limit -- a packet's snapshot must fit the importer).
+  --validation-input ABS_PATH  Private owner product-URL mapping.
   --validation-snapshot ABS_PATH  Optional private supplier baseline snapshot.
   --validation-output ABS_DIR  New private packet directory outside this repo.
                      Both are required for an export; --dry-run performs only
@@ -84,7 +86,7 @@ The default run opens a visible browser window and reads pages the way a person
 would. Leave it on screen while it works -- it is how you see it going wrong.
 `.trimStart()
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const options = {
     sizes: [],
     fromCatalog: false,
@@ -98,6 +100,7 @@ function parseArgs(argv) {
     productDelay: 1500,
     validateProducts: false,
     validationSeed: null,
+    validationCount: 5,
     validationJitterMin: 2000,
     validationJitterMax: 5000,
     minInterval: 10000,
@@ -126,6 +129,7 @@ function parseArgs(argv) {
     else if (arg === '--product-delay') options.productDelay = Number(value())
     else if (arg === '--validate-products') options.validateProducts = true
     else if (arg === '--validation-seed') options.validationSeed = Number(value())
+    else if (arg === '--validation-count') options.validationCount = Number(value())
     else if (arg === '--validation-input') options.validationInput = value()
     else if (arg === '--validation-snapshot') options.validationSnapshot = value()
     else if (arg === '--validation-output') options.validationOutput = value()
@@ -153,8 +157,32 @@ function validateEnrichmentOptions(options) {
   if (!Number.isFinite(options.productDelay) || options.productDelay < 0) throw new Error('--product-delay must be zero or greater')
 }
 
+// The most pages one --validation-count run may request. A downstream safety
+// bound, not a business rule: each selected page becomes one enriched row in the
+// packet's snapshot.json, which the CLI the owner actually runs to import that
+// packet -- scripts/import-product-images.mjs, the #468 caller -- reads under
+// MAX_PACKET_FILE_BYTES (65536) in readPacketInputs. (scripts/import-images.mjs:35
+// caps the same file at an inline 65536 too; same number, a second import path.)
+// Measured 2026-09-10 against src/data/scraped-tires.json with JSON.stringify --
+// the bytes the packet actually writes, not json.dumps pretty-printed, which runs
+// ~10% high (1083 rows: ~362 B/row avg, 573 max) -- ~166 of the largest raw rows
+// fit under 65536, and the enriched form (candidates + per-URL provenance) lowers
+// the practical ceiling to ~120-150. 100 stays under that with headroom for the
+// owner's 37-model target. INVALIDATED BY a change to ANY of the 65536 packet-file
+// caps -- 8 sites as of 2026-09-10 (`git grep 65536 -- scripts/ backend/`), only
+// import-product-images.mjs's MAX_PACKET_FILE_BYTES named and the rest inline, so
+// raising one leaves the others silently disagreeing: grep the class, do not trust
+// one file. Or growth in per-row size. Re-measure; do not just raise this.
+export const MAX_VALIDATION_COUNT = 100
+
 function validateValidationOptions(options) {
   if (!Number.isInteger(options.validationSeed)) throw new Error('--validation-seed must be an integer')
+  if (!Number.isInteger(options.validationCount) || options.validationCount < 1) {
+    throw new Error('--validation-count must be a positive integer')
+  }
+  if (options.validationCount > MAX_VALIDATION_COUNT) {
+    throw new Error(`--validation-count ${options.validationCount} exceeds the ${MAX_VALIDATION_COUNT}-page cap: each selected page becomes one row in the packet's snapshot.json, which import-images.mjs reads under a 65536-byte limit. Run fewer pages per packet.`)
+  }
   if (!Number.isFinite(options.validationJitterMin) || options.validationJitterMin < 0 ||
       !Number.isFinite(options.validationJitterMax) || options.validationJitterMax < options.validationJitterMin) {
     throw new Error('--validation-jitter-min/max must be non-negative, with max at least min')
@@ -179,7 +207,8 @@ function seededRandom(seed) {
 }
 
 /** Pick a stable, bounded set from the snapshot without making a network call. */
-export function selectValidationUrls(rows, seed, count = 5) {
+export function selectValidationUrls(rows, seed, count) {
+  if (!Number.isInteger(count) || count < 1) throw new Error('selectValidationUrls requires a positive integer count')
   const candidates = [...new Set(rows.map(row => row.source?.url).filter(Boolean).map(productUrl))]
   if (candidates.length < count) throw new Error(`Validation needs ${count} valid product URLs; snapshot has ${candidates.length}`)
   const random = seededRandom(seed)
@@ -195,7 +224,7 @@ export function createValidationOptions(options) {
   const random = seededRandom(options.validationSeed ^ 0x9E3779B9)
   return {
     ...options,
-    enrichLimit: 5,
+    enrichLimit: options.validationCount,
     concurrency: 1,
     productDelay: 0,
     delayForNext: () => options.validationJitterMin + Math.floor(random() * (options.validationJitterMax - options.validationJitterMin + 1)),
@@ -488,22 +517,22 @@ async function main() {
       const mappingBytes = readPrivateImageInput(options.validationInput, 65536)
       const plan = prepareImagePilot(inputBytes, mappingBytes)
       assertImagePilotOutput(options.validationOutput, ROOT)
-      const urls = selectValidationUrls([...plan.baseline.keys()].map(url => ({ source: { url } })), options.validationSeed)
+      const urls = selectValidationUrls([...plan.baseline.keys()].map(url => ({ source: { url } })), options.validationSeed, options.validationCount)
       const codeSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8', windowsHide: true }).trim()
-      if (options.dryRun) { console.log('Private exact-five inputs valid; dry run made no provider requests and wrote no packet.'); return }
+      if (options.dryRun) { console.log(`Private inputs valid (${urls.length} product URLs); dry run made no provider requests and wrote no packet.`); return }
       if (execFileSync('git', ['status', '--porcelain', '--untracked-files=normal'], { cwd: ROOT, encoding: 'utf8', windowsHide: true }).trim()) throw new Error('Pilot execution requires a clean reviewed checkout')
       const browser = await createBrowserFetcher({ headless: false, userAgent: USER_AGENT, productMetadataOnly: true })
       try {
         const packet = await collectImagePilot(plan, urls, { codeSha, seed: options.validationSeed, delayForNext: validationOptions.delayForNext }, url => browser.fetchProductPage(url))
         writeImagePilotPacket(options.validationOutput, packet, ROOT)
-        console.log('Private exact-five metadata packet written. No image files downloaded or approval granted.')
+        console.log(`Private metadata packet written (${urls.length} product URLs). No image files downloaded or approval granted.`)
       } catch { throw new Error('Private product pilot stopped; no retry, substitution, image download or activation. Inspect operator-local evidence.') }
       finally { await browser.close() }
       return
     }
-    if (options.dryRun) { console.log('Validation dry run: no provider requests. Supply private mapping/output paths to validate an exact-five packet.'); return }
+    if (options.dryRun) { console.log('Validation dry run: no provider requests. Supply private mapping/output paths to validate a packet.'); return }
     const snapshot = JSON.parse(await readFile(DEFAULT_OUT, 'utf8'))
-    const urls = selectValidationUrls(snapshot.tires || [], options.validationSeed)
+    const urls = selectValidationUrls(snapshot.tires || [], options.validationSeed, options.validationCount)
     console.log(`Validating exactly ${urls.length} seeded product pages (seed ${options.validationSeed}); read-only, serial, no retries.`)
     console.log(`Validation pacing: randomized ${options.validationJitterMin}-${options.validationJitterMax}ms between starts.`)
     console.log(options.plainFetch ? 'Using plain HTTP.\n' : 'Opening a browser window.\n')
