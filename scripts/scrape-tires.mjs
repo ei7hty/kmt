@@ -526,7 +526,16 @@ async function main() {
         const packet = await collectImagePilot(plan, urls, { codeSha, seed: options.validationSeed, delayForNext: validationOptions.delayForNext }, url => browser.fetchProductPage(url))
         writeImagePilotPacket(options.validationOutput, packet, ROOT)
         console.log(`Private metadata packet written (${urls.length} product URLs). No image files downloaded or approval granted.`)
-      } catch { throw new Error('Private product pilot stopped; no retry, substitution, image download or activation. Inspect operator-local evidence.') }
+      // The message stays generic, but the cause is ATTACHED rather than
+      // discarded. A bare `catch` here made every failure of this command
+      // indistinguishable from every other -- a redirect, a parse mismatch, a
+      // real block and a page that had not rendered yet all produced the same
+      // sentence, and the only way to tell them apart was to re-run the whole
+      // thing by hand with the error printed. That cost three live requests to
+      // somebody else's server on 2026-09-10 to learn the page simply had not
+      // finished loading. This runs on the owner's own machine, against a
+      // packet the owner supplied; the cause is his to read.
+      } catch (error) { throw new Error('Private product pilot stopped; no retry, substitution, image download or activation. Inspect operator-local evidence.', { cause: error }) }
       finally { await browser.close() }
       return
     }
