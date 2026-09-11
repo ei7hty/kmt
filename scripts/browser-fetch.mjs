@@ -175,7 +175,19 @@ export async function createBrowserFetcher(options = {}) {
         // not. Skipping the wait was an optimisation for the refusal case that
         // silently broke the success case, and the refusal case is already
         // covered by the check above.
-        await productPage.locator('script[type="application/ld+json"]').first().waitFor({ timeout: 20000 }).catch(() => {})
+        // Wait for the PRECONDITION ITSELF, not a proxy for it. The check
+        // below accepts a page carrying `application/ld+json` OR `tirecode`,
+        // so wait for exactly that disjunction. Waiting on the JSON-LD
+        // selector alone is a narrower question than the one being asked, and
+        // a product page that renders its content without a JSON-LD block
+        // burns the full timeout and is then judged on the shell anyway --
+        // which is the same defect as not waiting at all, just slower.
+        await productPage.waitForFunction(
+          () => document.querySelector('script[type="application/ld+json"]') !== null
+            || document.documentElement.outerHTML.includes('tirecode'),
+          undefined,
+          { timeout: 20000 },
+        ).catch(() => {})
         const html = await productPage.content()
         assertProviderResponse(url, response, html)
         if (response.status() >= 400) throw new Error(`GET ${url} -> ${response.status()}`)
