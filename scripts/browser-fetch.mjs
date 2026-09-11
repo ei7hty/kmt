@@ -161,9 +161,21 @@ export async function createBrowserFetcher(options = {}) {
           throw new RateLimitedError(`429 from ${url}`, response.headers()['retry-after'] ?? null)
         }
         if (!response) throw new Error(`GET ${url} -> no response`)
-        // A refusal page should not wait for product JSON-LD to appear.
+        // A refusal page should not wait for product JSON-LD to appear -- so
+        // the refusal check runs FIRST, against whatever is on screen at
+        // domcontentloaded, and a genuine refusal still fails immediately.
         assertProviderResponse(url, response, await productPage.content())
-        if (!productMetadataOnly) await productPage.locator('script[type="application/ld+json"]').first().waitFor({ timeout: 20000 }).catch(() => {})
+        // Then wait, for every caller. Measured on a real product page,
+        // 2026-09-10: at domcontentloaded it is a 1,997-byte shell with an
+        // empty <title> and neither `application/ld+json` nor `tirecode`
+        // anywhere in it; a moment later it is 538,513 bytes of the right
+        // tire. `productMetadataOnly` used to skip this wait, so the pilot --
+        // the ONLY caller that sets it -- judged the shell and concluded the
+        // supplier had served something that was not a product page. It had
+        // not. Skipping the wait was an optimisation for the refusal case that
+        // silently broke the success case, and the refusal case is already
+        // covered by the check above.
+        await productPage.locator('script[type="application/ld+json"]').first().waitFor({ timeout: 20000 }).catch(() => {})
         const html = await productPage.content()
         assertProviderResponse(url, response, html)
         if (response.status() >= 400) throw new Error(`GET ${url} -> ${response.status()}`)

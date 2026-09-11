@@ -65,8 +65,34 @@ const REFUSAL_MARKERS = [
   ['disallowed by robots', /disallow(?:ed)?\s+by\s+robots(?:\.txt)?/i],
 ]
 
+/**
+ * The markers above describe what a refusal page SAYS TO A PERSON. Matching
+ * them against raw HTML matches what the page's machinery is NAMED as well,
+ * and those are different things.
+ *
+ * Measured on a real giga-tires product page, 2026-09-10: `/\bcaptcha\b/i`
+ * matched SIXTEEN times on a fully served 538KB page for the exact tire
+ * requested -- every hit a Google reCAPTCHA integration for the newsletter and
+ * contact forms (`ACC.config.googleReCaptchaSiteKey`, `recaptchaNewsletter`,
+ * `contactFormErrorReCaptcha`), none of them a challenge. Nine of those hits
+ * were inside `<script>`, the rest inside tag attributes. The page carried 280
+ * occurrences of `tirecode`, 91 images and a JSON-LD block; it was a product
+ * page by every other measure, and the word alone condemned it.
+ *
+ * So strip scripts, styles and tag markup first, and test only the text a
+ * visitor would read. A real challenge states its refusal in visible words --
+ * that is the entire purpose of a challenge page. An embedded widget does not.
+ */
+export function visibleText(html) {
+  return String(html || '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+}
+
 export function refusalReason(html) {
-  const match = REFUSAL_MARKERS.find(([, pattern]) => pattern.test(String(html || '')))
+  const text = visibleText(html)
+  const match = REFUSAL_MARKERS.find(([, pattern]) => pattern.test(text))
   return match?.[0] || null
 }
 
