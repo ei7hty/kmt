@@ -117,20 +117,34 @@ enriched row in the packet's `snapshot.json`, which is read under a 65536-byte
 cap. Its provenance and invalidation condition are recorded beside the constant
 in `scripts/scrape-tires.mjs` — re-measure, do not just raise it.
 
-**Three separate ceilings exist and raising one alone will not widen a run.**
-Measured on `origin/main`, 2026-09-10:
+**Four separate ceilings exist and raising one alone will not widen a run.**
+Measured on `origin/main`, 2026-09-12:
 
 | value | where | what it bounds |
 | --- | --- | --- |
 | **100** | `MAX_VALIDATION_COUNT`, `scripts/scrape-tires.mjs` | pages one run may select — **the binding one** |
 | 250 | `IMAGE_PILOT_POLICY.candidateLimit`, `backend/image-provider-profile.mjs` | politeness budget; raising it changes the profile digest on purpose |
 | 500 | `MAX_IMAGE_PACKET_ASSETS`, `backend/image-manifest.mjs` | manifest sanity limit, so a malformed packet cannot claim an unbounded run |
+| 1 MB | `MAX_PACKET_FILE_BYTES`, `backend/image-manifest.mjs` | how large `snapshot.json` may be on disk |
 
-They are consistent today (100 < 250 < 500). Raise the first past 250 and the
-coordinator refuses; past 500 and the manifest does. Check all three.
+**The fourth was 64 KB until 2026-09-12, and it silently overrode the first.**
+A candidate costs about 5,700 bytes of `snapshot.json` — 85% of that its
+`enrichedRows` entry, at 5,496 bytes per row of which `parseImagePacket` reads
+992. So 64 KB meant **ten tires per run**, and the documented 100 was never once
+reachable. The staging coordinator's cap on the same data was already 1 MB, so
+two limits on one value differed by 16x and the accidental one won. Raising the
+read guard to match made the documented limit the real one.
 
-At 1,353 distinct models in the live catalogue, a 100-per-run batch is roughly
-14 runs to cover everything, not 250. Plan in runs, but the runs are now large.
+They are consistent today (100 < 250 < 500, and 1 MB holds ~180 candidates).
+Raise the first past 250 and the coordinator refuses; past 500 and the manifest
+does; past what fits in 1 MB and the packet writer does, naming the byte count.
+Check all four — and re-measure bytes-per-candidate rather than trusting the
+5,700 above, because `enrichedRows` is what moves.
+
+At 1,334 distinct models in the live catalogue, a 100-per-run batch is roughly
+**14 runs** to cover everything. Use `scripts/photo-batch.mjs`, which threads a
+batch's directories and its manifest digest between the steps so none of them
+is retyped.
 
 ## 1. Build the owner-reviewed mapping, locally
 
@@ -270,11 +284,41 @@ set to its absolute Python executable. Decoder versions are verified at run
 time and executed in an isolated child with time/pixel/frame/memory limits.
 Only complete JPEG/PNG payloads are accepted; GIF/WebP/SVG are refused.
 
+Before this, the staged images have to be **unwrapped**. `import-product-images.mjs`
+stores each fetched image as a private container — four bytes of length, then
+JSON metadata, then the image — under a name ending `.png` or `.jpeg`. Those
+files are not images, and a binding that points at one seals cleanly and is then
+refused by the decoder with `decode-or-resource-limit`, on the production
+machine, after the upload. Run:
+
+```text
+node scripts/unwrap-staged-images.mjs ABS_STAGING_DIR ABS_PACKET_DIR ABS_OUT_DIR
+```
+
+It verifies every unwrapped payload against the content-addressed name it was
+stored under and writes `bindings.json` in packet order, which is what
+`seal-image-packet.mjs` requires.
+
 With owner authorization to import the reviewed private packet:
 
 ```text
 node scripts/import-images.mjs ABS_EXISTING_OWNER_SQLITE ABS_PRIVATE_PACKET_DIRECTORY MANIFEST_SHA256
 ```
+
+**On the Fly machine, this must be followed by a `chown`.** `flyctl ssh console`
+logs in as **root**, so the import creates `/data/catalog-images-private` owned
+by `root` at mode `0700`. The app runs as **`node`** — it owns `/data` and
+`owner.sqlite` — and cannot even enter that directory. Every image then reports
+as **"local image file is missing or corrupt"** in the owner screen, which names
+the images rather than the permissions and reads exactly like a corrupt import.
+
+```text
+flyctl ssh console --app kmt --command "chown -R node:node /data/catalog-images-private"
+```
+
+Nothing needs re-importing when this happens: the files are intact and the
+database rows are correct. Only the ownership is wrong. Verify with
+`ls -la /data` — the storage directory should match `owner.sqlite`'s `node node`.
 
 The importer does not create/seed inventory or mutate supplier, offer,
 pricing, request or customer records. It checks all five identities, expected

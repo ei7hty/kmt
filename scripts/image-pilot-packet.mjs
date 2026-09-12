@@ -1,7 +1,7 @@
 import { mkdirSync, openSync, writeFileSync, fsyncSync, closeSync, lstatSync, realpathSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { sha256Bytes, assertAllowedImageUrl } from '../backend/image-assets.mjs'
-import { IMAGE_SELECTION_TAG, supplierImageRevision } from '../backend/image-manifest.mjs'
+import { IMAGE_SELECTION_TAG, MAX_PACKET_FILE_BYTES, supplierImageRevision } from '../backend/image-manifest.mjs'
 import { IMAGE_PILOT_POLICY, compileImageProviderProfile } from '../backend/image-provider-profile.mjs'
 import { parseProductPage, productUrl } from './giga-tires.mjs'
 
@@ -188,8 +188,13 @@ export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, dela
   // not the much smaller rows in the committed scrape snapshot. An estimate
   // taken from the latter under-counts badly: 18 validated pages already
   // exceeded this limit.
-  if (snapshotBytes.length > 65536) {
-    reject(`packet too large: ${candidates.length} validated pages produced ${snapshotBytes.length} bytes of snapshot.json, over the 65536 the importer reads. Run fewer pages per packet (about ${Math.max(1, Math.floor(candidates.length * 65536 / snapshotBytes.length))} at this row size).`)
+  // IMPORTED, not restated. This is the importer's own read cap: the writer
+  // and the reader of this file must agree about its maximum size, and two
+  // copies of one number is the defect this repository keeps finding. When it
+  // was 65536 here and 1MB in the coordinator, the smaller one silently
+  // decided how many tires a run could carry.
+  if (snapshotBytes.length > MAX_PACKET_FILE_BYTES) {
+    reject(`packet too large: ${candidates.length} validated pages produced ${snapshotBytes.length} bytes of snapshot.json, over the ${MAX_PACKET_FILE_BYTES} the importer reads. Run fewer pages per packet (about ${Math.max(1, Math.floor(candidates.length * MAX_PACKET_FILE_BYTES / snapshotBytes.length))} at this row size).`)
   }
   return { snapshotBytes, profileBytes: Buffer.from(JSON.stringify(profile)), profileDigest, snapshotDigest: sha256Bytes(snapshotBytes),
     orderedIds: candidates.map(row => row.supplierId), productHosts, imageHosts }
