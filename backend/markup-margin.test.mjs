@@ -97,17 +97,25 @@ test('margin bounds that would be a typo rather than a decision are refused, and
   for (const input of [{ maxMarginPerTire: -1 }, { maxMarginPerTire: 501 }, { maxMarginPerTire: 'lots' }]) {
     assert.throws(() => db.saveMarkup({ rate: 1.35, ...input }), /maximum margin per tire/, JSON.stringify(input))
   }
-  // Zero is a real answer for a floor (it is the same as off) and a typo for
-  // a ceiling: a $0 maximum margin sells every unpriced tire at exactly what
-  // Ken paid for it.
-  assert.throws(() => db.saveMarkup({ rate: 1.35, maxMarginPerTire: 0 }), /maximum margin per tire/)
-  assert.equal(db.saveMarkup({ rate: 1.35, minMarginPerTire: 0 }).minMarginPerTire, 0, 'but a $0 floor is allowed')
-
   assert.throws(() => db.saveMarkup({ rate: 1.35, minMarginPerTire: 80, maxMarginPerTire: 75 }),
     /cannot be more than the maximum/, 'a floor above the ceiling is a contradiction, not a rule')
 
   const stored = db.getMarkup()
   assert.equal(stored.maxMarginPerTire, 75, 'every rejected save left the stored rule as it was')
+})
+
+test('zero is a real answer for a floor and a typo for a ceiling', t => {
+  const db = setup(t)
+  // A $0 maximum margin sells every unpriced tire at exactly what Ken paid
+  // for it, which nobody types on purpose. A $0 minimum is simply "no floor".
+  //
+  // The floor is cleared first, deliberately: with one stored, a $0 ceiling
+  // is ALSO caught by the floor-above-ceiling check, and this assertion would
+  // pass while the guard it names did nothing. Tested alone, it can only be
+  // the ceiling's own bound answering.
+  assert.equal(db.saveMarkup({ rate: 1.35, minMarginPerTire: 0 }).minMarginPerTire, 0, 'a $0 floor is allowed')
+  assert.throws(() => db.saveMarkup({ rate: 1.35, maxMarginPerTire: 0 }), /maximum margin per tire/)
+  assert.equal(db.getMarkup().maxMarginPerTire, null, 'and nothing was written')
 })
 
 test('a markup record saved before margin bounds existed reads them as off, and reprices nothing', t => {
