@@ -260,6 +260,21 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     } else {
       console.error('Local image acquisition refused. Use: node scripts/import-product-images.mjs ABS_PACKET_DIR ABS_STAGING_DIR --confirm-hosts host,host')
       console.error('Inspect the private staging directory named by any run id above; no network fallback is available.')
+      // The reason, printed rather than discarded. Every refusal except the
+      // host mismatch above produced the same two lines regardless of cause --
+      // a missing directory, an unreadable packet, a rejected staging path and
+      // a decoder failure were indistinguishable. The operator running this on
+      // his own machine, against a packet he supplied, is the person who has
+      // to act on it; withholding which check refused does not protect him
+      // from anything, it just costs him the next hour.
+      console.error(`  reason: ${error?.message ?? error}`)
+      if (error?.cause) console.error(`  cause:  ${error.cause?.message ?? error.cause}`)
+      if (error?.code) console.error(`  code:   ${error.code}`)
+      if (error?.path) console.error(`  path:   ${error.path}`)
+      // The refusal messages in the staging coordinator are deliberately one
+      // constant string shared by a dozen checks, so the message alone cannot
+      // say which refused. The stack can, and costs nothing to print.
+      if (error?.stack) console.error(error.stack.split('\n').slice(1, 5).map(line => `  ${line.trim()}`).join('\n'))
     }
     process.exitCode = 1
   }

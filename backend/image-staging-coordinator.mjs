@@ -72,7 +72,22 @@ const wasInterrupted = (label, message) =>
 async function runThroughMode(input, mode) {
   try { return await runStaging({ ...input }, mode) } catch (error) {
     if (wasInterrupted(mode.label, error.message)) throw error
-    throw refused()
+    // The MESSAGE is unchanged -- still the one constant string, still saying
+    // nothing on its own. The original error rides as a `cause`, which only a
+    // caller that deliberately reads `.cause` ever sees.
+    //
+    // Discarding it entirely made this the outermost of five identical
+    // swallowing catches on one path, and it hid all four beneath it: a run
+    // that refused for a bad directory, an unreadable packet, a malformed
+    // candidate or a decoder failure printed the same sentence, and the only
+    // way to tell them apart was to re-run by hand with instrumentation.
+    // Measured tonight, that cost four consecutive live runs against a
+    // supplier's servers to learn four single facts.
+    //
+    // Nothing reaches a customer through here: this path is the owner's own
+    // command on the owner's own machine, and `backend/image-import-cli.test.mjs`
+    // asserts no server module imports it.
+    throw new Error(refused().message, { cause: error })
   }
 }
 
