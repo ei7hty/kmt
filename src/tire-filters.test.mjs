@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 
 import {
   matchesFilters, facetCounts, applyFilters, sortTires, toggleFilter,
-  activeFilterCount, hasRatings, availableSorts, NO_FILTERS, PRICE_BANDS,
+  activeFilterCount, hasRatings, availableSorts, visibleFacet,
+  NO_FILTERS, PRICE_BANDS, BRAND_FACET_LIMIT,
 } from './tire-filters.js'
 
 /** A list shaped like the real one: the fields /api/catalog actually returns. */
@@ -154,4 +155,70 @@ test('the real shape: 323 tires narrowed by season and brand', () => {
   assert.ok(winter.every(t => t.category === 'winter'))
   const { brands } = facetCounts(many, { ...NO_FILTERS, seasons: ['winter'] })
   assert.ok(brands.every(b => b.count <= 41), 'no brand can outnumber the season it is counted within')
+})
+
+// --- How many brands to draw ---------------------------------------------------
+
+/** Ranked the way facetCounts ranks: count first, then alphabetically. */
+const ranked = (count, from = 30) => Array.from({ length: count }, (_, i) => ({
+  id: `brand-${i}`, label: `Brand ${i}`, count: from - i,
+}))
+
+test('a short facet is drawn whole, with nothing behind a disclosure', () => {
+  const options = ranked(BRAND_FACET_LIMIT)
+  const { shown, hidden } = visibleFacet(options)
+  assert.equal(shown.length, BRAND_FACET_LIMIT)
+  assert.deepEqual(hidden, [], 'a list that already fits must not offer to expand')
+})
+
+test('a long facet keeps its ranking and cuts only the tail', () => {
+  // 107 brands is the measured 225/50R17. Drawing all of them made the panel
+  // 4,010px tall, which is what this cap exists to prevent.
+  const options = ranked(107, 120)
+  const { shown, hidden } = visibleFacet(options)
+  assert.equal(shown.length, BRAND_FACET_LIMIT)
+  assert.equal(shown.length + hidden.length, 107)
+  assert.deepEqual(shown.map(o => o.id), options.slice(0, BRAND_FACET_LIMIT).map(o => o.id),
+    'the shown brands are the highest-counted ones, in the order they arrived')
+})
+
+test('a brand you have already ticked is never hidden by the cap', () => {
+  // Otherwise ticking a rare brand and collapsing the list would hide the only
+  // control holding the list down, and Clear filters would be the way back.
+  const options = ranked(107, 120)
+  const rare = options.at(-1).id
+  const { shown, hidden } = visibleFacet(options, { selected: [rare] })
+  assert.ok(shown.some(o => o.id === rare), 'the ticked brand fell off the end of the panel')
+  assert.ok(!hidden.some(o => o.id === rare))
+  assert.equal(shown.length, BRAND_FACET_LIMIT + 1)
+})
+
+test('expanding shows every brand you can still pick, and no brand you cannot', () => {
+  // With Winter ticked, 86 of the 107 brands have no winter tire. "Show all"
+  // must not mean "show 86 things you cannot choose".
+  const options = [...ranked(BRAND_FACET_LIMIT + 4, 40), ...ranked(50, 0).map(o => ({ ...o, count: 0 }))]
+  const { shown, hidden } = visibleFacet(options, { expanded: true })
+  assert.deepEqual(hidden, [])
+  assert.equal(shown.length, BRAND_FACET_LIMIT + 4)
+  assert.ok(shown.every(o => o.count > 0))
+})
+
+test('a zero-count brand already on screen stays on screen', () => {
+  // The other half of the same rule: an option that is drawn must not vanish
+  // as boxes are ticked, because a control that moves mid-press is worse than
+  // a greyed one. Only the hidden tail is pruned.
+  const options = [...ranked(6, 20), ...ranked(6, 0).map((o, i) => ({ ...o, id: `empty-${i}`, count: 0 }))]
+  const { shown, hidden } = visibleFacet(options)
+  assert.equal(options.length, BRAND_FACET_LIMIT)
+  assert.equal(shown.length, BRAND_FACET_LIMIT, 'a collapsed list at the cap drops nothing')
+  assert.deepEqual(hidden, [])
+})
+
+test('the count on the control is what expanding will really show', () => {
+  const options = [...ranked(20, 40), ...ranked(30, 0).map((o, i) => ({ ...o, id: `empty-${i}`, count: 0 }))]
+  const collapsed = visibleFacet(options)
+  const expanded = visibleFacet(options, { expanded: true })
+  assert.equal(collapsed.shown.length + collapsed.hidden.length, expanded.shown.length,
+    '"Show all N brands" would name a number the expanded list does not contain')
+  assert.notEqual(expanded.shown.length, options.length, 'this case has to include unpickable brands to mean anything')
 })

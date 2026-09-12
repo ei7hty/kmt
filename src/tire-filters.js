@@ -175,3 +175,52 @@ export function toggleFilter(filters, kind, id) {
 export function activeFilterCount(filters = NO_FILTERS) {
   return (filters?.seasons?.length ?? 0) + (filters?.brands?.length ?? 0) + (filters?.bands?.length ?? 0)
 }
+
+/**
+ * How many brands to show before the rest go behind a disclosure.
+ *
+ * Measured, not chosen by feel: 225/50R17 holds 323 tires from 107 brands, and
+ * the first version of this panel drew every one of them. It came to 4,010px
+ * -- four and a half screens of checkboxes above the first tire -- and the
+ * tail of it was 40-odd brands with a single tire each. A filter that is
+ * taller than the list it filters is not narrowing anything.
+ *
+ * Twelve is where the shape of this catalogue changes: sorted by count, the
+ * twelfth brand in that size has 8 tires and the thirteenth has 7, and the
+ * twelve are Bridgestone, Hankook, Pirelli, Continental, Nexen, Goodyear,
+ * Michelin, Nokian, Cooper, Falken, General and Yokohama -- the names a
+ * customer came in saying. They are ranked, never listed by name here: a
+ * hard-coded roster would quietly hide a brand the moment stock changed.
+ */
+export const BRAND_FACET_LIMIT = 12
+
+/**
+ * Split a facet's options into the ones shown and the ones behind "show all".
+ *
+ * `options` arrives already ranked (count first, then alphabetically), so this
+ * only cuts; it never reorders, because a list that re-sorts itself as boxes
+ * are ticked moves a control out from under the cursor mid-press -- the same
+ * reason a zero-count option is disabled rather than dropped.
+ *
+ * A SELECTED option is always shown, wherever it ranks. Otherwise ticking a
+ * rare brand and then collapsing the list would hide the very control holding
+ * the list down, and the only way back would be Clear filters.
+ *
+ * A zero-count option that is already on screen STAYS on screen, disabled --
+ * removing it reflows the panel under the cursor. One still hidden is dropped
+ * instead of revealed: with Winter ticked, 86 of the 107 brands have no winter
+ * tire, and "show all" should not mean "show 86 things you cannot pick".
+ * `shown.length + hidden.length` is therefore what the control should count,
+ * not `options.length`.
+ */
+export function visibleFacet(options, { limit = BRAND_FACET_LIMIT, selected = [], expanded = false } = {}) {
+  const pickable = option => option.count > 0 || selected.includes(option.id)
+  if (expanded) return { shown: options.filter(pickable), hidden: [] }
+  if (options.length <= limit) return { shown: options, hidden: [] }
+  const keep = new Set(options.slice(0, limit).map(option => option.id))
+  for (const id of selected) keep.add(id)
+  return {
+    shown: options.filter(option => keep.has(option.id)),
+    hidden: options.filter(option => !keep.has(option.id) && pickable(option)),
+  }
+}

@@ -528,19 +528,40 @@
 .tire-facet-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tire-facet-count { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 10.5px; font-variant-numeric: tabular-nums; }
 
-/* Two columns from 560px: the row was one tire per line at any width, which
-   is what made a 66px photo look lost in 785px of empty space. */
-.tire-options { display: grid; gap: 10px; margin-top: 18px; }
-@media (min-width: 560px) { .tire-options { grid-template-columns: 1fr 1fr; } }
-@media (min-width: 1040px) { .tire-options { grid-template-columns: repeat(3, 1fr); } }
-.tire-option { display: grid; grid-template-columns: 66px 1fr auto; align-items: center; gap: 15px; padding: 13px !important; border: 1px solid #303033 !important; border-radius: 3px !important; background: #121212 !important; color: #fff !important; text-align: left; }
+/* The row was one tire per line at any width, which is what made a 66px photo
+   look lost in 785px of empty space. The column count now comes from the
+   card's own minimum rather than a viewport number, because the viewport is
+   not what constrains it: .order-section caps at 1000px and the panel pads
+   40px a side, so this grid is 872px wide on any desktop. Three columns of
+   that left the tire name 81px -- measured on the running page, not guessed:
+   283px per card, less 36 padding, 66 photo, 30 gaps and a 70px price --
+   which is why "Touring Comfort" wrapped and a one-line description ran to
+   four. auto-fill fits as many 400px cards as there is really room for (two
+   here, three if the panel ever widens), and min(400px, 100%) keeps one per
+   row on a phone instead of overflowing it. */
+.tire-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(400px, 100%), 1fr)); gap: 10px; margin-top: 18px; }
+/* minmax(0, 1fr), not 1fr: a bare 1fr floors at min-content, so one long
+   unbroken model name widens the column and squeezes the rest of the card.
+   The narrow layout below already guarded this; the wide one did not.
+   Aligned to the start so every name in a row sits on the same line -- with
+   centring, a card with a two-line description pushed its own title out of
+   step with the card beside it. */
+.tire-option { display: grid; grid-template-columns: 80px minmax(0, 1fr) auto; align-items: start; gap: 15px; padding: 13px !important; border: 1px solid #303033 !important; border-radius: 3px !important; background: #121212 !important; color: #fff !important; text-align: left; }
 .tire-option:hover, .tire-option.selected { border-color: var(--accent) !important; background: var(--accent-bg) !important; transform: none; }
-.tire-option:disabled { cursor: not-allowed; opacity: 0.4; }
+/* Dimmed, still readable. At 0.4 the whole card composites toward the page
+   behind it, and "Currently unavailable" -- the one thing a customer needs to
+   read off that card -- went with it. */
+.tire-option:disabled { cursor: not-allowed; opacity: 0.55; }
 .tire-art { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; border: 9px solid #303033; outline: 2px solid #77777a; color: #080808; background: radial-gradient(circle, #77777a 0 9%, #171717 10% 26%, #909094 27% 31%, #121212 32% 100%); font-size: 0; }
 .tire-info { display: grid; gap: 3px; }
 .tire-info strong { font-size: 15px; }
 .tire-info small { color: var(--muted); font-size: 11px; }
-.tire-info small:last-child { color: #58d77c; }
+/* Coloured by state, not by position. A :last-child selector painted the
+   stock line green whatever it said, so an out-of-stock tire announced
+   "Currently unavailable" in the in-stock green: the colour and the words
+   disagreed, and the colour is the half a scanning eye reads first. */
+.tire-stock[data-stock="in"] { color: #58d77c; }
+.tire-stock[data-stock="out"] { color: #e0a33a; }
 .tire-option > b { display: grid; color: #f3f3f3; font-family: var(--mono); font-size: 17px; text-align: right; }
 .tire-option > b i { color: var(--muted); font-family: var(--sans); font-size: 10px; font-style: normal; font-weight: 400; }
 .vehicle-inline, .service-fields { display: grid; gap: 8px; margin-top: 26px; }
@@ -596,7 +617,7 @@
   .fitment-options { grid-template-columns: repeat(3, 1fr); gap: 8px; max-height: none; overflow: visible; }
   .fitment-footer { align-items: flex-start; flex-direction: column; }
   .fitment-footer .primary-action { width: 100%; }
-  .tire-option { grid-template-columns: 48px 1fr; }
+  .tire-option { grid-template-columns: 48px minmax(0, 1fr); }
   .tire-art { width: 42px; height: 42px; border-width: 7px; }
   .tire-option > b { grid-column: 2; justify-self: start; text-align: left; }
   .service-fields { grid-template-columns: 1fr; }

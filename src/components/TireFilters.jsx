@@ -1,17 +1,23 @@
-import { facetCounts, availableSorts, activeFilterCount, toggleFilter, NO_FILTERS } from '../tire-filters.js'
+import { useState } from 'react'
+import { facetCounts, availableSorts, activeFilterCount, toggleFilter, visibleFacet, NO_FILTERS } from '../tire-filters.js'
 
 /**
  * The narrowing controls above a size's tire list.
  *
  * Markup only -- every decision (what the facets are, what each count means,
- * whether rating is offered at all) lives in src/tire-filters.js, which is
- * where the tests drive it. Same split as inventory-grid.js / OwnerInventoryGrid.jsx.
+ * which brands are shown before "show all", whether rating is offered at all)
+ * lives in src/tire-filters.js, which is where the tests drive it. Same split
+ * as inventory-grid.js / OwnerInventoryGrid.jsx.
  *
- * Two things here are deliberate and easy to undo by accident:
+ * Three things here are deliberate and easy to undo by accident:
  *
  * A zero-count option is rendered DISABLED, never removed. Dropping it would
  * make the panel reflow as boxes are ticked and move a control out from under
  * the cursor mid-press.
+ *
+ * The brand facet is CAPPED. 225/50R17 carries 107 brands, and drawing all of
+ * them made this panel 4,010px tall -- four and a half screens of checkboxes
+ * standing between a customer and the first tire. See BRAND_FACET_LIMIT.
  *
  * The rating sort appears only when some tire in THIS list carries one. The
  * feature is built and intentionally unpopulated -- there is no source for
@@ -19,30 +25,44 @@ import { facetCounts, availableSorts, activeFilterCount, toggleFilter, NO_FILTER
  * sight rather than sorting nothing and teaching people it is broken.
  */
 export default function TireFilters({ tires, filters = NO_FILTERS, sort = 'price', onFiltersChange, onSortChange, resultCount }) {
+  const [allBrands, setAllBrands] = useState(false)
   const { seasons, brands, bands } = facetCounts(tires, filters)
   const sorts = availableSorts(tires)
   const active = activeFilterCount(filters)
+  const brandView = visibleFacet(brands, { selected: filters?.brands ?? [], expanded: allBrands })
 
-  const group = (kind, options, legend) => options.length === 0 ? null : (
+  const option = (kind, item) => {
+    const checked = (filters[kind] ?? []).includes(item.id)
+    const empty = item.count === 0 && !checked
+    return (
+      <label key={item.id} className={empty ? 'tire-facet-option is-empty' : 'tire-facet-option'}>
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={empty}
+          onChange={() => onFiltersChange(toggleFilter(filters, kind, item.id))}
+        />
+        <span className="tire-facet-label">{item.label}</span>
+        <span className="tire-facet-count">{item.count}</span>
+      </label>
+    )
+  }
+
+  const group = (kind, options, legend, footer = null) => options.length === 0 ? null : (
     <fieldset className="tire-facet">
       <legend>{legend}</legend>
-      {options.map(option => {
-        const checked = (filters[kind] ?? []).includes(option.id)
-        const empty = option.count === 0 && !checked
-        return (
-          <label key={option.id} className={empty ? 'tire-facet-option is-empty' : 'tire-facet-option'}>
-            <input
-              type="checkbox"
-              checked={checked}
-              disabled={empty}
-              onChange={() => onFiltersChange(toggleFilter(filters, kind, option.id))}
-            />
-            <span className="tire-facet-label">{option.label}</span>
-            <span className="tire-facet-count">{option.count}</span>
-          </label>
-        )
-      })}
+      {options.map(item => option(kind, item))}
+      {footer}
     </fieldset>
+  )
+
+  const brandFooter = (brandView.hidden.length > 0 || allBrands) && (
+    <button
+      type="button"
+      className="tire-facet-more"
+      aria-expanded={allBrands}
+      onClick={() => setAllBrands(shown => !shown)}
+    >{allBrands ? 'Show fewer brands' : `Show all ${brandView.shown.length + brandView.hidden.length} brands`}</button>
   )
 
   return (
@@ -61,21 +81,21 @@ export default function TireFilters({ tires, filters = NO_FILTERS, sort = 'price
 
       <div className="tire-sorts" role="group" aria-label="Sort tires">
         <span className="tire-sorts-label">Sort</span>
-        {sorts.map(option => (
+        {sorts.map(item => (
           <button
             type="button"
-            key={option.id}
-            className={sort === option.id ? 'tire-sort selected' : 'tire-sort'}
-            aria-pressed={sort === option.id}
-            onClick={() => onSortChange(option.id)}
-          >{option.label}</button>
+            key={item.id}
+            className={sort === item.id ? 'tire-sort selected' : 'tire-sort'}
+            aria-pressed={sort === item.id}
+            onClick={() => onSortChange(item.id)}
+          >{item.label}</button>
         ))}
       </div>
 
       <div className="tire-facets">
         {group('seasons', seasons, 'Season')}
         {group('bands', bands, 'Price')}
-        {group('brands', brands, 'Brand')}
+        {group('brands', brandView.shown, 'Brand', brandFooter)}
       </div>
     </div>
   )
