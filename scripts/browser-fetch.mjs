@@ -212,19 +212,25 @@ export async function createBrowserFetcher(options = {}) {
         // not. Skipping the wait was an optimisation for the refusal case that
         // silently broke the success case, and the refusal case is already
         // covered by the check above.
-        // Wait for the PRECONDITION ITSELF, not a proxy for it. The check
-        // below accepts a page carrying `application/ld+json` OR `tirecode`,
-        // so wait for exactly that disjunction. Waiting on the JSON-LD
-        // selector alone is a narrower question than the one being asked, and
-        // a product page that renders its content without a JSON-LD block
-        // burns the full timeout and is then judged on the shell anyway --
-        // which is the same defect as not waiting at all, just slower.
-        await productPage.waitForFunction(
-          () => document.querySelector('script[type="application/ld+json"]') !== null
-            || document.documentElement.outerHTML.includes('tirecode'),
-          undefined,
-          { timeout: 20000 },
-        ).catch(() => {})
+        // Wait for the JSON-LD block, and ONLY that.
+        //
+        // This wait briefly tested `ld+json OR the string "tirecode"`, on the
+        // reasoning that `assertExpectedPage` accepts either. That was a wait
+        // THAT COULD NOT FAIL: every one of these URLs contains the word
+        // `tirecode`, and the unrendered shell echoes its own URL (canonical
+        // link, og:url), so the condition was already true at
+        // domcontentloaded. It returned instantly on a shell and the run then
+        // judged a page that had not rendered -- symptom: a product page
+        // parsing to `sku: undefined` because there was no structured data
+        // yet, on some pages but not others, depending on how fast they came
+        // back.
+        //
+        // `parseProductPage` reads everything it needs out of the JSON-LD
+        // product block, so that block is the real precondition. If a page
+        // genuinely never produces one, the 20s elapses and the caller refuses
+        // it by name -- loudly and for the right reason, rather than silently
+        // parsing a shell.
+        await productPage.waitForSelector('script[type="application/ld+json"]', { timeout: 20000 }).catch(() => {})
         const html = await productPage.content()
         assertProviderResponse(url, response, html)
         if (response.status() >= 400) throw new Error(`GET ${url} -> ${response.status()}`)
