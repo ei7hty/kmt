@@ -56,6 +56,10 @@ Options:
   --validation-seed N Required integer seed for reproducible page selection.
   --validation-count N Pages to select (default 5; an over-cap value is refused,
                      naming the limit -- a packet's snapshot must fit the importer).
+  --allow-partial    Build the packet from the pages that validated instead of
+                     refusing the run. Every skipped page is named with the
+                     reason either way; this only decides whether a partial
+                     result is written. Off by default.
   --validation-input ABS_PATH  Private owner product-URL mapping.
   --validation-snapshot ABS_PATH  Optional private supplier baseline snapshot.
   --validation-output ABS_DIR  New private packet directory outside this repo.
@@ -101,6 +105,7 @@ export function parseArgs(argv) {
     validateProducts: false,
     validationSeed: null,
     validationCount: 5,
+    allowPartial: false,
     validationJitterMin: 2000,
     validationJitterMax: 5000,
     minInterval: 10000,
@@ -130,6 +135,7 @@ export function parseArgs(argv) {
     else if (arg === '--validate-products') options.validateProducts = true
     else if (arg === '--validation-seed') options.validationSeed = Number(value())
     else if (arg === '--validation-count') options.validationCount = Number(value())
+    else if (arg === '--allow-partial') options.allowPartial = true
     else if (arg === '--validation-input') options.validationInput = value()
     else if (arg === '--validation-snapshot') options.validationSnapshot = value()
     else if (arg === '--validation-output') options.validationOutput = value()
@@ -523,10 +529,27 @@ async function main() {
       if (execFileSync('git', ['status', '--porcelain', '--untracked-files=normal'], { cwd: ROOT, encoding: 'utf8', windowsHide: true }).trim()) throw new Error('Pilot execution requires a clean reviewed checkout')
       const browser = await createBrowserFetcher({ headless: false, userAgent: USER_AGENT, productMetadataOnly: true })
       try {
-        const packet = await collectImagePilot(plan, urls, { codeSha, seed: options.validationSeed, delayForNext: validationOptions.delayForNext }, url => browser.fetchProductPage(url))
+        const packet = await collectImagePilot(plan, urls, { codeSha, seed: options.validationSeed, delayForNext: validationOptions.delayForNext, allowPartial: options.allowPartial }, url => browser.fetchProductPage(url))
         writeImagePilotPacket(options.validationOutput, packet, ROOT)
-        console.log(`Private metadata packet written (${urls.length} product URLs). No image files downloaded or approval granted.`)
-      } catch { throw new Error('Private product pilot stopped; no retry, substitution, image download or activation. Inspect operator-local evidence.') }
+        // Report what was WRITTEN, and say so against what was asked for. This
+        // printed `urls.length` -- the number of pages requested -- so a run
+        // that asked for 10, skipped one and wrote 9 announced "10 product
+        // URLs". The skipped page was named a few lines above, which made the
+        // overstatement easy to miss and easy to believe.
+        const written = packet.orderedIds.length
+        console.log(written === urls.length
+          ? `Private metadata packet written (${written} product URLs). No image files downloaded or approval granted.`
+          : `Private metadata packet written (${written} of ${urls.length} product URLs; ${urls.length - written} skipped above). No image files downloaded or approval granted.`)
+      // The message stays generic, but the cause is ATTACHED rather than
+      // discarded. A bare `catch` here made every failure of this command
+      // indistinguishable from every other -- a redirect, a parse mismatch, a
+      // real block and a page that had not rendered yet all produced the same
+      // sentence, and the only way to tell them apart was to re-run the whole
+      // thing by hand with the error printed. That cost three live requests to
+      // somebody else's server on 2026-09-10 to learn the page simply had not
+      // finished loading. This runs on the owner's own machine, against a
+      // packet the owner supplied; the cause is his to read.
+      } catch (error) { throw new Error('Private product pilot stopped; no retry, substitution, image download or activation. Inspect operator-local evidence.', { cause: error }) }
       finally { await browser.close() }
       return
     }

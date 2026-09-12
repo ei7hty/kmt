@@ -43,8 +43,15 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     if (process.argv.length !== 4) throw new Error('Arguments required')
     console.log(JSON.stringify(sealImagePacket(process.argv[2], process.argv[3])))
-  } catch {
+  } catch (error) {
     console.error('Packet sealing refused. Use: node scripts/seal-image-packet.mjs ABS_PRIVATE_PACKET ABS_BINDINGS_JSON. No network or approval action is performed.')
+    // The sixth bare catch on this one pipeline. Sealing reads local files the
+    // operator named, on the operator's machine, and every way it can refuse --
+    // a count mismatch, a wrong order, an unreadable path, a bad format -- said
+    // the same sentence. The reason is his own input described back to him.
+    console.error(`  reason: ${error?.message ?? error}`)
+    if (error?.code) console.error(`  code:   ${error.code}`)
+    if (error?.path) console.error(`  path:   ${error.path}`)
     process.exitCode = 1
   }
 }

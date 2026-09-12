@@ -60,8 +60,28 @@ export function parseImagePacket({ manifestBytes, profileBytes, snapshotBytes, e
     if (!/^supplier-payload-v1:[a-f0-9]{64}$/.test(candidate.revision)) refuse()
     const observed = p.observations[i], row = s.enrichedRows[i]
     keys(observed, ['supplierId', 'requestedUrl', 'finalUrl', 'sku', 'size', 'listingUrl'])
-    if (observed.supplierId !== candidate.supplierId || observed.finalUrl !== candidate.productUrl || observed.sku !== candidate.supplierSku ||
-        row?.source?.sku !== candidate.supplierSku || row?.source?.url !== candidate.productUrl || row?.size !== observed.size ||
+    // The three documents must agree, and they are bound BY URL, not by sku.
+    //
+    // This required `observed.sku === candidate.supplierSku` and
+    // `row.source.sku === candidate.supplierSku`. Both compare a value read
+    // off the PRODUCT PAGE against a value from the LISTING, and at this
+    // supplier those are different identifier systems that never match:
+    // measured 2026-09-12 across 8 candidates, page sku is the URL's tirecode
+    // ("20000466", "15576210000", "714890") while supplierSku is giga's
+    // listing code ("ROYA0161626570H", "GENE0031520565H", "GRND0221520565H").
+    // 8 of 8 disagreed. It is the same false assumption `collectImagePilot`
+    // carried, encoded a second time here.
+    //
+    // What the check is FOR is refusing a packet assembled from mismatched
+    // parts. Two ties already do that, and both hold exactly:
+    //   - productUrl binds all three documents (8/8 verified)
+    //   - `revision`, a supplier-payload-v1 hash of the whole supplier row,
+    //     binds candidate to supplier, and import re-checks it at commit
+    // So the sku tie is kept, but between the two values that genuinely come
+    // from the same place: what the run OBSERVED and what it PARSED. A packet
+    // whose observation and enriched row disagree is still refused.
+    if (observed.supplierId !== candidate.supplierId || observed.finalUrl !== candidate.productUrl ||
+        observed.sku !== row?.source?.sku || row?.source?.url !== candidate.productUrl || row?.size !== observed.size ||
         !Array.isArray(row.imageUrls) || !row.imageUrls.includes(candidate.originalUrl)) refuse()
     for (const field of ['productUrl', 'originalUrl']) {
       const value = candidate[field]

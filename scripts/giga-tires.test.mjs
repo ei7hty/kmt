@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { productUrl } from './giga-tires.mjs'
+import { productUrl, refusalReason, visibleText } from './giga-tires.mjs'
 import { GIGA_SITEMAP_SAMPLE } from './fixtures/giga-sitemap-sample.mjs'
 
 /**
@@ -99,4 +99,61 @@ test('productUrl() accepts every URL in the sitemap sample', () => {
     try { productUrl(url) } catch (error) { failures.push({ url, message: error.message }) }
   }
   assert.deepEqual(failures, [], `${failures.length} of ${GIGA_SITEMAP_SAMPLE.length} sitemap URLs were refused`)
+})
+
+/**
+ * `refusalReason` reads what a page SAYS, not what its machinery is NAMED.
+ *
+ * The shapes below are taken verbatim from a real giga-tires product page
+ * (2026-09-10) that `/\bcaptcha\b/i` matched sixteen times while being an
+ * entirely normal, fully served page for the requested tire.
+ */
+const RECAPTCHA_ON_A_REAL_PRODUCT_PAGE = `
+<html><head><title>Royal Black Racing Trac 225/50R17XL 98W BSW</title></head>
+<body>
+  <h1>Royal Black Racing Trac</h1>
+  <input type="hidden" name="recaptchaToken" class="j-newsletter-recaptcha-token">
+  <div id="recaptchaNewsletter" class="newsletter-recaptcha-container"></div>
+  <script>
+    ACC.config.googleReCaptchaSiteKey = '6LeTckAUAAAAAPxJ9w9A_n90FCYEhEzEIdl6-Dlj';
+    ACC.messages.invalidGoogleReCaptcha = 'Captcha could not be validated';
+    ACC.messages.contactFormErrorReCaptcha = ACC.messages.invalidGoogleReCaptcha;
+  </script>
+</body></html>`
+
+test('refusalReason ignores a reCAPTCHA widget on a real product page', () => {
+  assert.equal(refusalReason(RECAPTCHA_ON_A_REAL_PRODUCT_PAGE), null)
+})
+
+test('refusalReason still catches a challenge that says so in visible text', () => {
+  // The discriminator is not the word, it is where the word lives. A real
+  // challenge states its refusal to the reader; a widget never does.
+  assert.equal(refusalReason('<html><body><h1>Please complete the CAPTCHA to continue</h1></body></html>'), 'captcha')
+  assert.equal(refusalReason('<html><body><p>Verify you are human</p></body></html>'), 'verify you are human')
+  assert.equal(refusalReason('<html><body><p>Access Denied</p></body></html>'), 'access denied')
+  assert.equal(refusalReason('<html><body><p>Too Many Requests</p></body></html>'), 'too many requests')
+})
+
+test('visibleText drops scripts, styles and tag markup, keeps readable words', () => {
+  const html = '<style>.captcha{}</style><script>var captcha = 1</script><div class="captcha">hello</div>'
+  const text = visibleText(html)
+  assert.ok(!/captcha/i.test(text), 'a word that only appears in script, style or attributes is not visible text')
+  assert.match(text, /hello/)
+})
+
+test('a refusal inside a <script> string is NOT treated as a refusal, and one in the body IS', () => {
+  // Mutation-proof for the pair: same word, two placements, opposite verdicts.
+  assert.equal(refusalReason('<script>msg = "Access Denied"</script><body>Tire details</body>'), null)
+  assert.equal(refusalReason('<script>ok()</script><body>Access Denied</body>'), 'access denied')
+})
+
+test('visibleText survives a closing tag with junk inside it', () => {
+  // CodeQL js/bad-tag-filter, high: `</script\s*>` does not match
+  // `</script\t\n bar>`, which HTML permits. A page using that form would have
+  // had its script text counted as VISIBLE, producing a false refusal -- the
+  // opposite of what this function is for.
+  const sneaky = '<html><body><script\n>var msg = "Access Denied"</script\t\n bar><p>Tire details</p></body></html>'
+  assert.equal(refusalReason(sneaky), null, 'script content must not be read as a refusal, however the tag is closed')
+  assert.match(visibleText(sneaky), /Tire details/)
+  assert.ok(!/Access Denied/.test(visibleText(sneaky)), 'the script body is not visible text')
 })

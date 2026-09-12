@@ -5,7 +5,21 @@ import { IMAGE_SELECTION_TAG, supplierImageRevision } from '../backend/image-man
 import { IMAGE_PILOT_POLICY, compileImageProviderProfile } from '../backend/image-provider-profile.mjs'
 import { parseProductPage, productUrl } from './giga-tires.mjs'
 
-const reject = () => { throw new Error('Private pilot input or outcome refused') }
+/**
+ * The message stays constant; the REASON is attached as a cause.
+ *
+ * Every refusal in this file used to throw one identical sentence, so a run
+ * that stopped told the operator nothing about which of a dozen checks
+ * objected. That is the same defect the bare `catch` in scrape-tires.mjs had,
+ * and it cost the same thing: live requests spent re-running a command by hand
+ * to learn what one printed word would have said. The packet is private and so
+ * is its content -- but this runs on the owner's own machine, against a packet
+ * the owner supplied, and the NAME of the check that refused is not a secret
+ * from him.
+ */
+const reject = reason => {
+  throw new Error('Private pilot input or outcome refused', reason ? { cause: new Error(reason) } : undefined)
+}
 const parse = bytes => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
 export function prepareImagePilot(inputBytes, mappingBytes) {
   if (!(inputBytes instanceof Uint8Array) || inputBytes.length > 8 * 1024 * 1024 ||
@@ -25,9 +39,25 @@ export function prepareImagePilot(inputBytes, mappingBytes) {
   return { baseline, inputDigest: mapping.inputDigest, mappingDigest: sha256Bytes(mappingBytes) }
 }
 
-export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, delayForNext, now = Date.now, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }, fetchPage) {
+/**
+ * ONE RUN TELLS YOU EVERY PAGE THAT FAILED, NOT THE FIRST.
+ *
+ * This used to throw on the first page that did not validate, which meant
+ * finding out about page 30 cost thirty runs and thirty live fetches of pages
+ * that were already known to be fine. Now every page is attempted, each
+ * failure is recorded with the field that disagreed, and the run reports all
+ * of them together.
+ *
+ * `allowPartial` decides what happens next, and the DEFAULT IS STILL TO
+ * REFUSE. Without it, any failure fails the run -- now with a complete list
+ * instead of a single line. With it, the packet is built from the pages that
+ * did validate and the skipped ones are named on stdout. What must never
+ * happen either way is a quietly smaller packet reported as a success: a run
+ * that asked for 37 and wrote 30 has to say so in both modes.
+ */
+export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, delayForNext, allowPartial = false, now = Date.now, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }, fetchPage) {
   if (!/^[a-f0-9]{40}$/.test(codeSha) || !Number.isSafeInteger(seed) || !orderedUrls.length || new Set(orderedUrls).size !== orderedUrls.length || orderedUrls.some(url => !plan.baseline.has(url))) reject()
-  const candidates = [], observations = [], enrichedRows = []
+  const candidates = [], observations = [], enrichedRows = [], skipped = []
   let lastStart
   for (const requestedUrl of orderedUrls) {
     if (lastStart !== undefined) {
@@ -42,15 +72,108 @@ export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, dela
     // No fallback: SKU/MPN and size must be present in the actual response.
     const row = parseProductPage(fetched.html, { url: fetched.url })
     const { mapping, tire } = plan.baseline.get(requestedUrl)
-    if (row.source?.sku !== mapping.supplierSku || row.size !== tire.size || !row.imageUrls?.length ||
-        (tire.source.productId && row.source.productId !== tire.source.productId)) reject()
-    const originalUrl = row.imageUrls[0]
+    // Named one at a time, so a refusal says which field disagreed and with
+    // what.
+    //
+    // THE IDENTITY CHECK TIES THE PAGE TO THE URL, NOT TO THE LISTING.
+    //
+    // This used to compare the product page's sku against `mapping.supplierSku`
+    // -- the value in the committed snapshot. Measured 2026-09-11 against three
+    // real pages, those are two different identifier systems and never match:
+    //
+    //   /...racing-trac/tirecode/20000533   page sku "20000533"   snapshot "ROYA0041722550WXL"
+    //   /...pro-racing/tirecode/20000281    page sku "20000281"   snapshot "APLS0061722550WXL"
+    //   /...milage-suv-cuv/tirecode/20000466 page sku "20000466"  snapshot "ROYA0161626570H"
+    //
+    // The page reports the TIRECODE, which is the last segment of the URL the
+    // request asked for. The snapshot carries giga's internal listing code. The
+    // old comparison could not have succeeded on any page, ever.
+    //
+    // What this check is FOR is anti-substitution: proof the server returned
+    // the product the URL named, rather than a near-miss or a redirect target.
+    // Comparing the page's sku to the tirecode in the requested URL does that
+    // directly and is STRICTER than the old comparison, which only ever tested
+    // whether two unrelated codes happened to be equal.
+    //
+    // The snapshot-to-mapping tie is not lost: `prepareImagePilot` already
+    // refuses any candidate whose `supplierSku` does not match the snapshot
+    // row, before a single request is made.
+    const requestedTireCode = fetched.url.split('/tirecode/')[1]?.split(/[/?#]/)[0]
+    // Each condition names itself and the values that disagreed. Computed as a
+    // reason rather than thrown, so the loop can record it and carry on.
+    const problem =
+      !requestedTireCode ? `no /tirecode/<code> segment in ${fetched.url}`
+      : row.source?.sku !== requestedTireCode ? `identity: page sku ${JSON.stringify(row.source?.sku)} is not the tirecode ${JSON.stringify(requestedTireCode)} the URL asked for`
+      : row.size !== tire.size ? `size: page has ${JSON.stringify(row.size)}, snapshot expects ${JSON.stringify(tire.size)}`
+      : !row.imageUrls?.length ? 'imageUrls: the product page carried no image URLs in its structured data'
+      : (tire.source.productId && row.source.productId !== tire.source.productId) ? `productId: page has ${JSON.stringify(row.source?.productId)}, snapshot expects ${JSON.stringify(tire.source.productId)}`
+      : null
+    // WITHOUT --allow-partial this still STOPS GLOBALLY on the first bad page,
+    // exactly as before. That default is deliberate and not mine to change
+    // quietly: `image-pilot-packet.test.mjs` names it ("pilot stops globally
+    // without packet on missing-sku/wrong-sku/wrong-size/no-image"), and the
+    // reason is footprint -- once a page disagrees with the mapping, carrying
+    // on means more requests to somebody else's server while something is
+    // already wrong.
+    //
+    // With --allow-partial the run continues and reports every failure
+    // together. That is the opt-in, and it is what makes one run able to
+    // answer what four runs answered tonight.
+    //
+    // A PROVIDER refusal -- blocked, rate-limited, challenged -- is different
+    // and stops globally in BOTH modes: fetchPage throws and that throw is not
+    // caught here.
+    if (problem) {
+      if (!allowPartial) reject(problem)
+      skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason: problem })
+      continue
+    }
+    // Choose the first image in a format the PROFILE ALREADY DECLARES it will
+    // accept, rather than whichever happens to be listed first.
+    //
+    // `IMAGE_PILOT_POLICY.allowedFormats` is ['jpeg','png'] and the decoder
+    // enforces it on the real bytes downstream. This supplier lists a .webp
+    // first for most products: measured on a 9-candidate packet, 6 of 9 first
+    // images were webp and EVERY ONE of those products also carried a png or
+    // jpg further down its own list. Taking [0] blindly would have sent all
+    // six to a decoder guaranteed to refuse them -- six pointless downloads
+    // from someone else's server to learn something the URL already said.
+    //
+    // The extension is a hint, not proof; the decoder still checks the bytes
+    // and still refuses a file that lies about itself. This only avoids
+    // fetching the ones we can already tell are wrong.
+    const extensionOf = value => value.split('?')[0].split('#')[0].split('.').pop().toLowerCase()
+    const acceptable = new Set(IMAGE_PILOT_POLICY.allowedFormats.flatMap(format => format === 'jpeg' ? ['jpg', 'jpeg'] : [format]))
+    const originalUrl = row.imageUrls.find(value => acceptable.has(extensionOf(value)))
+    if (!originalUrl) {
+      const reason = `no image in an allowed format (${IMAGE_PILOT_POLICY.allowedFormats.join('/')}); page offered ${row.imageUrls.map(extensionOf).join(', ')}`
+      if (!allowPartial) reject(reason)
+      skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason })
+      continue
+    }
     const imageHost = new URL(originalUrl).hostname
-    if (assertAllowedImageUrl(originalUrl, [imageHost]) !== originalUrl || new URL(originalUrl).hash) reject()
+    if (assertAllowedImageUrl(originalUrl, [imageHost]) !== originalUrl || new URL(originalUrl).hash) {
+      const reason = `image URL refused: ${originalUrl}`
+      if (!allowPartial) reject(reason)
+      skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason })
+      continue
+    }
     candidates.push({ supplierId: tire.id, supplierSku: mapping.supplierSku, productUrl: fetched.url, originalUrl, revision: mapping.revision })
     observations.push({ supplierId: tire.id, requestedUrl, finalUrl: fetched.url, sku: row.source.sku, size: row.size, listingUrl: tire.source.url })
     enrichedRows.push(row)
   }
+  // Report BEFORE deciding, so the list is printed whether the run proceeds or
+  // refuses. A skipped page the operator never sees named is the silent
+  // smaller success this whole tool exists to refuse.
+  if (skipped.length) {
+    console.error(`\n${skipped.length} of ${orderedUrls.length} product pages did not validate:`)
+    for (const item of skipped) console.error(`  - ${item.name} (${item.supplierId})\n      ${item.reason}`)
+    console.error('')
+    if (!allowPartial) {
+      reject(`${skipped.length} of ${orderedUrls.length} pages did not validate; re-run with --allow-partial to build a packet from the ${candidates.length} that did`)
+    }
+  }
+  if (!candidates.length) reject('no product page validated; nothing to write')
   const hosts = values => [...new Set(values.map(value => new URL(value).hostname))].sort()
   const productHosts = hosts(observations.flatMap(row => [row.requestedUrl, row.finalUrl, row.listingUrl]))
   const imageHosts = hosts(candidates.map(row => row.originalUrl))
@@ -59,7 +182,15 @@ export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, dela
   const snapshot = { version: 2, candidates, provenance: { codeSha, seed, inputDigest: plan.inputDigest, mappingDigest: plan.mappingDigest,
     selection: IMAGE_SELECTION_TAG, productHosts, imageHosts, observations }, enrichedRows }
   const snapshotBytes = Buffer.from(JSON.stringify(snapshot))
-  if (snapshotBytes.length > 65536) reject()
+  // Named, with the arithmetic, because this is the cap a bulk run actually
+  // hits first and the message used to be silent. The rows are ENRICHED
+  // product rows -- description, season, UTQG, warranty, every image URL --
+  // not the much smaller rows in the committed scrape snapshot. An estimate
+  // taken from the latter under-counts badly: 18 validated pages already
+  // exceeded this limit.
+  if (snapshotBytes.length > 65536) {
+    reject(`packet too large: ${candidates.length} validated pages produced ${snapshotBytes.length} bytes of snapshot.json, over the 65536 the importer reads. Run fewer pages per packet (about ${Math.max(1, Math.floor(candidates.length * 65536 / snapshotBytes.length))} at this row size).`)
+  }
   return { snapshotBytes, profileBytes: Buffer.from(JSON.stringify(profile)), profileDigest, snapshotDigest: sha256Bytes(snapshotBytes),
     orderedIds: candidates.map(row => row.supplierId), productHosts, imageHosts }
 }

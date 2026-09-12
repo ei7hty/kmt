@@ -60,8 +60,19 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     if (extra.length) throw new Error('Unexpected arguments')
     console.log(JSON.stringify(await importImageFiles({ database, packetDirectory, manifestDigest, python: process.env.KMT_IMAGE_DECODER_PYTHON })))
-  } catch {
+  } catch (error) {
     console.error('Local image import refused. Use: node scripts/import-images.mjs ABS_DB ABS_PRIVATE_PACKET MANIFEST_SHA256. Inspect the private packet; no network fallback is available.')
+    // The seventh bare catch on this one pipeline, and the worst placed: it is
+    // the only step that runs on the production machine, where re-running by
+    // hand with instrumentation is not an option and a deploy is the only way
+    // to change the code. A silent refusal here costs a deploy cycle to
+    // diagnose. The operator supplied the database path, the packet and the
+    // digest; the reason is his own input described back to him.
+    console.error(`  reason: ${error?.message ?? error}`)
+    if (error?.cause) console.error(`  cause:  ${error.cause?.message ?? error.cause}`)
+    if (error?.code) console.error(`  code:   ${error.code}`)
+    if (error?.path) console.error(`  path:   ${error.path}`)
+    if (error?.stack) console.error(error.stack.split('\n').slice(1, 5).map(line => `  ${line.trim()}`).join('\n'))
     process.exitCode = 1
   }
 }

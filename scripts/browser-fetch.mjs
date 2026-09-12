@@ -1,3 +1,5 @@
+/* global document */ // used inside waitForFunction, which runs in the browser
+
 /**
  * Page fetcher backed by a real browser window.
  *
@@ -21,9 +23,14 @@ import { assertExpectedPage, assertProviderResponse, productUrl, ProviderRefusal
 
 const READY_SELECTOR = '.plp-list__item-container'
 
-// Metadata pilot: one exact main-document request, no redirects, subresources,
-// popups, scripts, XHR, images, fonts or media. A page requiring any of those
-// fails; the pilot never relaxes policy or retries to obtain a result.
+// Metadata pilot: ONE exact main-document navigation, no redirects, no popups,
+// no second document. That part is unchanged and is what this policy is for.
+//
+// Subresources are NOT refused any more. They were, and it made the pilot
+// incapable of ever succeeding against this supplier -- see the note on
+// `javaScriptEnabled` in createBrowserFetcher. Images, fonts and media are
+// still dropped, matching the size scrape. The pilot still never retries, never
+// substitutes, and never follows a redirect to obtain a result.
 export function productDocumentPolicy(expectedUrl) {
   let used = false
   return request => {
@@ -94,8 +101,25 @@ export async function createBrowserFetcher(options = {}) {
     : []
 
   const browser = await chromium.launch({ headless, executablePath, args })
+  // JavaScript stays ON for the pilot, as it already is for the size scrape.
+  //
+  // It used to be off (`javaScriptEnabled: false` when productMetadataOnly),
+  // for minimum footprint. Measured 2026-09-11: with scripts disabled, a
+  // product URL answers HTTP 202 and a 1,997-byte shell that never fills --
+  // held for 20 seconds it stays at 1,997 bytes, no JSON-LD, not one
+  // occurrence of `tirecode`. The shell's only request is to
+  // `token.awswaf.com`: this host's AWS WAF wants a browser to behave like a
+  // browser before it serves the page, exactly as the header above describes
+  // for the listing scrape.
+  //
+  // So the pilot could never have worked. Turning scripts on is not stealth
+  // and not a bypass -- it is the same honest posture `fetchSizePage` has
+  // used all along: a visible window, the real user agent, no fingerprint
+  // patching, no token replay, and a pause between pages. What it gives up is
+  // only the pilot's original "absolute minimum footprint" goal, which cost
+  // the feature its entire reason to exist.
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, userAgent,
-    serviceWorkers: 'block', ...(productMetadataOnly ? { javaScriptEnabled: false } : {}) })
+    serviceWorkers: 'block' })
   const page = await context.newPage()
 
   // Images and fonts are most of the bytes on a listing page and none of the
@@ -150,10 +174,25 @@ export async function createBrowserFetcher(options = {}) {
       try {
         if (productMetadataOnly) {
           const allow = productDocumentPolicy(url)
-          await productPage.route('**/*', route => routeProductDocument(route, allow).catch(async error => {
-            documentError = error
-            await route.abort().catch(() => {})
-          }))
+          await productPage.route('**/*', async route => {
+            // The MAIN DOCUMENT keeps every guard it ever had: exactly one
+            // navigation, fetched with maxRedirects 0 so a redirect is refused
+            // rather than followed, and capped at 4MB. `allow` only consumes
+            // itself on a match, so calling it per request is safe.
+            if (allow(route.request())) {
+              return routeProductDocument(route, () => true).catch(async error => {
+                documentError = error
+                await route.abort().catch(() => {})
+              })
+            }
+            // Everything else follows `fetchSizePage`'s rule, which has been
+            // in production against this supplier all along: drop the bytes
+            // that are not data, let the page be a page. Aborting subresources
+            // here is what left the pilot staring at a 1,997-byte WAF shell.
+            const type = route.request().resourceType()
+            if (type === 'image' || type === 'font' || type === 'media') return route.abort().catch(() => {})
+            return route.continue().catch(async () => { await route.abort().catch(() => {}) })
+          })
         }
         const response = await productPage.goto(url, { waitUntil: 'domcontentloaded', timeout })
         if (documentError) throw documentError
@@ -161,9 +200,58 @@ export async function createBrowserFetcher(options = {}) {
           throw new RateLimitedError(`429 from ${url}`, response.headers()['retry-after'] ?? null)
         }
         if (!response) throw new Error(`GET ${url} -> no response`)
-        // A refusal page should not wait for product JSON-LD to appear.
+        // A refusal page should not wait for product JSON-LD to appear -- so
+        // the refusal check runs FIRST, against whatever is on screen at
+        // domcontentloaded, and a genuine refusal still fails immediately.
         assertProviderResponse(url, response, await productPage.content())
-        if (!productMetadataOnly) await productPage.locator('script[type="application/ld+json"]').first().waitFor({ timeout: 20000 }).catch(() => {})
+        // Then wait, for every caller. Measured on a real product page,
+        // 2026-09-10: at domcontentloaded it is a 1,997-byte shell with an
+        // empty <title> and neither `application/ld+json` nor `tirecode`
+        // anywhere in it; a moment later it is 538,513 bytes of the right
+        // tire. `productMetadataOnly` used to skip this wait, so the pilot --
+        // the ONLY caller that sets it -- judged the shell and concluded the
+        // supplier had served something that was not a product page. It had
+        // not. Skipping the wait was an optimisation for the refusal case that
+        // silently broke the success case, and the refusal case is already
+        // covered by the check above.
+        // Wait for the JSON-LD block, and ONLY that.
+        //
+        // This wait briefly tested `ld+json OR the string "tirecode"`, on the
+        // reasoning that `assertExpectedPage` accepts either. That was a wait
+        // THAT COULD NOT FAIL: every one of these URLs contains the word
+        // `tirecode`, and the unrendered shell echoes its own URL (canonical
+        // link, og:url), so the condition was already true at
+        // domcontentloaded. It returned instantly on a shell and the run then
+        // judged a page that had not rendered -- symptom: a product page
+        // parsing to `sku: undefined` because there was no structured data
+        // yet, on some pages but not others, depending on how fast they came
+        // back.
+        //
+        // `parseProductPage` reads everything it needs out of the JSON-LD
+        // product block, so that block is the real precondition. If a page
+        // genuinely never produces one, the 20s elapses and the caller refuses
+        // it by name -- loudly and for the right reason, rather than silently
+        // parsing a shell.
+        // Wait for a JSON-LD block that actually contains a PRODUCT.
+        //
+        // Third correction to this one wait tonight, and the same mistake each
+        // time: waiting for something CORRELATED with what the parser needs
+        // instead of the thing itself.
+        //   1. `ld+json OR "tirecode"` -- every URL contains "tirecode", so it
+        //      was true before anything rendered.
+        //   2. any `ld+json` element -- these pages ship a BreadcrumbList or
+        //      Organization block in the shell and the Product block later, so
+        //      it returned on the wrong block. Measured: 19 of 37 pages parsed
+        //      to `sku: undefined` with that wait in place.
+        // `productJsonLd` (giga-tires.mjs) scans every ld+json block for a node
+        // whose @type includes "Product" and ignores the rest. So that is the
+        // precondition, and nothing weaker will do.
+        await productPage.waitForFunction(
+          () => [...document.querySelectorAll('script[type="application/ld+json"]')]
+            .some(node => (node.textContent || '').includes('"Product"')),
+          undefined,
+          { timeout: 20000 },
+        ).catch(() => {})
         const html = await productPage.content()
         assertProviderResponse(url, response, html)
         if (response.status() >= 400) throw new Error(`GET ${url} -> ${response.status()}`)
