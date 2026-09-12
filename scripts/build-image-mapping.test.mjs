@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { rankModels, pickRepresentativeTire, buildCandidate, namesFromFile, selectByNames } from './build-image-mapping.mjs'
+import { rankModels, pickRepresentativeTire, buildCandidate, namesFromFile, namesForBrands, selectByNames } from './build-image-mapping.mjs'
 import { prepareImagePilot } from './image-pilot-packet.mjs'
 import { sha256Bytes } from '../backend/image-assets.mjs'
 import { supplierImageRevision } from '../backend/image-manifest.mjs'
@@ -239,12 +239,23 @@ test('--models and --models-file are mutually exclusive', t => {
   assert.match(result.stderr, /mutually exclusive/)
 })
 
-test('neither --models nor --models-file is a required-argument error', t => {
+test('no selector at all is a required-argument error', t => {
   const dir = sandbox(t)
   const snapshotFile = writeSnapshot(dir, snapshotWithModels([{ name: 'M', sizes: 1 }]))
   const result = run(['--snapshot', snapshotFile, '--out', path.join(dir, 'mapping.json')])
   assert.notEqual(result.status, 0)
-  assert.match(result.stderr, /Exactly one of --models or --models-file is required/)
+  assert.match(result.stderr, /Exactly one of --models, --models-file or --brands is required/)
+})
+
+test('two selectors at once are refused, and the message names which two', t => {
+  const dir = sandbox(t)
+  const snapshotFile = writeSnapshot(dir, snapshotWithModels([{ name: 'M', sizes: 1 }]))
+  for (const pair of [['--models', '1', '--brands', 'x'], ['--models-file', path.join(dir, 'l.txt'), '--brands', 'x']]) {
+    const result = run(['--snapshot', snapshotFile, '--out', path.join(dir, 'mapping.json'), ...pair])
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /mutually exclusive/)
+    assert.match(result.stderr, /--brands/, 'the message names the flags actually given')
+  }
 })
 
 test('--models-file selects the named models, in file order, ignoring row count', t => {
@@ -302,4 +313,54 @@ test('the committed top-models fixture selects 37 distinct candidates from the r
 
   const plan = prepareImagePilot(readFileSync(snapshotFile), mappingBytes)
   assert.equal(plan.baseline.size, 37)
+})
+
+/**
+ * `--brands`: the brand comes from the supplier's own URL segment, never from
+ * splitting a display name. "Royal Black Racing Trac" split on its first space
+ * gives "Royal", which is a brand that does not exist.
+ */
+const BRAND_ROWS = [
+  { id: 'a', name: 'Royal Black Racing Trac', size: '225/50R17', source: { url: 'https://www.giga-tires.com/225-50-17/royal-black-tires/racing-trac/tirecode/1' } },
+  { id: 'b', name: 'Royal Black Milage SUV/CUV', size: '265/70R16', source: { url: 'https://www.giga-tires.com/265-70-16/royal-black-tires/milage/tirecode/2' } },
+  { id: 'c', name: 'Accelera Iota EVT', size: '205/55R16', source: { url: 'https://www.giga-tires.com/205-55-16/accelera-tires/iota-evt/tirecode/3' } },
+  { id: 'd', name: 'Waterfall Quattro', size: '205/65R15', source: { url: 'https://www.giga-tires.com/205-65-15/waterfall-tires/quattro/tirecode/4' } },
+]
+
+test('--brands matches the supplier slug and the human label alike', () => {
+  const ranking = rankModels(BRAND_ROWS)
+  for (const request of [['royal-black'], ['Royal Black'], ['ROYAL BLACK'], ['  royal-black  ']]) {
+    const { names, unmatched } = namesForBrands(ranking, BRAND_ROWS, request)
+    assert.deepEqual(unmatched, [], `should match: ${JSON.stringify(request)}`)
+    assert.deepEqual(names.sort(), ['Royal Black Milage SUV/CUV', 'Royal Black Racing Trac'])
+  }
+})
+
+test('--brands never infers a brand from the display name', () => {
+  // "Royal" is the first word of two model names and is not a brand. A request
+  // for it must miss, not quietly return the Royal Black models.
+  const ranking = rankModels(BRAND_ROWS)
+  const { names, unmatched } = namesForBrands(ranking, BRAND_ROWS, ['Royal'])
+  assert.deepEqual(names, [])
+  assert.deepEqual(unmatched, ['Royal'])
+})
+
+test('--brands reports what is available when a brand misses', () => {
+  const ranking = rankModels(BRAND_ROWS)
+  const { unmatched, available } = namesForBrands(ranking, BRAND_ROWS, ['Nonesuch', 'accelera'])
+  assert.deepEqual(unmatched, ['Nonesuch'])
+  assert.deepEqual(available, ['Accelera', 'Royal Black', 'Waterfall'])
+})
+
+test('--brands returns models in the snapshot ranking order it was given', () => {
+  const ranking = rankModels(BRAND_ROWS)
+  const { names } = namesForBrands(ranking, BRAND_ROWS, ['royal-black', 'accelera', 'waterfall'])
+  const order = ranking.map(([name]) => name).filter(name => names.includes(name))
+  assert.deepEqual(names, order, 'brand selection must not reorder relative to the ranking')
+})
+
+test('a row whose URL has no brand segment is skipped, not guessed at', () => {
+  const rows = [...BRAND_ROWS, { id: 'e', name: 'Mystery Tire', size: '205/65R15', source: { url: 'https://www.giga-tires.com/nonsense' } }]
+  const { available } = namesForBrands(rankModels(rows), rows, ['royal-black'])
+  assert.ok(!available.includes('Mystery'), 'an unparseable URL contributes no brand')
 })
