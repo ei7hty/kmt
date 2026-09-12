@@ -72,7 +72,31 @@ const HEALTH_OTHER_HOST = process.env.HEALTH_OTHER_HOST || 'kmt.fly.dev';
  * asserting nothing -- and more means the baseline was not updated.
  */
 const EXPECTED_CHECKS = CANDIDATE ? 53 : 69;
-const CATALOG_CACHE_CONTROL = 'public, max-age=300';
+/**
+ * `/api/catalog` has TWO correct cache headers, and which one is correct
+ * depends on server state this audit cannot see.
+ *
+ * `backend/api.mjs` serves `public, max-age=300` until the owner's database
+ * holds any image packet, and `no-store` from then on -- deliberately, and
+ * permanently: *"Once images exist, keep revocation-sensitive URLs out of
+ * browser/CDN caches forever, including after the final packet is revoked."*
+ * An approved photo can be revoked, and a cached catalog would keep serving
+ * its URL after it was withdrawn.
+ *
+ * This audit asserted equality with the five-minute value. It was written
+ * when no packets existed, so the two were indistinguishable. On 2026-09-12
+ * the first real photos were imported, `hasImagePackets()` began returning
+ * true, and the deployed-site check failed on main -- not a regression, an
+ * expectation that had quietly become one of two valid answers.
+ *
+ * Asserting membership rather than equality is weaker, and it is the honest
+ * bound: the audit sees a header, not the database that decides it. What it
+ * still refuses is a THIRD value -- a missing header, a stale `max-age`, a
+ * typo -- which is what this check exists to catch.
+ */
+const CATALOG_CACHE_CONTROL_BEFORE_PHOTOS = 'public, max-age=300';
+const CATALOG_CACHE_CONTROL_WITH_PHOTOS = 'no-store';
+const CATALOG_CACHE_CONTROL_VALID = [CATALOG_CACHE_CONTROL_BEFORE_PHOTOS, CATALOG_CACHE_CONTROL_WITH_PHOTOS];
 const CATALOG_TRANSFER_BUDGET_BYTES = 200 * 1024;
 
 let passed = 0;
@@ -483,9 +507,9 @@ async function main() {
   check(type.includes('application/json'), 'GET /api/catalog answers JSON', `content-type: ${type || 'none'}`);
 
   const catalogCacheControl = catalogResponse.headers.get('cache-control') || '';
-  check(catalogCacheControl === CATALOG_CACHE_CONTROL,
-    'GET /api/catalog is cacheable for five minutes',
-    `cache-control: ${catalogCacheControl || 'none'}`);
+  check(CATALOG_CACHE_CONTROL_VALID.includes(catalogCacheControl),
+    'GET /api/catalog carries one of its two correct cache headers',
+    `cache-control: ${catalogCacheControl || 'none'} -- expected ${CATALOG_CACHE_CONTROL_VALID.join(' or ')}`);
 
   const catalog = await catalogResponse.json().catch(() => null);
   const tires = catalog?.tires;
