@@ -12,6 +12,10 @@ import { cleanCatalogDescription } from './catalog-description.mjs'
 
 const DEFAULT_MARKUP_RATE = DEFAULT_MARKUP_SETTINGS.rate
 const DEFAULT_SHIPPING_PER_TIRE = DEFAULT_MARKUP_SETTINGS.shippingPerTire
+const DEFAULT_MIN_MARGIN_PER_TIRE = DEFAULT_MARKUP_SETTINGS.minMarginPerTire
+const DEFAULT_MAX_MARGIN_PER_TIRE = DEFAULT_MARKUP_SETTINGS.maxMarginPerTire
+/** A typo guard, not a pricing opinion -- the same job `rate`'s 1-to-10 does. */
+const MARGIN_BOUND_LIMIT = 500
 
 const CATALOGUE_LINE_BASES = ['perTire', 'perJob']
 const CATALOGUE_LINE_MODES = ['automatic', 'optional']
@@ -199,6 +203,7 @@ export class Inventory {
     const stored = this.getMeta('markup')
     if (!stored) return {
       rate: DEFAULT_MARKUP_RATE, shippingPerTire: DEFAULT_SHIPPING_PER_TIRE,
+      minMarginPerTire: DEFAULT_MIN_MARGIN_PER_TIRE, maxMarginPerTire: DEFAULT_MAX_MARGIN_PER_TIRE,
       rateIsPlaceholder: true, shippingPerTireIsPlaceholder: true, isPlaceholder: true, updatedAt: null,
     }
     const hasShippingKey = Object.prototype.hasOwnProperty.call(stored, 'shippingPerTire')
@@ -207,6 +212,15 @@ export class Inventory {
     return {
       ...stored,
       shippingPerTire: stored.shippingPerTire ?? DEFAULT_SHIPPING_PER_TIRE,
+      // A record saved before the margin bounds existed needs none of the
+      // careful legacy reading `shippingPerTire` above needs, and the reason
+      // is worth stating so nobody adds it later out of symmetry: shipping
+      // arrived with a guessed value (0) and a flag claiming whose it was, so
+      // an absent key and a decided zero had to be told apart. A margin bound
+      // has no guessed value and no flag. Absent is off, off is what every
+      // row saved before today meant, and `?? null` is the whole migration.
+      minMarginPerTire: stored.minMarginPerTire ?? DEFAULT_MIN_MARGIN_PER_TIRE,
+      maxMarginPerTire: stored.maxMarginPerTire ?? DEFAULT_MAX_MARGIN_PER_TIRE,
       rateIsPlaceholder,
       shippingPerTireIsPlaceholder,
       isPlaceholder: rateIsPlaceholder || shippingPerTireIsPlaceholder,
@@ -230,9 +244,43 @@ export class Inventory {
     if (!Number.isFinite(shippingPerTire) || shippingPerTire < 0 || shippingPerTire > 200) {
       throw new InputError('Enter a per-tire shipping cost between $0 and $200.')
     }
+
+    // The margin bounds, under the same "omitted means not changing" rule.
+    // That rule is load-bearing here rather than merely tidy: the owner
+    // screen's markup form sends `{ rate, shippingPerTire }` and nothing else
+    // (src/owner/OwnerInventory.jsx), so under any other reading Ken would
+    // clear his own margin floor every time he adjusted his rate, and the
+    // hundreds of prices it was holding up would drop with no save that
+    // mentioned them.
+    //
+    // `null` is a real, explicit answer here -- "no bound" -- and it is the
+    // only way back off, so it has to be distinguishable from an omission.
+    // Zero is NOT that way back for the ceiling: a $0 maximum margin sells
+    // every unpriced tire at exactly what Ken paid for it, which is a typo,
+    // not an instruction, and it is refused below.
+    const minProvided = input.minMarginPerTire !== undefined
+    const maxProvided = input.maxMarginPerTire !== undefined
+    const minMarginPerTire = minProvided ? input.minMarginPerTire : previous.minMarginPerTire
+    const maxMarginPerTire = maxProvided ? input.maxMarginPerTire : previous.maxMarginPerTire
+    if (minMarginPerTire !== null &&
+        (!Number.isFinite(minMarginPerTire) || minMarginPerTire < 0 || minMarginPerTire > MARGIN_BOUND_LIMIT)) {
+      throw new InputError(`Enter a minimum margin per tire between $0 and $${MARGIN_BOUND_LIMIT}, or leave it off.`)
+    }
+    if (maxMarginPerTire !== null &&
+        (!Number.isFinite(maxMarginPerTire) || maxMarginPerTire <= 0 || maxMarginPerTire > MARGIN_BOUND_LIMIT)) {
+      throw new InputError(`Enter a maximum margin per tire above $0 and up to $${MARGIN_BOUND_LIMIT}, or leave it off.`)
+    }
+    if (minMarginPerTire !== null && maxMarginPerTire !== null && minMarginPerTire > maxMarginPerTire) {
+      throw new InputError('The minimum margin per tire cannot be more than the maximum.')
+    }
+
     const markup = {
       rate: Math.round(input.rate * 10000) / 10000,
       shippingPerTire: Math.round(shippingPerTire * 100) / 100,
+      // Cents, like shipping beside it -- a bound stored to a fraction of a
+      // cent would move a price by an amount no invoice could show.
+      minMarginPerTire: minMarginPerTire === null ? null : Math.round(minMarginPerTire * 100) / 100,
+      maxMarginPerTire: maxMarginPerTire === null ? null : Math.round(maxMarginPerTire * 100) / 100,
       // rate is required and freshly validated on every call, so a
       // successful save always decides it. shippingPerTire only stops being
       // a placeholder on a call that actually named it -- an untouched
