@@ -531,7 +531,15 @@ async function main() {
       try {
         const packet = await collectImagePilot(plan, urls, { codeSha, seed: options.validationSeed, delayForNext: validationOptions.delayForNext, allowPartial: options.allowPartial }, url => browser.fetchProductPage(url))
         writeImagePilotPacket(options.validationOutput, packet, ROOT)
-        console.log(`Private metadata packet written (${urls.length} product URLs). No image files downloaded or approval granted.`)
+        // Report what was WRITTEN, and say so against what was asked for. This
+        // printed `urls.length` -- the number of pages requested -- so a run
+        // that asked for 10, skipped one and wrote 9 announced "10 product
+        // URLs". The skipped page was named a few lines above, which made the
+        // overstatement easy to miss and easy to believe.
+        const written = packet.orderedIds.length
+        console.log(written === urls.length
+          ? `Private metadata packet written (${written} product URLs). No image files downloaded or approval granted.`
+          : `Private metadata packet written (${written} of ${urls.length} product URLs; ${urls.length - written} skipped above). No image files downloaded or approval granted.`)
       // The message stays generic, but the cause is ATTACHED rather than
       // discarded. A bare `catch` here made every failure of this command
       // indistinguishable from every other -- a redirect, a parse mismatch, a

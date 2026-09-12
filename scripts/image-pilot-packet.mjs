@@ -109,7 +109,28 @@ export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, dela
       : (tire.source.productId && row.source.productId !== tire.source.productId) ? `productId: page has ${JSON.stringify(row.source?.productId)}, snapshot expects ${JSON.stringify(tire.source.productId)}`
       : null
     if (problem) { skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason: problem }); continue }
-    const originalUrl = row.imageUrls[0]
+    // Choose the first image in a format the PROFILE ALREADY DECLARES it will
+    // accept, rather than whichever happens to be listed first.
+    //
+    // `IMAGE_PILOT_POLICY.allowedFormats` is ['jpeg','png'] and the decoder
+    // enforces it on the real bytes downstream. This supplier lists a .webp
+    // first for most products: measured on a 9-candidate packet, 6 of 9 first
+    // images were webp and EVERY ONE of those products also carried a png or
+    // jpg further down its own list. Taking [0] blindly would have sent all
+    // six to a decoder guaranteed to refuse them -- six pointless downloads
+    // from someone else's server to learn something the URL already said.
+    //
+    // The extension is a hint, not proof; the decoder still checks the bytes
+    // and still refuses a file that lies about itself. This only avoids
+    // fetching the ones we can already tell are wrong.
+    const extensionOf = value => value.split('?')[0].split('#')[0].split('.').pop().toLowerCase()
+    const acceptable = new Set(IMAGE_PILOT_POLICY.allowedFormats.flatMap(format => format === 'jpeg' ? ['jpg', 'jpeg'] : [format]))
+    const originalUrl = row.imageUrls.find(value => acceptable.has(extensionOf(value)))
+    if (!originalUrl) {
+      skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl,
+        reason: `no image in an allowed format (${IMAGE_PILOT_POLICY.allowedFormats.join('/')}); page offered ${row.imageUrls.map(extensionOf).join(', ')}` })
+      continue
+    }
     const imageHost = new URL(originalUrl).hostname
     if (assertAllowedImageUrl(originalUrl, [imageHost]) !== originalUrl || new URL(originalUrl).hash) {
       skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason: `image URL refused: ${originalUrl}` })
