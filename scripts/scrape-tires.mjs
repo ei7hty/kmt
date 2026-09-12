@@ -20,6 +20,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
+import { MAX_MAPPING_FILE_BYTES, MAX_PACKET_FILE_BYTES } from '../backend/image-manifest.mjs'
 import { readPrivateImageInput } from './import-images.mjs'
 import { prepareImagePilot, collectImagePilot, writeImagePilotPacket, assertImagePilotOutput } from './image-pilot-packet.mjs'
 
@@ -165,20 +166,27 @@ function validateEnrichmentOptions(options) {
 
 // The most pages one --validation-count run may request. A downstream safety
 // bound, not a business rule: each selected page becomes one enriched row in the
-// packet's snapshot.json, which the CLI the owner actually runs to import that
-// packet -- scripts/import-product-images.mjs, the #468 caller -- reads under
-// MAX_PACKET_FILE_BYTES (65536) in readPacketInputs. (scripts/import-images.mjs:35
-// caps the same file at an inline 65536 too; same number, a second import path.)
-// Measured 2026-09-10 against src/data/scraped-tires.json with JSON.stringify --
-// the bytes the packet actually writes, not json.dumps pretty-printed, which runs
-// ~10% high (1083 rows: ~362 B/row avg, 573 max) -- ~166 of the largest raw rows
-// fit under 65536, and the enriched form (candidates + per-URL provenance) lowers
-// the practical ceiling to ~120-150. 100 stays under that with headroom for the
-// owner's 37-model target. INVALIDATED BY a change to ANY of the 65536 packet-file
-// caps -- 8 sites as of 2026-09-10 (`git grep 65536 -- scripts/ backend/`), only
-// import-product-images.mjs's MAX_PACKET_FILE_BYTES named and the rest inline, so
-// raising one leaves the others silently disagreeing: grep the class, do not trust
-// one file. Or growth in per-row size. Re-measure; do not just raise this.
+// packet's snapshot.json, and the acquisition CLI reads that file under
+// MAX_PACKET_FILE_BYTES.
+//
+// THE WARNING THAT USED TO LIVE HERE WAS RIGHT, AND WAS IGNORED. It read:
+// "INVALIDATED BY a change to ANY of the 65536 packet-file caps -- 8 sites as
+// of 2026-09-10 ... raising one leaves the others silently disagreeing: grep
+// the class, do not trust one file."
+//
+// On 2026-09-12 someone raised two of the eight and shipped. The next real
+// batch -- 96 images, a 616KB snapshot -- sealed nowhere: seal-image-packet.mjs
+// was one of the six still inline at 65536. The note was accurate, specific,
+// and in the file; it was simply not read before editing a neighbouring line.
+// That is what a comment can and cannot do, and it is why the number is now a
+// pair of named exports (MAX_PACKET_FILE_BYTES, MAX_MAPPING_FILE_BYTES in
+// backend/image-manifest.mjs) imported at every site rather than a literal
+// repeated with two different meanings.
+//
+// Measured 2026-09-12: a packet candidate costs ~5,700 bytes of snapshot.json,
+// so the 1MB cap holds ~180. 100 stays under that with headroom. INVALIDATED BY
+// growth in per-candidate size -- re-measure bytes per candidate, which is the
+// number that moves, rather than raising this one.
 export const MAX_VALIDATION_COUNT = 100
 
 function validateValidationOptions(options) {
@@ -187,7 +195,7 @@ function validateValidationOptions(options) {
     throw new Error('--validation-count must be a positive integer')
   }
   if (options.validationCount > MAX_VALIDATION_COUNT) {
-    throw new Error(`--validation-count ${options.validationCount} exceeds the ${MAX_VALIDATION_COUNT}-page cap: each selected page becomes one row in the packet's snapshot.json, which import-images.mjs reads under a 65536-byte limit. Run fewer pages per packet.`)
+    throw new Error(`--validation-count ${options.validationCount} exceeds the ${MAX_VALIDATION_COUNT}-page cap: each selected page becomes one row in the packet's snapshot.json, which is read under a ${MAX_PACKET_FILE_BYTES}-byte limit. Run fewer pages per packet.`)
   }
   if (!Number.isFinite(options.validationJitterMin) || options.validationJitterMin < 0 ||
       !Number.isFinite(options.validationJitterMax) || options.validationJitterMax < options.validationJitterMin) {
@@ -520,7 +528,7 @@ async function main() {
       if (!options.validationInput || !options.validationOutput || options.headless || options.plainFetch ||
           options.validationJitterMin < 2000 || options.validationJitterMax > 5000) throw new Error('Private packet export requires both paths, a visible document-only browser and 2-5 second pacing')
       const inputBytes = readPrivateImageInput(options.validationSnapshot || DEFAULT_OUT, 8 * 1024 * 1024)
-      const mappingBytes = readPrivateImageInput(options.validationInput, 65536)
+      const mappingBytes = readPrivateImageInput(options.validationInput, MAX_MAPPING_FILE_BYTES)
       const plan = prepareImagePilot(inputBytes, mappingBytes)
       assertImagePilotOutput(options.validationOutput, ROOT)
       const urls = selectValidationUrls([...plan.baseline.keys()].map(url => ({ source: { url } })), options.validationSeed, options.validationCount)

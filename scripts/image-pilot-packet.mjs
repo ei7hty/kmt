@@ -1,7 +1,7 @@
 import { mkdirSync, openSync, writeFileSync, fsyncSync, closeSync, lstatSync, realpathSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { sha256Bytes, assertAllowedImageUrl } from '../backend/image-assets.mjs'
-import { IMAGE_SELECTION_TAG, MAX_PACKET_FILE_BYTES, supplierImageRevision } from '../backend/image-manifest.mjs'
+import { IMAGE_SELECTION_TAG, MAX_MAPPING_FILE_BYTES, MAX_PACKET_FILE_BYTES, supplierImageRevision } from '../backend/image-manifest.mjs'
 import { IMAGE_PILOT_POLICY, compileImageProviderProfile } from '../backend/image-provider-profile.mjs'
 import { parseProductPage, productUrl } from './giga-tires.mjs'
 
@@ -23,7 +23,7 @@ const reject = reason => {
 const parse = bytes => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
 export function prepareImagePilot(inputBytes, mappingBytes) {
   if (!(inputBytes instanceof Uint8Array) || inputBytes.length > 8 * 1024 * 1024 ||
-      !(mappingBytes instanceof Uint8Array) || mappingBytes.length > 65536) reject()
+      !(mappingBytes instanceof Uint8Array) || mappingBytes.length > MAX_MAPPING_FILE_BYTES) reject()
   const input = parse(inputBytes), mapping = parse(mappingBytes)
   if (Object.keys(mapping).sort().join(',') !== 'candidates,inputDigest,version' || mapping.version !== 1 || mapping.inputDigest !== sha256Bytes(inputBytes) || !Array.isArray(mapping.candidates) || !mapping.candidates.length) reject()
   const ids = new Set(), urls = new Set(), baseline = new Map()

@@ -5,14 +5,14 @@ import { fileURLToPath } from 'node:url'
 import { readPrivateImageInput } from './import-images.mjs'
 import { sha256Bytes } from '../backend/image-assets.mjs'
 import { compileImageProviderProfile } from '../backend/image-provider-profile.mjs'
-import { parseImagePacket } from '../backend/image-manifest.mjs'
+import { MAX_MAPPING_FILE_BYTES, MAX_PACKET_FILE_BYTES, parseImagePacket } from '../backend/image-manifest.mjs'
 
 // Owner-supplied local files are an attestation, not HTTP acquisition evidence.
 export function sealImagePacket(directory, bindingsFile) {
-  const snapshotBytes = readPrivateImageInput(path.join(directory, 'snapshot.json'), 65536)
-  const profileBytes = readPrivateImageInput(path.join(directory, 'profile.json'), 65536)
+  const snapshotBytes = readPrivateImageInput(path.join(directory, 'snapshot.json'), MAX_PACKET_FILE_BYTES)
+  const profileBytes = readPrivateImageInput(path.join(directory, 'profile.json'), MAX_PACKET_FILE_BYTES)
   const snapshot = JSON.parse(snapshotBytes), profile = compileImageProviderProfile(JSON.parse(profileBytes))
-  const bindings = JSON.parse(readPrivateImageInput(bindingsFile, 65536))
+  const bindings = JSON.parse(readPrivateImageInput(bindingsFile, MAX_MAPPING_FILE_BYTES))
   if (!Array.isArray(bindings) || !bindings.length || snapshot.candidates?.length !== bindings.length) throw new Error('Bindings must match the snapshot candidate count')
   const files = new Map()
   const assets = bindings.map((binding, i) => {

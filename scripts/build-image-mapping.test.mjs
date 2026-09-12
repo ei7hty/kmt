@@ -7,6 +7,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { rankModels, pickRepresentativeTire, buildCandidate, namesFromFile, namesForBrands, selectByNames } from './build-image-mapping.mjs'
+import { MAX_MAPPING_FILE_BYTES } from '../backend/image-manifest.mjs'
 import { prepareImagePilot } from './image-pilot-packet.mjs'
 import { sha256Bytes } from '../backend/image-assets.mjs'
 import { supplierImageRevision } from '../backend/image-manifest.mjs'
@@ -180,16 +181,21 @@ test('refuses --models greater than the snapshot has, by name, unless --allow-fe
   assert.equal(mapping.candidates.length, 1)
 })
 
-test('refuses rather than writes a mapping over prepareImagePilot\'s 65536-byte limit', t => {
+test('refuses rather than writes a mapping over the cap, whatever the cap is', t => {
   const dir = sandbox(t)
-  // ~400 distinct one-row models comfortably clears the 65536-byte candidate limit
-  // (measured: each candidate serialises to roughly 200-250 bytes in this fixture's shape).
-  const specs = Array.from({ length: 400 }, (_, i) => ({ name: `Model ${String(i).padStart(4, '0')}`, sizes: 1 }))
+  // DERIVED from the constant, not restated. This test used to hardcode 400
+  // models and the string "65536", so raising the cap to 256KB on 2026-09-12
+  // turned a real guard into a test that could no longer reach the limit it was
+  // written to prove -- and it failed for that reason rather than for a defect.
+  // Sizing the fixture off MAX_MAPPING_FILE_BYTES keeps it honest at any cap.
+  const BYTES_PER_CANDIDATE = 200 // conservative for this fixture's short names
+  const models = Math.ceil(MAX_MAPPING_FILE_BYTES / BYTES_PER_CANDIDATE) + 200
+  const specs = Array.from({ length: models }, (_, i) => ({ name: `Model ${String(i).padStart(5, '0')}`, sizes: 1 }))
   const snapshotFile = writeSnapshot(dir, snapshotWithModels(specs))
   const out = path.join(dir, 'mapping.json')
-  const result = run(['--models', '400', '--allow-fewer', '--snapshot', snapshotFile, '--out', out])
+  const result = run(['--models', String(models), '--allow-fewer', '--snapshot', snapshotFile, '--out', out])
   assert.notEqual(result.status, 0)
-  assert.match(result.stderr, /over prepareImagePilot's 65536-byte limit/)
+  assert.match(result.stderr, new RegExp(`over prepareImagePilot's ${MAX_MAPPING_FILE_BYTES}-byte limit`))
   assert.equal(existsSync(out), false)
 })
 
