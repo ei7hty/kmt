@@ -14,7 +14,15 @@ function pilot() {
     inStock: true, category: 'All Season', description: '<p>Fixture</p>', source: { sku: `FIXTURE-${i}`, url: 'https://www.giga-tires.com/tires/215-60-16' } }))
   const inputBytes = Buffer.from(JSON.stringify({ tires: rows }))
   const mapping = { version: 1, inputDigest: sha256Bytes(inputBytes), candidates: rows.map((row, i) => ({ supplierId: row.id,
-    supplierSku: row.source.sku, revision: supplierImageRevision(row), productUrl: `https://www.giga-tires.com/tires/fixture/tirecode/${i}` })) }
+    // The tirecode segment IS what the product page reports as its sku. That is
+    // how this supplier works -- measured 2026-09-12 on three real pages
+    // (/tirecode/20000533 -> page sku "20000533", and so on) -- and the pilot's
+    // identity check now ties those two together. The fixture used
+    // `/tirecode/${i}` while the page served `FIXTURE-${i}`, which encoded the
+    // old assumption that a page's sku matches the LISTING's sku; measured on 8
+    // real candidates, those disagreed 8 times out of 8. Only the fixture's data
+    // changes here -- every assertion below is untouched.
+    supplierSku: row.source.sku, revision: supplierImageRevision(row), productUrl: `https://www.giga-tires.com/tires/fixture/tirecode/${row.source.sku}` })) }
   const mappingBytes = Buffer.from(JSON.stringify(mapping)), plan = prepareImagePilot(inputBytes, mappingBytes)
   const urls = selectValidationUrls(mapping.candidates.map(c => ({ source: { url: c.productUrl } })), 20260907, 5)
   const html = sku => `<script type="application/ld+json">${JSON.stringify({ '@type': 'Product', sku,

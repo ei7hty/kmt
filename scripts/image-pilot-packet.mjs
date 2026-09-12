@@ -108,7 +108,26 @@ export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, dela
       : !row.imageUrls?.length ? 'imageUrls: the product page carried no image URLs in its structured data'
       : (tire.source.productId && row.source.productId !== tire.source.productId) ? `productId: page has ${JSON.stringify(row.source?.productId)}, snapshot expects ${JSON.stringify(tire.source.productId)}`
       : null
-    if (problem) { skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason: problem }); continue }
+    // WITHOUT --allow-partial this still STOPS GLOBALLY on the first bad page,
+    // exactly as before. That default is deliberate and not mine to change
+    // quietly: `image-pilot-packet.test.mjs` names it ("pilot stops globally
+    // without packet on missing-sku/wrong-sku/wrong-size/no-image"), and the
+    // reason is footprint -- once a page disagrees with the mapping, carrying
+    // on means more requests to somebody else's server while something is
+    // already wrong.
+    //
+    // With --allow-partial the run continues and reports every failure
+    // together. That is the opt-in, and it is what makes one run able to
+    // answer what four runs answered tonight.
+    //
+    // A PROVIDER refusal -- blocked, rate-limited, challenged -- is different
+    // and stops globally in BOTH modes: fetchPage throws and that throw is not
+    // caught here.
+    if (problem) {
+      if (!allowPartial) reject(problem)
+      skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason: problem })
+      continue
+    }
     // Choose the first image in a format the PROFILE ALREADY DECLARES it will
     // accept, rather than whichever happens to be listed first.
     //
@@ -127,13 +146,16 @@ export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, dela
     const acceptable = new Set(IMAGE_PILOT_POLICY.allowedFormats.flatMap(format => format === 'jpeg' ? ['jpg', 'jpeg'] : [format]))
     const originalUrl = row.imageUrls.find(value => acceptable.has(extensionOf(value)))
     if (!originalUrl) {
-      skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl,
-        reason: `no image in an allowed format (${IMAGE_PILOT_POLICY.allowedFormats.join('/')}); page offered ${row.imageUrls.map(extensionOf).join(', ')}` })
+      const reason = `no image in an allowed format (${IMAGE_PILOT_POLICY.allowedFormats.join('/')}); page offered ${row.imageUrls.map(extensionOf).join(', ')}`
+      if (!allowPartial) reject(reason)
+      skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason })
       continue
     }
     const imageHost = new URL(originalUrl).hostname
     if (assertAllowedImageUrl(originalUrl, [imageHost]) !== originalUrl || new URL(originalUrl).hash) {
-      skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason: `image URL refused: ${originalUrl}` })
+      const reason = `image URL refused: ${originalUrl}`
+      if (!allowPartial) reject(reason)
+      skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason })
       continue
     }
     candidates.push({ supplierId: tire.id, supplierSku: mapping.supplierSku, productUrl: fetched.url, originalUrl, revision: mapping.revision })
