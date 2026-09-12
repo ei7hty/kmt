@@ -25,6 +25,11 @@ if (!BASE) {
   process.exit(2);
 }
 
+// The customer-field contract, from the one place it is declared. This file
+// held a hand-copied duplicate of that array, which is exactly the drift the
+// shared list's own comment warned about.
+import { CATALOG_FIELDS_PHRASE, catalogRowProblem } from './audit-ui.mjs';
+
 /**
  * How many checks a complete run performs.
  *
@@ -70,8 +75,6 @@ function reportCount() {
   }
 }
 
-/** The seven fields a customer's browser is built around, and nothing else. */
-const CATALOG_FIELDS = ['id', 'name', 'size', 'price', 'inStock', 'category', 'description'];
 
 async function main() {
   const expectedCountRaw = process.env.EXPECTED_CATALOG_COUNT;
@@ -152,14 +155,10 @@ async function main() {
   //    should not have to open a different file to confirm it. This is
   //    exactly the regression #61 shipped: sku, stock, listPrice and the
   //    supplier's product URL were reaching every customer's browser.
-  const wrongShape = tires.filter(tire => {
-    const keys = Object.keys(tire).sort();
-    return keys.length !== CATALOG_FIELDS.length ||
-      !CATALOG_FIELDS.every(field => Object.prototype.hasOwnProperty.call(tire, field));
-  });
+  const wrongShape = tires.filter(tire => catalogRowProblem(tire) !== null);
   check(wrongShape.length === 0,
-    `every catalog row carries exactly the seven customer fields, no supplier fields (${tires.length} rows)`,
-    wrongShape.length ? `first offender: ${JSON.stringify(Object.keys(wrongShape[0]))}` : '');
+    `every catalog row carries ${CATALOG_FIELDS_PHRASE}, no supplier fields (${tires.length} rows)`,
+    wrongShape.length ? `first offender ${catalogRowProblem(wrongShape[0])}: ${JSON.stringify(Object.keys(wrongShape[0]))}` : '');
 
   reportCount();
   if (failed > 0) process.exitCode = 1;
