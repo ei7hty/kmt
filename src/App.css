@@ -512,6 +512,14 @@
 .tire-filters-clear { padding: 4px 9px; border: 1px solid #3e3e42; border-radius: 3px; background: transparent; color: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .tire-filters-clear:hover { border-color: var(--accent); color: #fff; }
 
+/* The panel collapses on a phone, and the rule that collapses it lives in one
+   place: the narrow block in RequestFlow.css. Here -- at every other width --
+   the toggle does not exist and the body is open, so a collapsed state cannot
+   follow someone from a phone to a desktop and hide the filters there. Undo
+   this pair and the panel disappears on desktop with nothing to reopen it. */
+.tire-filters-toggle { display: none; }
+.tire-filters-body { display: grid; gap: 14px; }
+
 .tire-sorts { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .tire-sorts-label { margin-right: 2px; color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
 .tire-sort { padding: 4px 11px; border: 1px solid #3e3e42; border-radius: 999px; background: transparent; color: #dedee3; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }

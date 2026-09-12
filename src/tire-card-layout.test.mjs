@@ -99,12 +99,18 @@ test('the stylesheet reader keeps what applies at this width and drops what does
  * undefined, because a lookup that quietly answers nothing turns every
  * assertion built on it into a pass that proves nothing.
  */
-function declarations(css, selector, prop, label) {
+function lookup(css, selector, prop) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const blocks = [...css.matchAll(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 'g'))]
-  assert.ok(blocks.length, `${label}: no rule for \`${selector}\` -- this test cannot measure what it says it measures`)
-  const found = blocks.flatMap(block =>
+  return blocks.flatMap(block =>
     [...block[1].matchAll(new RegExp(`(?:^|;)\\s*${prop}\\s*:([^;]+)`, 'g'))].map(match => match[1].trim()))
+}
+
+function declarations(css, selector, prop, label) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  assert.ok(new RegExp(`${escaped}\\s*\\{`).test(css),
+    `${label}: no rule for \`${selector}\` -- this test cannot measure what it says it measures`)
+  const found = lookup(css, selector, prop)
   assert.ok(found.length, `${label}: \`${selector}\` declares no ${prop}`)
   return found
 }
@@ -256,4 +262,43 @@ test('a filter option is laid out by its own rule, not by the page-wide label ru
       `"${element}" outranks every rule that lays out a filter option, so the option renders as a block: ` +
       'checkbox against the text, count running into the label. Scope the rule; do not weaken this test.')
   }
+})
+
+const PHONE_VIEWPORT_PX = 375
+
+test('the filter panel collapses on a phone and only on a phone', () => {
+  const at = width => atWidth(appCss, width) + atWidth(flowCss, width)
+  const phone = at(PHONE_VIEWPORT_PX)
+  const wide = at(DESKTOP_VIEWPORT_PX)
+  const collapsed = '.tire-filters-body[data-open="false"]'
+
+  // On a phone: the panel can be shut, and there is a full-size control to
+  // open it again.
+  assert.deepEqual(lookup(phone, collapsed, 'display'), ['none'],
+    'nothing collapses the panel at 375px, where it is ~950px of filters above the first tire')
+  assert.equal(lookup(phone, '.order-section .tire-filters-toggle', 'display').at(-1), 'flex',
+    'the panel collapses at 375px with no control shown to open it')
+  assert.ok(px(lookup(phone, '.order-section .tire-filters-toggle', 'min-height').at(-1)) >= 44,
+    'the only way back to the filters on a phone is under a 44px touch target')
+
+  // On a desktop: neither half exists. This is the pairing that matters -- a
+  // collapse rule that applied here would hide the panel at a width where the
+  // toggle is display:none, leaving no way to reopen it.
+  assert.deepEqual(lookup(wide, collapsed, 'display'), [],
+    'the collapse rule reaches the desktop, where the control that undoes it is hidden')
+  assert.equal(lookup(wide, '.tire-filters-toggle', 'display').at(-1), 'none',
+    'the phone toggle is drawn on the desktop too, where it controls nothing')
+})
+
+test('the toggle names the thing it opens, and that thing is there', () => {
+  const component = readFileSync(new URL('./components/TireFilters.jsx', import.meta.url), 'utf8')
+  const id = component.match(/const BODY_ID = '([^']+)'/)
+  assert.ok(id, 'BODY_ID is not declared where this test looks for it')
+  assert.match(component, /aria-controls=\{BODY_ID\}/, 'the toggle does not say what it controls')
+  assert.match(component, /id=\{BODY_ID\}/, 'nothing carries the id the toggle points at')
+  assert.match(component, /aria-expanded=\{open\}/, 'the toggle does not report whether it is open')
+  // The CSS hides the body by an attribute, so the attribute has to be written
+  // as a string: data-open={open} renders nothing at all when open is false.
+  assert.match(component, /data-open=\{open \? 'true' : 'false'\}/,
+    "data-open must be a string; a boolean false renders no attribute and the selector never matches")
 })

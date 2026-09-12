@@ -9,7 +9,12 @@ import { facetCounts, availableSorts, activeFilterCount, toggleFilter, visibleFa
  * lives in src/tire-filters.js, which is where the tests drive it. Same split
  * as inventory-grid.js / OwnerInventoryGrid.jsx.
  *
- * Three things here are deliberate and easy to undo by accident:
+ * Four things here are deliberate and easy to undo by accident:
+ *
+ * The panel COLLAPSES ON A PHONE and nowhere else. Expanded at 375px it is
+ * about 950px of filters standing above the first tire -- more than a screen
+ * of controls before any product. Which widths collapse is decided in the
+ * stylesheet, not here; see the note on `open` below for why.
  *
  * A zero-count option is rendered DISABLED, never removed. Dropping it would
  * make the panel reflow as boxes are ticked and move a control out from under
@@ -24,8 +29,18 @@ import { facetCounts, availableSorts, activeFilterCount, toggleFilter, visibleFa
  * ratings yet and inventing them was never on the table -- so it stays out of
  * sight rather than sorting nothing and teaching people it is broken.
  */
+/** The element the toggle says it controls; a fixed id, one panel per page. */
+const BODY_ID = 'tire-filter-controls'
+
 export default function TireFilters({ tires, filters = NO_FILTERS, sort = 'price', onFiltersChange, onSortChange, resultCount }) {
   const [allBrands, setAllBrands] = useState(false)
+  // Collapsed to start, and it only means anything on a phone: the toggle is
+  // display:none and the body is open at every other width, so this state
+  // cannot travel to a desktop and hide the panel there. That is a stylesheet
+  // decision rather than a matchMedia listener on purpose -- a listener has a
+  // first paint before it has an answer, and resizing mid-session would strand
+  // someone with filters they cannot see.
+  const [open, setOpen] = useState(false)
   const { seasons, brands, bands } = facetCounts(tires, filters)
   const sorts = availableSorts(tires)
   const active = activeFilterCount(filters)
@@ -79,23 +94,37 @@ export default function TireFilters({ tires, filters = NO_FILTERS, sort = 'price
         )}
       </div>
 
-      <div className="tire-sorts" role="group" aria-label="Sort tires">
-        <span className="tire-sorts-label">Sort</span>
-        {sorts.map(item => (
-          <button
-            type="button"
-            key={item.id}
-            className={sort === item.id ? 'tire-sort selected' : 'tire-sort'}
-            aria-pressed={sort === item.id}
-            onClick={() => onSortChange(item.id)}
-          >{item.label}</button>
-        ))}
-      </div>
+      <button
+        type="button"
+        className="tire-filters-toggle"
+        aria-expanded={open}
+        aria-controls={BODY_ID}
+        onClick={() => setOpen(shown => !shown)}
+      >
+        <span>Filter &amp; sort</span>
+        {active > 0 && <span className="tire-filters-badge">{active}</span>}
+        <span className="tire-filters-caret" aria-hidden="true" />
+      </button>
 
-      <div className="tire-facets">
-        {group('seasons', seasons, 'Season')}
-        {group('bands', bands, 'Price')}
-        {group('brands', brandView.shown, 'Brand', brandFooter)}
+      <div className="tire-filters-body" id={BODY_ID} data-open={open ? 'true' : 'false'}>
+        <div className="tire-sorts" role="group" aria-label="Sort tires">
+          <span className="tire-sorts-label">Sort</span>
+          {sorts.map(item => (
+            <button
+              type="button"
+              key={item.id}
+              className={sort === item.id ? 'tire-sort selected' : 'tire-sort'}
+              aria-pressed={sort === item.id}
+              onClick={() => onSortChange(item.id)}
+            >{item.label}</button>
+          ))}
+        </div>
+
+        <div className="tire-facets">
+          {group('seasons', seasons, 'Season')}
+          {group('bands', bands, 'Price')}
+          {group('brands', brandView.shown, 'Brand', brandFooter)}
+        </div>
       </div>
     </div>
   )
