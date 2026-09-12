@@ -230,7 +230,26 @@ export async function createBrowserFetcher(options = {}) {
         // genuinely never produces one, the 20s elapses and the caller refuses
         // it by name -- loudly and for the right reason, rather than silently
         // parsing a shell.
-        await productPage.waitForSelector('script[type="application/ld+json"]', { timeout: 20000 }).catch(() => {})
+        // Wait for a JSON-LD block that actually contains a PRODUCT.
+        //
+        // Third correction to this one wait tonight, and the same mistake each
+        // time: waiting for something CORRELATED with what the parser needs
+        // instead of the thing itself.
+        //   1. `ld+json OR "tirecode"` -- every URL contains "tirecode", so it
+        //      was true before anything rendered.
+        //   2. any `ld+json` element -- these pages ship a BreadcrumbList or
+        //      Organization block in the shell and the Product block later, so
+        //      it returned on the wrong block. Measured: 19 of 37 pages parsed
+        //      to `sku: undefined` with that wait in place.
+        // `productJsonLd` (giga-tires.mjs) scans every ld+json block for a node
+        // whose @type includes "Product" and ignores the rest. So that is the
+        // precondition, and nothing weaker will do.
+        await productPage.waitForFunction(
+          () => [...document.querySelectorAll('script[type="application/ld+json"]')]
+            .some(node => (node.textContent || '').includes('"Product"')),
+          undefined,
+          { timeout: 20000 },
+        ).catch(() => {})
         const html = await productPage.content()
         assertProviderResponse(url, response, html)
         if (response.status() >= 400) throw new Error(`GET ${url} -> ${response.status()}`)

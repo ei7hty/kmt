@@ -139,7 +139,15 @@ export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, dela
   const snapshot = { version: 2, candidates, provenance: { codeSha, seed, inputDigest: plan.inputDigest, mappingDigest: plan.mappingDigest,
     selection: IMAGE_SELECTION_TAG, productHosts, imageHosts, observations }, enrichedRows }
   const snapshotBytes = Buffer.from(JSON.stringify(snapshot))
-  if (snapshotBytes.length > 65536) reject()
+  // Named, with the arithmetic, because this is the cap a bulk run actually
+  // hits first and the message used to be silent. The rows are ENRICHED
+  // product rows -- description, season, UTQG, warranty, every image URL --
+  // not the much smaller rows in the committed scrape snapshot. An estimate
+  // taken from the latter under-counts badly: 18 validated pages already
+  // exceeded this limit.
+  if (snapshotBytes.length > 65536) {
+    reject(`packet too large: ${candidates.length} validated pages produced ${snapshotBytes.length} bytes of snapshot.json, over the 65536 the importer reads. Run fewer pages per packet (about ${Math.max(1, Math.floor(candidates.length * 65536 / snapshotBytes.length))} at this row size).`)
+  }
   return { snapshotBytes, profileBytes: Buffer.from(JSON.stringify(profile)), profileDigest, snapshotDigest: sha256Bytes(snapshotBytes),
     orderedIds: candidates.map(row => row.supplierId), productHosts, imageHosts }
 }
