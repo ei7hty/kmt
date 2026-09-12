@@ -65,7 +65,7 @@ import { BASELINE_PATTERNS } from './test-baseline.mjs'
  * reviewer sees the baseline move deliberately rather than discovering it later
  * in a diff nobody read.
  */
-const EXPECTED_TESTS = 819
+const EXPECTED_TESTS = 838
 
 /**
  * The DIFFERENCE the image suites make to the total: 729 with a decoder, 664
