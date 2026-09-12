@@ -3299,3 +3299,73 @@ Recorded rather than built: this is a design question about the count guard
 itself, and it belongs in daylight with the whole picture, not resolved
 inside a merge queue at four in the morning by whoever happened to get
 bounced by it.
+
+
+---
+
+## A fixture that agrees with the guarantee is not a test of it
+
+*2026-09-12, LOCAL SUITE lane (inventory-local-suite, PR #511). Found by
+mutation testing my own tests, not by review.*
+
+`scripts/inventory-suite.mjs` sells exactly one guarantee: every step in its
+plan carries a `touches` classification, and **only `local` steps are ever
+executed** -- so the tool cannot contact a supplier or write production. The
+runner enforces it with one line:
+
+```js
+if (step.touches !== TOUCHES.LOCAL) { /* yours, not mine */ continue }
+```
+
+I replaced that check with `if (!step.run)` -- "does this step carry a
+command?", a completely different question -- and **the entire suite stayed
+green**. The reason is the shape worth carrying: every non-local step the plan
+builds today happens to have `run: null`, so the fixture agreed with the
+guarantee by coincidence. Both predicates gave the same answer on every case
+the tests contained. The guarantee the whole file exists to provide was not
+under test at all, and no amount of reading the tests would have said so --
+they look thorough, and they pass, and they assert on the right output.
+
+**The fix is a fixture that can tell the two apart**: a `SUPPLIER` step that
+*does* carry a command -- the poisoned case, which the plan builder never
+produces and which is precisely the mistake worth catching, because it is what
+a future step added carelessly would look like. With that case present, all
+three mutations of the check (removed, inverted, replaced by the `run` test)
+go red.
+
+**The general form**, and it is not specific to this file: when a guard
+distinguishes A from B, check whether your fixtures contain any case where A
+and B disagree. If they do not, the guard is untested no matter how many
+assertions surround it -- and a second, weaker predicate that happens to
+agree on your data will pass review, pass CI, and hold nothing.
+
+## A mutation harness can mutate the wrong function, and the green looks like coverage
+
+*Same session, same night, one level up from the note above.*
+
+The anchor I mutated was `if (step.touches !== TOUCHES.LOCAL) {`. That line is
+**byte-identical in two functions** in the same file -- `runnableViolations()`
+and `runPlan()` -- and `String.replace(string, string)` replaces only the
+FIRST occurrence. `runnableViolations` is defined earlier, so every mutation I
+believed was testing the runner was actually testing the detector. Tests went
+red, the report read as coverage, and the runner's guard had never been touched
+-- which is exactly how the hole in the note above survived the first pass.
+
+A mutation run that reddens the wrong test is indistinguishable, in its output,
+from one that reddens the right test. Both say `exit 1` and name some tests.
+The only difference is a fact about the file that the harness never checks.
+
+**Two cheap habits that catch it:**
+
+1. **Assert anchor uniqueness in the harness itself.** Count occurrences before
+   replacing; refuse and say so when the count is not exactly 1. Mine now
+   prints `ANCHOR MATCHED n TIMES -- not a usable mutation` and skips, rather
+   than silently mutating whichever one came first.
+2. **Anchor on something unique to the function** -- a log line, an error
+   message, a variable name -- not on the guard expression, which is the part
+   most likely to be duplicated precisely because it encodes a rule applied in
+   more than one place.
+
+The second is the sharper one. Two functions enforcing the same rule is good
+design; it is also what makes the guard line a bad mutation anchor. Those two
+facts point in opposite directions and the harness has to know it.
