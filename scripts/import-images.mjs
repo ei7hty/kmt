@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { ImagePublication, imageDirectoryForDatabase } from '../backend/image-publication.mjs'
 import { parseImagePacket } from '../backend/image-manifest.mjs'
+import { MAX_PACKET_FILE_BYTES } from '../backend/image-manifest.mjs'
 
 // Bounded, no-follow reads; never accept arbitrary URLs as local inputs.
 export function readPrivateImageInput(filename, maxBytes) {
@@ -30,9 +31,9 @@ export function readPrivateImageInput(filename, maxBytes) {
 
 export async function importImageFiles({ database, packetDirectory, manifestDigest, python }) {
   if (!path.isAbsolute(database) || !lstatSync(database).isFile() || lstatSync(database).isSymbolicLink() || realpathSync(database) !== path.resolve(database)) throw new Error('Existing private database required')
-  const input = { manifestBytes: readPrivateImageInput(path.join(packetDirectory, 'manifest.json'), 65536),
-    profileBytes: readPrivateImageInput(path.join(packetDirectory, 'profile.json'), 65536),
-    snapshotBytes: readPrivateImageInput(path.join(packetDirectory, 'snapshot.json'), 65536), expectedManifestDigest: manifestDigest }
+  const input = { manifestBytes: readPrivateImageInput(path.join(packetDirectory, 'manifest.json'), MAX_PACKET_FILE_BYTES),
+    profileBytes: readPrivateImageInput(path.join(packetDirectory, 'profile.json'), MAX_PACKET_FILE_BYTES),
+    snapshotBytes: readPrivateImageInput(path.join(packetDirectory, 'snapshot.json'), MAX_PACKET_FILE_BYTES), expectedManifestDigest: manifestDigest }
   const packet = parseImagePacket(input)
   const files = new Map()
   for (const asset of packet.assets) {

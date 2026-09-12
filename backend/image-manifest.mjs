@@ -51,6 +51,30 @@ export const MAX_IMAGE_PACKET_ASSETS = 500
  */
 export const MAX_PACKET_FILE_BYTES = 1024 * 1024
 
+/**
+ * How large the MAPPING a person supplies may be -- and the bindings list
+ * derived from it. A different file from the packet documents above, and a
+ * different job.
+ *
+ * IT EXISTS BECAUSE ONE NUMBER WAS DOING TWO JOBS. `65536` appeared at eight
+ * sites across `scripts/` and `backend/`: some capping a packet's
+ * snapshot/profile/manifest, others capping the owner's mapping. They are
+ * unrelated files that happened to share a value, so raising "the packet cap"
+ * on 2026-09-12 changed two sites and silently left six -- and the next real
+ * batch refused at `seal-image-packet.mjs`, which was one of the six. A shared
+ * literal is not a shared meaning.
+ *
+ * Sized from measurement, not habit: a mapping candidate costs about 271 bytes
+ * (measured over a real 171-candidate mapping at 46,422 bytes). The politeness
+ * ceiling is 250 candidates, which is ~68,000 bytes -- already past 65536. So
+ * that cap was about to start refusing legitimate mappings on its own.
+ *
+ * 256KB holds roughly 960 candidates, comfortably past every count ceiling
+ * above it. Re-measure bytes-per-candidate if the mapping gains fields; that
+ * is the number that moves, not this one.
+ */
+export const MAX_MAPPING_FILE_BYTES = 256 * 1024
+
 export const IMAGE_SELECTION_TAG = 'owner-mapped-seeded-v2'
 export function supplierImageRevision(tire) {
   const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
@@ -63,7 +87,7 @@ const keys = (value, expected) => {
   if (!value || Array.isArray(value) || Object.keys(value).sort().join(',') !== [...expected].sort().join(',')) refuse()
 }
 function document(bytes) {
-  if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > 65536) refuse()
+  if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > MAX_PACKET_FILE_BYTES) refuse()
   const copy = Buffer.from(bytes)
   return { bytes: copy, value: JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(copy)), digest: sha256Bytes(copy) }
 }

@@ -83,14 +83,15 @@ import { readFileSync, existsSync, statSync, lstatSync, realpathSync, openSync, 
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { sha256Bytes } from '../backend/image-assets.mjs'
-import { supplierImageRevision } from '../backend/image-manifest.mjs'
+import { MAX_MAPPING_FILE_BYTES, supplierImageRevision } from '../backend/image-manifest.mjs'
 import { deriveBrand } from '../src/data/brand.js'
 import { productUrl } from './giga-tires.mjs'
 import { prepareImagePilot } from './image-pilot-packet.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DEFAULT_SNAPSHOT = path.join(ROOT, 'src', 'data', 'scraped-tires.json')
-const MAX_MAPPING_BYTES = 65536 // prepareImagePilot's own limit -- see its `reject()` on mappingBytes.length
+
+
 
 const HELP = `
 Build the owner's product-photo mapping.json from the committed scrape
@@ -404,8 +405,8 @@ function main() {
   const mapping = { version: 1, inputDigest: sha256Bytes(snapshotBytes), candidates }
   const mappingBytes = Buffer.from(JSON.stringify(mapping))
 
-  if (mappingBytes.length > MAX_MAPPING_BYTES) {
-    console.error(`Generated mapping is ${mappingBytes.length} bytes, over prepareImagePilot's ${MAX_MAPPING_BYTES}-byte limit. Request fewer models.`)
+  if (mappingBytes.length > MAX_MAPPING_FILE_BYTES) {
+    console.error(`Generated mapping is ${mappingBytes.length} bytes, over prepareImagePilot's ${MAX_MAPPING_FILE_BYTES}-byte limit. Request fewer models.`)
     process.exitCode = 1
     return
   }
