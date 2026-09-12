@@ -842,6 +842,7 @@ export class Inventory {
         json_extract(s.payload,'$.inStock') AS inStock,
         json_extract(s.payload,'$.category') AS category,
         json_extract(s.payload,'$.description') AS description,
+        json_extract(s.payload,'$.source.url') AS source_url,
         s.active, o.id AS offer_id, o.price_cents, o.shipping_cents, o.enabled
       FROM supplier s LEFT JOIN offers o ON o.id=s.id
       ${where}
@@ -876,6 +877,19 @@ export class Inventory {
         // Normalize at the customer boundary as well as ingress: historical
         // payloads are corrected immediately without rewriting production data.
         description: cleanCatalogDescription(row.description),
+        // The customer's shop filters by brand, and a brand has to come from
+        // somewhere the customer boundary can see. It is READ, not inferred:
+        // `deriveBrand` takes the `<brand>-tires` segment out of the supplier's
+        // own listing URL. Splitting the display name on its first space would
+        // turn "Royal Black Racing Trac" into "Royal", which is not a brand,
+        // and gets multi-word brands wrong silently.
+        //
+        // The URL itself never crosses this boundary -- only the label. A
+        // supplier URL is private provenance and the catalogue is public.
+        //
+        // Omitted, not null, when the URL has no recognisable brand segment: a
+        // filter should offer the brands that exist, and "null" is not one.
+        ...(deriveBrand(row.source_url) ? { brand: deriveBrand(row.source_url).label } : {}),
         ...(imageUrls.has(row.id) ? { imageUrl: imageUrls.get(row.id) } : {}),
       })
     }

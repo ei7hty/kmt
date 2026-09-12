@@ -1,0 +1,177 @@
+/**
+ * Narrowing a size down to a list a person can actually read.
+ *
+ * WHY THIS EXISTS. Measured on the live site, 2026-09-12: size 225/50R17 holds
+ * 323 tires. The shop showed twelve, sorted by price ascending, with no filter
+ * and no sort control anywhere -- reaching the last tire meant pressing "show
+ * 24 more" thirteen times. A winter tire sat fourth, between two summer tires,
+ * because $157 falls between $155 and $159. In a Massachusetts market that is
+ * the single distinction a buyer most needs and the page did not draw it.
+ *
+ * Pure functions over a plain array, deliberately: no fetch, no DOM, no React.
+ * The list is already in memory -- filtering it in the browser is instant and
+ * costs the supplier nothing, and it keeps this file testable without either.
+ *
+ * The markup lives in src/components/TireFilters.jsx. This is the part that
+ * decides things, and the part the tests drive.
+ */
+
+/**
+ * Season is the facet a buyer needs first, and the supplier does not provide
+ * it. What it provides is `category` -- 'all-season', 'winter', 'performance',
+ * 'off-road', 'eco' -- which mixes season with use case.
+ *
+ * These map the supplier's categories onto the question an owner is actually
+ * asking ("will these get me through February?"). A category absent from this
+ * map is kept and shown under its own name rather than dropped: a facet that
+ * silently hides tires is worse than one with an unfamiliar label.
+ */
+export const SEASON_LABELS = Object.freeze({
+  'all-season': 'All-season',
+  winter: 'Winter',
+  performance: 'Summer / performance',
+  'off-road': 'Off-road / all-terrain',
+  eco: 'Eco',
+})
+
+/**
+ * Price bands, in dollars per tire.
+ *
+ * Derived from the live catalogue rather than picked round: measured
+ * 2026-09-12 over 6,038 offered tires, the range is $55.64 to $4,611.96 with a
+ * median of $249.27. Two bands under the median and two above put roughly half
+ * the catalogue in each direction, which is what makes a band worth pressing.
+ * RE-MEASURE if pricing moves; a band nobody's tires fall into is dead weight.
+ */
+export const PRICE_BANDS = Object.freeze([
+  { id: 'under-150', label: 'Under $150', min: 0, max: 150 },
+  { id: '150-250', label: '$150 – $250', min: 150, max: 250 },
+  { id: '250-400', label: '$250 – $400', min: 250, max: 400 },
+  { id: 'over-400', label: 'Over $400', min: 400, max: Infinity },
+])
+
+export const SORTS = Object.freeze({
+  price: { id: 'price', label: 'Price' },
+  brand: { id: 'brand', label: 'Brand' },
+  rating: { id: 'rating', label: 'Rating' },
+})
+
+/** The empty selection: everything shown, nothing narrowed. */
+export const NO_FILTERS = Object.freeze({ seasons: [], brands: [], bands: [] })
+
+const bandOf = price => PRICE_BANDS.find(band => price >= band.min && price < band.max) ?? null
+const seasonLabel = category => SEASON_LABELS[category] ?? category ?? 'Other'
+
+/**
+ * Does one tire pass a selection?
+ *
+ * Facets are AND across kinds and OR within a kind -- "winter OR all-season,
+ * AND Michelin, AND under $250" -- which is how every shop a customer has used
+ * before behaves. An empty kind means that kind is not narrowing anything, not
+ * that nothing matches.
+ */
+export function matchesFilters(tire, filters = NO_FILTERS) {
+  const { seasons = [], brands = [], bands = [] } = filters ?? {}
+  if (seasons.length && !seasons.includes(tire.category)) return false
+  if (brands.length && !brands.includes(tire.brand)) return false
+  if (bands.length) {
+    const band = bandOf(tire.price)
+    if (!band || !bands.includes(band.id)) return false
+  }
+  return true
+}
+
+/**
+ * Facet options with a COUNT FOR EACH, computed against the other facets.
+ *
+ * The count beside a checkbox answers "how many will I have left" before the
+ * press, and it is computed with that facet's own selection removed -- so
+ * ticking "Winter" does not drop every other season's count to zero and make
+ * the rest of the list look empty. That is the behaviour a person expects from
+ * a shop and the thing that is wrong in most hand-rolled filter panels.
+ *
+ * Options with a zero count are RETURNED, not dropped, so the panel does not
+ * reflow as boxes are ticked; the caller renders them disabled. A control that
+ * moves under the cursor is worse than one that is greyed.
+ */
+export function facetCounts(tires, filters = NO_FILTERS) {
+  const without = kind => tires.filter(tire => matchesFilters(tire, { ...filters, [kind]: [] }))
+
+  const seasonPool = without('seasons')
+  const seasonIds = [...new Set(tires.map(tire => tire.category).filter(Boolean))]
+  const seasons = seasonIds
+    .map(id => ({ id, label: seasonLabel(id), count: seasonPool.filter(tire => tire.category === id).length }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+
+  const brandPool = without('brands')
+  const brandIds = [...new Set(tires.map(tire => tire.brand).filter(Boolean))]
+  const brands = brandIds
+    .map(id => ({ id, label: id, count: brandPool.filter(tire => tire.brand === id).length }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+
+  const bandPool = without('bands')
+  const bands = PRICE_BANDS
+    .map(band => ({ id: band.id, label: band.label, count: bandPool.filter(tire => bandOf(tire.price)?.id === band.id).length }))
+    .filter(band => band.count > 0 || (filters?.bands ?? []).includes(band.id))
+
+  return { seasons, brands, bands }
+}
+
+/**
+ * Is there anything to sort by rating WITH?
+ *
+ * Ratings are built but unpopulated on purpose: the owner has no source for
+ * them yet and inventing them was never on the table. So the control appears
+ * only once real ratings exist, rather than sitting there sorting nothing and
+ * teaching customers it does not work.
+ */
+export function hasRatings(tires) {
+  return tires.some(tire => typeof tire.rating === 'number' && tire.rating > 0)
+}
+
+/** The sorts worth offering for THIS list: rating only when something carries one. */
+export function availableSorts(tires) {
+  return [SORTS.price, SORTS.brand, ...(hasRatings(tires) ? [SORTS.rating] : [])]
+}
+
+/**
+ * Order a list.
+ *
+ * Out-of-stock tires trail in every order, as they always have: they are shown
+ * so a buyer knows they exist, and cannot be chosen. Price ascending stays the
+ * default -- it was the only order before this and it is the right one to keep
+ * for a shop where the cheapest workable tire is a common answer.
+ *
+ * Every comparator ends in price then id, so the order is total: a sort with
+ * ties is a list that reshuffles when nothing changed.
+ */
+export function sortTires(tires, sort = 'price') {
+  const byStock = (a, b) => (a.inStock === b.inStock ? 0 : a.inStock ? -1 : 1)
+  const tail = (a, b) => a.price - b.price || String(a.id).localeCompare(String(b.id))
+  const comparators = {
+    price: tail,
+    brand: (a, b) => String(a.brand ?? '￿').localeCompare(String(b.brand ?? '￿')) || tail(a, b),
+    // Highest first: a rating sort that put one-star tires on top would be a
+    // literal reading of "sort by rating" and no use to anyone.
+    rating: (a, b) => (b.rating ?? -1) - (a.rating ?? -1) || tail(a, b),
+  }
+  const compare = comparators[sort] ?? comparators.price
+  return [...tires].sort((a, b) => byStock(a, b) || compare(a, b))
+}
+
+/** Filter then sort, in that order, because the sort is over what survived. */
+export function applyFilters(tires, filters = NO_FILTERS, sort = 'price') {
+  return sortTires(tires.filter(tire => matchesFilters(tire, filters)), sort)
+}
+
+/** Tick or untick one option, returning a new selection. */
+export function toggleFilter(filters, kind, id) {
+  const current = filters?.[kind] ?? []
+  const next = current.includes(id) ? current.filter(value => value !== id) : [...current, id]
+  return { ...NO_FILTERS, ...filters, [kind]: next }
+}
+
+/** How many kinds are narrowing anything -- for the "clear all" control. */
+export function activeFilterCount(filters = NO_FILTERS) {
+  return (filters?.seasons?.length ?? 0) + (filters?.brands?.length ?? 0) + (filters?.bands?.length ?? 0)
+}
