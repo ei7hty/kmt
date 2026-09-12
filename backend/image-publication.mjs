@@ -25,9 +25,28 @@ export function ensureImagePublicationSchema(db) {
     );
     CREATE TABLE IF NOT EXISTS image_publications (
       supplier_id TEXT PRIMARY KEY REFERENCES supplier(id), packet TEXT NOT NULL REFERENCES image_packets(digest),
-      ordinal INTEGER NOT NULL, FOREIGN KEY(packet, ordinal) REFERENCES image_packet_assets(packet, ordinal)
+      ordinal INTEGER NOT NULL, hidden INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY(packet, ordinal) REFERENCES image_packet_assets(packet, ordinal)
     );
   `)
+
+  // `hidden` on an EXISTING table. CREATE TABLE IF NOT EXISTS does nothing to a
+  // table that already exists, so a column added above reaches a fresh database
+  // and never reaches production -- a failure that shows up only on the live
+  // machine, which is the whole reason this repository writes migrations.
+  //
+  // WHY THIS COLUMN LIVES HERE AND NOT IN THE DECISION LOG. image_packets,
+  // image_packet_assets and image_decisions all carry UPDATE/DELETE triggers
+  // that abort with 'immutable image provenance': what was approved, by whom,
+  // and when is append-only and must stay that way. image_publications is
+  // deliberately outside that set -- it is the PROJECTION of those decisions
+  // onto what customers currently see. So "the owner turned this one photo
+  // off" is a fact about the projection, not a revision of history, and hiding
+  // a photo neither rewrites nor weakens the audit chain that approved it.
+  const publicationColumns = db.prepare('PRAGMA table_info(image_publications)').all().map(column => column.name)
+  if (!publicationColumns.includes('hidden')) {
+    db.exec('ALTER TABLE image_publications ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0')
+  }
   for (const table of ['image_packets', 'image_packet_assets', 'image_decisions']) {
     for (const action of ['UPDATE', 'DELETE']) db.exec(`CREATE TRIGGER IF NOT EXISTS ${table}_no_${action.toLowerCase()}
       BEFORE ${action} ON ${table} BEGIN SELECT RAISE(ABORT, 'immutable image provenance'); END;`)
@@ -59,13 +78,59 @@ export function verifyImageDecisions(db) {
 
 // Inventory uses this projection without importing local paths, URLs or SKU
 // fields into the customer object. Five candidates make the hash work bounded.
+/**
+ * The joins and columns the owner's inventory list needs to know each row's
+ * photo state. Kept here, beside `approvedImageUrls`, because the two must
+ * agree about what "this product has a live photo" means -- and the screen
+ * that shows a photo and the route that serves it disagreeing is exactly the
+ * confusion this whole feature has to avoid.
+ */
+export const PHOTO_JOIN = `LEFT JOIN image_publications ip ON ip.supplier_id=s.id
+  LEFT JOIN image_packet_assets ia ON ia.packet=ip.packet AND ia.ordinal=ip.ordinal`
+
+export const PHOTO_COLUMNS = `ip.hidden AS photo_hidden, ip.packet AS photo_packet, ip.ordinal AS photo_ordinal,
+  ia.source_hash AS photo_source_hash, ia.metadata AS photo_metadata,
+  EXISTS(SELECT 1 FROM image_decisions d WHERE d.packet=ip.packet AND d.action='approved') AS photo_approved,
+  EXISTS(SELECT 1 FROM image_decisions r WHERE r.packet=ip.packet AND r.action='revoked') AS photo_revoked`
+
+/**
+ * One product's photo state, from a joined row.
+ *
+ *   none      no packet has ever published a photo for this product
+ *   pending   imported and waiting for the owner's approval
+ *   revoked   the packet it came from was revoked -- terminal, needs a new one
+ *   hidden    approved, but the owner switched this one product off
+ *   stale     approved and visible to nobody: the supplier row changed since
+ *             the photo was taken, so `approvedImageUrls` skips it
+ *   live      a customer sees this photo right now
+ *
+ * `stale` is the one worth surfacing rather than folding into "no photo". A
+ * photo silently stops being served when a price or a description changes,
+ * because the revision hash it was approved against no longer matches. Without
+ * a name for that state the owner sees a photo they approved simply not
+ * appearing, with nothing anywhere saying why.
+ */
+export function photoState(row, payload) {
+  if (!row.photo_packet) return { state: 'none', url: null }
+  if (row.photo_revoked) return { state: 'revoked', url: null }
+  if (!row.photo_approved) return { state: 'pending', url: null }
+  const metadata = row.photo_metadata ? JSON.parse(row.photo_metadata) : null
+  const url = metadata && IMAGE_DIGEST.test(metadata.sha256) && ['jpeg', 'png'].includes(metadata.format)
+    ? `/api/images/${metadata.sha256}.${metadata.format}` : null
+  if (!url) return { state: 'none', url: null }
+  if (row.photo_hidden) return { state: 'hidden', url }
+  if (supplierImageRevision(payload) !== row.photo_source_hash) return { state: 'stale', url }
+  return { state: 'live', url }
+}
+
 export function approvedImageUrls(db) {
   const result = new Map()
   const rows = db.prepare(`SELECT p.supplier_id, a.source_hash, a.metadata, s.payload, s.active
     FROM image_publications p JOIN image_packet_assets a ON a.packet=p.packet AND a.ordinal=p.ordinal
     JOIN supplier s ON s.id=p.supplier_id
     JOIN image_decisions d ON d.packet=p.packet AND d.action='approved'
-    WHERE NOT EXISTS (SELECT 1 FROM image_decisions r WHERE r.packet=p.packet AND r.action='revoked')`).all()
+    WHERE p.hidden=0
+      AND NOT EXISTS (SELECT 1 FROM image_decisions r WHERE r.packet=p.packet AND r.action='revoked')`).all()
   for (const row of rows) {
     if (!row.active || supplierImageRevision(JSON.parse(row.payload)) !== row.source_hash) continue
     const m = JSON.parse(row.metadata)
@@ -206,7 +271,19 @@ export class ImagePublication {
           if (expected?.supplierId !== row.supplier_id || candidate?.revision !== row.source_hash ||
               metadata.sha256 !== expected.sha256 || metadata.format !== expected.format) throw failure()
           this.storage.read({ ...metadata, byteLength: metadata.bytes })
-          this.db.prepare('INSERT INTO image_publications VALUES (?,?,?) ON CONFLICT(supplier_id) DO UPDATE SET packet=excluded.packet, ordinal=excluded.ordinal').run(row.supplier_id, digest, row.ordinal)
+          // COLUMNS NAMED, not positional. `VALUES (?,?,?)` depends on the
+          // table having exactly three columns, so adding `hidden` broke this
+          // insert -- the approval path, on production -- and the only thing
+          // that said so was the existing suite. A named insert survives a
+          // column being added; a positional one is a silent dependency on
+          // column count that no reader of this line can see.
+          //
+          // `hidden` is deliberately not listed: a re-approval must not change
+          // a visibility the owner already chose, and the DEFAULT 0 covers the
+          // first insert. ON CONFLICT updates packet and ordinal only, for the
+          // same reason.
+          this.db.prepare(`INSERT INTO image_publications (supplier_id, packet, ordinal) VALUES (?,?,?)
+            ON CONFLICT(supplier_id) DO UPDATE SET packet=excluded.packet, ordinal=excluded.ordinal`).run(row.supplier_id, digest, row.ordinal)
         }
       } else this.db.prepare('DELETE FROM image_publications WHERE packet=?').run(digest)
       appendDecision(this.db, digest, action, actor)
@@ -227,6 +304,38 @@ export class ImagePublication {
   // 404. A range baked into a path pattern would silently cap a packet at
   // however many the author had in mind the day they wrote it -- the exact
   // hardcoded five that MAX_IMAGE_PACKET_ASSETS replaced in the manifest.
+  /**
+   * Turn ONE product's photo off or on, without touching the packet it came
+   * from or the decision that approved it.
+   *
+   * The owner asked for this in these terms: "being able to disable or enable
+   * photos individually per product". Revocation already existed, but it is
+   * per-PACKET and it is TERMINAL -- one bad photo in a batch of ninety-six
+   * could only be dealt with by revoking all ninety-six, permanently, and a
+   * revoked packet can never be approved again. That is correct for "this
+   * batch should never have been published" and useless for "this one picture
+   * is wrong".
+   *
+   * So this writes to `image_publications`, the projection, and leaves
+   * `image_decisions` alone. The audit chain still says the packet was
+   * approved, by whom, and when -- because it was. What changed is only
+   * whether this one row is currently served, and that is reversible by
+   * design: `hidden` flips both ways, as many times as the owner likes.
+   *
+   * Returns the row's new state rather than nothing, so a caller never has to
+   * re-read to find out what it just did.
+   */
+  setPhotoHidden(supplierId, hidden) {
+    if (typeof supplierId !== 'string' || !supplierId) throw failure(404)
+    if (typeof hidden !== 'boolean') throw failure(400)
+    const existing = this.db.prepare('SELECT packet, ordinal, hidden FROM image_publications WHERE supplier_id=?').get(supplierId)
+    // A 404 rather than a silent no-op: asking to hide a photo that does not
+    // exist is a mistake worth hearing about, not something to absorb.
+    if (!existing) throw failure(404)
+    this.db.prepare('UPDATE image_publications SET hidden=? WHERE supplier_id=?').run(hidden ? 1 : 0, supplierId)
+    return { supplierId, hidden, packet: existing.packet, ordinal: existing.ordinal }
+  }
+
   readOwnerAsset(digest, ordinal) {
     if (!IMAGE_DIGEST.test(digest)) throw failure(404)
     if (!Number.isSafeInteger(ordinal) || ordinal < 0) throw failure(404)

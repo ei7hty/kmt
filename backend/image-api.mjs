@@ -8,6 +8,16 @@ import { readJsonBody } from './api.mjs'
 // and a regex that stops matching does not announce itself.
 const OWNER_ASSET_TAIL = /^([a-f0-9]{64})\/assets\/(\d{1,4})$/
 
+/**
+ * `product/<supplierId>` under the owner prefix: switch ONE product's photo off
+ * or on. Supplier ids are the scraper's own (`giga-roya0161626570h`), so the
+ * character class matches those and nothing that could be a path of its own.
+ * Bounded like the asset tail above, and for the same reason: reject absurd
+ * input before it reaches the database, without the bound pretending to be a
+ * business rule.
+ */
+const OWNER_PRODUCT_TAIL = /^product\/([A-Za-z0-9][A-Za-z0-9_.-]{0,127})$/
+
 export function createImageApi(images, auth) {
   return async (request, response) => {
     const url = new URL(request.url, 'http://localhost'), pathname = url.pathname
@@ -48,11 +58,22 @@ export function createImageApi(images, auth) {
         }
         else if (IMAGE_DIGEST.test(tail)) send(200, images.review(tail))
         else send(404, { error: 'Image packet unavailable' })
-      } else if (request.method === 'POST' && IMAGE_DIGEST.test(tail)) {
+      } else if (request.method === 'POST' && (IMAGE_DIGEST.test(tail) || OWNER_PRODUCT_TAIL.test(tail))) {
         const scheme = (request.headers['x-forwarded-proto'] || '').split(',')[0].trim() || (request.socket.encrypted ? 'https' : 'http')
         if (request.headers.origin !== `${scheme}://${request.headers.host}` ||
             request.headers['sec-fetch-site'] && request.headers['sec-fetch-site'] !== 'same-origin') {
           send(403, { error: 'Same-origin owner action required' }); return true
+        }
+        const product = OWNER_PRODUCT_TAIL.exec(tail)
+        if (product) {
+          // Per-product visibility. The SAME same-origin gate as a packet
+          // decision above, deliberately: this changes what a customer sees,
+          // and "smaller change" is not a reason for a weaker door.
+          const input = await readJsonBody(request)
+          if (Object.keys(input).sort().join(',') !== 'hidden' || typeof input.hidden !== 'boolean') {
+            send(400, { error: 'Send exactly { hidden: true } or { hidden: false }' }); return true
+          }
+          send(200, images.setPhotoHidden(product[1], input.hidden)); return true
         }
         const input = await readJsonBody(request)
         if (Object.keys(input).sort().join(',') !== 'action,expectedVersion') { send(400, { error: 'Invalid image decision' }); return true }

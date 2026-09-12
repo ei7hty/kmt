@@ -543,7 +543,7 @@ export default function OwnerInventory({ navigate }) {
       <div className="oi-filters">
         <label>Search tires or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Brand, model, supplier SKU…" /></label>
         <label>Tire size<input aria-label="Tire size" value={sizeQuery} onChange={e => typeSize(e.target.value)} placeholder="Any size · type to find, e.g. 205/55R16" autoComplete="off" spellCheck={false} /></label>
-        <label>Show<select aria-label="Show tires" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All supplier tires</option><option value="offered">Chosen for KMT</option><option value="unselected">Not yet chosen</option><option value="available">Supplier in stock</option></select></label>
+        <label>Show<select aria-label="Show tires" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All supplier tires</option><option value="offered">Chosen for KMT</option><option value="unselected">Not yet chosen</option><option value="available">Supplier in stock</option><option value="photo">Has a photo</option><option value="no-photo">No photo yet</option></select></label>
       </div>
       {sizePending && <div className="oi-size-matches" role="status" aria-live="polite">
         {sizeMatches.length === 0

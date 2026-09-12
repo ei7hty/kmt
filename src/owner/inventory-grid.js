@@ -45,6 +45,11 @@ export const BULK_LIMIT = 200
  */
 export const GRID_COLUMNS = [
   { key: 'select', label: '', sort: null },
+  // Not sortable, deliberately. `photo` is derived per row -- part SQL, part a
+  // revision hash computed in JS -- so there is no single column the server
+  // could ORDER BY. A header that sorts nothing while looking sortable is the
+  // screen lying about what it did; the two photo FILTERS do this job honestly.
+  { key: 'photo', label: 'Photo', sort: null },
   { key: 'size', label: 'Size', sort: 'size' },
   { key: 'name', label: 'Tire', sort: 'name' },
   { key: 'supplierCost', label: 'Supplier cost', sort: 'supplierPrice', numeric: true },
@@ -243,6 +248,10 @@ export function createInventoryGrid({ api }) {
     notice: null,
     pending: null,
     busy: false,
+    // Ids whose photo toggle is in flight. Per row rather than one global flag:
+    // the owner works down a page turning photos off, and a single `busy` would
+    // freeze every other row while one request was out.
+    photoBusy: EMPTY,
   }
   const listeners = new Set()
   let sequence = 0
@@ -387,6 +396,44 @@ export function createInventoryGrid({ api }) {
     signedOut() { set({ data: null, needsSignIn: true, drafts: EMPTY, rowStatus: EMPTY, selected: [], notice: null, pending: null }) },
 
     editRow: withDraft,
+
+    isPhotoBusy: id => Boolean(state.photoBusy[id]),
+
+    /**
+     * Turn one product's photo off or on.
+     *
+     * NOT OPTIMISTIC, deliberately, and this is the one place in the grid where
+     * that is the right call. Price edits are optimistic because the owner is
+     * typing and needs the field to keep up. A photo toggle changes what a
+     * CUSTOMER sees; showing "Off" before the server has agreed would mean the
+     * screen and the shop disagree about a live page, and the owner would move
+     * on believing something that had not happened.
+     *
+     * The row is patched from the SERVER's answer, not from what was asked for
+     * -- the same rule the rest of this file follows for sort and for saves.
+     */
+    async setPhotoHidden(id, hidden) {
+      if (state.photoBusy[id]) return
+      set({ photoBusy: { ...state.photoBusy, [id]: true }, notice: null })
+      try {
+        const result = await api(`images/product/${encodeURIComponent(id)}`, {
+          method: 'POST', body: JSON.stringify({ hidden }),
+        })
+        const items = state.data?.items?.map(item => item.id === id
+          ? { ...item, photo: { ...item.photo, state: result.hidden ? 'hidden' : 'live' } }
+          : item)
+        const rest = { ...state.photoBusy }; delete rest[id]
+        set({ photoBusy: rest, ...(items ? { data: { ...state.data, items } } : {}) })
+      } catch (error) {
+        const rest = { ...state.photoBusy }; delete rest[id]
+        // Named, and the row is left exactly as the server still has it. A
+        // toggle that silently does nothing is worse than one that says so.
+        set({ photoBusy: rest, notice: { tone: 'error',
+          text: error?.status === 404
+            ? 'That tire has no photo to switch off. Reload to see its current state.'
+            : 'That photo could not be changed. Nothing was altered; try again.' } })
+      }
+    },
 
     toggleSelected(id) {
       const selected = state.selected.includes(id)

@@ -29,6 +29,52 @@ function SupplierLink({ url, children }) {
 }
 
 /**
+ * What each photo state says to the owner, in his words.
+ *
+ * Six states, and the two that matter most are the ones a shorter version
+ * would collapse into "no photo": STALE means an approved photo stopped being
+ * served because the supplier row changed under it, and HIDDEN means he turned
+ * it off himself. Both look identical to a customer and mean completely
+ * different things to him.
+ */
+const PHOTO_LABELS = {
+  none: { text: 'None', hint: 'No photo has been brought in for this tire.' },
+  pending: { text: 'Waiting', hint: 'Imported and waiting for you to approve it on the Product photos screen.' },
+  revoked: { text: 'Revoked', hint: 'The batch this came from was revoked. It needs a fresh one.' },
+  hidden: { text: 'Off', hint: 'You switched this photo off. Customers do not see it.' },
+  stale: { text: 'Out of date', hint: 'This tire changed since the photo was approved, so it stopped showing. Bring in a new photo.' },
+  live: { text: 'Showing', hint: 'Customers see this photo now.' },
+}
+
+/**
+ * The photo cell: what state this product's photo is in, and the one control
+ * that changes it.
+ *
+ * The toggle appears only for `live` and `hidden` -- the two states the owner
+ * can actually move between. Offering it on `none` or `revoked` would be a
+ * button that cannot work, and on `stale` it would imply the photo comes back,
+ * which it does not until a new one is brought in.
+ */
+function PhotoCell({ item, grid }) {
+  const photo = item.photo || { state: 'none', url: null }
+  const label = PHOTO_LABELS[photo.state] || PHOTO_LABELS.none
+  const togglable = photo.state === 'live' || photo.state === 'hidden'
+  const busy = grid.isPhotoBusy?.(item.id)
+  return <td className={`oi-g-cell-photo oi-g-photo-${photo.state}`}>
+    {photo.url
+      ? <img className="oi-g-thumb" src={photo.url} alt="" width="40" height="40" loading="lazy" />
+      : <span className="oi-g-thumb oi-g-thumb-empty" aria-hidden="true" />}
+    <span className="oi-g-photo-state" title={label.hint}>{label.text}</span>
+    {togglable && <button type="button" className="oi-g-photo-toggle" disabled={busy}
+      data-testid={`oi-photo-toggle-${item.id}`}
+      onClick={() => grid.setPhotoHidden(item.id, photo.state === 'live')}>
+      {busy ? '…' : photo.state === 'live' ? 'Turn off' : 'Turn on'}
+      <span className="oi-g-sr"> photo for {item.size} {item.name}</span>
+    </button>}
+  </td>
+}
+
+/**
  * A sortable header.
  *
  * `aria-sort` and the arrow both come from the sort the SERVER said it applied.
@@ -138,6 +184,7 @@ function GridRow({ item, grid, state, expanded, onExpand }) {
         <label className="oi-g-check"><input type="checkbox" checked={selected} onChange={() => grid.toggleSelected(item.id)} />
           <span className="oi-g-sr">Select {item.size} {item.name}</span></label>
       </td>
+      <PhotoCell item={item} grid={grid} />
       <td className="oi-g-cell-size">{item.size}</td>
       <th scope="row" className="oi-g-cell-name">
         <span className="oi-g-name">{item.name}</span>
