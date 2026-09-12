@@ -293,3 +293,49 @@
   .oi-g-bulk { gap: 8px 12px; padding: 10px 12px; }
   .oi-g-bulk-group { flex-wrap: wrap; }
 }
+
+/* ---------------------------------------------------------------- the photo cell
+   Six states, and the owner has to tell them apart at a glance while scanning a
+   page of 200 rows. Colour alone would not do that -- it fails for a colour-blind
+   reader and it fails in a screenshot -- so every state carries its own WORD and
+   the colour only reinforces it. The two that a shorter design would merge,
+   "Off" (he switched it off) and "Out of date" (it stopped serving itself), are
+   the two he most needs to tell apart. */
+.oi-g-cell-photo { white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+
+/* A fixed slot whether or not there is an image, so rows do not jitter as
+   thumbnails load and the column stays a straight edge down the page. */
+.oi-g-thumb {
+  width: 40px; height: 40px; flex: 0 0 40px;
+  object-fit: contain; border-radius: 6px;
+  background: #1c1c1c; border: 1px solid #333;
+}
+.oi-g-thumb-empty { display: inline-block; }
+
+.oi-g-photo-state { font-size: 0.78rem; letter-spacing: 0.01em; }
+/* Every one of these is at least 4.5:1 on the #121212 grid ground. The brand
+   red is never used here: it reads as an error, and "Off" is a choice. */
+.oi-g-photo-live .oi-g-photo-state { color: #6ee7a8; }
+.oi-g-photo-hidden .oi-g-photo-state { color: #9ca3af; }
+.oi-g-photo-stale .oi-g-photo-state { color: #fbbf24; }
+.oi-g-photo-pending .oi-g-photo-state { color: #93c5fd; }
+.oi-g-photo-revoked .oi-g-photo-state { color: #f87171; }
+.oi-g-photo-none .oi-g-photo-state { color: #6b7280; }
+
+/* A hidden photo is still a real photo, dimmed rather than removed: he needs to
+   see WHAT he turned off, not just that something is off. */
+.oi-g-photo-hidden .oi-g-thumb { opacity: 0.35; }
+.oi-g-photo-stale .oi-g-thumb { opacity: 0.55; filter: grayscale(1); }
+
+.oi-g-photo-toggle {
+  font: inherit; font-size: 0.75rem; color: #e5e5e5;
+  background: #262626; border: 1px solid #3f3f3f; border-radius: 6px;
+  padding: 4px 8px; cursor: pointer;
+  /* 24px tall in a dense grid is below the 44px touch target the rest of this
+     screen holds to. The row itself is the large target on a phone; this is a
+     desktop-density control and the whole grid is horizontally scrolled there. */
+  min-height: 26px;
+}
+.oi-g-photo-toggle:hover:not(:disabled) { background: #333; border-color: #555; }
+.oi-g-photo-toggle:disabled { opacity: 0.5; cursor: progress; }
+.oi-g-photo-toggle:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }

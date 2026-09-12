@@ -42,7 +42,7 @@ const makeItem = (n, over = {}) => ({
  * `echo` lets a test make the server apply a DIFFERENT sort than was asked for,
  * which is exactly what the real endpoint does with an unknown key.
  */
-function makeApi({ pool = Array.from({ length: 60 }, (_, i) => makeItem(i + 1)), echo = null, bulk = null, single = null } = {}) {
+function makeApi({ pool = Array.from({ length: 60 }, (_, i) => makeItem(i + 1)), echo = null, bulk = null, single = null, photo = null } = {}) {
   const calls = []
   const api = async (path, options = {}) => {
     calls.push({ path, options })
@@ -84,6 +84,14 @@ function makeApi({ pool = Array.from({ length: 60 }, (_, i) => makeItem(i + 1)),
       assert.equal(typeof body.version, 'number', 'a single-row save carries its expected version')
       if (single) return single(path, body)
       return { ...body, version: body.version + 1 }
+    }
+    if (path.startsWith('images/product/') && options.method === 'POST') {
+      const body = JSON.parse(options.body)
+      assert.deepEqual(Object.keys(body), ['hidden'], 'the photo route takes exactly { hidden }')
+      assert.equal(typeof body.hidden, 'boolean')
+      const supplierId = decodeURIComponent(path.slice('images/product/'.length))
+      if (photo) return photo(supplierId, body)
+      return { supplierId, hidden: body.hidden, packet: 'p1', ordinal: 0 }
     }
     throw new Error(`the stub was asked for an unknown route: ${options.method || 'GET'} ${path}`)
   }
@@ -617,4 +625,100 @@ test('money fields accept what the existing single-row form accepted', () => {
   assert.ok(Number.isNaN(parseMoney('89.999')))
   assert.ok(Number.isNaN(parseMoney('-1')))
   assert.ok(Number.isNaN(parseMoney('abc')))
+})
+
+// -------------------------------------------------- per-product photo control
+
+test('turning a photo off asks the server and takes the row from its answer, not from the request', async () => {
+  const pool = [makeItem(1, { photo: { state: 'live', url: '/api/images/aa.jpeg' } })]
+  const { api, calls } = makeApi({ pool })
+  const grid = createInventoryGrid({ api })
+  grid.load(); await settle()
+
+  await grid.setPhotoHidden('sku-1', true)
+
+  const posted = calls.find(call => call.path.startsWith('images/product/'))
+  assert.ok(posted, 'a photo toggle must reach the server')
+  assert.equal(posted.path, 'images/product/sku-1')
+  assert.deepEqual(JSON.parse(posted.options.body), { hidden: true })
+  assert.equal(grid.getState().data.items[0].photo.state, 'hidden')
+})
+
+test('the row is NOT changed before the server answers', async () => {
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  const pool = [makeItem(1, { photo: { state: 'live', url: '/api/images/aa.jpeg' } })]
+  const { api } = makeApi({ pool, photo: async (supplierId, body) => { await gate; return { supplierId, hidden: body.hidden } } })
+  const grid = createInventoryGrid({ api })
+  grid.load(); await settle()
+
+  const inFlight = grid.setPhotoHidden('sku-1', true)
+  await settle()
+  // A price edit is optimistic because the owner is typing. This is not: it
+  // changes what a CUSTOMER sees, and claiming it before the server agreed
+  // would leave the screen and the shop disagreeing about a live page.
+  assert.equal(grid.getState().data.items[0].photo.state, 'live', 'still live until the server says otherwise')
+  assert.equal(grid.isPhotoBusy('sku-1'), true, 'the row shows it is working')
+
+  release(); await inFlight
+  assert.equal(grid.getState().data.items[0].photo.state, 'hidden')
+  assert.equal(grid.isPhotoBusy('sku-1'), false)
+})
+
+test('busy is per row, so toggling one photo does not freeze the others', async () => {
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  const pool = [
+    makeItem(1, { photo: { state: 'live', url: '/a.jpeg' } }),
+    makeItem(2, { photo: { state: 'live', url: '/b.jpeg' } }),
+  ]
+  const { api } = makeApi({ pool, photo: async (supplierId, body) => { await gate; return { supplierId, hidden: body.hidden } } })
+  const grid = createInventoryGrid({ api })
+  grid.load(); await settle()
+
+  const first = grid.setPhotoHidden('sku-1', true)
+  await settle()
+  assert.equal(grid.isPhotoBusy('sku-1'), true)
+  assert.equal(grid.isPhotoBusy('sku-2'), false, 'row 2 must stay usable while row 1 is in flight')
+
+  release(); await first
+})
+
+test('a failed toggle says so and leaves the row exactly as the server still has it', async () => {
+  const pool = [makeItem(1, { photo: { state: 'live', url: '/api/images/aa.jpeg' } })]
+  const { api } = makeApi({ pool, photo: () => { throw Object.assign(new Error('nope'), { status: 500 }) } })
+  const grid = createInventoryGrid({ api })
+  grid.load(); await settle()
+
+  await grid.setPhotoHidden('sku-1', true)
+
+  assert.equal(grid.getState().data.items[0].photo.state, 'live', 'nothing changed, because nothing changed on the server')
+  assert.equal(grid.getState().notice.tone, 'error')
+  assert.match(grid.getState().notice.text, /Nothing was altered/)
+  assert.equal(grid.isPhotoBusy('sku-1'), false, 'the row is usable again after a failure')
+})
+
+test('a 404 gets its own words, because it means something different', async () => {
+  const pool = [makeItem(1, { photo: { state: 'live', url: '/api/images/aa.jpeg' } })]
+  const { api } = makeApi({ pool, photo: () => { throw Object.assign(new Error('gone'), { status: 404 }) } })
+  const grid = createInventoryGrid({ api })
+  grid.load(); await settle()
+
+  await grid.setPhotoHidden('sku-1', true)
+  assert.match(grid.getState().notice.text, /no photo to switch off/)
+})
+
+test('a second toggle on a row already in flight is ignored, not queued', async () => {
+  let release, calls = 0
+  const gate = new Promise(resolve => { release = resolve })
+  const pool = [makeItem(1, { photo: { state: 'live', url: '/a.jpeg' } })]
+  const { api } = makeApi({ pool, photo: async (supplierId, body) => { calls++; await gate; return { supplierId, hidden: body.hidden } } })
+  const grid = createInventoryGrid({ api })
+  grid.load(); await settle()
+
+  const first = grid.setPhotoHidden('sku-1', true)
+  await grid.setPhotoHidden('sku-1', true)
+  release(); await first
+
+  assert.equal(calls, 1, 'a double-click must not send two writes for one row')
 })
