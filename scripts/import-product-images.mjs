@@ -42,14 +42,16 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sha256Bytes } from '../backend/image-assets.mjs'
+// Imported, not restated: the writer of a packet (scripts/image-pilot-packet.mjs)
+// and its reader must agree about the maximum size of one. That file's comment
+// records why it is 1MB and what the old 64KB silently overrode.
+import { MAX_PACKET_FILE_BYTES } from '../backend/image-manifest.mjs'
 import { compileImageProviderProfile } from '../backend/image-provider-profile.mjs'
 import { runApprovedImageStaging } from '../backend/image-staging-coordinator.mjs'
 import { readPrivateImageInput } from './import-images.mjs'
 
 /** Nothing about a refusal says which check refused. The packet is private and so is the reason. */
 const refused = () => new Error('Local image acquisition refused')
-
-const MAX_PACKET_FILE_BYTES = 65536
 
 /**
  * The five fields a staging candidate is, in the order they are written.

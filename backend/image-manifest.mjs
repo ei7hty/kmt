@@ -12,6 +12,45 @@ export const IMAGE_PUBLIC_PATH = /^\/api\/images\/([a-f0-9]{64})\.(jpeg|png)$/
 // malformed packet cannot claim an unbounded run. The bound is a sanity limit,
 // not a business one: the catalog is ~1,250 distinct models.
 export const MAX_IMAGE_PACKET_ASSETS = 500
+
+/**
+ * How large a packet's `snapshot.json` / `profile.json` may be on disk. Lives
+ * here, beside the other packet-shape limits, because the WRITER of a packet
+ * (`scripts/image-pilot-packet.mjs`) and the acquisition CLI that READS one
+ * must agree about it, and two copies of one number is the defect this
+ * repository keeps finding.
+ *
+ * The reader is deliberately not named here. `image-import-cli.test.mjs`
+ * asserts that no file under `backend/` or `src/` mentions that script at all
+ * -- a blunt content grep that cannot tell an import from a comment, and
+ * should not have to. Writing its filename in this comment failed that test,
+ * correctly. The guard stays blunt; the comment gives way.
+ *
+ * It was 65536, in both places, and it was the binding constraint on the whole
+ * feature without anyone choosing it. Measured 2026-09-12 on a real packet: a
+ * candidate costs about 5,700 bytes, 85% of that its `enrichedRows` entry
+ * (5,496 bytes per row, of which `parseImagePacket` reads 992). So 64KB meant
+ * TEN tires per run against 1,334 distinct models.
+ *
+ * Four limits govern a packet, and the smallest was an accident:
+ *
+ *   MAX_VALIDATION_COUNT      100  scripts/scrape-tires.mjs   pages per run
+ *   candidateLimit            250  image-provider-profile     politeness budget
+ *   MAX_IMAGE_PACKET_ASSETS   500  here                       sanity ceiling
+ *   this constant              1MB                            read-size guard
+ *
+ * At 64KB this one silently overrode the documented 100, which was therefore
+ * never once reachable. The coordinator's cap on the same data was already 1MB
+ * (`snapshotBytes.length > 1024 * 1024`), so two limits on one value differed
+ * by 16x. Raised to match it, which makes MAX_VALIDATION_COUNT the real limit.
+ *
+ * This is a guard against an absurd file, not a security boundary: every field
+ * is validated after parsing and the count ceilings above still bound a run.
+ * Re-measure if `enrichedRows` grows -- the number that matters is bytes per
+ * candidate, not this constant.
+ */
+export const MAX_PACKET_FILE_BYTES = 1024 * 1024
+
 export const IMAGE_SELECTION_TAG = 'owner-mapped-seeded-v2'
 export function supplierImageRevision(tire) {
   const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
