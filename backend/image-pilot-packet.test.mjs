@@ -13,7 +13,7 @@ function pilot() {
   const rows = Array.from({ length: 5 }, (_, i) => ({ id: `giga-fixture-${i}`, name: 'Fixture', size: '215/60R16', price: 80,
     inStock: true, category: 'All Season', description: '<p>Fixture</p>', source: { sku: `FIXTURE-${i}`, url: 'https://www.giga-tires.com/tires/215-60-16' } }))
   const inputBytes = Buffer.from(JSON.stringify({ tires: rows }))
-  const mapping = { version: 1, inputDigest: sha256Bytes(inputBytes), candidates: rows.map((row, i) => ({ supplierId: row.id,
+  const mapping = { version: 1, inputDigest: sha256Bytes(inputBytes), candidates: rows.map(row => ({ supplierId: row.id,
     // The tirecode segment IS what the product page reports as its sku. That is
     // how this supplier works -- measured 2026-09-12 on three real pages
     // (/tirecode/20000533 -> page sku "20000533", and so on) -- and the pilot's

@@ -1,3 +1,5 @@
+/* global document */ // used inside waitForFunction, which runs in the browser
+
 /**
  * Page fetcher backed by a real browser window.
  *
