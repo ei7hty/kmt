@@ -57,9 +57,35 @@ export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, dela
     const row = parseProductPage(fetched.html, { url: fetched.url })
     const { mapping, tire } = plan.baseline.get(requestedUrl)
     // Named one at a time, so a refusal says which field disagreed and with
-    // what. Behaviour is identical -- the same four conditions, same order.
-    if (row.source?.sku !== mapping.supplierSku) {
-      reject(`sku: page has ${JSON.stringify(row.source?.sku)}, mapping expects ${JSON.stringify(mapping.supplierSku)}`)
+    // what.
+    //
+    // THE IDENTITY CHECK TIES THE PAGE TO THE URL, NOT TO THE LISTING.
+    //
+    // This used to compare the product page's sku against `mapping.supplierSku`
+    // -- the value in the committed snapshot. Measured 2026-09-11 against three
+    // real pages, those are two different identifier systems and never match:
+    //
+    //   /...racing-trac/tirecode/20000533   page sku "20000533"   snapshot "ROYA0041722550WXL"
+    //   /...pro-racing/tirecode/20000281    page sku "20000281"   snapshot "APLS0061722550WXL"
+    //   /...milage-suv-cuv/tirecode/20000466 page sku "20000466"  snapshot "ROYA0161626570H"
+    //
+    // The page reports the TIRECODE, which is the last segment of the URL the
+    // request asked for. The snapshot carries giga's internal listing code. The
+    // old comparison could not have succeeded on any page, ever.
+    //
+    // What this check is FOR is anti-substitution: proof the server returned
+    // the product the URL named, rather than a near-miss or a redirect target.
+    // Comparing the page's sku to the tirecode in the requested URL does that
+    // directly and is STRICTER than the old comparison, which only ever tested
+    // whether two unrelated codes happened to be equal.
+    //
+    // The snapshot-to-mapping tie is not lost: `prepareImagePilot` already
+    // refuses any candidate whose `supplierSku` does not match the snapshot
+    // row, before a single request is made.
+    const requestedTireCode = fetched.url.split('/tirecode/')[1]?.split(/[/?#]/)[0]
+    if (!requestedTireCode) reject(`tirecode: no /tirecode/<code> segment in ${fetched.url}`)
+    if (row.source?.sku !== requestedTireCode) {
+      reject(`identity: page sku ${JSON.stringify(row.source?.sku)} is not the tirecode ${JSON.stringify(requestedTireCode)} the URL asked for`)
     }
     if (row.size !== tire.size) {
       reject(`size: page has ${JSON.stringify(row.size)}, snapshot expects ${JSON.stringify(tire.size)}`)
