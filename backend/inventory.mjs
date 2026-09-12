@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 import { DEFAULT_PRICING_SETTINGS, normalizePricingSettings } from '../src/pricing.js'
 import { deriveBrand } from '../src/data/brand.js'
-import { ensureImagePublicationSchema, approvedImageUrls } from './image-publication.mjs'
+import { ensureImagePublicationSchema, approvedImageUrls, PHOTO_JOIN, PHOTO_COLUMNS, photoState } from './image-publication.mjs'
 import { cleanCatalogDescription } from './catalog-description.mjs'
 
 const DEFAULT_MARKUP_RATE = DEFAULT_MARKUP_SETTINGS.rate
@@ -615,8 +615,15 @@ export class Inventory {
     if (filter === 'offered') conditions.push('o.enabled=1')
     if (filter === 'unselected') conditions.push('COALESCE(o.enabled,0)=0')
     if (filter === 'available') conditions.push("s.active=1 AND json_extract(s.payload,'$.inStock')=1 AND json_extract(s.payload,'$.source.stock')>0")
+    // Photo filters. `photo` means a publication row exists at all, not that a
+    // customer can see it -- hidden, stale and pending rows still answer yes,
+    // because the owner filtering for "tires with photos" is looking for the
+    // ones there is something to manage on. `no-photo` is its exact complement,
+    // so the two partition the catalogue with nothing falling between them.
+    if (filter === 'photo') conditions.push('ip.supplier_id IS NOT NULL')
+    if (filter === 'no-photo') conditions.push('ip.supplier_id IS NULL')
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-    const from = `FROM supplier s LEFT JOIN offers o ON o.id=s.id ${where}`
+    const from = `FROM supplier s LEFT JOIN offers o ON o.id=s.id ${PHOTO_JOIN} ${where}`
     const total = this.db.prepare(`SELECT count(*) AS n ${from}`).get(...args).n
     const asked = Math.floor(Number(askedPageSize))
     const pageSize = PAGE_SIZES.includes(asked) ? asked : DEFAULT_PAGE_SIZE
@@ -627,11 +634,13 @@ export class Inventory {
     const applied = orderBy(sort, dir)
     const currentPage = Math.max(1, Math.min(Math.floor(Number(page)) || 1, Math.max(1, Math.ceil(total / pageSize))))
     const rows = this.db.prepare(`SELECT s.*, o.price_cents, o.shipping_cents, o.enabled, o.notes, o.version,
-        o.updated_at AS offer_updated_at, ${MARGIN_CENTS} AS margin_cents ${from}
+        o.updated_at AS offer_updated_at, ${MARGIN_CENTS} AS margin_cents, ${PHOTO_COLUMNS} ${from}
       ORDER BY ${applied.order} LIMIT ? OFFSET ?`)
       .all(...args, pageSize, (currentPage - 1) * pageSize)
-    return { items: rows.map(row => ({
-      ...JSON.parse(row.payload), lastSeen: row.last_seen, supplierActive: !!row.active,
+    return { items: rows.map(row => {
+      const payload = JSON.parse(row.payload)
+      return {
+      ...payload, lastSeen: row.last_seen, supplierActive: !!row.active,
       // Derived, never stored, and deliberately OUTSIDE `offer`: that object is
       // the shape the owner screen submits back, asserted field-for-field in
       // four existing tests, and widening it would make a read-only column look
@@ -639,9 +648,14 @@ export class Inventory {
       // SQL expression the sort orders by, so the column and the order cannot
       // disagree. NULL for a tire with no price.
       marginCents: row.margin_cents ?? null, offerUpdatedAt: row.offer_updated_at ?? null,
+      // Read-only, and outside `offer` for the same reason marginCents is: the
+      // screen submits `offer` back field-for-field, and a photo is changed
+      // through its own route, not by saving a price.
+      photo: photoState(row, payload),
       offer: { priceCents: row.price_cents ?? null, shippingCents: row.shipping_cents ?? null, enabled: !!row.enabled,
         notes: row.notes ?? '', version: row.version ?? 0 },
-    })), total, page: currentPage, pageSize, sort: applied.sort, dir: applied.dir }
+      }
+    }), total, page: currentPage, pageSize, sort: applied.sort, dir: applied.dir }
   }
 
   saveOffer(id, input) {
