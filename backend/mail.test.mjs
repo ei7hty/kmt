@@ -1264,3 +1264,36 @@ test('createMailer hands the service account through to the adapter it builds', 
   assert.equal(mailer.adapter.options.auth.type, 'OAuth2')
   assert.equal(mailer.adapter.options.auth.serviceClient, '1234567890')
 })
+
+// --- What the two request emails say when nobody named a vehicle ---------------
+
+/** The fields both request templates read, with the vehicle left to the caller. */
+const requestMailData = vehicleInfo => ({
+  to_name: 'Jamie', quantity: 4, tireName: 'Michelin Defender', tireSize: '225/50R17',
+  vehicleInfo, locationType: 'Home', serviceZip: '02149', date: '2026-10-01',
+  statusUrl: 'https://example.test/status', ownerUrl: 'https://example.test/owner', total: null,
+})
+
+test('the customer email drops the vehicle phrase rather than leaving a hole in it', () => {
+  // The vehicle became optional at intake. Interpolated bare, the line read
+  // "Got your request for 4 x Michelin Defender (225/50R17) on your , to be
+  // fitted at home" -- which reads as a broken template, not a short answer.
+  const named = TEMPLATES['request-received'].render(requestMailData('2019 Honda Civic')).text
+  assert.match(named, /on your 2019 Honda Civic, to be fitted at home/)
+
+  const blank = TEMPLATES['request-received'].render(requestMailData('')).text
+  assert.doesNotMatch(blank, /on your\s*,/, 'the sentence still has the hole the vehicle used to fill')
+  assert.doesNotMatch(blank, /on your\s*$/m)
+  assert.match(blank, /\(225\/50R17\), to be fitted at home/, 'and it still reads as a sentence')
+})
+
+test("the owner email says the vehicle is missing rather than printing nothing", () => {
+  // Ken's copy, not the customer's: a line that just stops reads as data lost
+  // in transit. "not given" reads as a question he still has to ask.
+  const named = TEMPLATES['request-arrived'].render(requestMailData('2019 Honda Civic')).text
+  assert.match(named, /^Vehicle: 2019 Honda Civic$/m)
+
+  const blank = TEMPLATES['request-arrived'].render(requestMailData('')).text
+  assert.match(blank, /^Vehicle: not given$/m)
+  assert.doesNotMatch(blank, /^Vehicle:\s*$/m)
+})

@@ -581,6 +581,9 @@
 :where(.customer-shell) input { border-color: #3e3e42; background: #080808; }
 .order-summary-line { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; padding: 13px 0; border-block: 1px solid #303033; color: #a3a3ab; font-size: 13px; }
 .order-summary-line b { color: #f1f1f1; }
+/* Said, not left blank. The vehicle is optional at intake, and a row that just
+   stops reads as data Ken lost rather than a question he still has to ask. */
+.owner-request-vehicle-missing { color: #8e8e96; font-style: italic; }
 .step-error { margin-top: 16px; color: #ff7077; font-size: 13px; }
 .success-message { margin-top: 16px; padding: 16px; border: 1px solid #3ca75b; background: rgba(60, 167, 91, 0.1); color: #71df8b; }
 .site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #303033; color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
