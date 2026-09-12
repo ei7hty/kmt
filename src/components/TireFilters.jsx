@@ -1,5 +1,11 @@
 import { useState } from 'react'
-import { facetCounts, availableSorts, activeFilterCount, toggleFilter, visibleFacet, NO_FILTERS } from '../tire-filters.js'
+import { facetCounts, availableSorts, activeFilterCount, toggleFilter, visibleFacet, priceRange, NO_FILTERS } from '../tire-filters.js'
+
+/** The element the toggle says it controls; a fixed id, one panel per page. */
+const BODY_ID = 'tire-filter-controls'
+
+/** Same shape as the price on a card, so the range and the cards agree. */
+const money = amount => `$${Number(amount).toFixed(2)}`
 
 /**
  * The narrowing controls above a size's tire list.
@@ -29,10 +35,7 @@ import { facetCounts, availableSorts, activeFilterCount, toggleFilter, visibleFa
  * ratings yet and inventing them was never on the table -- so it stays out of
  * sight rather than sorting nothing and teaching people it is broken.
  */
-/** The element the toggle says it controls; a fixed id, one panel per page. */
-const BODY_ID = 'tire-filter-controls'
-
-export default function TireFilters({ tires, filters = NO_FILTERS, sort = 'price', onFiltersChange, onSortChange, resultCount }) {
+export default function TireFilters({ tires, filters = NO_FILTERS, sort = 'price', onFiltersChange, onSortChange, results = [] }) {
   const [allBrands, setAllBrands] = useState(false)
   // Collapsed to start, and it only means anything on a phone: the toggle is
   // display:none and the body is open at every other width, so this state
@@ -45,6 +48,10 @@ export default function TireFilters({ tires, filters = NO_FILTERS, sort = 'price
   const sorts = availableSorts(tires)
   const active = activeFilterCount(filters)
   const brandView = visibleFacet(brands, { selected: filters?.brands ?? [], expanded: allBrands })
+  const resultCount = results.length
+  // The range of what is ON SCREEN, not of the size: filter to winter and the
+  // line has to agree with the list under it or it is just decoration.
+  const range = priceRange(results)
 
   const option = (kind, item) => {
     const checked = (filters[kind] ?? []).includes(item.id)
@@ -86,6 +93,9 @@ export default function TireFilters({ tires, filters = NO_FILTERS, sort = 'price
         <p className="tire-filters-count" role="status">
           <strong>{resultCount}</strong> {resultCount === 1 ? 'tire' : 'tires'}
           {active > 0 && <> of {tires.length}</>}
+          {range && <span className="tire-filters-range">
+            {range.low === range.high ? money(range.low) : <>{money(range.low)} &ndash; {money(range.high)}</>} per tire
+          </span>}
         </p>
         {active > 0 && (
           <button type="button" className="tire-filters-clear" onClick={() => onFiltersChange({ ...NO_FILTERS })}>

@@ -50,9 +50,19 @@ export const PRICE_BANDS = Object.freeze([
   { id: 'over-400', label: 'Over $400', min: 400, max: Infinity },
 ])
 
+/**
+ * The orders a customer can ask for, each labelled with what it does.
+ *
+ * "Price" said nothing about which end it started from, and there was only one
+ * direction, so a customer who wanted the best tire in the size could not ask
+ * for it. In 225/50R17 that hid a lot: the size runs $52.03 to $516.27, and
+ * the twelve tires everyone saw first spanned $52.03 to $63.92 -- a $12 window
+ * of a $464 range, with the other 311 thirteen presses of "show 24 more" away.
+ */
 export const SORTS = Object.freeze({
-  price: { id: 'price', label: 'Price' },
-  brand: { id: 'brand', label: 'Brand' },
+  price: { id: 'price', label: 'Price: low to high' },
+  'price-desc': { id: 'price-desc', label: 'Price: high to low' },
+  brand: { id: 'brand', label: 'Brand A-Z' },
   rating: { id: 'rating', label: 'Rating' },
 })
 
@@ -131,25 +141,56 @@ export function hasRatings(tires) {
 
 /** The sorts worth offering for THIS list: rating only when something carries one. */
 export function availableSorts(tires) {
-  return [SORTS.price, SORTS.brand, ...(hasRatings(tires) ? [SORTS.rating] : [])]
+  return [SORTS.price, SORTS['price-desc'], SORTS.brand, ...(hasRatings(tires) ? [SORTS.rating] : [])]
+}
+
+/**
+ * The cheapest and dearest of a list, for the line above it.
+ *
+ * The first screen used to say "323 tires" over twelve tires between $52 and
+ * $64, which reads as a shop that tops out at $64. It says what the list on
+ * screen really spans instead -- so "low to high" is understood as a place in
+ * a range rather than as the whole of it.
+ *
+ * Out-of-stock tires count: they are shown, they carry a price, and leaving
+ * them out would make the line disagree with the list under it.
+ */
+export function priceRange(tires) {
+  const prices = tires.map(tire => tire.price).filter(price => typeof price === 'number')
+  if (prices.length === 0) return null
+  return { low: Math.min(...prices), high: Math.max(...prices) }
 }
 
 /**
  * Order a list.
  *
  * Out-of-stock tires trail in every order, as they always have: they are shown
- * so a buyer knows they exist, and cannot be chosen. Price ascending stays the
- * default -- it was the only order before this and it is the right one to keep
- * for a shop where the cheapest workable tire is a common answer.
+ * so a buyer knows they exist, and cannot be chosen.
  *
- * Every comparator ends in price then id, so the order is total: a sort with
- * ties is a list that reshuffles when nothing changed.
+ * LOW TO HIGH STAYS THE DEFAULT. The complaint it answers is real -- the shop
+ * opened on its twelve cheapest tires -- but the fix is not a different
+ * default. It is saying which end you are at, offering the other one, and
+ * printing the range above the list, because a customer at a roadside asking
+ * for the cheapest workable tire is the common case here and reordering
+ * against them to make the shop look dearer would be merchandising, not help.
+ *
+ * Every comparator ends in a total tiebreak, so the order is total: a sort
+ * with ties is a list that reshuffles when nothing changed.
+ *
+ * An id with no comparator here falls back to price, which is the right thing
+ * for a stale saved sort and the wrong thing for a pill someone just added and
+ * wired to nothing -- it would look like it worked. tire-filters.test.mjs
+ * holds SORTS and this table to each other so that cannot happen quietly.
  */
 export function sortTires(tires, sort = 'price') {
   const byStock = (a, b) => (a.inStock === b.inStock ? 0 : a.inStock ? -1 : 1)
   const tail = (a, b) => a.price - b.price || String(a.id).localeCompare(String(b.id))
   const comparators = {
     price: tail,
+    // Not -tail: the tiebreak has to stay a total order, and negating one that
+    // ends in a localeCompare would reverse the id order too, which is fine,
+    // but writing it out says what it does.
+    'price-desc': (a, b) => b.price - a.price || String(a.id).localeCompare(String(b.id)),
     brand: (a, b) => String(a.brand ?? '￿').localeCompare(String(b.brand ?? '￿')) || tail(a, b),
     // Highest first: a rating sort that put one-star tires on top would be a
     // literal reading of "sort by rating" and no use to anyone.

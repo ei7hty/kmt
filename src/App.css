@@ -509,6 +509,9 @@
 .tire-filters-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .tire-filters-count { margin: 0; color: var(--muted); font-size: 12px; }
 .tire-filters-count strong { color: #f3f3f3; font-family: var(--mono); font-size: 16px; }
+/* The range, on its own line under the count: "323 tires" over twelve tires
+   between $52 and $64 reads as a shop that tops out at $64. */
+.tire-filters-range { display: block; margin-top: 2px; color: #8e8e96; font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
 .tire-filters-clear { padding: 4px 9px; border: 1px solid #3e3e42; border-radius: 3px; background: transparent; color: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .tire-filters-clear:hover { border-color: var(--accent); color: #fff; }
 

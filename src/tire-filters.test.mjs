@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 
 import {
   matchesFilters, facetCounts, applyFilters, sortTires, toggleFilter,
-  activeFilterCount, hasRatings, availableSorts, visibleFacet,
-  NO_FILTERS, PRICE_BANDS, BRAND_FACET_LIMIT,
+  activeFilterCount, hasRatings, availableSorts, visibleFacet, priceRange,
+  NO_FILTERS, PRICE_BANDS, BRAND_FACET_LIMIT, SORTS,
 } from './tire-filters.js'
 
 /** A list shaped like the real one: the fields /api/catalog actually returns. */
@@ -76,7 +76,7 @@ test('price bands cover the list without overlapping', () => {
 })
 
 test('out-of-stock trails in every order, and every order is total', () => {
-  for (const sort of ['price', 'brand', 'rating']) {
+  for (const sort of ['price', 'price-desc', 'brand', 'rating']) {
     const ordered = sortTires(TIRES, sort)
     const lastInStock = ordered.map(t => t.inStock).lastIndexOf(true)
     const firstOut = ordered.map(t => t.inStock).indexOf(false)
@@ -104,20 +104,20 @@ test('brand sort puts unbranded tires last, not first', () => {
  */
 test('with no ratings anywhere, rating is not offered as a sort', () => {
   assert.equal(hasRatings(TIRES), false)
-  assert.deepEqual(availableSorts(TIRES).map(s => s.id), ['price', 'brand'])
+  assert.deepEqual(availableSorts(TIRES).map(s => s.id), ['price', 'price-desc', 'brand'])
 })
 
 test('one real rating is enough to offer the sort', () => {
   const rated = [...TIRES, { id: 'h', brand: 'Toyo', category: 'all-season', price: 200, inStock: true, rating: 4.4, ratingCount: 1280 }]
   assert.equal(hasRatings(rated), true)
-  assert.deepEqual(availableSorts(rated).map(s => s.id), ['price', 'brand', 'rating'])
+  assert.deepEqual(availableSorts(rated).map(s => s.id), ['price', 'price-desc', 'brand', 'rating'])
 })
 
 test('a zero rating is not a rating', () => {
   // A backend that fills in 0 for "unknown" must not switch the feature on.
   const zeroed = TIRES.map(t => ({ ...t, rating: 0, ratingCount: 0 }))
   assert.equal(hasRatings(zeroed), false)
-  assert.deepEqual(availableSorts(zeroed).map(s => s.id), ['price', 'brand'])
+  assert.deepEqual(availableSorts(zeroed).map(s => s.id), ['price', 'price-desc', 'brand'])
 })
 
 test('rating sort is highest first, and unrated tires trail', () => {
@@ -221,4 +221,75 @@ test('the count on the control is what expanding will really show', () => {
   assert.equal(collapsed.shown.length + collapsed.hidden.length, expanded.shown.length,
     '"Show all N brands" would name a number the expanded list does not contain')
   assert.notEqual(expanded.shown.length, options.length, 'this case has to include unpickable brands to mean anything')
+})
+
+// --- Which end of the price you are looking at ---------------------------------
+
+test('high to low is the other end, and out-of-stock still trails', () => {
+  const ids = sortTires(TIRES, 'price-desc').map(t => t.id)
+  const inStock = TIRES.filter(t => t.inStock).length
+  assert.deepEqual(ids.slice(0, inStock), ['e', 'c', 'd', 'a', 'b', 'g'],
+    'dearest first among what can be bought')
+  assert.deepEqual(ids.slice(inStock), ['f'], 'a tire nobody can buy does not lead any order')
+
+  // Mirror images of each other among the tires you can actually buy. Out of
+  // stock trails in BOTH directions, so it is not part of the mirror.
+  const buyable = sort => sortTires(TIRES, sort).filter(t => t.inStock).map(t => t.id)
+  assert.deepEqual(buyable('price-desc'), [...buyable('price')].reverse())
+})
+
+test('every sort a customer is offered is wired to a comparator of its own', () => {
+  // `comparators[sort] ?? comparators.price` is right for a stale saved sort
+  // and wrong for a new pill wired to nothing: it would look like it worked.
+  // A list where price order and every other order genuinely differ.
+  const list = [
+    { id: '1', brand: 'Zenith', category: 'winter', price: 90, inStock: true, rating: 2 },
+    { id: '2', brand: 'Apex', category: 'winter', price: 300, inStock: true, rating: 5 },
+    { id: '3', brand: 'Mid', category: 'winter', price: 180, inStock: true, rating: 4 },
+  ]
+  const fallback = sortTires(list, 'no-such-sort').map(t => t.id)
+  assert.deepEqual(fallback, sortTires(list, 'price').map(t => t.id),
+    'an unknown sort should fall back to price -- if this changed, the guard below means something else')
+
+  for (const id of Object.keys(SORTS)) {
+    if (id === 'price') continue
+    assert.notDeepEqual(sortTires(list, id).map(t => t.id), fallback,
+      `the "${id}" pill orders this list exactly as price does, which is what a sort wired to nothing looks like`)
+  }
+})
+
+test('every sort offered has a label that says which way it goes', () => {
+  // "Price" did not, and there was only one direction, so a customer who
+  // wanted the best tire in the size had no way to ask for it.
+  for (const sort of availableSorts(TIRES)) {
+    assert.ok(sort.label && sort.label.trim(), `${sort.id} has no label`)
+    if (sort.id.startsWith('price')) {
+      assert.match(sort.label, /low to high|high to low/,
+        `"${sort.label}" does not say which end of the price it starts from`)
+    }
+  }
+  const directions = availableSorts(TIRES).filter(s => s.id.startsWith('price')).map(s => s.label)
+  assert.equal(new Set(directions).size, 2, 'both directions of price are offered, and they are not the same label')
+})
+
+// --- What the list on screen spans ---------------------------------------------
+
+test('the range is of the tires actually shown, not of the size', () => {
+  // "323 tires" over twelve tires between $52 and $64 reads as a shop that
+  // tops out at $64. The line has to agree with the list under it.
+  assert.deepEqual(priceRange(TIRES), { low: 99.00, high: 310.00 })
+  const winter = applyFilters(TIRES, { ...NO_FILTERS, seasons: ['winter'] })
+  assert.deepEqual(priceRange(winter), { low: 157.33, high: 220.00 },
+    'filtered to winter, the range still claims the whole size')
+})
+
+test('a range needs something to be a range of', () => {
+  assert.equal(priceRange([]), null, 'an empty list has no range, and must not report one')
+  assert.deepEqual(priceRange([TIRES[0]]), { low: 157.33, high: 157.33 },
+    'one tire is its own low and high; the panel says it once rather than as a span')
+  // An out-of-stock tire is shown and carries a price, so it counts: leaving
+  // it out would make the line disagree with the list.
+  const soldOut = TIRES.find(t => !t.inStock)
+  assert.ok(soldOut.price < priceRange(TIRES).high)
+  assert.equal(priceRange([soldOut]).low, soldOut.price)
 })
