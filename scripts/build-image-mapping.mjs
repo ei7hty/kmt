@@ -84,6 +84,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { sha256Bytes } from '../backend/image-assets.mjs'
 import { supplierImageRevision } from '../backend/image-manifest.mjs'
+import { deriveBrand } from '../src/data/brand.js'
 import { productUrl } from './giga-tires.mjs'
 import { prepareImagePilot } from './image-pilot-packet.mjs'
 
@@ -113,9 +114,21 @@ Options:
                     proceed with whatever's available instead of refusing.
                     Without this flag, any shortfall is a hard error, every
                     missing model named -- never a silent smaller run.
+  --brands A,B,C   Every model of these brands, in snapshot ranking order.
+                    Matches the supplier's own slug (royal-black) or the
+                    label a person writes (Royal Black), case-insensitively.
+                    A brand that matches nothing is named, along with the
+                    full list of what is available, and refuses unless
+                    --allow-fewer is given.
   --help           This message.
 
---models and --models-file are mutually exclusive; exactly one is required.
+--models, --models-file and --brands are mutually exclusive; exactly one is
+required.
+
+--brands reads each row's brand from the SUPPLIER'S OWN URL (the "-tires"
+path segment), not from the display name: splitting "Royal Black Racing Trac"
+on its first space gives "Royal", and multi-word brands make that silently
+wrong. See src/data/brand.js.
 
 --models N ranks models by ROW COUNT IN THIS SNAPSHOT ONLY, most first, ties
 broken alphabetically. THIS IS NOT CATALOGUE POPULARITY: the snapshot covers
@@ -136,13 +149,14 @@ refuses is never saved.
 `.trimStart()
 
 function parseArgs(argv) {
-  const options = { models: null, modelsFile: null, out: null, snapshot: DEFAULT_SNAPSHOT, allowFewer: false, help: false }
+  const options = { models: null, modelsFile: null, brands: null, out: null, snapshot: DEFAULT_SNAPSHOT, allowFewer: false, help: false }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--help' || arg === '-h') options.help = true
     else if (arg === '--allow-fewer') options.allowFewer = true
     else if (arg === '--models') options.models = Number(argv[++i])
     else if (arg === '--models-file') options.modelsFile = path.resolve(argv[++i])
+    else if (arg === '--brands') options.brands = String(argv[++i] ?? '').split(',').map(s => s.trim()).filter(Boolean)
     else if (arg === '--out') options.out = argv[++i]
     else if (arg === '--snapshot') options.snapshot = path.resolve(argv[++i])
     else throw new Error(`Unknown argument ${arg}. Run with --help.`)
@@ -151,8 +165,11 @@ function parseArgs(argv) {
 }
 
 function validateOptions(options) {
-  if (options.models !== null && options.modelsFile !== null) throw new Error('--models and --models-file are mutually exclusive.')
-  if (options.models === null && options.modelsFile === null) throw new Error('Exactly one of --models or --models-file is required.')
+  const selectors = [['--models', options.models], ['--models-file', options.modelsFile], ['--brands', options.brands]]
+    .filter(([, value]) => value !== null)
+  if (selectors.length > 1) throw new Error(`${selectors.map(([flag]) => flag).join(', ')} are mutually exclusive; pass exactly one.`)
+  if (selectors.length === 0) throw new Error('Exactly one of --models, --models-file or --brands is required.')
+  if (options.brands !== null && !options.brands.length) throw new Error('--brands needs at least one brand.')
   if (options.models !== null && (!Number.isInteger(options.models) || options.models < 1)) throw new Error('--models must be a positive integer.')
   if (typeof options.out !== 'string' || !options.out) throw new Error('--out is required.')
 }
@@ -172,6 +189,47 @@ export function namesFromFile(bytes) {
  * `--models-file` funnel through, so a shortfall is reported identically
  * regardless of which produced the request.
  */
+/**
+ * Model names belonging to the requested brands, plus the brands that matched
+ * nothing and the full list of what is available.
+ *
+ * BRAND COMES FROM THE SUPPLIER'S URL, NOT THE DISPLAY NAME. `deriveBrand`
+ * (src/data/brand.js) reads the `<brand>-tires` segment out of the listing URL
+ * the supplier itself published. Splitting "Royal Black Racing Trac" on its
+ * first space would give "Royal", and there are multi-word brands where that
+ * is simply wrong; reading the segment is reading data.
+ *
+ * A request matches either form, case-insensitively: the slug as it appears in
+ * the URL (`royal-black`) or the label as a person would write it
+ * (`Royal Black`). Nobody should have to know which one this file wanted.
+ *
+ * Within a brand, models come back in the snapshot's own ranking order, so a
+ * brand request composes with `--allow-fewer` and the shortfall reporting the
+ * other two selectors already use.
+ */
+export function namesForBrands(ranking, tires, requested) {
+  const brandOf = new Map()
+  const available = new Map()
+  for (const tire of tires) {
+    const brand = deriveBrand(tire?.source?.url)
+    if (!brand) continue
+    brandOf.set(tire.name, brand.slug)
+    available.set(brand.slug, brand.label)
+  }
+  const wanted = new Set()
+  const unmatched = []
+  for (const entry of requested) {
+    const needle = String(entry).trim().toLowerCase()
+    if (!needle) continue
+    const slug = available.has(needle) ? needle
+      : [...available].find(([, label]) => label.toLowerCase() === needle)?.[0]
+    if (slug) wanted.add(slug)
+    else unmatched.push(entry)
+  }
+  const names = ranking.map(([name]) => name).filter(name => wanted.has(brandOf.get(name)))
+  return { names, unmatched, available: [...available.values()].sort() }
+}
+
 export function selectByNames(byName, names) {
   const selected = [], missing = []
   for (const name of names) {
@@ -278,7 +336,29 @@ function main() {
   // names, so selectByNames below can never find one of these "missing" --
   // only a genuine --models-file entry with no snapshot row can be.
   let requestedNames
-  if (options.modelsFile) {
+  if (options.brands) {
+    const { names, unmatched, available } = namesForBrands(ranking, tires, options.brands)
+    if (unmatched.length) {
+      // Naming what IS available, at the moment of the miss. A brand can be
+      // typed as the supplier's slug or as a label, and nobody should have to
+      // guess which spelling this file wanted, or run a second command to find
+      // out.
+      console.error(`${unmatched.length} requested brand(s) are not in ${options.snapshot}: ${unmatched.join(', ')}`)
+      console.error(`Available brands (${available.length}): ${available.join(', ')}`)
+      if (!options.allowFewer) {
+        console.error('Refusing rather than quietly building a mapping for the brands that did match. Pass --allow-fewer to proceed with those.')
+        process.exitCode = 1
+        return
+      }
+    }
+    if (!names.length) {
+      console.error('No models matched the requested brand(s); nothing to write.')
+      process.exitCode = 1
+      return
+    }
+    console.log(`${names.length} model(s) across ${options.brands.length - unmatched.length} brand(s).`)
+    requestedNames = names
+  } else if (options.modelsFile) {
     requestedNames = namesFromFile(readFileSync(options.modelsFile))
   } else {
     if (options.models > ranking.length) {
