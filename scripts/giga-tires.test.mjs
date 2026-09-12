@@ -146,3 +146,14 @@ test('a refusal inside a <script> string is NOT treated as a refusal, and one in
   assert.equal(refusalReason('<script>msg = "Access Denied"</script><body>Tire details</body>'), null)
   assert.equal(refusalReason('<script>ok()</script><body>Access Denied</body>'), 'access denied')
 })
+
+test('visibleText survives a closing tag with junk inside it', () => {
+  // CodeQL js/bad-tag-filter, high: `</script\s*>` does not match
+  // `</script\t\n bar>`, which HTML permits. A page using that form would have
+  // had its script text counted as VISIBLE, producing a false refusal -- the
+  // opposite of what this function is for.
+  const sneaky = '<html><body><script\n>var msg = "Access Denied"</script\t\n bar><p>Tire details</p></body></html>'
+  assert.equal(refusalReason(sneaky), null, 'script content must not be read as a refusal, however the tag is closed')
+  assert.match(visibleText(sneaky), /Tire details/)
+  assert.ok(!/Access Denied/.test(visibleText(sneaky)), 'the script body is not visible text')
+})

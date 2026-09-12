@@ -84,9 +84,15 @@ const REFUSAL_MARKERS = [
  * that is the entire purpose of a challenge page. An embedded widget does not.
  */
 export function visibleText(html) {
-  return String(html || '')
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
+  // `stripRawTextElements` rather than a regex pair, and this file already had
+  // it -- `parseListingPage` has used it all along. The hand-rolled version
+  // here was a second, worse copy: CodeQL (js/bad-tag-filter, high) caught
+  // that `<\/script\s*>` does not match `</script\t\n bar>`, which HTML
+  // permits. Script text would then have counted as visible and could have
+  // produced a FALSE REFUSAL -- the exact defect this function exists to end.
+  // The helper scans for `</script` and then the next `>`, whatever sits
+  // between, so it has never had that hole.
+  return String(stripRawTextElements(stripRawTextElements(String(html || ''), 'script'), 'style'))
     .replace(/<[^>]+>/g, ' ')
 }
 
