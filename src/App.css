@@ -533,8 +533,12 @@
 .tire-facet legend { padding: 0 0 5px; color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
 .tire-facet-option { display: flex; align-items: center; gap: 7px; padding: 3px 0; color: #dedee3; font-size: 12.5px; cursor: pointer; }
 /* Shown, never removed: dropping a zero-count option reflows the panel and
-   moves a control out from under the cursor mid-press. */
-.tire-facet-option.is-empty { color: #5d5d64; cursor: not-allowed; }
+   moves a control out from under the cursor mid-press. Which makes its colour
+   load-bearing -- it is the row saying "this brand has nothing in Winter", and
+   at #5d5d64 it measured 2.97:1 on this panel, which is not a sentence anyone
+   reads. Exempt from WCAG as a disabled control; raised anyway, for the same
+   reason as the out-of-stock card above. */
+.tire-facet-option.is-empty { color: #7d7d85; cursor: not-allowed; }
 .tire-facet-option input { width: 13px; height: 13px; margin: 0; accent-color: var(--accent); flex: 0 0 auto; }
 .tire-facet-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tire-facet-count { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 10.5px; font-variant-numeric: tabular-nums; }
@@ -559,10 +563,27 @@
    step with the card beside it. */
 .tire-option { display: grid; grid-template-columns: 80px minmax(0, 1fr) auto; align-items: start; gap: 15px; padding: 13px !important; border: 1px solid #303033 !important; border-radius: 3px !important; background: #121212 !important; color: #fff !important; text-align: left; }
 .tire-option:hover, .tire-option.selected { border-color: var(--accent) !important; background: var(--accent-bg) !important; transform: none; }
-/* Dimmed, still readable. At 0.4 the whole card composites toward the page
-   behind it, and "Currently unavailable" -- the one thing a customer needs to
-   read off that card -- went with it. */
-.tire-option:disabled { cursor: not-allowed; opacity: 0.55; }
+/* Dimmed by choosing the colours, not by fading the card.
+   `opacity` fades the text and the ground together, and this ground is
+   already near-black, so only the text loses: at 0.55 "Currently unavailable"
+   measured 3.33:1 against the panel and the description 3.07:1 -- run through
+   the gate's own ratio() from .forge/contrast-measure.mjs, not estimated.
+   Nothing in this repo could have told me. The a11y audit measures what the
+   SEEDED database renders, and the seed holds zero out-of-stock tires, so this
+   whole state is drawn zero times in every run the gate has ever made. The
+   finding is kmt-e2's, from the same shape of hole on the owner's photo
+   states; the arithmetic here is mine.
+   A disabled control is exempt from WCAG 1.4.3, so this is not a compliance
+   fix. "Currently unavailable" is the only thing the card exists to say in
+   this state, and 3.33:1 is not enough to say it with. */
+.tire-option:disabled { cursor: not-allowed; opacity: 1; border-color: #232326 !important; background: #0f0f10 !important; }
+/* The photo may fade: it carries no words. */
+.tire-option:disabled .tire-media { opacity: 0.45; }
+.tire-option:disabled .tire-info strong, .tire-option:disabled > b { color: #a3a3ab; }
+/* :not(.tire-stock) -- the stock line keeps its own colour on a disabled
+   card. Without the exclusion this rule outranks it (0,2,2 against 0,2,0) and
+   greys out the one line the card exists to show in this state. */
+.tire-option:disabled .tire-info small:not(.tire-stock) { color: #8e8e96; }
 .tire-art { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; border: 9px solid #303033; outline: 2px solid #77777a; color: #080808; background: radial-gradient(circle, #77777a 0 9%, #171717 10% 26%, #909094 27% 31%, #121212 32% 100%); font-size: 0; }
 .tire-info { display: grid; gap: 3px; }
 .tire-info strong { font-size: 15px; }

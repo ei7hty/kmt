@@ -302,3 +302,73 @@ test('the toggle names the thing it opens, and that thing is there', () => {
   assert.match(component, /data-open=\{open \? 'true' : 'false'\}/,
     "data-open must be a string; a boolean false renders no attribute and the selector never matches")
 })
+
+// --- Colours no audit on this repo can see -----------------------------------
+
+/**
+ * The state a customer meets least often is the one nothing measures.
+ *
+ * kmt-e2 found this shape on the owner's photo column and it transfers here
+ * exactly: the a11y audit measures what the SEEDED database renders, and the
+ * seed holds ZERO out-of-stock tires (measured today: 323 rows in 225/50R17,
+ * 0 of them out of stock). So the whole disabled-card state is drawn zero
+ * times in every run the gate has ever made, and its colours were whatever
+ * they were. `.tire-option:disabled` faded the card with `opacity`, which
+ * fades text and ground together over a near-black ground, so only the text
+ * lost: "Currently unavailable" came out at 3.33:1 and the description 3.07:1.
+ *
+ * A disabled control is exempt from WCAG 1.4.3, so none of this was a
+ * compliance failure. It is simpler than that -- "Currently unavailable" is
+ * the only thing the card exists to say in that state.
+ *
+ * Every colour below is READ from the stylesheet and run through the gate's
+ * own ratio(), so no hex is restated here and this cannot drift when someone
+ * restyles the card.
+ */
+import { ratio } from '../.forge/contrast-measure.mjs'
+
+const rgb = value => {
+  // `!important` rides along on several of these declarations; it changes who
+  // wins, not what colour it is.
+  const found = String(value).replace(/!important/gi, '').trim().match(/^#([0-9a-f]{6})$/i)
+  assert.ok(found, `expected a six-digit hex, read ${JSON.stringify(value)}`)
+  const n = parseInt(found[1], 16)
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+}
+
+const READABLE = 4.5
+
+test('every state of a tire card is readable, including the one nothing renders', () => {
+  const card = declaration(appCss, '.tire-option', 'background', 'tire card')
+  const disabled = declaration(appCss, '.tire-option:disabled', 'background', 'unavailable card')
+
+  const pairs = [
+    ['in stock', '.tire-stock[data-stock="in"]', card],
+    ['currently unavailable', '.tire-stock[data-stock="out"]', card],
+    // On the unavailable card, which is the ground no audit here has drawn.
+    ['currently unavailable, on the unavailable card', '.tire-stock[data-stock="out"]', disabled],
+    ['the name of an unavailable tire', '.tire-option:disabled .tire-info strong, .tire-option:disabled > b', disabled],
+    ['the description of an unavailable tire', '.tire-option:disabled .tire-info small:not(.tire-stock)', disabled],
+    // And the filter panel's own unpickable row.
+    ['a brand with nothing left in it', '.tire-facet-option.is-empty', declaration(appCss, '.tire-filters', 'background', 'filter panel')],
+    ['the price range', '.tire-filters-range', declaration(appCss, '.tire-filters', 'background', 'filter panel')],
+  ]
+
+  for (const [label, selector, ground] of pairs) {
+    const color = declaration(appCss, selector, 'color', label)
+    const measured = ratio(rgb(color), rgb(ground))
+    assert.ok(measured >= READABLE,
+      `${label}: ${color.trim()} on ${ground.trim()} is ${measured.toFixed(2)}:1, under ${READABLE}:1`)
+  }
+})
+
+test('the unavailable card is dimmed by its colours, not by fading it', () => {
+  // The guard that matters more than any hex above. `opacity` fades the text
+  // and the ground together; over a near-black ground only the text loses, so
+  // re-introducing it would put every colour measured above back under 4:1
+  // while each one still reads as passing on its own.
+  const faded = lookup(desktop(appCss), '.tire-option:disabled', 'opacity')
+    .filter(value => Number(value.trim()) < 1)
+  assert.deepEqual(faded, [],
+    'the unavailable card is faded with opacity again, which makes every colour above a number that is not what renders')
+})
