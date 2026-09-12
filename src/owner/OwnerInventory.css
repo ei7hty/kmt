@@ -313,14 +313,21 @@
 .oi-g-thumb-empty { display: inline-block; }
 
 .oi-g-photo-state { font-size: 0.78rem; letter-spacing: 0.01em; }
-/* Every one of these is at least 4.5:1 on the #121212 grid ground. The brand
-   red is never used here: it reads as an error, and "Off" is a choice. */
+/* Every one of these is at least 4.5:1 on the #121212 grid ground, and
+   `photo-state-contrast.test.mjs` holds that claim to it -- this comment
+   asserted the invariant while the `none` rule below broke it at 3.88:1, and
+   the browser audit caught that only because a seeded row happens to render
+   "None". It renders no row in the other five states, so it measured one
+   colour of six. The brand red is never used here: it reads as an error, and
+   "Off" is a choice. */
 .oi-g-photo-live .oi-g-photo-state { color: #6ee7a8; }
 .oi-g-photo-hidden .oi-g-photo-state { color: #9ca3af; }
 .oi-g-photo-stale .oi-g-photo-state { color: #fbbf24; }
 .oi-g-photo-pending .oi-g-photo-state { color: #93c5fd; }
 .oi-g-photo-revoked .oi-g-photo-state { color: #f87171; }
-.oi-g-photo-none .oi-g-photo-state { color: #6b7280; }
+/* The file's own muted token, not a new grey: #6b7280 was invented here and
+   was the only use of it anywhere in src/. */
+.oi-g-photo-none .oi-g-photo-state { color: #a3a3ab; }
 
 /* A hidden photo is still a real photo, dimmed rather than removed: he needs to
    see WHAT he turned off, not just that something is off. */
