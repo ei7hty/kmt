@@ -39,9 +39,25 @@ export function prepareImagePilot(inputBytes, mappingBytes) {
   return { baseline, inputDigest: mapping.inputDigest, mappingDigest: sha256Bytes(mappingBytes) }
 }
 
-export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, delayForNext, now = Date.now, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }, fetchPage) {
+/**
+ * ONE RUN TELLS YOU EVERY PAGE THAT FAILED, NOT THE FIRST.
+ *
+ * This used to throw on the first page that did not validate, which meant
+ * finding out about page 30 cost thirty runs and thirty live fetches of pages
+ * that were already known to be fine. Now every page is attempted, each
+ * failure is recorded with the field that disagreed, and the run reports all
+ * of them together.
+ *
+ * `allowPartial` decides what happens next, and the DEFAULT IS STILL TO
+ * REFUSE. Without it, any failure fails the run -- now with a complete list
+ * instead of a single line. With it, the packet is built from the pages that
+ * did validate and the skipped ones are named on stdout. What must never
+ * happen either way is a quietly smaller packet reported as a success: a run
+ * that asked for 37 and wrote 30 has to say so in both modes.
+ */
+export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, delayForNext, allowPartial = false, now = Date.now, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) }, fetchPage) {
   if (!/^[a-f0-9]{40}$/.test(codeSha) || !Number.isSafeInteger(seed) || !orderedUrls.length || new Set(orderedUrls).size !== orderedUrls.length || orderedUrls.some(url => !plan.baseline.has(url))) reject()
-  const candidates = [], observations = [], enrichedRows = []
+  const candidates = [], observations = [], enrichedRows = [], skipped = []
   let lastStart
   for (const requestedUrl of orderedUrls) {
     if (lastStart !== undefined) {
@@ -83,26 +99,38 @@ export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, dela
     // refuses any candidate whose `supplierSku` does not match the snapshot
     // row, before a single request is made.
     const requestedTireCode = fetched.url.split('/tirecode/')[1]?.split(/[/?#]/)[0]
-    if (!requestedTireCode) reject(`tirecode: no /tirecode/<code> segment in ${fetched.url}`)
-    if (row.source?.sku !== requestedTireCode) {
-      reject(`identity: page sku ${JSON.stringify(row.source?.sku)} is not the tirecode ${JSON.stringify(requestedTireCode)} the URL asked for`)
-    }
-    if (row.size !== tire.size) {
-      reject(`size: page has ${JSON.stringify(row.size)}, snapshot expects ${JSON.stringify(tire.size)}`)
-    }
-    if (!row.imageUrls?.length) {
-      reject('imageUrls: the product page carried no image URLs in its structured data')
-    }
-    if (tire.source.productId && row.source.productId !== tire.source.productId) {
-      reject(`productId: page has ${JSON.stringify(row.source?.productId)}, snapshot expects ${JSON.stringify(tire.source.productId)}`)
-    }
+    // Each condition names itself and the values that disagreed. Computed as a
+    // reason rather than thrown, so the loop can record it and carry on.
+    const problem =
+      !requestedTireCode ? `no /tirecode/<code> segment in ${fetched.url}`
+      : row.source?.sku !== requestedTireCode ? `identity: page sku ${JSON.stringify(row.source?.sku)} is not the tirecode ${JSON.stringify(requestedTireCode)} the URL asked for`
+      : row.size !== tire.size ? `size: page has ${JSON.stringify(row.size)}, snapshot expects ${JSON.stringify(tire.size)}`
+      : !row.imageUrls?.length ? 'imageUrls: the product page carried no image URLs in its structured data'
+      : (tire.source.productId && row.source.productId !== tire.source.productId) ? `productId: page has ${JSON.stringify(row.source?.productId)}, snapshot expects ${JSON.stringify(tire.source.productId)}`
+      : null
+    if (problem) { skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason: problem }); continue }
     const originalUrl = row.imageUrls[0]
     const imageHost = new URL(originalUrl).hostname
-    if (assertAllowedImageUrl(originalUrl, [imageHost]) !== originalUrl || new URL(originalUrl).hash) reject()
+    if (assertAllowedImageUrl(originalUrl, [imageHost]) !== originalUrl || new URL(originalUrl).hash) {
+      skipped.push({ supplierId: tire.id, name: tire.name, requestedUrl, reason: `image URL refused: ${originalUrl}` })
+      continue
+    }
     candidates.push({ supplierId: tire.id, supplierSku: mapping.supplierSku, productUrl: fetched.url, originalUrl, revision: mapping.revision })
     observations.push({ supplierId: tire.id, requestedUrl, finalUrl: fetched.url, sku: row.source.sku, size: row.size, listingUrl: tire.source.url })
     enrichedRows.push(row)
   }
+  // Report BEFORE deciding, so the list is printed whether the run proceeds or
+  // refuses. A skipped page the operator never sees named is the silent
+  // smaller success this whole tool exists to refuse.
+  if (skipped.length) {
+    console.error(`\n${skipped.length} of ${orderedUrls.length} product pages did not validate:`)
+    for (const item of skipped) console.error(`  - ${item.name} (${item.supplierId})\n      ${item.reason}`)
+    console.error('')
+    if (!allowPartial) {
+      reject(`${skipped.length} of ${orderedUrls.length} pages did not validate; re-run with --allow-partial to build a packet from the ${candidates.length} that did`)
+    }
+  }
+  if (!candidates.length) reject('no product page validated; nothing to write')
   const hosts = values => [...new Set(values.map(value => new URL(value).hostname))].sort()
   const productHosts = hosts(observations.flatMap(row => [row.requestedUrl, row.finalUrl, row.listingUrl]))
   const imageHosts = hosts(candidates.map(row => row.originalUrl))
