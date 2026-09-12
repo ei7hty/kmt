@@ -5,7 +5,21 @@ import { IMAGE_SELECTION_TAG, supplierImageRevision } from '../backend/image-man
 import { IMAGE_PILOT_POLICY, compileImageProviderProfile } from '../backend/image-provider-profile.mjs'
 import { parseProductPage, productUrl } from './giga-tires.mjs'
 
-const reject = () => { throw new Error('Private pilot input or outcome refused') }
+/**
+ * The message stays constant; the REASON is attached as a cause.
+ *
+ * Every refusal in this file used to throw one identical sentence, so a run
+ * that stopped told the operator nothing about which of a dozen checks
+ * objected. That is the same defect the bare `catch` in scrape-tires.mjs had,
+ * and it cost the same thing: live requests spent re-running a command by hand
+ * to learn what one printed word would have said. The packet is private and so
+ * is its content -- but this runs on the owner's own machine, against a packet
+ * the owner supplied, and the NAME of the check that refused is not a secret
+ * from him.
+ */
+const reject = reason => {
+  throw new Error('Private pilot input or outcome refused', reason ? { cause: new Error(reason) } : undefined)
+}
 const parse = bytes => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
 export function prepareImagePilot(inputBytes, mappingBytes) {
   if (!(inputBytes instanceof Uint8Array) || inputBytes.length > 8 * 1024 * 1024 ||
@@ -42,8 +56,20 @@ export async function collectImagePilot(plan, orderedUrls, { codeSha, seed, dela
     // No fallback: SKU/MPN and size must be present in the actual response.
     const row = parseProductPage(fetched.html, { url: fetched.url })
     const { mapping, tire } = plan.baseline.get(requestedUrl)
-    if (row.source?.sku !== mapping.supplierSku || row.size !== tire.size || !row.imageUrls?.length ||
-        (tire.source.productId && row.source.productId !== tire.source.productId)) reject()
+    // Named one at a time, so a refusal says which field disagreed and with
+    // what. Behaviour is identical -- the same four conditions, same order.
+    if (row.source?.sku !== mapping.supplierSku) {
+      reject(`sku: page has ${JSON.stringify(row.source?.sku)}, mapping expects ${JSON.stringify(mapping.supplierSku)}`)
+    }
+    if (row.size !== tire.size) {
+      reject(`size: page has ${JSON.stringify(row.size)}, snapshot expects ${JSON.stringify(tire.size)}`)
+    }
+    if (!row.imageUrls?.length) {
+      reject('imageUrls: the product page carried no image URLs in its structured data')
+    }
+    if (tire.source.productId && row.source.productId !== tire.source.productId) {
+      reject(`productId: page has ${JSON.stringify(row.source?.productId)}, snapshot expects ${JSON.stringify(tire.source.productId)}`)
+    }
     const originalUrl = row.imageUrls[0]
     const imageHost = new URL(originalUrl).hostname
     if (assertAllowedImageUrl(originalUrl, [imageHost]) !== originalUrl || new URL(originalUrl).hash) reject()
