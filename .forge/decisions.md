@@ -170,3 +170,29 @@ Ruled by the PRODUCT MANAGER / OWNER AGENT. `backend/static.mjs` splices the res
 **Rejected: a fetch on mount**, for the flash and the round trip above. **Rejected: server-side rewriting of the `<head>`** -- the `<title>`, meta description and `og:*` stay build-time and out of this feature entirely. The reason is durability, not mechanism: a bad `<title>` outlives its correction in a search index, where a bad hero does not, and `no-cache` on the shell means an injected mistake is undone as fast as it was made. Now that the injection mechanism exists, "we already inject, just add the title" answers an argument nobody made. **Rejected: `no-cache` replaced by `no-store` for the shell** -- `no-store` also forbids the back/forward cache, and the 304 is worth keeping for the common case where the copy has not changed.
 
 **One limit worth knowing before anyone verifies this locally.** `backend/dev.mjs` does not use `static.mjs` at all -- Vite's middleware serves the source there -- so a local `node backend/dev.mjs` renders the shipped defaults and never an edit. Verify against `backend/server.mjs` with a build.
+
+## 2026-09-13 — Scheduling is in scope, and the line is what the customer is promised
+
+Ruled by Ken, relayed and written by the PRODUCT MANAGER / OWNER AGENT, after KMT SWE DEV (session `local_19a8d4ee`) was asked to integrate Google Workspace Calendar with the booking flow and **stopped to ask rather than build against a contradiction**. That was the right call and it is why this entry exists instead of a rollback: the boundary was written three times — `project.md:73` ("Appointments/scheduling/dispatch | **Out of scope entirely** -- flow ends at payment"), `project.md:82`, R6, and `roadmap.md` ("Later: Scheduling: a confirmed time, not just a preferred date") — and a task that reverses something written three times deserves a person saying yes out loud.
+
+Ken's words: **"yes scheduling is in scope now"**.
+
+**The line is not "scheduling", it is what the customer is promised.** Read the original exclusions with the customer in mind and they are all about the same thing: appointments offered, a confirmed time, dispatch, "any post-payment fulfilment step". None of them is about what Ken knows about his own week. So the reversal is narrower than it first reads, and drawing it precisely is the whole value of this entry.
+
+**The test, for any future change:**
+
+> Does a customer see, choose or get promised a time? Does anything after payment ask something of them?
+
+If no to both, it is **owner tooling** over a job Ken has already accepted, and R6 does not govern it. Writing an all-day entry into Ken's own calendar, on the date the customer already stated as a *preference*, promises nothing, changes no customer-facing screen, and dispatches nobody — it is nearer to the mail notifications that already exist than to scheduling.
+
+If yes to either, it is the thing that was ruled out and it needs its own spec. A confirmed slot, or a free/busy read that shapes what the customer may pick on the date step, changes R1's flow and the promise the product makes. **That is a different decision and this entry does not grant it.**
+
+**Trigger is `paid`, and the reason is not the obvious one.** Payment here is a **fake step that always succeeds** (`project.md:50`, `:71`) because Ken takes the money in person or by phone (`:26`). So `paid` is not a money event at all — it is the customer confirming the job, which is exactly the moment something belongs in his day. `sent`/`approved` is a quote he has offered that nobody has accepted; triggering there would fill his calendar with jobs that never happen, and `PAYABLE = ['sent','approved']` with `paid`'s only onward move being `done` means there is no exit to clean them up with.
+
+**A dedicated shared calendar, not delegation scope.** The service account that already sends mail can create events with no new dependency and no new credential. Sharing one "KMT jobs" calendar with its address needs **no Admin-console scope change** — which keeps this out of a class of change Ken cannot easily undo — gives it one calendar rather than events access across the domain, and makes revocation "unshare a calendar" in a UI he already knows, with nothing to deploy.
+
+**The privacy notice is a release blocker, not a follow-up.** Phase A sends a customer's **name, service address, phone and notes** to Google. Deleting the event on redaction is necessary and not sufficient: the privacy notice is what tells a customer where their data goes, and it does not mention Google Calendar. The wording is a product call and stays in the product lane. Shipping the feature before the notice is the kind of gap that matters more here than the feature does.
+
+**Rejected: leaving R6 as written and calling calendar work an exception.** An exception to a rule written in three files is how the rule stops meaning anything — the next agent reads `project.md`, finds "out of scope entirely", and either builds nothing or builds anything. R6 now says what it actually governs and points here; `project.md` and `roadmap.md` keep their wording and are read through it, because rewriting a boundary in three places to look like it was always this way loses the fact that it moved, and when.
+
+**Rejected: a failure posture of "logged and carry on", alone.** Matching mail — never blocking payment — is right. But a calendar write that fails silently forever means the first Ken hears of it is a customer on a doorstep. It has to surface somewhere he looks; the outbox's unresolved-failures route is the existing shape for that.

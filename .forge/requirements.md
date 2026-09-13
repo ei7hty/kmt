@@ -15,7 +15,14 @@ All of these still apply.
 - _R3._ The owner sees drafted quotes and can Approve & Send in one tap, or sees them flagged as an exception, visibly distinct.
 - _R4._ There is an obvious, tappable way between the customer flow and the owner flow.
 - _R5._ After approval the customer can view the quote and complete a fake payment that always succeeds.
-- _R6._ The flow ends clearly at "confirmed and paid"; no scheduling or dispatch follows.
+- _R6._ The **customer** flow ends clearly at "confirmed and paid": a customer
+  is never shown, offered or promised a time, and nothing after payment is
+  asked of them. What the owner does with a job he has already accepted —
+  including putting it in his own calendar — is owner tooling and sits outside
+  this requirement. Amended 2026-09-13 by Ken's ruling; the reasoning, and the
+  test for which side of the line a change falls on, is in `decisions.md`.
+  `project.md` and `roadmap.md` still carry the original wording and are read
+  through this.
 - _R7._ The app is deployed at a public URL reachable from any phone browser.
 - _R8._ `/owner` uses the same visual system as `/`: dark ground, cards, red for primary actions, condensed uppercase headings.
 - _R9._ The exception state on the owner screen stays visually distinct, in amber, never red or green.
