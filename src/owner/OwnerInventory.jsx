@@ -7,7 +7,10 @@ import { PrivacyFooter } from '../routes/Privacy.jsx'
 import MailAlert from '../components/MailAlert.jsx'
 import { InquiryNavButton } from './Inquiries.jsx'
 import OwnerInventoryGrid from './OwnerInventoryGrid.jsx'
-import { createInventoryGrid } from './inventory-grid.js'
+import {
+  createInventoryGrid, buildMarkupSave, markupSavedNotice,
+  marginField, marginBoundSummary, supportsMarginBounds,
+} from './inventory-grid.js'
 
 const dateLabel = value => value ? new Date(value).toLocaleString() : 'Never refreshed'
 
@@ -137,25 +140,63 @@ function BrowserImport({ sizes }) {
  */
 const compactSize = value => String(value).replace(/\D/g, '')
 
+/**
+ * One end of the margin rule: the least, or the most, a marked-up tire earns.
+ *
+ * Three things carry the one distinction this control exists for -- **an empty
+ * box means no bound, and `0` is a different answer** -- because a text input
+ * on its own carries none of it:
+ *
+ *   - the PLACEHOLDER reads "No least" / "No most", so an empty box says what
+ *     it means instead of showing an empty rectangle;
+ *   - the LINE UNDER IT says, live, what the box as typed will actually do,
+ *     including the two things $0 does at these two ends, which are not the
+ *     same thing (`marginBoundSummary`);
+ *   - "Turn off" EMPTIES the box, so switching a bound off is a button Ken
+ *     presses rather than something he has to achieve by deleting characters
+ *     and hoping he did not leave a zero behind.
+ *
+ * It only appears when there is something in the box, because a permanent
+ * "Turn off" beside an already-off field is furniture that says nothing.
+ */
+function MarginBound({ id, kind, label, value, onChange, disabled }) {
+  return <div className="oi-bound">
+    <label htmlFor={id} className="oi-kicker">{label}</label>
+    <div className="oi-bound-input">
+      <input id={id} value={value} inputMode="decimal" disabled={disabled}
+        placeholder={kind === 'min' ? 'No least' : 'No most'}
+        aria-describedby={`${id}-effect`}
+        onChange={e => onChange(e.target.value)} />
+      {value !== '' && <button type="button" className="oi-button oi-inline" disabled={disabled}
+        data-testid={`${id}-off`} onClick={() => onChange('')}>Turn off</button>}
+    </div>
+    <p className="oi-muted oi-bound-effect" id={`${id}-effect`}>{marginBoundSummary(value, kind)}</p>
+  </div>
+}
+
 function MarkupRule({ markup, onSaved }) {
   const [rate, setRate] = useState(String(markup.rate))
   const [shippingPerTire, setShippingPerTire] = useState(String(markup.shippingPerTire ?? 0))
+  // Empty string for a bound of `null`, which is what "no bound" looks like in
+  // a text field. `marginField` is the one place that conversion happens, in
+  // both directions, so the form and the parser cannot disagree about it.
+  const [minMargin, setMinMargin] = useState(marginField(markup.minMarginPerTire))
+  const [maxMargin, setMaxMargin] = useState(marginField(markup.maxMarginPerTire))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // See `supportsMarginBounds`: a backend without these keys accepts a bound
+  // with a 200 and stores nothing, so the fields are not offered there at all.
+  const marginBounds = supportsMarginBounds(markup)
 
   async function save(event) {
     event.preventDefault()
     setError('')
-    const parsedRate = Number(rate)
-    if (!Number.isFinite(parsedRate) || parsedRate < 1 || parsedRate > 10) {
-      setError('Enter a markup between 1 and 10 times the supplier price.'); return
-    }
-    const parsedShipping = Number(shippingPerTire)
-    if (!Number.isFinite(parsedShipping) || parsedShipping < 0 || parsedShipping > 200) {
-      setError('Enter a per-tire shipping cost between $0 and $200.'); return
-    }
+    const { body, error: refusal } = buildMarkupSave({
+      rate, shippingPerTire, minMarginPerTire: minMargin, maxMarginPerTire: maxMargin, marginBounds,
+    })
+    if (refusal) { setError(refusal); return }
     setSaving(true)
-    try { onSaved(await api('markup', { method: 'PUT', body: JSON.stringify({ rate: parsedRate, shippingPerTire: parsedShipping }) })) }
+    try { onSaved(await api('markup', { method: 'PUT', body: JSON.stringify(body) })) }
     catch (err) { setError(err.message) }
     finally { setSaving(false) }
   }
@@ -164,6 +205,12 @@ function MarkupRule({ markup, onSaved }) {
     <div>
       <h2>Default markup</h2>
       <p>Tires you have not priced are offered at the supplier price times this number, plus shipping. Any price you set below wins over it.</p>
+      {marginBounds && <p>
+        Fitting a tire takes you the same time whatever the tire cost, so you can hold what the rule
+        proposes to at least — and at most — a set amount over what you paid the supplier. Shipping sits
+        outside both: it is freight you pass on, not money you make. <strong>Leave a box empty and that end
+        is off. $0 is a number, not an empty box.</strong>
+      </p>}
       <p className="oi-muted">
         {markup.isPlaceholder
           ? 'Still the starting values — nobody has set these yet, so those prices are provisional.'
@@ -175,6 +222,12 @@ function MarkupRule({ markup, onSaved }) {
       <input id="markup-rate" value={rate} onChange={e => setRate(e.target.value)} inputMode="decimal" disabled={saving} />
       <label htmlFor="markup-shipping" className="oi-kicker">SHIPPING PER TIRE ($)</label>
       <input id="markup-shipping" value={shippingPerTire} onChange={e => setShippingPerTire(e.target.value)} inputMode="decimal" disabled={saving} />
+      {marginBounds && <div className="oi-margin-bounds">
+        <MarginBound id="markup-min-margin" kind="min" label="THE LEAST YOU MAKE PER TIRE ($)"
+          value={minMargin} onChange={setMinMargin} disabled={saving} />
+        <MarginBound id="markup-max-margin" kind="max" label="THE MOST YOU MAKE PER TIRE ($)"
+          value={maxMargin} onChange={setMaxMargin} disabled={saving} />
+      </div>}
       <button type="submit" className="oi-button oi-primary" disabled={saving}>{saving ? 'Saving…' : 'Save markup'}</button>
       {error && <p role="alert" className="oi-error">{error}</p>}
     </form>
@@ -463,7 +516,11 @@ export default function OwnerInventory({ navigate }) {
 
   function markupSaved(markup) {
     grid.patchSummary({ markup })
-    setNotice(`Default markup saved. Tires you have not priced are now offered at supplier price × ${markup.rate}, plus $${markup.shippingPerTire} shipping.`)
+    // Built from what the server stored, not from what the form sent. That is
+    // the read-back that tells Ken an emptied box was taken as "off" -- the one
+    // thing this form is careful about and the one thing a form cannot confirm
+    // about itself.
+    setNotice(markupSavedNotice(markup))
   }
 
   function pricingSaved(pricing) {
