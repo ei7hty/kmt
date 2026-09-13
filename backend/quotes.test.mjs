@@ -507,7 +507,6 @@ test('a tire we do not offer is refused rather than quoted', async t => {
 
 test('a request is required to carry the fields a quote needs', async t => {
   const { quotes } = setup(t)
-  assert.throws(() => quotes.submit(form({ vehicleInfo: '' })), /vehicleInfo is required/)
   assert.throws(() => quotes.submit(form({ location: '   ' })), /location is required/)
   assert.throws(() => quotes.submit(form({ customerKey: 'not-a-key' })), /customer key/)
   assert.throws(() => quotes.submit(form({ locationNotes: 'x'.repeat(1001) })), /too long/)
@@ -1807,4 +1806,40 @@ test('who operates the owner screen never reaches the customer shape', t => {
   const customer = quotes.get(request.id)
   assert.equal('decidedBy' in customer.quote, false, 'not merely null -- absent')
   assert.equal('decidedBy' in quotes.get(request.id, 'owner').quote, true, 'the owner shape carries the field')
+})
+
+// --- The vehicle, which is not one of those fields ----------------------------
+
+test('a request with no vehicle is accepted, and says so rather than storing a blank', async t => {
+  // The owner's decision: the tire size comes off the sidewall the customer
+  // already selected, the vehicle never verified fitment, and he coordinates
+  // the particulars with the customer regardless. Refusing a whole request
+  // over it turned away people who knew their size and not their trim.
+  const { quotes } = setup(t)
+  const submitted = quotes.submit(form({ vehicleInfo: '' }))
+  assert.equal(submitted.request.vehicleInfo, '')
+  assert.ok(submitted.quote, 'a quote is still drafted')
+})
+
+test('not knowing the vehicle is itself a reason for the owner to look', async t => {
+  // The gate this protects: src/pricing.js tests the vehicle text for truck,
+  // pickup, van and SUV, and an empty string matches no pattern. Making the
+  // field optional without this would have SILENTLY removed that review gate
+  // for exactly the requests that tell Ken the least.
+  const { quotes } = setup(t)
+
+  const unknown = quotes.submit(form({ vehicleInfo: '' }))
+  assert.equal(unknown.quote.exception, true, 'a request with no vehicle is not auto-sendable')
+  assert.ok(unknown.quote.exceptionReasons.some(reason => /no vehicle/i.test(reason)),
+    'the reason names the missing vehicle: ' + JSON.stringify(unknown.quote.exceptionReasons))
+
+  // And the two reasons stay distinct -- "not given" is not "it is a truck".
+  const truck = quotes.submit(form({ vehicleInfo: '2019 Ford F-150 Pickup' }))
+  assert.ok(truck.quote.exceptionReasons.some(reason => /truck/i.test(reason)))
+  assert.ok(!truck.quote.exceptionReasons.some(reason => /no vehicle/i.test(reason)))
+
+  // A car Ken does not need to look at raises neither.
+  const car = quotes.submit(form({ vehicleInfo: '2019 Honda Civic' }))
+  assert.ok(!car.quote.exceptionReasons.some(reason => /no vehicle|truck/i.test(reason)),
+    'an ordinary car raised a vehicle exception: ' + JSON.stringify(car.quote.exceptionReasons))
 })
