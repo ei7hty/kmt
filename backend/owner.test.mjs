@@ -12,6 +12,11 @@ import { LoginThrottle } from './limits.mjs'
 import { SHARED_PASSWORD_ACTOR } from './quotes.mjs'
 import { PageImporter } from './import.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
+// The owner grid's own helper, imported rather than reimplemented: the defect
+// these tests cover lives in the seam between what list() returns and what the
+// screen sends back, so a test that rebuilt the screen's half by hand would
+// pass against a screen that still had the bug.
+import { sellingEnabled } from '../src/owner/inventory-grid.js'
 
 const SIZE = '215/60R16'
 const otherSize = '225/50R17'
@@ -2218,4 +2223,156 @@ test('scripts/import-tires.mjs refuses --complete for a size that was not read i
   const rows = Object.fromEntries(db.list().items.map(row => [row.id, row]))
   assert.equal(rows['giga-a'].supplierActive, false, 'a full read may retire')
   assert.equal(rows['giga-a'].offer.enabled, true, 'with the owner offer kept')
+})
+
+/*
+ * Saving a tire must not take it off sale.
+ *
+ * These three tests span BOTH halves of the defect deliberately, and that is
+ * the point of them. `list()` collapsed "nobody has decided" into "the owner
+ * said no" -- `offer.enabled` is `!!row.enabled` over a LEFT JOIN, so a tire
+ * with no offers row arrives as `enabled: false` -- and the owner grid then
+ * sent that false straight back as part of the next thing Ken saved. Either
+ * half alone is enough to put a selling tire out of the customer catalogue,
+ * so a test that only inspected `selling.offered` would pass against a
+ * correct `list()` bolted to a grid that still sent a stale false.
+ *
+ * So they import `sellingEnabled` from the owner grid and build the request
+ * body the way the screen builds it, then assert on `catalog()` -- the thing
+ * a customer actually sees. Reverting either half turns them red.
+ *
+ * `catalog()` is the assertion rather than any field on `list()` because
+ * `catalog()` is the only place the consequence is real. Everything else is
+ * a description of it.
+ */
+
+/** The body OwnerInventoryGrid commits when only the price field was edited. */
+const priceEdit = (item, priceCents) => ({
+  priceCents,
+  shippingCents: item.offer.shippingCents,
+  enabled: sellingEnabled(item),
+  notes: item.offer.notes ?? '',
+  version: item.offer.version,
+})
+
+const sellingIds = db => new Set(db.catalog().map(t => t.id))
+
+test('typing a price into a tire the owner has never touched leaves it on sale', t => {
+  const db = setup(t)
+  const item = db.list().items.find(row => row.id === 'giga-a')
+
+  assert.equal(item.offer.version, 0, 'the fixture has no offers row, which is the case that broke')
+  assert.equal(item.offer.enabled, false, 'and its raw enabled flag is false, which is what misled the grid')
+  assert.equal(item.selling.offered, true, 'while the tire is in fact for sale')
+  assert.equal(item.selling.source, 'markup', 'at the rule\u2019s price, because nobody has set one')
+  assert.ok(sellingIds(db).has('giga-a'), 'the customer catalogue sells it before the save')
+
+  db.saveOffer('giga-a', priceEdit(item, 5999))
+
+  assert.ok(sellingIds(db).has('giga-a'),
+    'and still sells it after the owner sets a price \u2014 pricing a tire is not a decision to stop selling it')
+  assert.equal(db.catalog().find(t => t.id === 'giga-a').price, 59.99, 'now at the price he set')
+})
+
+test('a bulk price write leaves every row it prices on sale', t => {
+  const db = setup(t)
+  db.importSnapshot(snapshot([tire('giga-a'), tire('giga-b'), tire('giga-c')]))
+  db.applySnapshot(snapshot([tire('giga-a'), tire('giga-b'), tire('giga-c')]), { complete: true })
+  const items = db.list().items
+  assert.equal(items.length, 3)
+  assert.equal(sellingIds(db).size, 3, 'all three are for sale before the write')
+
+  // confirmBulk()'s request body: every field carried forward except the one
+  // the tool is changing, which is why `enabled` being read from the wrong
+  // place did this 200 rows at a time.
+  const result = db.saveOffers({ offers: items.map(item => ({ id: item.id, ...priceEdit(item, 7500) })) })
+  assert.equal(result.results.filter(r => r.ok).length, 3, 'all three saved')
+
+  assert.equal(sellingIds(db).size, 3, 'and all three are still for sale')
+  assert.deepEqual(db.catalog().map(t => t.price), [75, 75, 75])
+})
+
+test('a tire the owner switched off stays off when he later edits its price', t => {
+  const db = setup(t)
+
+  // The control for the two tests above, and it has to bite on the same
+  // helper they do or it controls nothing. An earlier version of this test
+  // passed `enabled: false` by hand, which meant `sellingEnabled` could have
+  // returned a hardcoded `true` and every test here would still have been
+  // green -- verified by doing exactly that: 109/109 passed. So the
+  // deselection here is made ONCE, explicitly, and everything after it goes
+  // through the same `priceEdit` path the two tests above use.
+  const item = db.list().items.find(row => row.id === 'giga-a')
+  db.saveOffer('giga-a', { ...priceEdit(item, 5999), enabled: false })
+  assert.equal(sellingIds(db).has('giga-a'), false, 'a deliberate no is honoured')
+
+  const off = db.list().items.find(row => row.id === 'giga-a')
+  assert.equal(off.selling.offered, false, 'and the screen reports it as not for sale')
+  assert.equal(off.offer.version, 1, 'the row now carries a decision')
+
+  // Ken changes his mind about the PRICE of a tire he has switched off. The
+  // fix must not read that as switching it back on: `sellingEnabled` has to
+  // preserve a real `false`, not merely stop inventing one.
+  db.saveOffer('giga-a', priceEdit(off, 6499))
+  assert.equal(sellingIds(db).has('giga-a'), false,
+    'editing the price of a switched-off tire does not put it back on sale')
+
+  // ...and switching it back on is still a thing he can do.
+  const stillOff = db.list().items.find(row => row.id === 'giga-a')
+  db.saveOffer('giga-a', { ...priceEdit(stillOff, 6499), enabled: true })
+  assert.ok(sellingIds(db).has('giga-a'), 'switching it back on sells it again')
+})
+
+test('list() reports the price a customer pays now, by the same rule catalog() uses', t => {
+  const db = setup(t)
+  const item = db.list().items.find(row => row.id === 'giga-a')
+
+  // Not restated as a literal: the assertion reads BOTH sides out of the code
+  // under test, so a change to the markup rule cannot leave this passing
+  // against a stale hardcoded number, and a second copy of the rule inside
+  // list() would fail it.
+  const fromCatalog = db.catalog().find(t => t.id === 'giga-a').price
+  assert.equal(item.selling.priceCents, Math.round(fromCatalog * 100),
+    'the grid and the customer catalogue name the same price')
+
+  const expected = quotedPrice({ supplierPrice: item.price, offer: undefined, tire: item, settings: db.getMarkup() })
+  assert.equal(item.selling.priceCents, Math.round(expected.price * 100))
+  assert.equal(item.selling.source, 'markup')
+
+  // Once he prices it, the source flips and the number follows his decision.
+  db.saveOffer('giga-a', priceEdit(item, 4200))
+  const priced = db.list().items.find(row => row.id === 'giga-a')
+  assert.equal(priced.selling.priceCents, 4200)
+  assert.equal(priced.selling.source, 'owner', 'his price is a decision, not a suggestion')
+})
+
+test('a priced tire that is not for sale is counted and reachable, and nothing repairs it', t => {
+  const db = setup(t)
+  db.applySnapshot(snapshot([tire('giga-a'), tire('giga-b'), tire('giga-c')]), { complete: true })
+  const items = Object.fromEntries(db.list().items.map(row => [row.id, row]))
+
+  assert.equal(db.summary().pricedNotOfferedCount, 0, 'a database nobody has touched has none')
+
+  // The exact state the defect left behind: a price, and not for sale.
+  db.saveOffer('giga-a', { ...priceEdit(items['giga-a'], 5999), enabled: false })
+  // And the state that is NOT it: switched off with no price, which is an
+  // ordinary "I do not carry this" and must not be counted as damage.
+  db.saveOffer('giga-b', { ...priceEdit(items['giga-b'], null), enabled: false })
+
+  assert.equal(db.summary().pricedNotOfferedCount, 1,
+    'only the priced one counts \u2014 a tire switched off without a price is a normal decision')
+
+  const filtered = db.list({ filter: 'priced-not-offered' })
+  assert.deepEqual(filtered.items.map(row => row.id), ['giga-a'],
+    'and the filter reaches exactly that row, which is what makes the count actionable')
+  assert.equal(filtered.total, 1)
+
+  // The count REPORTS. Reading it, listing it, or reading the row back must
+  // not quietly put the tire on sale: the damaged rows are the record of what
+  // happened and Ken repairs them deliberately, later.
+  db.summary(); db.list({ filter: 'priced-not-offered' }); db.list()
+  assert.equal(sellingIds(db).has('giga-a'), false, 'still not for sale after being read three ways')
+  assert.equal(db.summary().pricedNotOfferedCount, 1, 'and still counted')
+  assert.equal(db.list().items.find(r => r.id === 'giga-a').offer.version, 1,
+    'the row was not rewritten by any read')
 })

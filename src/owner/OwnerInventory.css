@@ -41,6 +41,14 @@
 .oi-results { display: block; }
 .oi-stock { color: #73dba3; }
 .oi-attention { color: #edbf6d; }
+/* Amber, which is this project's settled colour for "needs attention" and
+   never for a primary action or a success. The inherited .oi-attention amber
+   measures 10.78:1 against this panel's own darker ground, not against the
+   page's -- which is why the ground is stated here rather than left to the
+   page. `inventory-grid.test.mjs` reads both values out of this file and
+   re-measures them; it does not trust this sentence. */
+.oi-priced-off { margin: -12px 0 24px; padding: 12px 16px; border: 1px solid #4a3a1c; border-left-width: 3px; border-radius: 6px; background: #191309; font-size: 13px; line-height: 1.5; }
+.oi-priced-off strong { color: #f3d08a; }
 .oi-description { color: #a3a3ab; font-size: 13px; }
 .oi-shell dt { font-size: 11px; color: #a3a3ab; margin-bottom: 5px; }
 .oi-shell dd { font-size: 13px; margin: 0; color: #dedee3; overflow-wrap: anywhere; }
@@ -227,6 +235,15 @@
    server-side and the save responses do not carry a new one. */
 .oi-g-margin.is-stale { color: #edbf6d; font-weight: 500; }
 .oi-g-cell-input { width: 116px; }
+/* The price a customer is paying right now, on a tire Ken has not priced
+   himself -- the markup rule's number, where this column used to show an
+   em-dash. Not the muted grey the incidental text uses: this is a live price
+   and the only statement on the row of what the tire actually sells for.
+   #b9b9c2 measures 9.62:1 on the table ground and 8.50:1 on the selected-row
+   ground, the worst of the three; `inventory-grid.test.mjs` reads both ends
+   out of these files and re-measures rather than trusting this sentence. */
+.oi-g-ruled { display: block; margin-top: 2px; color: #b9b9c2; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.oi-g-ruled-tag { color: #a3a3ab; }
 .oi-shell .oi-g-table input.oi-g-input { width: 100%; min-height: 44px; padding: 8px 9px; border: 1px solid #56565c; border-radius: 4px; background: #0d0d0d; color: #f5f5f5; font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
 .oi-shell .oi-g-table input.oi-g-input:hover { border-color: #77777a; }
 .oi-shell .oi-g-check { display: flex; align-items: center; justify-content: center; gap: 0; min-width: 44px; min-height: 44px; margin: 0; padding: 0; }
