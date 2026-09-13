@@ -1122,13 +1122,27 @@ async function main() {
       if (request.resourceType() !== 'script') return route.fulfill({ status: 204, body: '' });
       // Exercise the complete CSP contract without analytics pollution. The
       // real loader is never fetched; this deterministic stub attempts the
-      // three GA4 connection families and both pixel families instead.
+      // GA4 connection families and both pixel families instead.
+      //
+      // THE APEX analytics.google.com IS IN THAT LIST BECAUSE IT WAS NOT, and
+      // its absence is why this probe stayed green over a policy that refused
+      // every beacon. The other hosts here are each granted by a wildcard;
+      // GA4 collects on the apex, which a wildcard does not grant. A fixture
+      // that only ever tries hostnames the policy happens to allow measures
+      // the fixture. Five days of production analytics went missing behind
+      // this check reporting success -- found by loading the real site in a
+      // real browser, not by reading the policy.
+      //
+      // The apex needs its own `context.route` glob below for the same
+      // reason: '*.analytics.google.com' does not match it there either, and
+      // an unintercepted probe would leave this machine for Google.
       return route.fulfill({
         status: 200,
         contentType: 'application/javascript',
         body: `
           fetch('https://www.google-analytics.com/g/collect?a=audit').catch(() => {});
           fetch('https://region1.analytics.google.com/g/collect?a=audit').catch(() => {});
+          fetch('https://analytics.google.com/g/collect?a=audit').catch(() => {});
           fetch('https://www.googletagmanager.com/g/collect?a=audit').catch(() => {});
           for (const src of [
             'https://www.google-analytics.com/g/collect?a=audit-pixel',
@@ -1138,6 +1152,15 @@ async function main() {
       });
     });
     await context.route('**://*.google-analytics.com/**', route => {
+      const request = route.request();
+      gaAttempts.push({ url: request.url(), type: request.resourceType() });
+      route.fulfill({ status: 204, body: '' });
+    });
+    // TWO patterns, because a glob '*' needs something before the dot: the
+    // apex 'analytics.google.com' is not matched by '*.analytics.google.com'
+    // any more than the CSP wildcard grants it. Same trap, same host, one
+    // line apart -- and an unintercepted probe would leave this machine.
+    await context.route('**://analytics.google.com/**', route => {
       const request = route.request();
       gaAttempts.push({ url: request.url(), type: request.resourceType() });
       route.fulfill({ status: 204, body: '' });
@@ -1176,6 +1199,7 @@ async function main() {
         'www.google-analytics.com:fetch',
         'www.google-analytics.com:image',
         'region1.analytics.google.com:fetch',
+        'analytics.google.com:fetch',
       ];
       const missing = required.filter(value => !attempted.has(value));
       if (missing.length > 0 || cspViolations.length > 0) {
