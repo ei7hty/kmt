@@ -3445,3 +3445,164 @@ a fixture that agreed with the guarantee, a mutation harness that mutated the
 wrong function, and now a watcher whose silence looked like a pass. None was
 carelessness. Each was a checking tool built while attention was on the thing
 being checked — which is exactly when nobody is checking the checker.
+
+**2026-09-12 — Claude (GATE & ENVIRONMENT, subagent of OWNER AGENT)**
+
+### A marker that describes 170 of 236 worktrees, and the test that could not tell
+
+`DECODER_SUITE_DELTA` was declared 65 and measured 73. Three lanes measured it
+independently in one night and all three got a number the constant disagreed
+with, because `test-count-check.mjs`'s shortfall message subtracted the stale
+constant from the real shortfall and announced the remainder as "something else
+and is worth finding" — sending readers after 8 tests that do not exist. The
+number is now 73, measured with a control — same tree, same command, one
+environment variable the only difference — and measured twice, because a
+constant that has rotted twice deserves more than one reading:
+
+```
+at 05510e9 (this branch's base):   808 tests / 5 fail without   881 / 0 with   delta 73
+on this branch (+6 own tests):     834 tests / 6 fail without    907 / 0 with   delta 73
+```
+
+A third reading taken by the lane that briefed me, on an earlier tree, was
+780 / 853 — different absolute totals, **same delta of 73**. Three trees, one
+number: that is what makes it a measurement rather than an observation.
+
+The cause of the stale constant is the interesting part, and it is the same
+shape as #464's own fix:
+
+**A fix that removes a failure mode locally also removes the ability to exercise
+its guard locally.** #464 taught the venv lookup to climb out of `.worktrees/`,
+which was correct — and it meant unsetting the environment variable no longer
+produced the no-decoder state, so nothing could reach the branch that consumes
+the constant, so the constant rotted through the addition of a fourth image
+suite and then a fifth. The comment defending it said it was "kept because CI
+has no venv and is exactly where it now fires." **That was false when it was
+written**: `fly-deploy.yml` builds a venv at :94-98 and exports the variable in
+the *same job* as the count check at :134. The branch fires in CI never.
+
+Then the marker itself. `git worktree list` reports **236 worktrees registered
+against this repository, in six path shapes, and the literal `.worktrees/`
+marker matches 170 of them**:
+
+```
+170  <main>/.worktrees/<name>                      matches
+ 31  ~/.codex/worktrees/<h>/kmt/.worktrees/<name>  matches the WRONG root
+ 17  ~/.codex/worktrees/<h>/kmt                    no marker
+  5  <main>/.claude/worktrees/<name>               no marker  (the agent harness)
+  3  ~/.codex/worktrees/<other>                    no marker
+ 10  %TEMP%/<name>, and one checkout beside <main> no marker
+```
+
+Every unmatched shape resolves `decoder.local` inside itself, where nothing has
+ever built one, so 73 tests vanish and five suites fail at module load looking
+exactly like broken code. The obvious fix — a second literal marker for
+`.claude/worktrees/` — **would have fixed 5 of those 66.** The fix taken instead
+asks git for `--git-common-dir`, whose parent is the main checkout from any
+worktree in any layout. `scripts/worktree.mjs` had already reached that
+conclusion independently (its `OUR_COMMON_DIR`); the fixture had re-derived the
+question and answered it with a literal.
+
+**The generalisable bit: a path marker encodes a guess about where somebody put
+a checkout, and that is a fact that can stop being true with nothing going red.
+When a tool already knows the answer, ask the tool.**
+
+### The seventh instrument that reported success while proving nothing
+
+`backend/decoder-fixtures.test.mjs` was written *for* #464, *to* end this exact
+class. All six of its tests passed, green, in a worktree where `decoderPython`
+was `null` and 73 tests were silently not running. The real-repo one asserted:
+
+```js
+assert.ok(!found.includes(`.worktrees${path.sep}`), ...)
+```
+
+and `...\kmt\.claude\worktrees\agent-x\decoder.local\...` satisfies it perfectly
+— there is no `.` before `worktrees`, so the marker is absent, the climb never
+happens, and the guard written to catch precisely this reports success. I
+confirmed the blindness by mutation: reintroducing the bug leaves all six green.
+
+**It asserted a property of the STRING instead of the property anyone wanted.**
+The repair was to assert against git — the venv resolved is the one the main
+checkout holds, whichever layout you are in — and that version goes red under
+the same mutation while the other eleven stay green.
+
+### Making a constant's staleness an event, not a vigilance problem
+
+`DECODER_SUITE_DELTA` could not be tested because it lived in
+`test-count-check.mjs`, which is a **script**: importing it runs the whole
+four-minute suite. So nothing asserted against it and nothing ever could. It now
+lives in `test-baseline.mjs` beside a new `DECODER_SUITE_FILES`, and a test
+greps for the five files that import `realImageFixtures` and fails the moment a
+sixth appears — the event that invalidates the number, caught when it happens.
+
+That tripwire's own first draft searched for `realImageFixtures(` anywhere in a
+file and reported **itself**, because its comment contains the words. A detector
+that cannot tell a call site from a sentence about call sites would have been
+wrong again the next time anyone documented it. It matches the import statement
+now. Cheap lesson, general shape: **when you grep for a symbol to decide
+something, your own explanation of the grep is inside the search space.**
+
+### A swap that three guards cannot see, made mechanical
+
+Delete a suite of N tests, add a suite of N tests: the total is identical, the
+file count is identical, everything green, and N assertions that used to protect
+something protect nothing. The defence was a *sentence* in a failure message
+asking the author to "say so in the pull request."
+
+`.forge/test-name-diff-check.mjs` diffs test NAMES, counted, against
+`git merge-base HEAD origin/main`. Proven with a planted count-neutral swap
+(3 tests deleted, 3 added) against the real repository:
+
+| instrument | verdict on the swap |
+| --- | --- |
+| `test-count-check.mjs` | **907** — byte-identical to the unswapped run |
+| `orphaned-test-check.mjs` | exit 0, "all 53 test files run somewhere" |
+| `test-name-diff-check.mjs` | **exit 1**, naming all 3 lost tests |
+
+Three design notes worth keeping: the **merge base**, never `origin/main`, or
+every test added to main after you branched reads as lost; **names, not
+files**, or every refactor that relocates a test cries wolf; **counts, not a
+set**, or deleting one of two same-named tests shows no loss.
+
+It is **not wired into CI**, and that is stated in the file rather than implied:
+the gate job's `actions/checkout` at `fly-deploy.yml:83` carries no
+`fetch-depth`, so the clone is depth 1 and has no merge base at all — the check
+would refuse on every PR. Wiring it needs `fetch-depth: 0` on that job plus one
+`- run:` line, which is the repo agent's lane. Until then it is a local gate,
+and it refuses with exit 2 rather than degrading to green when it cannot compare
+— the `NOTES.md` watcher lesson, applied on purpose.
+
+### The shared scratchpad is not shared — the sessions opting out of it are
+
+Two lanes reported another session overwriting a generically-named file
+mid-run, one having executed another session's script by accident. **Measured
+before theorising, and the brief's framing turned out to be wrong:** the harness
+*does* isolate. Each session gets
+`%TEMP%/claude/C--Users-anune-code-kmt/<session-uuid>/scratchpad`, and **108
+distinct per-session directories** exist there today. Nothing collides inside
+them.
+
+The collisions are in the shared `%TEMP%` root, where sessions write when they
+do not use the scratchpad they were given: **38 loose `.mjs` scripts and 775
+loose `.txt`/`.log` files**, with names any two agents would independently pick
+— `check.mjs`, `fix.mjs`, `answer.mjs`, `amend.mjs`, `api.mjs`, `lint-probe.mjs`
+— sitting next to the fingerprints of people who found a name already taken:
+`audit.txt`/`audit2.txt`, `a1/a2/a3.txt`, `wt.txt`/`wt3.txt`, `build2/build3`,
+`ga-b3/b4/b5.mjs`, `owner.test.good2.mjs`. The generic `*-wt` worktree
+directories in that root are the same story one level up.
+
+**This is not fixable from inside the repository, and I am saying so rather than
+building something that pretends to.** A helper that namespaced paths would
+re-implement isolation the harness already provides, and could not stop a
+session that types `%TEMP%/check.mjs` anyway — which is the only thing actually
+happening. So, the convention instead, and it is the whole fix:
+
+- **Write scratch files to the scratchpad path your harness gives you**, never
+  to `%TEMP%` / `/tmp` directly. It is already per-session; use it.
+- **If you must use a shared location, put the session or branch in the name.**
+  `kmt-<branch>-audit.log`, not `audit.log`. An incremented suffix is not a
+  workaround, it is the collision announcing itself.
+- **Never execute a script from a shared temp path you did not write this
+  session.** `check.mjs` in `%TEMP%` belongs to whoever wrote it last, and that
+  is not reliably you.

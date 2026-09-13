@@ -24,6 +24,8 @@ import {
   parseMoney, PAGE_SIZES, BULK_LIMIT, sellingEnabled, neverDecided, ruledPriceCents,
   DEFAULT_LOW_STOCK_THRESHOLD, LOW_STOCK_MIN, LOW_STOCK_MAX, parseLowStockThreshold,
   stockState, stockLabel, stockClass, switchedOffByHand, stockRecovered, lowStockSummary,
+  buildMarkupSave, markupSavedNotice, marginField, marginBoundSummary,
+  parseMarginBound, supportsMarginBounds, MARGIN_BOUND_LIMIT,
 } from './inventory-grid.js'
 
 const SORT_KEYS = ['size', 'name', 'supplierPrice', 'price', 'margin', 'enabled', 'updated']
@@ -1142,3 +1144,143 @@ test('the threshold box takes a whole number in range and refuses everything els
   assert.equal(parseLowStockThreshold('0'), null)
 })
 
+/* ==========================================================================
+ * The markup rule's margin floor and ceiling (#512's owner-facing half).
+ *
+ * The arithmetic these bounds perform is `src/markup.test.mjs`'s, and what a
+ * save stores is `backend/markup-margin.test.mjs`'s. What is proved here is the
+ * part that lives only on this screen: **an empty box and a typed `0` are
+ * different answers, and the form has to send them differently.**
+ *
+ * `null` is "no bound" and the only way back off. `0` is a real value the
+ * backend allows for the floor and REFUSES for the ceiling, where it would sell
+ * a tire at what Ken paid for it. An omitted key is a third thing again --
+ * "this save is not about that" -- which is what stops a rate-only save from
+ * wiping a floor, and is therefore exactly what this form must never send for a
+ * box Ken has just emptied.
+ * ========================================================================== */
+
+const BOUNDLESS_MARKUP = { rate: 1.35, shippingPerTire: 0, isPlaceholder: true }
+const BOUNDED_MARKUP = { ...BOUNDLESS_MARKUP, minMarginPerTire: null, maxMarginPerTire: null }
+
+test('a backend that has never heard of margin bounds is told apart from one whose bounds are off', () => {
+  // The distinction is a missing KEY against a null VALUE, and it is the whole
+  // gate: a backend without these keys builds its stored markup record field by
+  // field, so it answers a bound with 200 OK and stores nothing. A control that
+  // reports success and changes nothing is the one outcome worth this check.
+  assert.equal(supportsMarginBounds(BOUNDLESS_MARKUP), false)
+  assert.equal(supportsMarginBounds(BOUNDED_MARKUP), true, 'present and null is supported, and off')
+  assert.equal(supportsMarginBounds({ ...BOUNDED_MARKUP, minMarginPerTire: 28 }), true)
+  assert.equal(supportsMarginBounds(null), false, 'and no markup at all is not a backend that supports them')
+})
+
+test('against a backend without margin bounds the body is byte-for-byte the one this form always sent', () => {
+  const { body, error } = buildMarkupSave({ rate: '1.4', shippingPerTire: '25.75', minMarginPerTire: '28', maxMarginPerTire: '75', marginBounds: false })
+  assert.equal(error, undefined)
+  // Keys, not only values: a body that GAINED a key would still satisfy a
+  // deepEqual on the two it is supposed to have.
+  assert.deepEqual(Object.keys(body).sort(), ['rate', 'shippingPerTire'])
+  assert.deepEqual(body, { rate: 1.4, shippingPerTire: 25.75 })
+})
+
+test('an emptied box is sent as an explicit null, never left out', () => {
+  const { body } = buildMarkupSave({ rate: '1.35', shippingPerTire: '0', minMarginPerTire: '', maxMarginPerTire: '', marginBounds: true })
+  // `in`, not a value check: `saveMarkup` reads an ABSENT key as "not changing
+  // this", so a blank box left out of the body would make a bound something Ken
+  // could switch on and never switch off again. An `undefined` value would
+  // additionally vanish through JSON.stringify and arrive as the same omission.
+  assert.ok('minMarginPerTire' in body, 'the key is sent even when the box is empty')
+  assert.ok('maxMarginPerTire' in body)
+  assert.equal(body.minMarginPerTire, null)
+  assert.equal(body.maxMarginPerTire, null)
+  assert.equal(JSON.parse(JSON.stringify(body)).minMarginPerTire, null, 'and survives the wire as null')
+})
+
+test('a typed zero is not an empty box: the floor sends 0 and the ceiling is refused', () => {
+  const floor = buildMarkupSave({ rate: '1.35', shippingPerTire: '0', minMarginPerTire: '0', maxMarginPerTire: '', marginBounds: true })
+  assert.equal(floor.body.minMarginPerTire, 0, 'a $0 floor is a real, legal value')
+  assert.notEqual(floor.body.minMarginPerTire, null, 'and is NOT the same answer as leaving the box empty')
+
+  // Tested with the floor empty on purpose. With a floor stored, a $0 ceiling
+  // is ALSO caught by the floor-above-ceiling rule below, and this assertion
+  // would pass while the guard it names did nothing at all.
+  const ceiling = buildMarkupSave({ rate: '1.35', shippingPerTire: '0', minMarginPerTire: '', maxMarginPerTire: '0', marginBounds: true })
+  assert.equal(ceiling.body, undefined, 'nothing is sent')
+  assert.match(ceiling.error, /cannot be \$0/)
+  assert.match(ceiling.error, /empty/, 'and the refusal says what the way off actually is')
+})
+
+test('a bound that is a typo rather than a decision is refused before a round trip', () => {
+  const save = over => buildMarkupSave({ rate: '1.35', shippingPerTire: '0', minMarginPerTire: '', maxMarginPerTire: '', marginBounds: true, ...over })
+  assert.match(save({ minMarginPerTire: 'lots' }).error, /least/)
+  assert.match(save({ minMarginPerTire: '-1' }).error, /least/)
+  assert.match(save({ minMarginPerTire: String(MARGIN_BOUND_LIMIT + 1) }).error, /least/)
+  assert.match(save({ maxMarginPerTire: 'lots' }).error, /most/)
+  assert.match(save({ maxMarginPerTire: String(MARGIN_BOUND_LIMIT + 1) }).error, /most/)
+  assert.match(save({ minMarginPerTire: '80', maxMarginPerTire: '75' }).error, /cannot be more than/)
+  assert.equal(save({ minMarginPerTire: String(MARGIN_BOUND_LIMIT) }).error, undefined, 'the limit itself is allowed')
+  for (const bad of ['lots', '-1', String(MARGIN_BOUND_LIMIT + 1)]) {
+    assert.equal(save({ minMarginPerTire: bad }).body, undefined, `${bad} sends nothing`)
+  }
+})
+
+test('the rate and shipping this form already validated are still validated', () => {
+  // Both checks moved out of the component when the bounds arrived, and moving
+  // a guard is how a guard gets lost.
+  const save = over => buildMarkupSave({ rate: '1.35', shippingPerTire: '0', marginBounds: true, minMarginPerTire: '', maxMarginPerTire: '', ...over })
+  assert.match(save({ rate: '0.5' }).error, /between 1 and 10/)
+  assert.match(save({ rate: '11' }).error, /between 1 and 10/)
+  assert.match(save({ rate: 'x' }).error, /between 1 and 10/)
+  assert.match(save({ shippingPerTire: '-1' }).error, /\$0 and \$200/)
+  assert.match(save({ shippingPerTire: '201' }).error, /\$0 and \$200/)
+})
+
+test('the line under each box says which of empty and zero is in it, and they are not the same sentence', () => {
+  const emptyMin = marginBoundSummary('', 'min')
+  const zeroMin = marginBoundSummary('0', 'min')
+  assert.notEqual(emptyMin, zeroMin, 'an empty box and a typed zero must not read alike -- that is the whole control')
+  assert.match(emptyMin, /No least/)
+  assert.match(zeroMin, /empty/, 'and a zero floor points at the box that actually turns it off')
+
+  const emptyMax = marginBoundSummary('', 'max')
+  const zeroMax = marginBoundSummary('0', 'max')
+  assert.notEqual(emptyMax, zeroMax)
+  assert.match(zeroMax, /what you paid/, 'a zero ceiling says what it would do, which is sell at cost')
+  assert.notEqual(zeroMin, zeroMax, 'the two ends do not agree about zero, so they do not share a sentence')
+
+  assert.match(marginBoundSummary('28', 'min'), /at least \$28\.00/)
+  assert.match(marginBoundSummary('75', 'max'), /more than \$75\.00/)
+  assert.equal(marginBoundSummary('lots', 'min'), 'Not a dollar amount.')
+})
+
+test('a stored bound and a form value convert both ways without changing', () => {
+  assert.equal(marginField(null), '', 'no bound is an empty box')
+  assert.equal(marginField(undefined), '', 'and so is a backend that never sent the key')
+  assert.equal(marginField(0), '0.00', 'a $0 bound is NOT an empty box')
+  assert.equal(marginField(28), '28.00')
+  for (const value of [0, 28, 28.01, MARGIN_BOUND_LIMIT]) {
+    assert.equal(parseMarginBound(marginField(value)), value, `${value} survives the round trip`)
+  }
+  assert.equal(parseMarginBound(marginField(null)), null)
+  assert.equal(parseMarginBound(''), null)
+  assert.ok(Number.isNaN(parseMarginBound('lots')))
+  assert.ok(Number.isNaN(parseMarginBound('-1')))
+})
+
+test('the notice after a save reads back what was stored, so clearing a bound is confirmed', () => {
+  const saved = over => markupSavedNotice({ rate: 1.35, shippingPerTire: 25.75, ...over })
+
+  const legacy = saved({})
+  assert.match(legacy, /supplier price × 1\.35, plus \$25\.75 shipping\./)
+  assert.doesNotMatch(legacy, /least|most/, 'a backend without bounds says nothing about them')
+
+  assert.match(saved({ minMarginPerTire: null, maxMarginPerTire: null }), /No least or most set/)
+  assert.match(saved({ minMarginPerTire: 28, maxMarginPerTire: null }), /at least \$28\.00 over what you paid/)
+  assert.doesNotMatch(saved({ minMarginPerTire: 28, maxMarginPerTire: null }), /at most/)
+  assert.match(saved({ minMarginPerTire: null, maxMarginPerTire: 75 }), /at most \$75\.00/)
+  assert.match(saved({ minMarginPerTire: 28, maxMarginPerTire: 75 }), /at least \$28\.00 and at most \$75\.00/)
+  // The one a clearing owner has to see: $0 is not "no bound", and the notice
+  // must not report it as one.
+  assert.match(saved({ minMarginPerTire: 0, maxMarginPerTire: null }), /at least \$0\.00/)
+  assert.doesNotMatch(saved({ minMarginPerTire: 0, maxMarginPerTire: null }), /No least or most set/)
+})
