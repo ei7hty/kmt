@@ -166,6 +166,21 @@ test('a phone can reach Ken from anywhere on the page, not just the top', () => 
     `the shell reserves ${reserved}px for a bar whose action alone is ${action}px, so the bar covers the end of the page`)
 })
 
+test('the bar sits last, where it cannot come between the order form and the social section', () => {
+  // Found the hard way: placed between `</main>` and `<SocialProof />`, this
+  // bar broke `.forge/request-flow-check.mjs:156`, which asserts the social
+  // section's immediate siblings are `#order` before and `.site-footer`
+  // after. The bar is `position: fixed`, so its document position is free and
+  // last is the position that costs nothing. That audit runs only in CI and
+  // takes minutes to get to; this says the same thing in milliseconds.
+  const order = ['<SocialProof />', 'className="site-footer"', 'className="mobile-contact-bar"']
+    .map(needle => ({ needle, at: route.indexOf(needle) }))
+
+  for (const { needle, at } of order) assert.notEqual(at, -1, `${needle} is not in the route at all`)
+  assert.deepEqual(order.map(item => item.at).sort((a, b) => a - b), order.map(item => item.at),
+    'the contact bar must come after the footer -- between the order form and the social section it breaks request-flow-check.mjs:156')
+})
+
 test('the bar offers texting and nothing else, which is Ken\'s rule not a layout choice', () => {
   // t63, verbatim: "dont create smaller call option promote texting". A bar
   // like this normally grows a call button; this asserts that it has not.
