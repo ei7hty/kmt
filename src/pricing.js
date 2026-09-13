@@ -84,12 +84,20 @@ const quantityFor = (request) => ALLOWED_QUANTITIES.includes(request?.quantity) 
  * new array would leave one branch to be forgotten, and the forgotten one
  * prices a staggered request as four of the FRONT tire: a wrong number on a
  * real invoice that looks exactly like a working order. One list cannot
- * have that bug. An empty array is treated as absent for the same reason a
- * missing one is: nothing today can produce either, and the legacy fields
- * are the only thing such a request can mean.
+ * have that bug.
+ *
+ * An EMPTY array is not the same as no array (the OWNER AGENT's ruling on
+ * this stage). Absent means "this request predates the field"; empty means
+ * "this request names no tire", and the engine must not quietly turn the
+ * second into the first: if a later stage writes the legacy fields alongside
+ * the array for older readers, a client bug producing `tires: []` would
+ * arrive with populated legacy fields, and pricing those would auto-send a
+ * quote for a tire the customer did not ask for. So an empty array is an
+ * empty list here, and `calculateDraftQuote` makes zero tires an exception
+ * rather than a quote of nothing but fees.
  */
 function tireEntriesFor(request) {
-  const listed = Array.isArray(request?.tires) && request.tires.length > 0
+  const listed = Array.isArray(request?.tires)
     ? request.tires
     : [{ position: null, size: request?.tireSize ?? null, tireSelection: request?.tireSelection, quantity: request?.quantity }]
   return listed.map(entry => ({
@@ -100,12 +108,29 @@ function tireEntriesFor(request) {
   }))
 }
 
+const NOT_FOUND = 'Selected tire was not found in the catalog'
+
+/**
+ * How a multi-entry reason names its tire: the position the request gave
+ * ("Front", "Rear"), with the size beside it when there is one; the size
+ * alone when there is no position; the entry's place in the list when
+ * there is neither.
+ */
+function entryLabel(entry, index) {
+  const position = typeof entry.position === 'string' && entry.position.trim()
+    ? entry.position.trim().charAt(0).toUpperCase() + entry.position.trim().slice(1)
+    : null
+  const size = typeof entry.size === 'string' && entry.size.trim() ? entry.size.trim() : null
+  if (position && size) return `${position} (${size})`
+  return position ?? size ?? `Tire ${index + 1}`
+}
+
 /**
  * The exception reasons one tire entry raises, in the order they always
  * came, with the same words. `null` is a tire the catalog did not have.
  */
 function tireExceptionReasons(tire) {
-  if (!tire) return ['Selected tire was not found in the catalog']
+  if (!tire) return [NOT_FOUND]
   const reasons = []
   if (!tire.inStock) reasons.push('Selected tire is out of stock')
   // Matched on category, not on a specific id. This was `tire.id === 'tire-5'`,
@@ -214,9 +239,21 @@ export function calculateDraftQuote(request, catalog = null, pricingSettings = D
 
   // Every tire rule runs per entry, and the request is an exception if any
   // entry raises one: an off-road rear with a road-going front is still an
-  // off-road job. A reason two entries both raise is listed once -- the
-  // owner's screen names what needs looking at, not how many times.
-  const exceptionReasons = [...new Set(entries.flatMap(entry => tireExceptionReasons(entry.tire)))]
+  // off-road job.
+  //
+  // With ONE entry the words are exactly what they always were -- that is
+  // the byte-identical property this stage promises. With more than one,
+  // each reason says which tire it is about, because the reasons are stored
+  // on the quote and a position dropped here cannot be recovered by the
+  // owner's screen later: two out-of-stock entries are two things for Ken
+  // to look at, and he should not have to work out which from the lines.
+  // Zero entries (an empty `tires` array) is the not-found reason, in the
+  // same words, so a request naming no tire lands in his review queue and
+  // never sends itself as a quote of nothing but fees.
+  const exceptionReasons = entries.length === 0
+    ? [NOT_FOUND]
+    : [...new Set(entries.flatMap((entry, index) =>
+      tireExceptionReasons(entry.tire).map(reason => entries.length > 1 ? `${entryLabel(entry, index)}: ${reason}` : reason)))]
 
   // The vehicle is optional at intake (backend/quotes.mjs REQUIRED), and that
   // is why the empty case is handled first rather than falling through. This

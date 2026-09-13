@@ -350,10 +350,20 @@ test('stage A: the legacy fields and a one-element tires array are the same requ
   assert.equal(exceptional.lineItems[0].quantity, 4)
 })
 
-test('stage A: an empty tires array means the legacy fields, the same as no array at all', () => {
-  const none = calculateDraftQuote(request({ quantity: 4 }), [tire()], undefined, richLines())
+test('stage A: an EMPTY tires array names no tire and is an exception, never the legacy tire and never a quote of fees alone', () => {
+  // Absent means the request predates the field; empty means it names no
+  // tire. The legacy fields are populated here on purpose: a later stage may
+  // write them alongside the array, and a client bug producing [] must not
+  // auto-send a quote for a tire the customer did not ask for.
   const empty = calculateDraftQuote(request({ quantity: 4, tires: [] }), [tire()], undefined, richLines())
-  assert.deepEqual(empty, none)
+  assert.equal(empty.exception, true)
+  assert.deepEqual(empty.exceptionReasons, ['Selected tire was not found in the catalog'])
+  assert.deepEqual(empty.lineItems.map(line => line.description), ['Mobile service fee'], 'no tire line and no per-tire fee; the visit fee alone is not a quote that may send itself')
+  // And absent still means the legacy fields, priced exactly as always.
+  const none = calculateDraftQuote(request({ quantity: 4 }), [tire()], undefined, richLines())
+  assert.equal(none.exception, false)
+  assert.equal(none.lineItems[0].description, 'Test Touring')
+  assert.equal(none.lineItems[0].quantity, 4)
 })
 
 const front = (overrides = {}) => tire({ id: 'giga-f', name: 'Front Sport', size: '245/35R19', price: 180, ...overrides })
@@ -420,22 +430,36 @@ test('staggered: two entries of the SAME tire are one distinct tire, so a perJob
 test('staggered: a rule raised by the SECOND entry alone makes the request an exception, and a reason both raise is listed once', () => {
   const offRoadRear = calculateDraftQuote(staggered(), [front(), rear({ category: 'off-road' })])
   assert.equal(offRoadRear.exception, true)
-  assert.deepEqual(offRoadRear.exceptionReasons, ['Off-road tire requires owner review'], 'an off-road rear with a road-going front is still an off-road job')
+  assert.deepEqual(offRoadRear.exceptionReasons, ['Rear (275/35R19): Off-road tire requires owner review'], 'an off-road rear with a road-going front is still an off-road job, and the reason says which tire')
 
   const rearMissing = calculateDraftQuote(staggered(), [front()])
-  assert.deepEqual(rearMissing.exceptionReasons, ['Selected tire was not found in the catalog'])
+  assert.deepEqual(rearMissing.exceptionReasons, ['Rear (275/35R19): Selected tire was not found in the catalog'])
   assert.deepEqual(rearMissing.lineItems.map(line => line.description), ['Front Sport'], 'the front still prices; the missing rear is the exception')
 
   const bothOut = calculateDraftQuote(staggered(), [front({ inStock: false }), rear({ inStock: false })])
-  assert.deepEqual(bothOut.exceptionReasons, ['Selected tire is out of stock'], 'once, not twice')
+  assert.deepEqual(bothOut.exceptionReasons, ['Front (245/35R19): Selected tire is out of stock', 'Rear (275/35R19): Selected tire is out of stock'], 'two tires out of stock are two things to look at')
 
   const mixed = calculateDraftQuote(staggered({ vehicleInfo: '2019 Ford F-150 Pickup', tires: [staggered().tires[0], { ...staggered().tires[1], tireSelection: 'tire-r' }] }), [front({ inStock: false }), rear({ id: 'tire-r', category: 'off-road' })])
   assert.deepEqual(mixed.exceptionReasons, [
-    'Selected tire is out of stock',
-    'Off-road tire requires owner review',
-    'Not a supplier-listed tire; owner review required',
+    'Front (245/35R19): Selected tire is out of stock',
+    'Rear (275/35R19): Off-road tire requires owner review',
+    'Rear (275/35R19): Not a supplier-listed tire; owner review required',
     'Truck, pickup, van, and SUV requests require owner review',
   ], 'entry reasons in entry order, then the vehicle gate, as before')
+})
+
+test('staggered: a reason names its tire by position, then by size when there is no position, then by place in the list', () => {
+  const reasons = tires => calculateDraftQuote(staggered({ tires }), [front({ inStock: false }), rear({ inStock: false })]).exceptionReasons
+  assert.deepEqual(reasons([
+    { position: 'front', tireSelection: 'giga-f', quantity: 2 },
+    { size: '275/35R19', tireSelection: 'giga-r', quantity: 2 },
+  ]), ['Front: Selected tire is out of stock', '275/35R19: Selected tire is out of stock'])
+  assert.deepEqual(reasons([
+    { tireSelection: 'giga-f', quantity: 2 },
+    { tireSelection: 'giga-r', quantity: 2 },
+  ]), ['Tire 1: Selected tire is out of stock', 'Tire 2: Selected tire is out of stock'])
+  // One entry in an array is still one tire: the words are exactly today's, no label.
+  assert.deepEqual(reasons([{ position: 'rear', size: '275/35R19', tireSelection: 'giga-r', quantity: 2 }]), ['Selected tire is out of stock'])
 })
 
 test('staggered: per-entry quantities are independent, and an entry quantity off the allowed list is one, as a request quantity always was', () => {
