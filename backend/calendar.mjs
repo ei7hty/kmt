@@ -168,6 +168,41 @@ export function eventFor({ request, quote, tire, origin }) {
 }
 
 /**
+ * Which of the three gates is shut, said in words Ken can act on.
+ *
+ * Between this server and an event on the calendar stand three separate
+ * grants, and each fails differently: the service account's key must be
+ * accepted (the token exchange), the Calendar API must be enabled on its
+ * project, and the calendar must be shared with the service account's
+ * address with write access. A single "calendar write failed" would hide
+ * which one -- and a check that cannot tell which gate is shut is a check
+ * that will one day report them all open. So the row's error and Ken's
+ * alert lead with the gate, then carry Google's own words after it.
+ *
+ * One honest limit: a wrong calendar id and a calendar not shared with the
+ * service account at all both come back from Google as 404. The message
+ * says so rather than picking one.
+ */
+export function explainRefusal(status, body, at) {
+  const text = String(body ?? '')
+  if (at === 'token') {
+    return `Google refused the service account's credentials at the token exchange (${status}): KMT_MAIL_SERVICE_CLIENT and KMT_MAIL_PRIVATE_KEY must be the client_email and private_key of one key file.`
+  }
+  if (status === 403 && /accessNotConfigured|has not been used in project|is disabled/i.test(text)) {
+    return 'The Google Calendar API is not enabled on the service account\'s project (403 accessNotConfigured): enable it in the Cloud console.'
+  }
+  if (status === 403) {
+    return 'The service account may not change this calendar (403): share it with the service account\'s address with "Make changes to events", not a read-only share.'
+  }
+  if (status === 404) {
+    return 'Google shows this service account no calendar under KMT_CALENDAR_ID (404): either the id is wrong, or the calendar is not shared with the service account\'s address at all -- Google answers both the same way, so check the share first, then the id.'
+  }
+  return null
+}
+
+const withReason = (why, detail) => (why ? `${why} ` : '') + detail
+
+/**
  * The HTTPS half: one access token at a time, refreshed a minute early, and
  * the two Calendar calls this feature needs. `fetch` is injectable so the
  * tests never open a socket and can answer whatever Google might.
@@ -191,7 +226,7 @@ export class GoogleCalendarClient {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     const text = await response.text()
-    if (!response.ok) throw new Error(`Google token exchange answered ${response.status}: ${text.slice(0, ERROR_LIMIT)}`)
+    if (!response.ok) throw new Error(withReason(explainRefusal(response.status, text, 'token'), `Google token exchange answered ${response.status}: ${text.slice(0, ERROR_LIMIT)}`))
     const parsed = JSON.parse(text)
     if (!parsed.access_token) throw new Error('Google token exchange answered without an access_token.')
     this.token = { value: parsed.access_token, expiresAt: this.now() + Number(parsed.expires_in ?? 3600) * 1000 }
@@ -207,7 +242,7 @@ export class GoogleCalendarClient {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     const text = await response.text()
-    if (!response.ok) throw new Error(`Google Calendar answered ${response.status} on ${method} ${path}: ${text.slice(0, ERROR_LIMIT)}`)
+    if (!response.ok) throw new Error(withReason(explainRefusal(response.status, text, 'calendar'), `Google Calendar answered ${response.status} on ${method} ${path}: ${text.slice(0, ERROR_LIMIT)}`))
     return text ? JSON.parse(text) : null
   }
 
@@ -329,7 +364,7 @@ export class Calendar {
       const message = String(error?.message ?? error).slice(0, ERROR_LIMIT)
       const row = this.insertRow({ requestId, calendarId, eventId: null, status: 'failed', error: message })
       this.log(`calendar: FAILED ${row.id} for request ${requestId}: ${message}`)
-      if (this.mailer) this.mailer.after('calendar-failed', requestId, { calendarId, reason: message.split('\n')[0].slice(0, 160) })
+      if (this.mailer) this.mailer.after('calendar-failed', requestId, { calendarId, reason: message.split('\n')[0].slice(0, 320) })
       return row
     }
   }

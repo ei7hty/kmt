@@ -11,7 +11,7 @@ import { TEMPLATES } from './mail-templates.mjs'
 import { createRequestsApi } from './api.mjs'
 import {
   CALENDAR_EVENT_STATUSES, CALENDAR_SCOPE, Calendar, GoogleCalendarClient, NullCalendarClient,
-  calendarEventsFor, createCalendar, describeCalendar, ensureCalendarTable, eventFor, readCalendarConfig, signAssertion,
+  calendarEventsFor, createCalendar, describeCalendar, ensureCalendarTable, eventFor, explainRefusal, readCalendarConfig, signAssertion,
 } from './calendar.mjs'
 
 const SIZE = '215/60R16'
@@ -36,12 +36,13 @@ const MAIL_CONFIG = { provider: 'none', host: '', port: 587, user: '', password:
  * script says for each Calendar call, and remembers every request so a test
  * can read what was actually sent. No socket is ever opened.
  */
-function fakeGoogle(script = []) {
+function fakeGoogle(script = [], { token = null } = {}) {
   const calls = []
   const answers = [...script]
   const fetch = async (url, init = {}) => {
     calls.push({ url, method: init.method, headers: init.headers, body: init.body })
     if (url === 'https://oauth2.googleapis.com/token') {
+      if (token) return { ok: false, status: token.status, text: async () => JSON.stringify(token.body) }
       return { ok: true, status: 200, text: async () => JSON.stringify({ access_token: 'tok-1', expires_in: 3600 }) }
     }
     const next = answers.shift() ?? { status: 200, body: { id: 'evt-1' } }
@@ -51,7 +52,7 @@ function fakeGoogle(script = []) {
 }
 
 /** A paid request in an in-memory world, with an outbox-only mailer to catch the owner alert. */
-function world(t, { config = CONFIG, script, env } = {}) {
+function world(t, { config = CONFIG, script, env, token } = {}) {
   const inventory = new Inventory(':memory:', [SIZE])
   t.after(() => inventory.close())
   inventory.importSnapshot(snapshot([tire()]))
@@ -60,7 +61,7 @@ function world(t, { config = CONFIG, script, env } = {}) {
   const lines = []
   const log = line => lines.push(line)
   const mailer = new Mailer({ outbox, quotes, adapter: new NullAdapter(), config: MAIL_CONFIG, origin: 'https://kensmobiletire.com', log })
-  const google = fakeGoogle(script)
+  const google = fakeGoogle(script, { token })
   const calendar = env
     ? createCalendar({ db: inventory.db, quotes, mailer, env, origin: 'https://kensmobiletire.com', fetch: google.fetch, log })
     : new Calendar({ db: inventory.db, quotes, mailer, config, origin: 'https://kensmobiletire.com', log,
@@ -198,12 +199,12 @@ test('a refusal from Google is a failed row with the error, and an email to Ken 
   assert.equal(alerts[0].type, 'calendar-failed')
   assert.equal(alerts[0].to, 'owner@example.com', 'owner audience')
   assert.equal(alerts[0].data.calendarId, CONFIG.calendarId)
-  assert.match(alerts[0].data.reason, /answered 403/)
+  assert.match(alerts[0].data.reason, /^The service account may not change this calendar \(403\)/, 'the alert leads with which gate is shut')
   const { subject, text } = TEMPLATES['calendar-failed'].render(alerts[0].data)
   assert.match(subject, new RegExp(`Calendar: add by hand — ${SOON}, 4 × Test Touring`))
   assert.match(text, /Add it by hand/)
   assert.match(text, /Where: Home — 456 Demo Ave/)
-  assert.match(text, /Why: Google Calendar answered 403/)
+  assert.match(text, /Why: The service account may not change this calendar \(403\): share it/)
   assert.match(text, /\/owner\/quotes\?request=/)
   assert.doesNotMatch(text, /Jamie@Example\.com/i, 'the customer\'s email is not in the alert')
   // A failed attempt does not block a retry: the next record tries again.
@@ -228,6 +229,48 @@ test('a malformed success from Google (no id) is a failure, not a created row wi
   const row = await calendar.record(paidRequest().id)
   assert.equal(row.status, 'failed')
   assert.match(row.error, /without its id/)
+})
+
+test('the three gates fail distinguishably: credentials, API enablement, share -- and the two Google cannot tell apart are named as such', async t => {
+  const notEnabled = { status: 403, body: { error: { code: 403, message: 'Google Calendar API has not been used in project 1234 before or it is disabled.', errors: [{ reason: 'accessNotConfigured' }] } } }
+  const readOnly = { status: 403, body: { error: { code: 403, message: 'Forbidden', errors: [{ reason: 'forbidden' }] } } }
+  const notFound = { status: 404, body: { error: { code: 404, message: 'Not Found', errors: [{ reason: 'notFound' }] } } }
+  const cases = [
+    [{ script: [notEnabled] }, /^The Google Calendar API is not enabled on the service account's project \(403 accessNotConfigured\)/],
+    [{ script: [readOnly] }, /^The service account may not change this calendar \(403\): share it .* "Make changes to events"/],
+    [{ script: [notFound] }, /^Google shows this service account no calendar under KMT_CALENDAR_ID \(404\): either the id is wrong, or the calendar is not shared .* both the same way/],
+    [{ token: { status: 400, body: { error: 'invalid_grant', error_description: 'Invalid JWT Signature.' } } }, /^Google refused the service account's credentials at the token exchange \(400\): KMT_MAIL_SERVICE_CLIENT and KMT_MAIL_PRIVATE_KEY/],
+  ]
+  for (const [setup, expected] of cases) {
+    const { calendar, mailer, outbox, paidRequest } = world(t, setup)
+    const row = await calendar.record(paidRequest().id)
+    await mailer.idle()
+    assert.equal(row.status, 'failed')
+    assert.match(row.error, expected)
+    assert.match(row.error, /Google (Calendar|token exchange) answered \d{3}/, 'and still carries Google\'s own answer after the explanation')
+    const alert = outbox.forRequest(row.requestId)[0]
+    assert.equal(alert.type, 'calendar-failed')
+    assert.match(alert.data.reason, expected, 'Ken\'s alert leads with the gate, not the status code')
+  }
+  assert.equal(explainRefusal(500, 'boom', 'calendar'), null, 'an answer this cannot classify gets no invented explanation')
+  const plain = world(t, { script: [{ status: 500, body: 'boom' }] })
+  const unexplained = await plain.calendar.record(plain.paidRequest().id)
+  assert.match(unexplained.error, /^Google Calendar answered 500 on POST/, 'and the row then starts with Google\'s answer, no guess in front of it')
+})
+
+test('a redaction after KMT_CALENDAR_ID has moved still deletes the event where it was made, using the stored calendar id', async t => {
+  const { calendar, inventory, quotes, paidRequest } = world(t)
+  const request = paidRequest()
+  await calendar.record(request.id)
+  const moved = { ...CONFIG, calendarId: 'moved@group.calendar.google.com' }
+  const google = fakeGoogle([{ status: 204 }])
+  const later = new Calendar({ db: inventory.db, quotes, config: moved, client: new GoogleCalendarClient(moved, { fetch: google.fetch }), log: () => {} })
+  const summary = await later.forget(request.id)
+  assert.equal(summary.deleted, 1)
+  const del = google.calls.at(-1)
+  assert.equal(del.method, 'DELETE')
+  assert.ok(del.url.includes(encodeURIComponent(CONFIG.calendarId)), 'the stored calendar id, not the configured one')
+  assert.ok(!del.url.includes('moved'), del.url)
 })
 
 /* ------------------------------------------------------------------- the API */
