@@ -169,6 +169,30 @@ Three properties, and the formula above is the only one that has all three:
 > shipping. It is answered instead by the margin floor and ceiling, which fix
 > the same skew without moving freight.
 
+**WHICH FORMULA IS LIVE, CHECKED IN ONE LINE.** Do not settle this from prose
+again — this document lost the argument to the code and would have done so
+faster if it had pointed here. `backend/owner.test.mjs` asserts:
+
+```js
+// supplierPrice x rate + shipping: freight is an internal cost passed
+// through after the goods margin is calculated.
+assert.equal(quotedPrice({ supplierPrice: 50, offer: null, settings: db.getMarkup() }).price, 83, '(50 x 1.5) + 8')
+```
+
+83 is `(50 × 1.5) + 8`, against a stored markup of rate 1.5 and $8 shipping.
+Landed cost would be 87. That test has been green on `main` throughout, so the
+standing formula has always been the tested one, and a change to the other
+would turn it red immediately.
+
+It was one of **four** independent places that already agreed with the code
+while this paragraph disagreed: the engine in `src/markup.js`, that test, the
+owner form's own label in `src/owner/OwnerInventory.jsx` (*"SUPPLIER PRICE ×
+MARKUP, THEN + SHIPPING"*), and the bulk price tool in
+`src/owner/inventory-grid.js`. Four implementations against one prose
+paragraph, and the paragraph won for half an hour because it was bold and
+attributed. Reading it more carefully would not have helped; going to the
+source did.
+
 ### Where it lives, and the seam that already exists
 
 `shippingPerTire` becomes a field in the markup settings beside `rate`,
