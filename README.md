@@ -147,6 +147,37 @@ sign-in controls when their API answers 401.
 The full design, data contract and refresh rules are in
 [`.forge/owner-backend.md`](.forge/owner-backend.md).
 
+## Updating inventory, start to finish
+
+The sections below describe each tool on its own. This one command reads the
+state of all of them and prints the ordered plan, with the paths filled in:
+
+```bash
+node scripts/inventory-suite.mjs
+```
+
+It says what the snapshot on disk holds, what the local database already has,
+which sizes are behind and by how much, and how far the current photo batch
+has got. Then it prints the plan. Every step is labelled by what it reaches,
+and **only the `LOCAL` steps are ever run** — `--run` executes those and prints
+the rest:
+
+| label | |
+| --- | --- |
+| `LOCAL` | The loopback server and this checkout. Run by `--run`. |
+| `SUPPLIER` | Contacts giga-tires.com. Printed, never issued — it opens a browser and belongs on a home connection. |
+| `PRODUCTION` | Writes the live volume or the live database. Printed. |
+| `YOU` | A judgement call: pricing, choosing what to offer, approving a photo. |
+
+`--server` must be a loopback address; anything else is refused before a
+request is built, so this cannot be pointed at the hosted server even by
+accident. The hosted command is printed for you to run instead.
+
+```bash
+node scripts/inventory-suite.mjs --run
+node scripts/inventory-suite.mjs --work /abs/batch-3 --models-file /abs/models.txt
+```
+
 ## Updating the tire catalog snapshot
 
 `scripts/scrape-tires.mjs` pulls real tires from giga-tires.com into a
@@ -397,6 +428,7 @@ the scraper from a home connection and treat the host as serving-only.
 | `backend/auth.mjs` | Password gate and signed session cookie for the hosted server. |
 | `backend/dev.mjs`, `backend/server.mjs` | Local and hosted entry points. |
 | `backend/*.test.mjs` | Backend tests, run with `node --test backend/*.test.mjs`. |
+| `scripts/inventory-suite.mjs` | The whole inventory update in one place: reads the real state and prints the ordered plan. Runs only the local steps. |
 | `scripts/scrape-tires.mjs` | Snapshot CLI: arguments, the run loop, the diff. |
 | `scripts/import-tires.mjs` | Pushes a snapshot into a running owner server, local or hosted. |
 | `scripts/giga-tires.mjs` | Parsing and normalising one supplier listing page. Pure, so it can be tested on saved HTML. |
