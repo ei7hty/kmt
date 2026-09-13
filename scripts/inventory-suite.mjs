@@ -45,6 +45,7 @@
  * to run. This file reads state, decides the order, and fills in the paths.
  */
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -188,11 +189,67 @@ export function sizeWork(snapshotSummary, server) {
   return { known: true, pending, stale }
 }
 
-/** Which stage a photo work directory has reached, using photo-batch.mjs's own layout. */
-export function photoStage({ work, mapping, packet, staging }) {
+/**
+ * The seal's own numbers, read off the manifest rather than recomputed.
+ *
+ * The digest is the sha256 OF the manifest file, not a field inside it -- that
+ * is how `import-images.mjs` verifies a packet, and computing it any other way
+ * would produce a number that looks right and fails at the server. Reading is
+ * best-effort: a manifest that is missing, truncated or not JSON leaves the
+ * stage as `sealed` with no numbers rather than throwing, because a photo
+ * directory must never be able to stop the rest of the plan printing.
+ */
+function readSeal(manifestPath) {
+  if (!manifestPath || !existsSync(manifestPath)) return {}
+  try {
+    const bytes = readFileSync(manifestPath)
+    const manifest = JSON.parse(bytes.toString('utf8'))
+    return {
+      sealedCount: Array.isArray(manifest.assets) ? manifest.assets.length : undefined,
+      sealedDigest: createHash('sha256').update(bytes).digest('hex'),
+    }
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Which stage a photo work directory has reached, using photo-batch.mjs's own
+ * layout.
+ *
+ * SEALED IS TESTED BEFORE STAGED, and the order is the whole correctness of
+ * this function. Unwrapping does not remove `staging/` -- a sealed batch still
+ * has one sitting beside its packet. So a ladder that asked "is there a
+ * staging directory?" before "is there a manifest?" reported a finished batch
+ * as unfinished, and the step below then told the owner to re-run the local
+ * half of a pipeline that had already produced 93 images and a digest.
+ *
+ * Found by pointing this at a real sealed batch rather than by a test: the
+ * ladder simply had no rung above `staged`, so `packet/manifest.json` -- the
+ * file that IS the seal -- was never looked at. Sending someone to redo work
+ * they have already done is the specific failure this tool exists to prevent,
+ * so getting it wrong here is worse than getting it wrong anywhere else in
+ * the file.
+ */
+export function photoStage({ work, mapping, packet, staging, sealed, sealedCount, sealedDigest }) {
   if (!work) return { stage: 'unconfigured', detail: 'no --work directory given' }
   if (!mapping) return { stage: 'empty', detail: 'no mapping.json yet' }
   if (!packet) return { stage: 'mapped', detail: 'mapping.json built; the product pages are not fetched' }
+  if (sealed) {
+    // The digest is the thing that gets mistyped -- it is the reason
+    // photo-batch.mjs prints the production command with it already filled in.
+    const count = typeof sealedCount === 'number' ? `${sealedCount} image(s)` : 'sealed'
+    const shown = sealedDigest ? `, manifest ${sealedDigest}` : ''
+    return {
+      stage: 'sealed',
+      detail: `${count} sealed and waiting to go to the server${shown}`,
+      // Carried on the result so the upload step can fill the command in.
+      // Undefined when the manifest could not be read, and the step prints a
+      // placeholder rather than a wrong digest.
+      digest: sealedDigest,
+      count: sealedCount,
+    }
+  }
   if (!staging) return { stage: 'fetched', detail: 'packet built; the images are not downloaded' }
   return { stage: 'staged', detail: 'images downloaded; photo-batch can unwrap and seal them' }
 }
@@ -303,11 +360,43 @@ export function buildPlan(state) {
         ? `  node scripts/photo-batch.mjs --models-file ${options.modelsFile} --work ${options.work}`
         : '  node scripts/photo-batch.mjs --models-file ABS_LIST --work ABS_WORK_DIR',
     ],
-    run: options.work && options.modelsFile
+    // A SEALED batch is never re-run. photo-batch.mjs's local half has already
+    // produced this packet, and running it again would rebuild work that is
+    // finished -- the exact thing this tool exists to stop someone doing. The
+    // real next step for a sealed batch is the upload, which is PRODUCTION and
+    // therefore printed below rather than executed.
+    run: photos.stage !== 'sealed' && options.work && options.modelsFile
       ? { script: 'photo-batch.mjs', args: ['--models-file', options.modelsFile, '--work', options.work] }
       : null,
-    blocked: options.work && options.modelsFile ? null : 'Pass --work and --models-file to include the photo batch.',
+    blocked: photos.stage === 'sealed'
+      ? 'This batch is already sealed. Its next step is the upload below, not another build.'
+      : (options.work && options.modelsFile ? null : 'Pass --work and --models-file to include the photo batch.'),
   })
+
+  // Only when there is actually a sealed packet to send. Printed, never run:
+  // it writes the live volume and then the live database.
+  if (photos.stage === 'sealed') {
+    const packet = path.join(options.work, 'packet')
+    steps.push({
+      touches: TOUCHES.PRODUCTION,
+      title: 'Put the sealed photo batch on the server',
+      why: `${photos.detail}. The digest below is read from the manifest, not retyped -- it is the value that gets mistyped, and import-images.mjs refuses a packet whose manifest does not match it.`,
+      lines: [
+        '  flyctl ssh console --app kmt --command "mkdir -p /tmp/kmt-batch"',
+        `  cd ${packet}; Get-ChildItem | ForEach-Object { flyctl ssh sftp put $_.FullName "/tmp/kmt-batch/$($_.Name)" --app kmt }`,
+        `  flyctl ssh console --app kmt --command "node /app/scripts/import-images.mjs /data/owner.sqlite /tmp/kmt-batch ${photos.digest ?? '<manifest digest>'}"`,
+        '  flyctl ssh console --app kmt --command "chown -R node:node /data/catalog-images-private"',
+        '',
+        '  The chown is not optional: `flyctl ssh console` logs in as root, so the',
+        '  import leaves root-owned storage at 0700 and the app, which runs as `node`,',
+        '  then reports every image as "missing or corrupt" -- an error that names the',
+        '  images rather than the permissions. Then approve them at /owner; nothing',
+        '  reaches a customer until you do.',
+      ],
+      run: null,
+      blocked: null,
+    })
+  }
 
   steps.push({
     touches: TOUCHES.PRODUCTION,
@@ -544,11 +633,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (options.help) { console.log(HELP); process.exit(0) }
     const snapshot = readSnapshot(options.snapshot)
     const server = await readServer(options.server)
+    const manifestPath = options.work ? path.join(options.work, 'packet', 'manifest.json') : null
     const photos = photoStage({
       work: options.work,
       mapping: Boolean(options.work) && existsSync(path.join(options.work, 'mapping.json')),
       packet: Boolean(options.work) && existsSync(path.join(options.work, 'packet', 'snapshot.json')),
       staging: Boolean(options.work) && existsSync(path.join(options.work, 'staging', 'images')),
+      sealed: Boolean(manifestPath) && existsSync(manifestPath),
+      ...readSeal(manifestPath),
     })
     const state = { snapshot, server, photos, options }
     const steps = buildPlan(state)
