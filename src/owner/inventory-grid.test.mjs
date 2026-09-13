@@ -1325,7 +1325,21 @@ test('the seasons offered are the shop’s own five, plus whatever this tire act
   const odd = seasonChoices('mud-terrain')
   assert.deepEqual(odd.at(-1), ['mud-terrain', 'mud-terrain'])
   assert.equal(odd.length, known.length + 1)
-  assert.equal(seasonChoices('all-season').length, known.length, 'a season already in the map is not listed twice')
+
+  // What stood here was `seasonChoices('all-season').length === known.length`,
+  // and `known` IS `seasonChoices('all-season')` -- it compared a call to
+  // itself and was true of any implementation, including one that duplicates.
+  // Raised in review. The duplication it meant to catch is caught by the
+  // deepEqual above; what had no guard at all is the derivation, which the
+  // server's OVERRIDE_CATEGORIES asserts at its own source and this did not.
+  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'inventory-grid.js'), 'utf8')
+  const after = source.slice(source.indexOf('export function seasonChoices'))
+  const body = after.slice(0, after.indexOf('\n}'))
+  assert.ok(body.includes('SEASON_LABELS'), 'seasonChoices stopped reading the shop’s own facet')
+  for (const season of Object.keys(SEASON_LABELS)) {
+    assert.doesNotMatch(body, new RegExp(`['"]${season}['"]`),
+      `"${season}" is written out again inside seasonChoices, beside the map it should be read from`)
+  }
 })
 
 test('the correction boxes open holding what a customer sees, correction or supplier', async () => {

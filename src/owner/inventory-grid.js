@@ -728,9 +728,17 @@ export function createInventoryGrid({ api }) {
       enabled: sellingEnabled(item),
       notes: item.offer.notes ?? '',
       // The owner's corrections to the supplier's own record, as EDITABLE text
-      // seeded with whatever a customer is being shown right now -- the
-      // correction where one exists, the supplier's own words where it does
-      // not. That seeding is the whole affordance: the defect this fixes is
+      // seeded with the correction where one exists and the supplier's own
+      // words where it does not.
+      //
+      // The supplier's half is the RAW payload -- `list()` spreads the payload,
+      // while a customer's copy goes through `cleanCatalogDescription` first --
+      // so for a description carrying markup the two differ. Deliberate, and
+      // harmless: `correctionOf` compares raw to raw, so an untouched box still
+      // reads as no correction, and what Ken edits is what the supplier
+      // actually sent rather than a sanitised rendering of it.
+      //
+      // That seeding is the whole affordance: the defect this fixes is
       // 202 characters of the supplier's advertising on a card, and deleting
       // the first sentence of a box that already holds it is one gesture,
       // where retyping "XL 98Y BSW" from memory into an empty box is not.

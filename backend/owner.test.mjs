@@ -17,6 +17,9 @@ import { LoginThrottle } from './limits.mjs'
 import { SHARED_PASSWORD_ACTOR } from './quotes.mjs'
 import { PageImporter } from './import.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
+// The quote engine, imported because `catalog()` is its input too and a season
+// correction therefore reaches it -- see the review-gate test at the bottom.
+import { calculateDraftQuote } from '../src/pricing.js'
 // The owner grid's own helper, imported rather than reimplemented: the defect
 // these tests cover lives in the seam between what list() returns and what the
 // screen sends back, so a test that rebuilt the screen's half by hand would
@@ -2554,4 +2557,47 @@ test('a correction changes what a customer reads, never which fields reach them'
   assert.equal(catalogRowProblem(customer), null, 'a corrected row is still exactly the contract')
   assert.doesNotMatch(JSON.stringify(customer), /override/i,
     'the correction reaches a customer as the tire\'s own category and description, not as a correction')
+})
+
+test('a season correction also moves the owner-review gate, which is the point and is not obvious', t => {
+  // FOUND IN REVIEW, not in writing this. `catalog()` is not only what a
+  // customer reads: `QuoteStore.catalog()` returns it verbatim and hands it to
+  // `calculateDraftQuote`, which holds a quote for the owner when
+  // `tire.category === 'off-road'` (src/pricing.js). So a control labelled
+  // "Season a customer filters by" also decides which quotes land in Ken's
+  // review queue, and nothing said so.
+  //
+  // The coupling is CORRECT and worth keeping. The gate exists so a person
+  // looks before an off-road tire is sold, and the three rows this feature was
+  // built for -- Bridgestone Turanza EverDrive, Pegasus HPX SPORT AS, Radar
+  // Dimax AS-9, every one a road tire the supplier filed `off-road` -- are
+  // holding quotes today for a reason that is not true. Correcting them stops
+  // a false hold; filing something as off-road starts a real one.
+  //
+  // It is pinned here so the next person to change either side finds the other.
+  const db = setup(t)
+  const draft = () => calculateDraftQuote({ tireSelection: 'giga-a', quantity: 4 }, db.catalog())
+  const heldForOffRoad = () => draft().exceptionReasons.some(reason => /off-road/i.test(reason))
+
+  assert.equal(db.catalog()[0].category, 'all-season')
+  assert.equal(heldForOffRoad(), false, 'the fixture is a road tire and is not held')
+
+  db.saveOffer('giga-a', offer({ categoryOverride: 'off-road' }))
+  assert.equal(heldForOffRoad(), true, 'filing a tire as off-road sends its quotes to the owner')
+
+  const held = db.list().items[0].offer
+  db.saveOffer('giga-a', { ...held, categoryOverride: 'all-season' })
+  assert.equal(heldForOffRoad(), false, 'and correcting a mis-filed one stops a hold that was never true')
+
+  // The control this most needs: the gate must still fire on the SUPPLIER's
+  // own filing, with no override at all. Otherwise the three assertions above
+  // are equally consistent with a quote engine that stopped reading category.
+  const other = new Inventory(':memory:', [SIZE, otherSize])
+  t.after(() => other.close())
+  other.importSnapshot(snapshot([tire('giga-a', { category: 'off-road' })]))
+  assert.equal(
+    calculateDraftQuote({ tireSelection: 'giga-a', quantity: 4 }, other.catalog())
+      .exceptionReasons.some(reason => /off-road/i.test(reason)),
+    true,
+    'a tire the supplier itself calls off-road is still held, override or no override')
 })

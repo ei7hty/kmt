@@ -231,9 +231,10 @@ function LowStockBar({ items, threshold, typed, onTyped }) {
  * glance using our easy test score® system", 202 characters of it. Neither is
  * fixable by re-scraping; the supplier's own record is what is wrong.
  *
- * BOTH BOXES ARE SEEDED WITH WHAT A CUSTOMER SEES RIGHT NOW, which is the
- * whole affordance: the fix for the advertising is to delete its first
- * sentence, and you cannot delete a sentence from an empty box. Sending the
+ * BOTH BOXES ARE SEEDED WITH THE VALUE IN FORCE -- the correction where one
+ * exists, the supplier's own record where it does not -- which is the whole
+ * affordance: the fix for the advertising is to delete its first sentence, and
+ * you cannot delete a sentence from an empty box. Sending the
  * supplier's own value back is a no-op -- `correctionOf` reads it as "no
  * correction" -- so an override that merely restates the supplier never
  * accumulates, and clearing the box is how you undo one.
