@@ -75,7 +75,21 @@ test('every field the projection can add is on one of the two lists', () => {
     "catalog()'s row builder is not where this test looks for it; if it moved, move this with it")
 
   const body = source.slice(start, end)
-  const conditional = [...body.matchAll(/\.\.\.\([^?]*\?\s*\{\s*([A-Za-z_$][\w$]*)\s*:/g)].map(match => match[1])
+  const fieldsIn = text => [...text.matchAll(/\.\.\.\([^?]*\?\s*\{\s*([A-Za-z_$][\w$]*)\s*:/g)].map(match => match[1])
+    .concat([...text.matchAll(/\{\s*([A-Za-z_$][\w$]*)\s*:\s*[^}]*\}\s*:\s*\{\s*\}/g)].map(match => match[1]))
+
+  // A field added through a HELPER the builder spreads counts too. The first
+  // version of this only read inline ternaries, so moving two fields into
+  // `specFields()` made them invisible here -- the row still carried them and
+  // the guard went quiet. It follows the spread now: any `...name(...)` in the
+  // builder has that function's body scanned as well.
+  const helpers = [...body.matchAll(/\.\.\.([A-Za-z_$][\w$]*)\s*\(/g)].map(match => match[1])
+  const conditional = [...fieldsIn(body)]
+  for (const helper of helpers) {
+    const at = source.search(new RegExp(`(export )?function ${helper}\\s*\\(`))
+    assert.notEqual(at, -1, `${helper}() is spread into a customer row and this test cannot find it to read`)
+    conditional.push(...fieldsIn(source.slice(at, source.indexOf('\n}', at))))
+  }
   assert.ok(conditional.length > 0,
     'no conditional field found in the row builder -- this test would pass over an empty list otherwise')
 

@@ -9,6 +9,7 @@ import { DEFAULT_PRICING_SETTINGS, normalizePricingSettings } from '../src/prici
 import { deriveBrand } from '../src/data/brand.js'
 import { ensureImagePublicationSchema, approvedImageUrls, PHOTO_JOIN, PHOTO_COLUMNS, photoState } from './image-publication.mjs'
 import { cleanCatalogDescription } from './catalog-description.mjs'
+import { describeTireSpec } from './tire-spec.mjs'
 
 const DEFAULT_MARKUP_RATE = DEFAULT_MARKUP_SETTINGS.rate
 const DEFAULT_SHIPPING_PER_TIRE = DEFAULT_MARKUP_SETTINGS.shippingPerTire
@@ -102,6 +103,28 @@ const now = () => new Date().toISOString()
  * stray space or a capital is not a different tire.
  */
 export const modelKey = (name) => (typeof name === 'string' ? name.trim().toLowerCase() : '')
+
+/**
+ * The decoded spec a customer sees, as the fields that may cross the boundary.
+ *
+ * Runs the SAME cleaner the description itself goes through, so the parser is
+ * fed what the customer is shown rather than the raw payload -- seven rows in
+ * the snapshot carry 200 characters of the supplier's own advertising in that
+ * field, and `cleanCatalogDescription` is what removes it.
+ *
+ * Each key is omitted rather than emitted empty, because `CATALOG_FIELDS` is a
+ * positive allow-list and `backend/catalog-boundary.test.mjs` asserts the
+ * field is present only when it says something.
+ */
+export function specFields(description) {
+  const cleaned = cleanCatalogDescription(description)
+  if (!cleaned) return {}
+  const described = describeTireSpec(cleaned)
+  return {
+    ...(described.category ? { specCategory: described.category } : {}),
+    ...(described.points?.length ? { specPoints: described.points } : {}),
+  }
+}
 
 /**
  * One approved photo per MODEL, for rows of that model that have none of their own.
@@ -1035,6 +1058,24 @@ export class Inventory {
         // Omitted, not null, when the URL has no recognisable brand segment: a
         // filter should offer the brands that exist, and "null" is not one.
         ...(deriveBrand(row.source_url) ? { brand: deriveBrand(row.source_url).label } : {}),
+        // The supplier's spec codes, decoded once here rather than parsed again
+        // in a browser. `94V BSW` means nothing to somebody standing next to a
+        // flat tyre; "Carries up to 1,653 lb per tire" does.
+        //
+        // BOTH FIELDS EXIST BECAUSE ONE OF THEM IS NOT ENOUGH. `specPoints` is
+        // per-tire fact, and `specCategory` is the supplier's OWN label for the
+        // tire -- "Touring", "Ultra High Performance All Season", "Racing".
+        // The coarse `category` beside it has five values and 230 of the 323
+        // tires in 225/50R17 are `all-season`, so a panel keyed on it showed
+        // seven tires in ten the identical paragraph. The supplier's own label
+        // has FOURTEEN values in that same size. The owner read the result on
+        // his own site and said the descriptions were "the same generic New
+        // England text for everything", which they were.
+        //
+        // Derived from the raw description that already crosses, so nothing
+        // new about the tire is exposed -- only the same sentence, readable.
+        // Omitted rather than empty when there is nothing to say.
+        ...specFields(row.description),
         // This row's own approved photo if it has one, otherwise a photo of the
         // SAME MODEL approved on one of its other sizes. A tire's product shot
         // is of the tread and sidewall pattern, which belongs to the model and
