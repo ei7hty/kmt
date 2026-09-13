@@ -32,6 +32,75 @@
 .order-section .tire-facet-count { margin-left: auto; padding-left: 10px; }
 /* The way back to the other 95 brands. Text, but a real target. */
 .order-section .tire-facet-more { min-height: 32px; margin-top: 4px; padding: 0; border: 0; background: none; color: var(--accent-text); font-size: 11.5px; font-weight: 400; letter-spacing: 0; text-align: left; text-transform: none; text-decoration: underline; }
+/* The chosen tire, explained in place.
+   -------------------------------------------------------------------------
+   Its own item of the .tire-options grid, spanning every column, rather than
+   content inside the card: the card is a single <button>, so nothing
+   interactive can be nested in it, and everything inside it would also be
+   swallowed into that button's accessible name -- which is already
+   "<name> <spec> In stock $52.03 per tire" before anything is added.
+
+   It carries the SELECTED card's own two markers -- #171717 and the
+   `inset 3px 0 #dedee3` bar -- so the two read as one object.
+
+   IT ONLY TUCKS UNDER THE CARD ON A PHONE, and that is measured rather than
+   taste. `.tire-options` is `repeat(auto-fill, minmax(min(400px, 100%), 1fr))`,
+   so it holds two columns once the grid itself reaches 812px: measured in the
+   browser, one column up to a 900px viewport and two from 950px. A full-row
+   item then tucks under the ROW, with its accent bar running under column one
+   -- so selecting the right-hand card would draw the panel attached to its
+   neighbour. Above 600px the panel is therefore its own closed box, tied to
+   its card by the shared accent bar and by the kicker naming the tire.
+
+   600px is the breakpoint this file already has, deliberately, instead of the
+   ~942px the flip actually happens at. A derived number would be a second
+   copy of `.tire-options`'s minmax -- two constants encoding one fact, the
+   CATALOG_FIELDS defect -- and it would go stale silently the first time the
+   grid is retuned. Picking a width where one column is certain means a change
+   to that grid can only cost a 6px gap, never a panel bolted to the wrong
+   tire.
+
+   Every colour here is stated, never inherited. `@tailwind base` zeroes
+   heading sizes and list padding, and this page has already shipped one
+   defect of each kind: a legacy `.min-h-screen label` rule outranking a class
+   until every filter option rendered as a block, and "Currently unavailable"
+   printed in the in-stock green. Contrast on this panel's ground (#171717)
+   was computed, not assumed -- the first draft of this comment guessed five
+   numbers and all five were wrong: #f3f3f3 16.16:1, #dedee3 13.37:1,
+   #c3c3c6 10.19:1, #a3a3ab 7.16:1, --accent-text #ff6b72 6.49:1. AA wants
+   4.5; the smallest here is the link, with 44% of margin to spare.
+   src/tire-detail.test.mjs recomputes them from this file rather than from a
+   list, so a rule added below with an unreadable grey fails there too.
+
+   NO BROAD `.product-detail p` RULE, and that is the point rather than an
+   omission. The first draft had one, and it silently outranked
+   `.product-detail-kicker` and `.product-detail-standing` -- both are <p>, so
+   (0,1,1) beat (0,1,0) and the kicker rendered at 13.5px body grey instead of
+   11px uppercase. Measured in the browser, not reasoned about; no test in this
+   tree could have seen it. Each element is addressed by its own class, and the
+   one shared rule is scoped to a block that contains no other paragraph. */
+.product-detail { grid-column: 1 / -1; display: grid; gap: 14px; min-width: 0; margin: 0 0 6px; padding: 18px; border: 1px solid #3e3e42; border-radius: 10px; background: #171717; box-shadow: inset 3px 0 #dedee3; text-align: left; }
+/* 0.06em, not the 0.1em this file's other kickers use: the longest name in
+   225/50R17 is "Continental ContiProContact SSR (Runflat)" at 41 characters,
+   and the wider tracking ran it to three lines of shouting at 375px. */
+.product-detail-kicker { overflow-wrap: anywhere; color: #a3a3ab; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.product-detail-block { display: grid; gap: 6px; min-width: 0; }
+/* .step-panel h3 sets Impact + uppercase on its own headings; h5 gets none of
+   that by name, and `@tailwind base` zeroes its size, so it is spelled out
+   rather than left to a cascade. */
+.order-section .product-detail h5 { margin: 0; color: #f3f3f3; font-family: var(--sans); font-size: 14px; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.product-detail-block p { color: #c3c3c6; font-size: 13.5px; line-height: 1.6; }
+.product-detail-points { margin: 0; padding-left: 18px; color: #c3c3c6; font-size: 13.5px; line-height: 1.6; list-style: disc; }
+.product-detail-points li { margin-bottom: 2px; }
+.product-detail-rating { color: #dedee3; font-size: 13px; }
+.product-detail-rating b { font-family: var(--mono); }
+/* The answer to "why is this one $52 and that one $516": mono and tabular, so
+   it reads as the arithmetic it is and lines up with the price on the card. */
+.product-detail-standing { color: #dedee3; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.product-detail-close { display: grid; justify-items: start; gap: 2px; padding-top: 12px; border-top: 1px solid #303033; }
+.product-detail-close p { color: #a3a3ab; font-size: 12.5px; line-height: 1.55; }
+/* A real target, not a text link squeezed into a sentence. */
+.product-detail-text { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-text); font-size: 13px; text-decoration: underline; }
 .tire-quantity { margin-top: 26px; padding-top: 22px; border-top: 1px solid #303033; }
 .tire-quantity-label { display: block; margin-bottom: 10px; font-size: 12px; font-weight: 600; color: #dedee3; }
 .quantity-options { display: flex; gap: 10px; }
@@ -146,6 +215,13 @@
   .order-section .tire-media { width: 48px; }
   .order-section .tire-art { width: 38px; height: 38px; border-width: 5px; }
   .order-section .tire-option > b { grid-column: 2; justify-self: start; text-align: left; }
+  /* One column is certain at this width, so the panel can tuck under its own
+     card instead of standing beside it: -12px cancels the grid's row gap so
+     the two touch, and the square top corners continue the card's edge. With
+     a gap it read as a second tire on a phone, which is the width where that
+     misreading costs the most. See the note above the default rule for why
+     this is the file's existing 600px and not the ~942px the grid flips at. */
+  .product-detail { margin-top: -12px; padding-top: 22px; border-top: 0; border-radius: 0 0 10px 10px; }
   .order-section .fitment-footer .primary-action { width: 100%; }
   .pricing-preview { padding: 18px 16px; }
   .pricing-preview-heading { align-items: center; }
