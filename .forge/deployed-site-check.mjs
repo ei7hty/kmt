@@ -587,16 +587,26 @@ async function main() {
     check(await page.locator('.fitment-option').first().isVisible().catch(() => false),
       '/ renders the size selector');
 
-    // 4b. The two pages the sitemap lists each carry exactly one canonical
-    //     tag naming themselves, not the other, and not whichever host is
-    //     answering this request (see checkCanonicalTag above).
+    // 4b. The page the sitemap lists carries exactly one canonical tag naming
+    //     itself, and not whichever host is answering this request (see
+    //     checkCanonicalTag above).
     const homeCanonical = await checkCanonicalTag(page, `https://${CANONICAL_HOST}/`);
     check(homeCanonical.ok, '/ carries exactly one canonical tag naming itself', homeCanonical.reason);
 
+    // /privacy asked the opposite question from 2026-09-13. Ken wanted the
+    // privacy notice out of search results, so it carries `noindex` and no
+    // canonical: a canonical answers "which URL is the real one for this
+    // content", and for a page nobody should land on from a search the answer
+    // is none of them. The two are asserted TOGETHER because either alone is
+    // satisfiable by an accident -- a page with neither tag looks the same as
+    // a page whose script never ran, and only the noindex being present rules
+    // that out.
     await page.goto(`${BASE}/privacy`, { waitUntil: 'domcontentloaded' });
-    const privacyCanonical = await checkCanonicalTag(page, `https://${CANONICAL_HOST}/privacy`);
-    check(privacyCanonical.ok, '/privacy carries exactly one canonical tag naming itself, not /',
-      privacyCanonical.reason);
+    const privacyRobots = await page.locator('meta[name="robots"]').getAttribute('content').catch(() => null);
+    const privacyCanonicalCount = await page.locator('link[rel="canonical"]').count();
+    check(/noindex/i.test(privacyRobots ?? '') && privacyCanonicalCount === 0,
+      '/privacy is kept out of search: a noindex robots tag and no canonical',
+      `robots content ${JSON.stringify(privacyRobots)}, canonical tags ${privacyCanonicalCount}`);
 
     // 5. Hard navigation to each route returns the app, not a 404. This is the
     //    SPA fallback, it is server configuration rather than app code, and it
@@ -865,15 +875,19 @@ async function main() {
     const sitemapType = sitemapResponse.headers.get('content-type') || '';
     const sitemapBody = await sitemapResponse.text();
     const locMatches = [...sitemapBody.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
-    // The pages meant for an index and nothing else: the customer flow and the
-    // privacy notice (t50). A page a customer owns never appears here.
-    const expectedLocs = [`https://${CANONICAL_HOST}/`, `https://${CANONICAL_HOST}/privacy`];
+    // The page meant for an index and nothing else: the customer flow. A page
+    // a customer owns never appears here, and since 2026-09-13 neither does
+    // /privacy -- it is noindexed at Ken's request, and advertising a page in
+    // the sitemap that will refuse to be indexed is a crawl spent to be
+    // refused. It stays crawlable; see the /privacy check above for why that
+    // is the half that makes noindex work.
+    const expectedLocs = [`https://${CANONICAL_HOST}/`];
     check(sitemapResponse.status === 200 && sitemapType.startsWith('application/xml') &&
       JSON.stringify(locMatches) === JSON.stringify(expectedLocs),
-      '/sitemap.xml answers 200 as application/xml listing exactly / and /privacy on the canonical host',
+      '/sitemap.xml answers 200 as application/xml listing exactly / on the canonical host',
       `status ${sitemapResponse.status}, content-type ${sitemapType || 'none'}, locs ${JSON.stringify(locMatches)}`);
   } catch (error) {
-    fail(`/sitemap.xml answers 200 as application/xml listing exactly / and /privacy on the canonical host — ${describeFetchError(error)}`);
+    fail(`/sitemap.xml answers 200 as application/xml listing exactly / on the canonical host — ${describeFetchError(error)}`);
   }
 
   // Three behaviors, not just files: caching that actually works, a method
