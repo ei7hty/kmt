@@ -32,7 +32,7 @@
  * the wrong value.
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, existsSync } from 'node:fs'
+import { mkdirSync, existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -65,15 +65,38 @@ export function parseArgs(argv) {
 const run = (script, args) => execFileSync(process.execPath, [path.join(ROOT, 'scripts', script), ...args],
   { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] })
 
-export function describeNextSteps({ packet, staging, digest, work }) {
+/**
+ * The three steps this refuses to take, with every value it already knows
+ * filled in.
+ *
+ * A PLACEHOLDER FOR A VALUE THE PRINTER HOLDS IS A DEFECT, not a formatting
+ * choice, and this printed three of them. `<n>` is the candidate count that
+ * was just written, `<seed>` is `options.seed` -- which parseArgs has already
+ * defaulted to today's date -- and the snapshot was passed in on the command
+ * line. The whole reason this file exists is that a batch done by hand is
+ * fifteen commands carrying three directories and a digest between them.
+ *
+ * `--validation-snapshot` IS THE ONE THAT BREAKS THINGS RATHER THAN MERELY
+ * COSTING A LOOKUP. `--snapshot` is handed to `build-image-mapping`, so the
+ * mapping carries that file's digest; `scrape-tires` then reads
+ * `src/data/scraped-tires.json` unless told otherwise and refuses on
+ * `mapping.inputDigest !== sha256Bytes(inputBytes)`. Printing step 1 without
+ * it told the operator to run a command this tool had already guaranteed would
+ * fail -- and the refusal names neither file, so the reader is left comparing
+ * hashes by hand. Omitted entirely when no `--snapshot` was given, because
+ * then the default is the file the mapping was actually built from.
+ */
+export function describeNextSteps({ packet, staging, digest, work, count, seed, snapshot }) {
+  const snapshotFlag = snapshot ? ` \\\n     --validation-snapshot ${snapshot}` : ''
   return [
     '',
     '─'.repeat(72),
     'LOCAL STEPS DONE. The three that touch somebody else or something live are yours:',
     '',
     '1. FETCH PRODUCT PAGES  (contacts the supplier, ~2-5s per page, a browser opens)',
-    `   node scripts/scrape-tires.mjs --validate-products --validation-count <n> \\`,
-    `     --validation-seed <seed> --validation-input ${path.join(work, 'mapping.json')} \\`,
+    `   node scripts/scrape-tires.mjs --validate-products --validation-count ${count ?? '<n>'} \\`,
+    `     --validation-seed ${seed ?? '<seed>'}${snapshotFlag} \\`,
+    `     --validation-input ${path.join(work, 'mapping.json')} \\`,
     `     --validation-output ${packet} --allow-partial`,
     '',
     '2. DOWNLOAD THE IMAGES  (contacts the supplier again; confirm the hosts it prints)',
@@ -115,15 +138,22 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       console.log(`[1/4] mapping  -> ${mapping} (already present, left alone)`)
     }
 
+    // Built ONCE, from the mapping that is actually on disk, and shared by all
+    // three printing paths below -- a second expression of this is how two of
+    // them come to print different numbers.
+    const candidates = JSON.parse(readFileSync(mapping, 'utf8')).candidates?.length ?? null
+    const steps = extra => describeNextSteps({ packet, staging, work: options.work,
+      count: candidates, seed: options.seed, snapshot: options.snapshot, ...extra })
+
     if (!existsSync(path.join(packet, 'snapshot.json'))) {
       console.log(`[2/4] packet   -> not built yet; step 1 below fetches it`)
-      console.log(describeNextSteps({ packet, staging, digest: null, work: options.work }))
+      console.log(steps({ digest: null }))
       process.exit(0)
     }
 
     if (!existsSync(path.join(staging, 'images'))) {
       console.log('[3/4] images   -> not downloaded yet; step 2 below fetches them')
-      console.log(describeNextSteps({ packet, staging, digest: null, work: options.work }))
+      console.log(steps({ digest: null }))
       process.exit(0)
     }
 
@@ -133,7 +163,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log('[4/4] seal     -> manifest.json')
     const sealed = JSON.parse(run('seal-image-packet.mjs', [packet, path.join(unwrapped, 'bindings.json')]))
     console.log(`      digest: ${sealed.manifestDigest}  (${sealed.count} images)`)
-    console.log(describeNextSteps({ packet, staging, digest: sealed.manifestDigest, work: options.work }))
+    console.log(steps({ digest: sealed.manifestDigest }))
   } catch (error) {
     console.error('Batch refused.')
     console.error(`  reason: ${error?.message ?? error}`)

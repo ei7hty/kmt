@@ -50,3 +50,51 @@ test('the printed steps put approval last and say nothing reaches a customer bef
   assert.match(steps, /APPROVE in the owner screen/)
   assert.match(steps, /Nothing reaches a customer until you do/)
 })
+
+test('step 1 carries the snapshot the mapping was built from, or the command it prints cannot work', () => {
+  // THE DEFECT THIS EXISTS FOR. `--snapshot X` is handed to
+  // build-image-mapping, so the mapping carries X's digest. `scrape-tires`
+  // reads src/data/scraped-tires.json unless told otherwise and refuses on
+  // `mapping.inputDigest !== sha256Bytes(inputBytes)`. Printing step 1 without
+  // `--validation-snapshot` therefore told the operator to run a command this
+  // tool had already guaranteed would fail -- and the refusal names neither
+  // file, so there is nothing in it to act on.
+  const snapshot = '/photos/snapshot-production.json'
+  const printed = describeNextSteps({ packet: '/w/packet', staging: '/w/staging', work: '/w', digest: null, count: 100, seed: 20260913, snapshot })
+  assert.match(printed, new RegExp(`--validation-snapshot ${snapshot}`))
+  // On the same command as the input it has to agree with, not somewhere else
+  // in the output where a reader might not carry it across.
+  const stepOne = printed.slice(printed.indexOf('1. FETCH'), printed.indexOf('2. DOWNLOAD'))
+  assert.match(stepOne, /--validation-snapshot/)
+  assert.match(stepOne, /--validation-input/)
+})
+
+test('with no snapshot given, step 1 names none -- the default is already the right file', () => {
+  const printed = describeNextSteps({ packet: '/w/packet', staging: '/w/staging', work: '/w', digest: null, count: 100, seed: 20260913 })
+  assert.doesNotMatch(printed, /--validation-snapshot/,
+    'naming the default snapshot explicitly would be noise, and wrong the day the default moves')
+  // The control: the same call WITH one does print it, so the assertion above
+  // is the conditional working rather than the flag never being printed.
+  assert.match(describeNextSteps({ packet: '/w/packet', staging: '/w/staging', work: '/w', digest: null, snapshot: '/s.json' }), /--validation-snapshot \/s\.json/)
+})
+
+test('a value this already holds is filled in, never left as a placeholder to type', () => {
+  const printed = describeNextSteps({ packet: '/w/packet', staging: '/w/staging', work: '/w', digest: null, count: 89, seed: 20260913 })
+  assert.match(printed, /--validation-count 89/)
+  assert.match(printed, /--validation-seed 20260913/)
+  assert.doesNotMatch(printed, /<n>|<seed>/, 'a placeholder for a value the printer holds is how a wrong number gets typed')
+
+  // Still honest when it genuinely does not know: the digest before sealing is
+  // the case that has always been printed as a placeholder, and should be.
+  assert.match(printed, /<manifest digest>/)
+})
+
+test('the count comes from the mapping, so it cannot disagree with what was written', () => {
+  // parseArgs defaults `--count` to 100 whatever the models file holds, so the
+  // printed count must not come from there: a 55-model mapping under a default
+  // of 100 would print a fetch for pages that do not exist.
+  const options = parseArgs(['--models-file', '/abs/list.txt', '--work', '/abs/work'])
+  assert.equal(options.count, 100, 'the parsed default is 100 regardless of the list')
+  const printed = describeNextSteps({ packet: '/w/packet', staging: '/w/staging', work: '/w', digest: null, count: 55, seed: options.seed })
+  assert.match(printed, /--validation-count 55/, 'the printed count is the mapping it read, not the parsed default')
+})
