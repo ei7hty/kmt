@@ -105,41 +105,6 @@ export function specPoints(tire) {
 }
 
 /**
- * Where this tire's price sits in the list the customer is looking at.
- *
- * This is the block that answers "why is this one $52 and that one $516".
- * Twelve cards sorted low-to-high look like the whole shop; the count line
- * above the list already says how many there are and what they span, and this
- * says where the one in your hand falls inside that.
- *
- * COMPARED AGAINST THE LIST ON SCREEN, not against the size, for the same
- * reason `priceRange` is: filter to winter and a sentence measured against all
- * 323 disagrees with every number above it. Pass the rendered list.
- *
- * Out-of-stock tires COUNT, for the same reason again -- they are shown, they
- * carry a price, and leaving them out would make this disagree with the list
- * it describes.
- *
- * Strictly-cheaper and strictly-dearer are counted separately rather than
- * derived from a rank, so tires at the same price are counted as neither and
- * the sentence stays true: there is no arithmetic here that ties has to break.
- */
-export function priceStanding(tire, tires) {
-  const price = tire?.price
-  if (typeof price !== 'number' || !Array.isArray(tires) || tires.length < 2) return null
-  const others = tires.filter(other => other !== tire && typeof other?.price === 'number')
-  if (others.length === 0) return null
-  const cheaper = others.filter(other => other.price < price).length
-  const dearer = others.filter(other => other.price > price).length
-  const text = cheaper === 0
-    ? 'Nothing else in this list costs less.'
-    : dearer === 0
-      ? 'Nothing else in this list costs more.'
-      : `In this list, ${cheaper} ${cheaper === 1 ? 'tire costs' : 'tires cost'} less and ${dearer} ${dearer === 1 ? 'costs' : 'cost'} more.`
-  return { cheaper, dearer, text }
-}
-
-/**
  * This tire's rating, or null.
  *
  * Ratings are built and DELIBERATELY EMPTY: there is no source for them and
@@ -168,12 +133,18 @@ export function tireRating(tire) {
  * react-dom in this suite and a JSX file cannot be imported by `node --test`.
  * Every field is null or empty when there is nothing honest to say, and the
  * component draws exactly the blocks that are not.
+ *
+ * IT NO LONGER TAKES THE LIST. A fourth block compared this tire's price with
+ * the others on screen -- "In this list, 8 tires cost less and 165 cost more."
+ * The owner read it on his own site and did not want it, which is the whole
+ * reason it is gone: a sentence that invites a customer to go price-hunting
+ * through 323 rows was answering a question he had not asked to have answered.
+ * The list was that block's only reader.
  */
-export function tireDetail(tire, tires = []) {
+export function tireDetail(tire) {
   return {
     season: seasonNote(tire),
     spec: specPoints(tire),
-    standing: priceStanding(tire, tires),
     rating: tireRating(tire),
   }
 }
