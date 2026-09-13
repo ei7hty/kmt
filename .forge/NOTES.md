@@ -3369,3 +3369,79 @@ The only difference is a fact about the file that the harness never checks.
 The second is the sharper one. Two functions enforcing the same rule is good
 design; it is also what makes the guard line a bad mutation anchor. Those two
 facts point in opposite directions and the harness has to know it.
+
+
+---
+
+## A second, weaker check reads as depth — and so does an empty instrument
+
+*2026-09-12, LOCAL SUITE lane (PR #511). Two more of the same night's class,
+found after the two notes above and caused by trying to be careful, not by
+being careless.*
+
+### The weaker check that read as belt and braces
+
+`scripts/inventory-suite.mjs` refuses to execute any step not classified
+`local`. On top of that classification I wrote a lint, `runnableViolations()`,
+scanning each runnable step's command for forbidden strings:
+
+```js
+const forbidden = [/giga-tires\.com/i, /\bflyctl\b/i, /kensmobiletire\.com/i, /kmt\.fly\.dev/i]
+```
+
+and a comment above it calling this "belt and braces on top of the
+classification." It was not belt and braces. It was a list with two holes, and
+the comment is what made it read as covered:
+
+- A runnable step invoking `scrape-tires.mjs 215/60R16` — the **supplier
+  scraper** — has no URL in its arguments at all, so no forbidden string
+  matches and the lint passes it.
+- A runnable step targeting any host outside those four passes too, which is
+  every host in the world except two of ours.
+
+CodeQL is what surfaced it, flagging the same substring idiom in the test as
+`js/incomplete-url-substring-sanitization`. The alert was a false positive
+about security — a test sanitises nothing — and a **true observation about
+shape**, and the shape was the part worth acting on. Chasing it into the
+production file is what found the holes; clearing the badge would not have.
+
+The fix was an **allow-list** of scripts a `local` step may invoke, plus
+`new URL(arg).hostname` equality against the same loopback set the real guard
+uses — so a script added to `scripts/` next month is refused by default rather
+than allowed by omission, and the file has one host idiom instead of two.
+
+**The general form**: a deny-list beside a real guard is not defence in depth,
+it is a second thing that can be wrong, and prose calling it "belt and braces"
+converts a gap into a reassurance. If you add a secondary check, either make it
+at least as strong as the primary one or say plainly in the comment which
+cases it does **not** cover. And a check that guards hosts more loosely than
+the code beside it is a small lie about what is verified.
+
+### The instrument whose empty result was indistinguishable from a clean one
+
+Same night, watching CI on two pull requests. The monitor's exit condition
+counted pending checks and stopped when the count was zero. `gh` returning
+nothing — a transient failure, an empty response — also produced zero. So
+"everything passed" and "I could not see anything" were the same value, and it
+announced `ALL CHECKS SETTLED` while the only check that mattered was still
+running. It emitted no per-check line, which was the tell: a report about
+several checks that names none of them has not observed any.
+
+I caught it only because the summary named no checks and I went and looked.
+
+**Three habits, in order of how often they would have helped here:**
+
+1. **Make a watcher print what it saw, not only its verdict.** A verdict with
+   no evidence under it cannot be sanity-checked at a glance; a list of check
+   names and results can.
+2. **Never let "no results" and "no failures" be the same value.** Distinguish
+   an empty query from an empty result set explicitly, and treat the empty
+   query as not-yet-known rather than as done.
+3. **Verify the conclusion directly before reporting it.** One
+   `gh pr checks <n>` took seconds and contradicted the watcher outright.
+
+This is the third instrument in one session whose success was uninformative:
+a fixture that agreed with the guarantee, a mutation harness that mutated the
+wrong function, and now a watcher whose silence looked like a pass. None was
+carelessness. Each was a checking tool built while attention was on the thing
+being checked — which is exactly when nobody is checking the checker.
