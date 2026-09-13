@@ -15,11 +15,23 @@
 .order-section .tire-options .tire-option:hover { background: #171717 !important; border-color: #909094 !important; }
 .order-section .tire-info strong { text-transform: none; font-weight: 650; letter-spacing: 0; }
 .order-section .tire-option { border-radius: 10px !important; padding: 18px !important; }
-.order-section .tire-media { display: grid; place-items: center; width: 66px; aspect-ratio: 1; overflow: hidden; }
+.order-section .tire-media { display: grid; place-items: center; width: 80px; aspect-ratio: 1; overflow: hidden; }
 .order-section .tire-media > img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .order-section .tire-option.selected { border-color: #ababba !important; background: #171717 !important; box-shadow: inset 3px 0 #dedee3; }
 .order-section .tire-info { gap: 6px; }
 .order-section .tire-info small { font-size: 12px; text-transform: none; font-weight: 400; line-height: 1.5; }
+/* Each filter option is a <label>, and a legacy element rule -- `.min-h-screen
+   label` in App.css -- gives every label on this page display:block, a 7px
+   bottom margin and UPPERCASE. It outranks a bare class, so .tire-facet-option's
+   flex row, its gap and its right-aligned count all silently did nothing: the
+   checkbox sat hard against the text and the count ran into the end of the
+   brand name ("BRIDGESTONE14"). Restated here, at a specificity that wins, in
+   the file whose first line is "keep legacy element rules out of new
+   controls" -- because that is exactly what this is. */
+.order-section .tire-facet-option { display: flex; align-items: center; gap: 8px; min-height: 26px; margin-bottom: 0; padding: 3px 0; color: #dedee3; font-size: 12.5px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.order-section .tire-facet-count { margin-left: auto; padding-left: 10px; }
+/* The way back to the other 95 brands. Text, but a real target. */
+.order-section .tire-facet-more { min-height: 32px; margin-top: 4px; padding: 0; border: 0; background: none; color: var(--accent-text); font-size: 11.5px; font-weight: 400; letter-spacing: 0; text-align: left; text-transform: none; text-decoration: underline; }
 .tire-quantity { margin-top: 26px; padding-top: 22px; border-top: 1px solid #303033; }
 .tire-quantity-label { display: block; margin-bottom: 10px; font-size: 12px; font-weight: 600; color: #dedee3; }
 .quantity-options { display: flex; gap: 10px; }
@@ -112,6 +124,24 @@
   .date-shortcuts { padding-top: 4px; }
   .date-choice { flex: 1; text-align: center !important; }
   .order-section .quantity-option { flex: 1; min-width: 0; }
+  /* Expanded at 375px this panel is ~950px of filters above the first tire --
+     more than a screen of controls before any product. So on a phone it sits
+     behind one control, while the count and Clear stay out where they are the
+     feedback that a filter did something. The collapse rule is scoped INSIDE
+     this block on purpose: it cannot apply at a width where the toggle that
+     undoes it is hidden. */
+  .tire-filters-body[data-open="false"] { display: none; }
+  .order-section .tire-filters-toggle { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 14px; border: 1px solid #3e3e42; border-radius: 8px; background: #171717; color: #dedee3; font-size: 14px; font-weight: 600; letter-spacing: 0; text-align: left; text-transform: none; }
+  .order-section .tire-filters-toggle:hover { border-color: #909094; }
+  .tire-filters-badge { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: #fff; font-family: var(--mono); font-size: 11px; text-align: center; }
+  /* Points down when there is more to open, up when there is not. */
+  .tire-filters-caret { width: 0; height: 0; margin-left: auto; border-inline: 5px solid transparent; border-top: 6px solid #a3a3ab; }
+  .order-section .tire-filters-toggle[aria-expanded="true"] .tire-filters-caret { border-top: 0; border-bottom: 6px solid #a3a3ab; }
+
+  /* A checkbox row is a touch target at this width, not a 26px line. */
+  .order-section .tire-facet-option { min-height: 44px; padding: 0; font-size: 14px; }
+  .order-section .tire-facet-option input { width: 18px; height: 18px; }
+  .order-section .tire-facet-more { min-height: 44px; font-size: 13px; }
   .order-section .tire-option { grid-template-columns: 48px minmax(0, 1fr); gap: 12px; padding: 16px !important; }
   .order-section .tire-media { width: 48px; }
   .order-section .tire-art { width: 38px; height: 38px; border-width: 5px; }

@@ -6,8 +6,8 @@ const YEARS = Array.from({ length: 40 }, (_, index) => String(new Date().getFull
 
 export function VehicleDetails({ vehicle, onVehicleChange, value, onChange }) {
   return <section className="request-details" aria-labelledby="vehicle-heading">
-    <div className="detail-heading"><div><span className="detail-index">YOUR VEHICLE</span><h4 id="vehicle-heading">What do you drive?</h4></div><span className="detail-badge">No VIN needed</span></div>
-    <p className="detail-help">Start with the year and make, then add your model. Unsure? Tell me what you know.</p>
+    <div className="detail-heading"><div><span className="detail-index">YOUR VEHICLE</span><h4 id="vehicle-heading">What do you drive? <span className="optional">optional</span></h4></div><span className="detail-badge">No VIN needed</span></div>
+    <p className="detail-help">Skip it if you like. It helps me turn up with the right kit, but nothing here changes your size or your price, and I confirm the details with you either way.</p>
     <div className="vehicle-fields">
       <div><label htmlFor="vehicleYear">Year</label><input id="vehicleYear" list="vehicle-years" inputMode="numeric" placeholder="2020" value={vehicle.year} onChange={event => onVehicleChange('year', event.target.value)} /><datalist id="vehicle-years">{YEARS.map(year => <option key={year} value={year} />)}</datalist></div>
       <div><label htmlFor="vehicleMake">Make</label><input id="vehicleMake" list="vehicle-makes" placeholder="Search or type a make" value={vehicle.make} onChange={event => onVehicleChange('make', event.target.value)} /><datalist id="vehicle-makes">{MAKES.map(make => <option key={make} value={make} />)}</datalist></div>

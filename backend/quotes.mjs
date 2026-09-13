@@ -150,7 +150,23 @@ const LIMITS = {
   customerName: 200, customerEmail: 254,
 }
 
-const REQUIRED = ['vehicleInfo', 'tireSelection', 'location', 'date', 'customerName', 'customerEmail']
+/**
+ * What a request cannot be submitted without.
+ *
+ * `vehicleInfo` IS NOT ON THIS LIST, by the owner's decision: the tire size
+ * comes off the sidewall the customer already selected, and the vehicle never
+ * verified fitment -- the form says so itself. It is useful to Ken and it is
+ * not a gate, because he coordinates with the customer on the particulars
+ * regardless. Refusing a whole request over it turned away people who knew
+ * their size and not their trim.
+ *
+ * It is not free, though: src/pricing.js used to read the vehicle for the
+ * truck/pickup/van/SUV review gate, and an empty string matches no pattern.
+ * Dropping it from here without doing anything else would have SILENTLY
+ * removed that gate for exactly the requests carrying the least information.
+ * An unknown vehicle is an exception there instead -- see calculateDraftQuote.
+ */
+const REQUIRED = ['tireSelection', 'location', 'date', 'customerName', 'customerEmail']
 
 /**
  * What a customer-facing read of a request carries.

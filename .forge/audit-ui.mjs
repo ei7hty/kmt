@@ -248,7 +248,7 @@ export async function exceptionTireFor(base) {
 export const CLEAN_SIZE = '205/65R15'
 
 /**
- * The seven fields a customer's browser is built around, and nothing else.
+ * The fields a customer's browser is built around, and nothing else.
  *
  * One list, imported by every script that checks it (deployed-site-check.mjs,
  * catalog-import-check.mjs), rather than a hand-synced copy in each. This
@@ -257,8 +257,58 @@ export const CLEAN_SIZE = '205/65R15'
  * failure shape for this particular list is quieter than a leak: someone adds
  * a legitimate eighth field, updates one file, and now one check passes while
  * the other fails on a diff nobody made.
+ *
+ * That comment was right and it was already out of date when it was written:
+ * catalog-import-check.mjs held a hand-copied duplicate of this array, the
+ * word "seven" was a third copy of the same fact in two messages, and the
+ * exact predicted failure then happened twice.
  */
 export const CATALOG_FIELDS = ['id', 'name', 'size', 'price', 'inStock', 'category', 'description']
+
+/**
+ * Fields a row MAY carry, approved one at a time, and not otherwise.
+ *
+ * Both of these are conditional in `catalog()`: a tire has an `imageUrl` only
+ * once a photo of it is approved, and a `brand` only when the supplier's own
+ * listing URL carries a recognisable one. A strict "exactly N keys" rule can
+ * never describe that, and until now it did not try -- which is why the
+ * deployed-site audit went red on every production deploy from the day photos
+ * went live, naming `imageUrl` as the offender on 6,115 rows. That is a true
+ * report of the rule as written and a false alarm about a leak, and a check
+ * that cries wolf on every deploy is one people stop reading.
+ *
+ * THE RULE THIS REPLACES IT WITH IS STRICTER, not looser. The leak it exists
+ * to catch is #61 -- sku, stock, listPrice and the supplier's product URL
+ * reaching every customer's browser. Exact-length could not tell an approved
+ * optional field from a leaked one, so it failed on both and taught people to
+ * ignore it. Required-plus-approved-optional-and-nothing-else still fails on
+ * the leak, and stops failing on the approvals.
+ *
+ * `brand` is the label only. It is READ from the supplier's listing URL by
+ * `deriveBrand`, and the URL itself stays behind the boundary: a supplier URL
+ * is private provenance and this list is the public contract.
+ */
+export const CATALOG_OPTIONAL_FIELDS = ['imageUrl', 'brand']
+
+/**
+ * Why a row's shape is wrong, or null if it is right.
+ *
+ * One implementation for the two scripts that ask, for the same reason the
+ * list itself is one export: two copies of a predicate drift exactly the way
+ * two copies of an array do, and more quietly, because nobody diffs logic.
+ */
+export function catalogRowProblem(tire) {
+  const keys = Object.keys(tire)
+  const missing = CATALOG_FIELDS.filter(field => !Object.prototype.hasOwnProperty.call(tire, field))
+  if (missing.length) return `missing ${missing.join(', ')}`
+  const extra = keys.filter(key => !CATALOG_FIELDS.includes(key) && !CATALOG_OPTIONAL_FIELDS.includes(key))
+  if (extra.length) return `carries ${extra.join(', ')}, which no customer field list approves`
+  return null
+}
+
+/** "the seven required customer fields" -- counted, never spelled out. */
+export const CATALOG_FIELDS_PHRASE =
+  `the ${CATALOG_FIELDS.length} required customer fields (optional: ${CATALOG_OPTIONAL_FIELDS.join(', ')})`
 
 /**
  * A size and a tire in it that sail through without an exception, resolved

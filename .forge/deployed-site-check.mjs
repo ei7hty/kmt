@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 import http from 'node:http';
 import https from 'node:https';
 import { promises as dns } from 'node:dns';
-import { CATALOG_FIELDS } from './audit-ui.mjs';
+import { CATALOG_FIELDS_PHRASE, catalogRowProblem } from './audit-ui.mjs';
 import { GA_MEASUREMENT_ID } from '../src/analytics.js';
 import { candidateConfig, candidateFetch, candidateAsset, transferBudget, MAX_CANDIDATE_BODY, assertCandidateRequest, guardCandidateContext, assertCandidateClean } from './release-candidate.mjs';
 
@@ -518,14 +518,10 @@ async function main() {
 
   if (Array.isArray(tires) && tires.length > 0) {
     // Every row, not a sample: one leaking row is the whole problem.
-    const wrongShape = tires.filter(tire => {
-      const keys = Object.keys(tire).sort();
-      return keys.length !== CATALOG_FIELDS.length ||
-        !CATALOG_FIELDS.every(field => Object.prototype.hasOwnProperty.call(tire, field));
-    });
+    const wrongShape = tires.filter(tire => catalogRowProblem(tire) !== null);
     check(wrongShape.length === 0,
-      `every catalog row carries exactly the seven customer fields (${tires.length} rows)`,
-      wrongShape.length ? `first offender: ${JSON.stringify(Object.keys(wrongShape[0]))}` : '');
+      `every catalog row carries ${CATALOG_FIELDS_PHRASE} and nothing else (${tires.length} rows)`,
+      wrongShape.length ? `first offender ${catalogRowProblem(wrongShape[0])}: ${JSON.stringify(Object.keys(wrongShape[0]))}` : '');
   }
 
   try {

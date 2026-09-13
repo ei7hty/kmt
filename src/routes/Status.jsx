@@ -134,7 +134,7 @@ function Status({ navigate }) {
               )
               return (
                 <div key={request.id} className="panel owner-request">
-                  <p className="owner-request-vehicle">{request.vehicleInfo}</p>
+                  {request.vehicleInfo && <p className="owner-request-vehicle">{request.vehicleInfo}</p>}
                   {/* A stopped request has no next beat, and a stepper pointing
                       at one would be telling the customer to wait for something
                       that is not coming. */}
