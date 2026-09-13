@@ -621,6 +621,59 @@
 .privacy-panel a { color: var(--accent-text); }
 .privacy-panel a, .privacy-panel .privacy-number { white-space: nowrap; }
 
+/* THE STICKY TEXT BAR, and why it only exists on a phone.
+   `.site-nav` is `position: relative` -- it scrolls away and does not come
+   back. Measured on production at 375x812: the `sms:` deep link in that nav
+   is the single lowest-friction way to become a lead here (one tap, opens
+   the messages app with a draft already written), and it is off screen by
+   2000px on a page that is 5.7 screens tall at step 1 and 8.5 at step 2. So
+   for ~95% of the page there was no way to reach Ken without scrolling back
+   to the top to look for one.
+   Text only, no call control: that is Ken's own standing rule, t63 verbatim
+   -- "dont create smaller call option promote texting" -- and it is why this
+   bar has one action in it rather than the two a bar like this usually has.
+   Phone only, because on a desktop the nav is in view far more of the time
+   and a fixed bar there costs more than it returns. */
+.mobile-contact-bar { display: none; }
+
+@media (max-width: 760px) {
+  .mobile-contact-bar {
+    position: fixed;
+    z-index: 3;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    justify-content: center;
+    /* The inset keeps the action clear of the iPhone home indicator, which
+       otherwise sits on top of it. Falls back to 0 where it is unsupported. */
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid #303033;
+    background: rgba(8, 8, 8, 0.94);
+  }
+
+  .mobile-contact-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 420px;
+    min-height: 48px;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    background: var(--accent-solid);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+  }
+
+  /* Room for the bar, so it never covers the last thing on the page -- which
+     at the end of the order form is the submit button. */
+  .customer-shell { padding-bottom: 82px; }
+}
+
 @media (max-width: 760px) {
   .customer-shell > .site-nav { flex-wrap: wrap; gap: 14px; }
   .site-links { order: 3; flex-basis: 100%; justify-content: space-between; }

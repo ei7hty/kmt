@@ -206,6 +206,14 @@
 
   /* A checkbox row is a touch target at this width, not a 26px line. */
   .order-section .tire-facet-option { min-height: 44px; padding: 0; font-size: 14px; }
+  /* And so is a sort pill, which this block missed. Measured on production at
+     375x812: the three pills rendered 22.0px tall at 11px type -- half the
+     floor, and the only controls left in the customer flow under it, sitting
+     directly above the facet rows above that this block had already fixed.
+     inline-flex because padding alone cannot centre a label inside a
+     min-height, and the pills keep their dense 22px form on desktop, the same
+     way the facet rows keep their 26px one. */
+  .order-section .tire-sort { display: inline-flex; align-items: center; min-height: 44px; padding: 4px 14px; font-size: 12px; }
   .order-section .tire-facet-option input { width: 18px; height: 18px; }
   .order-section .tire-facet-more { min-height: 44px; font-size: 13px; }
   .order-section .tire-option { grid-template-columns: 48px minmax(0, 1fr); gap: 12px; padding: 16px !important; }

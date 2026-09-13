@@ -554,6 +554,10 @@ function CustomerRequest({ navigate }) {
           </div>
         </div>}
       </main>
+      {/* One tap to a text with the draft already written, in reach from
+          anywhere on the page rather than only at the top. `TEXT_HREF` is the
+          same constant the nav uses, so the opener stays in one place. */}
+      <div className="mobile-contact-bar"><a className="mobile-contact-action" href={TEXT_HREF} data-testid="sticky-text-ken">{TEXT_LABEL}</a></div>
       <SocialProof /><footer className="site-footer"><span data-testid="copy-footer-brand">{COPY['footer.brand']}</span><span>Mobile tire service. Malden, MA.</span><a href="/privacy" className="privacy-link" onClick={event => { event.preventDefault(); navigate('/privacy') }}>Privacy</a></footer>
     </div>
   )
