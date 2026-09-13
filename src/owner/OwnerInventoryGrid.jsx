@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   GRID_COLUMNS, PAGE_SIZES, dollars, headerSortState, sortArrow,
-  showEmptyState, supplierCostCents, sellingPriceCents, sellingSource,
+  showEmptyState, supplierCostCents, ruledPriceCents,
 } from './inventory-grid.js'
 
 /**
@@ -174,12 +174,12 @@ function GridRow({ item, grid, state, expanded, onExpand }) {
   const stock = item.source?.stock
   const available = item.supplierActive && item.inStock && stock > 0
   const marginStale = dirty || status?.kind === 'saved'
-  // The rule's price, shown only where it is the one in force: `source` is
-  // 'markup' exactly when Ken has not priced the tire himself, so this is
-  // null the moment he has. Read from the server's answer rather than
-  // recomputed here -- the markup rule belongs to markup.js and one copy of
-  // it is the whole point.
-  const ruled = sellingSource(item) === 'markup' ? sellingPriceCents(item) : null
+  // The rule's price, shown only where it is the one in force -- null the
+  // moment Ken has a price of his own, including in the window after a save
+  // when the row's `selling` is still the server's pre-save answer. The two
+  // conditions that decide it live in `ruledPriceCents` rather than here, so
+  // the tests drive the same expression this renders.
+  const ruled = ruledPriceCents(item)
 
   const commit = () => grid.commitRow(item.id)
   const onKey = event => { if (event.key === 'Enter') { event.preventDefault(); commit() } }

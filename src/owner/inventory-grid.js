@@ -114,6 +114,28 @@ export const sellingPriceCents = item => item?.selling?.priceCents ?? null
 export const sellingSource = item => item?.selling?.source ?? null
 
 /**
+ * The rule's price for this row, or null if the rule is not what is in force.
+ *
+ * TWO conditions, and the second is the load-bearing one. `selling` is the
+ * server's answer and the save responses do not carry a new one, so a row that
+ * has just been saved still holds the `selling` from before the save: source
+ * 'markup', and the old rule price. Reading `source` alone therefore printed
+ * "$135.00 by rule" under the $150.00 the owner had just set — announcing a
+ * price that was no longer in force, which is the same class of defect this
+ * whole change exists to remove.
+ *
+ * `offer.priceCents` is the half that survives a stale `selling`, because both
+ * save paths keep it accurate on the row. An owner price always wins over the
+ * rule (markup.js: "The owner's price for that specific tire, if he has set
+ * one. It wins outright"), so its presence is enough to know the rule is not
+ * pricing this tire — without this module having to know what the rule is.
+ */
+export const ruledPriceCents = item =>
+  item?.offer?.priceCents == null && sellingSource(item) === 'markup'
+    ? sellingPriceCents(item)
+    : null
+
+/**
  * Which way this column's arrow points, read from what the SERVER said it did.
  *
  * `echoed` is the `{sort, dir}` off the last successful response. A column the

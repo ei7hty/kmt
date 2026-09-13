@@ -21,7 +21,7 @@ import { ratio } from '../../.forge/contrast-measure.mjs'
 import {
   createInventoryGrid, headerSortState, nextSortRequest, showEmptyState,
   applyBulkResults, bulkNotice, reasonLabel, priceFromFormula, previewPriceChange,
-  parseMoney, PAGE_SIZES, BULK_LIMIT, sellingEnabled, neverDecided,
+  parseMoney, PAGE_SIZES, BULK_LIMIT, sellingEnabled, neverDecided, ruledPriceCents,
 } from './inventory-grid.js'
 
 const SORT_KEYS = ['size', 'name', 'supplierPrice', 'price', 'margin', 'enabled', 'updated']
@@ -903,4 +903,48 @@ test('the rule price clears 4.5:1 on every row background it can land on', () =>
     assert.ok(measured >= 4.5,
       `the priced-but-not-for-sale warning's ${name} is ${measured.toFixed(2)}:1 (${fg} on ${warningGround}), below the 4.5:1 floor`)
   }
+})
+
+test('the rule price stops being shown the moment the owner has a price of his own', async () => {
+  // `selling` is the SERVER's answer and the save responses do not carry a new
+  // one, so after a save the row on screen still holds the pre-save `selling`
+  // -- source 'markup', and the old rule price. Rendering the rule line off
+  // `source` alone therefore printed "$135.00 by rule" underneath the $150.00
+  // Ken had just set, announcing a price that was no longer in force. That is
+  // the same class of defect this whole change exists to remove, so it does
+  // not get to ship inside the fix for it.
+  //
+  // `ruledPriceCents` requires BOTH: the server says the rule is what is in
+  // force, AND there is no owner price on the row. The second is kept accurate
+  // locally by both save paths, so it is the one that survives a stale
+  // `selling`.
+  const pool = [untouched(1)]
+  const { api } = makeApi({ pool })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+
+  assert.equal(ruledPriceCents(grid.items()[0]), untouched(1).selling.priceCents,
+    'before he prices it, the rule price is what the tire sells for and is shown')
+
+  grid.selectAllOnPage(true)
+  grid.requestBulk('price', { multiplier: 1.5, addShipping: false })
+  await grid.confirmBulk()
+
+  const row = grid.items()[0]
+  assert.equal(row.selling.source, 'markup', 'the stale server answer is still on the row -- this is the trap')
+  assert.equal(row.offer.priceCents, Math.round(untouched(1).price * 100 * 1.5), 'and his price is now set')
+  assert.equal(ruledPriceCents(row), null,
+    'so no rule price is claimed: his price is the one in force')
+})
+
+test('a single-row save clears the rule line too, by the same rule', async () => {
+  const pool = [untouched(1)]
+  const { api } = makeApi({ pool })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+
+  grid.editRow('sku-1', { price: '61.00' })
+  await grid.commitRow('sku-1')
+
+  assert.equal(ruledPriceCents(grid.items()[0]), null)
 })
