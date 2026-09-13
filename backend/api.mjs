@@ -3,6 +3,7 @@ import { PUBLIC_BODY_LIMIT, clientIp, refuse } from './limits.mjs'
 import { SITE_COPY_FIELDS, SiteCopy, siteCopyDefaults } from './site-copy.mjs'
 import { SocialProof } from './social-proof.mjs'
 import { IMAGE_PUBLIC_PATH } from './image-manifest.mjs'
+import { compressedJson } from './compression.mjs'
 
 /**
  * Exported as `readJsonBody` so the auth routes parse request bodies the same
@@ -169,13 +170,29 @@ export function createCatalogApi(inventory) {
       // unauthenticated caller -- it only shapes numbers the server itself
       // computes at submit time.
       const pricing = inventory.getPricingSettings()
+      // COMPRESSED HERE, because there is nowhere else it can be chosen. Fly's
+      // edge supplies an encoding and no quality dial; measured against the
+      // live 2,575,347-byte payload it sends ~325,000 bytes, worse than node
+      // brotli's LOWEST setting, and the deployed-site check has been failing
+      // on a 204,800-byte budget ever since. Quality 5 is 147,726 bytes in
+      // 17ms. Not one field was dropped to get there -- see compression.mjs.
+      //
+      // A `content-encoding` we set is passed through rather than redone, and
+      // `Vary` rides along with it: this route answers `public, max-age=300`
+      // whenever no image packet exists, and a shared cache keyed without
+      // Vary would hand one client's brotli body to the next as plain JSON.
+      const { body, headers } = await compressedJson(
+        { tires: inventory.catalog({ size }), disposalFee: pricing.disposalFee },
+        request.headers['accept-encoding'],
+      )
       // Once images exist, keep revocation-sensitive URLs out of browser/CDN
       // caches forever, including after the final packet is revoked.
       response.writeHead(200, {
         'Content-Type': 'application/json',
         'Cache-Control': inventory.hasImagePackets() ? 'no-store' : 'public, max-age=300',
+        ...headers,
       })
-      response.end(JSON.stringify({ tires: inventory.catalog({ size }), disposalFee: pricing.disposalFee }))
+      response.end(body)
     } catch (error) {
       console.error(error)
       response.writeHead(500, { 'Content-Type': 'application/json' })
