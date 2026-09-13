@@ -71,6 +71,59 @@ export function normalizePricingSettings(settings) {
 const quantityFor = (request) => ALLOWED_QUANTITIES.includes(request?.quantity) ? request.quantity : 1
 
 /**
+ * The tires a request asks for, as one list -- the only shape anything
+ * below this line reads (`.forge/staggered-fitment.md`, stage A).
+ *
+ * A request carrying a `tires` array (a staggered fitment: different tires
+ * front and rear, one car, one visit) is read as that array. A request with
+ * none -- every row stored today, and every browser running the bundle that
+ * exists today -- becomes a one-element list built from its legacy
+ * `tireSize`/`tireSelection`/`quantity` fields, here and nowhere else.
+ *
+ * Deliberately not two paths. Keeping the legacy fields priced alongside a
+ * new array would leave one branch to be forgotten, and the forgotten one
+ * prices a staggered request as four of the FRONT tire: a wrong number on a
+ * real invoice that looks exactly like a working order. One list cannot
+ * have that bug. An empty array is treated as absent for the same reason a
+ * missing one is: nothing today can produce either, and the legacy fields
+ * are the only thing such a request can mean.
+ */
+function tireEntriesFor(request) {
+  const listed = Array.isArray(request?.tires) && request.tires.length > 0
+    ? request.tires
+    : [{ position: null, size: request?.tireSize ?? null, tireSelection: request?.tireSelection, quantity: request?.quantity }]
+  return listed.map(entry => ({
+    position: entry?.position ?? null,
+    size: entry?.size ?? null,
+    tireSelection: entry?.tireSelection,
+    quantity: quantityFor(entry),
+  }))
+}
+
+/**
+ * The exception reasons one tire entry raises, in the order they always
+ * came, with the same words. `null` is a tire the catalog did not have.
+ */
+function tireExceptionReasons(tire) {
+  if (!tire) return ['Selected tire was not found in the catalog']
+  const reasons = []
+  if (!tire.inStock) reasons.push('Selected tire is out of stock')
+  // Matched on category, not on a specific id. This was `tire.id === 'tire-5'`,
+  // which was right when the catalog held six rows and silently wrong the
+  // moment a second off-road tire existed.
+  if (tire.category === 'off-road') reasons.push('Off-road tire requires owner review')
+  // A supplier row's id always starts with giga-, set once at import and
+  // never invented downstream (see src/data/scraped-tires.json and
+  // backend/inventory.mjs). Everything else -- the six seeds, and every
+  // generated row filling a size the supplier hasn't been asked about --
+  // is a placeholder standing in for a tire that may not exist to buy. A
+  // customer can still order one, but the owner has to look before it is
+  // sent, the same gate a real out-of-stock or off-road tire goes through.
+  if (!tire.id.startsWith('giga-')) reasons.push('Not a supplier-listed tire; owner review required')
+  return reasons
+}
+
+/**
  * Whether a fee this function generates itself (never a catalogue entry --
  * see below) is taxed, given the owner's `appliesTo` setting. `'all'` taxes
  * everything; `'goods'`/`'services'` taxes only a line of that own category.
@@ -104,53 +157,66 @@ function scopedAmountCents(entry, tire) {
   return entry.amountCents
 }
 
-function catalogueLineItems(catalogueLines, chosenLineIds, quantity, settings, tire) {
+/**
+ * `entries` is the resolved tire list (`tireEntriesFor`, each with its
+ * `tire` looked up). The fee ruling in `.forge/staggered-fitment.md` is
+ * the owner's, and this is where it is applied:
+ *
+ * - A `perTire` fee is one line per entry, each scoped to its own tire and
+ *   carrying its own quantity. Disposing of a 275 costs what disposing of a
+ *   275 costs; one merged line could not carry two unit prices.
+ * - A `perJob` fee is one line. With one distinct tire it is scoped to that
+ *   tire exactly as it always was. With more than one distinct tire it is
+ *   charged once at the site-wide `amountCents`, dropping SKU and size
+ *   overrides: a per-visit fee scoped to "the tire" has no answer when there
+ *   are two, and scoping it to the first entry would make the price of the
+ *   visit depend on which tire the customer happened to pick first.
+ *
+ * A request with one entry -- every request that exists today -- therefore
+ * produces exactly the lines it always produced, in the same order; that is
+ * asserted in the tests, not assumed here.
+ */
+function catalogueLineItems(catalogueLines, chosenLineIds, entries, settings) {
+  const distinct = new Set(entries.map(entry => entry.tireSelection)).size
+  const taxable = entry => Boolean(settings.tax) && entry.taxable === true
   return catalogueLines
     .filter(entry => entry && typeof entry === 'object' && entry.enabled &&
       (entry.mode === 'automatic' || (entry.mode === 'optional' && chosenLineIds.includes(entry.id))) &&
       typeof entry.label === 'string' && Number.isInteger(entry.amountCents))
-    .map(entry => ({
-      description: entry.label,
-      quantity: entry.basis === 'perTire' ? quantity : 1,
-      // Price specificity is independent of catalogue order: a deliberate
-      // SKU exception wins over its size, which wins over the site-wide
-      // parent amount. Reordering invoice lines can therefore never change
-      // what the customer is charged.
-      unitPrice: scopedAmountCents(entry, tire) / 100,
-      // The owner's own flag, never inferred -- see computeQuoteTotals.
-      taxable: Boolean(settings.tax) && entry.taxable === true,
-    }))
+    .flatMap(entry => {
+      if (entry.basis === 'perTire') {
+        return entries.map(({ tire, quantity }) => ({
+          description: entry.label,
+          quantity,
+          // Price specificity is independent of catalogue order: a deliberate
+          // SKU exception wins over its size, which wins over the site-wide
+          // parent amount. Reordering invoice lines can therefore never change
+          // what the customer is charged.
+          unitPrice: scopedAmountCents(entry, tire) / 100,
+          // The owner's own flag, never inferred -- see computeQuoteTotals.
+          taxable: taxable(entry),
+        }))
+      }
+      return [{
+        description: entry.label,
+        quantity: 1,
+        unitPrice: (distinct > 1 ? entry.amountCents : scopedAmountCents(entry, entries[0]?.tire)) / 100,
+        taxable: taxable(entry),
+      }]
+    })
 }
 
 export function calculateDraftQuote(request, catalog = null, pricingSettings = DEFAULT_PRICING_SETTINGS, catalogueLines = [], chosenLineIds = []) {
-  const tires = catalog || [getTireById(request?.tireSelection)].filter(Boolean)
-  const tire = tires.find(item => item.id === request?.tireSelection)
-  const quantity = quantityFor(request)
-  const exceptionReasons = []
+  // The list is built first and is the only thing read from here down.
+  const wanted = tireEntriesFor(request)
+  const tires = catalog || wanted.map(entry => getTireById(entry.tireSelection)).filter(Boolean)
+  const entries = wanted.map(entry => ({ ...entry, tire: tires.find(item => item.id === entry.tireSelection) ?? null }))
 
-  if (!tire) {
-    exceptionReasons.push('Selected tire was not found in the catalog')
-  } else {
-    if (!tire.inStock) {
-      exceptionReasons.push('Selected tire is out of stock')
-    }
-    // Matched on category, not on a specific id. This was `tire.id === 'tire-5'`,
-    // which was right when the catalog held six rows and silently wrong the
-    // moment a second off-road tire existed.
-    if (tire.category === 'off-road') {
-      exceptionReasons.push('Off-road tire requires owner review')
-    }
-    // A supplier row's id always starts with giga-, set once at import and
-    // never invented downstream (see src/data/scraped-tires.json and
-    // backend/inventory.mjs). Everything else -- the six seeds, and every
-    // generated row filling a size the supplier hasn't been asked about --
-    // is a placeholder standing in for a tire that may not exist to buy. A
-    // customer can still order one, but the owner has to look before it is
-    // sent, the same gate a real out-of-stock or off-road tire goes through.
-    if (!tire.id.startsWith('giga-')) {
-      exceptionReasons.push('Not a supplier-listed tire; owner review required')
-    }
-  }
+  // Every tire rule runs per entry, and the request is an exception if any
+  // entry raises one: an off-road rear with a road-going front is still an
+  // off-road job. A reason two entries both raise is listed once -- the
+  // owner's screen names what needs looking at, not how many times.
+  const exceptionReasons = [...new Set(entries.flatMap(entry => tireExceptionReasons(entry.tire)))]
 
   // The vehicle is optional at intake (backend/quotes.mjs REQUIRED), and that
   // is why the empty case is handled first rather than falling through. This
@@ -179,10 +245,12 @@ export function calculateDraftQuote(request, catalog = null, pricingSettings = D
   // opts into like any optional one, chosen via chosenLineIds rather than a
   // request field calculateDraftQuote itself reads.
   const lineItems = [
-    // The visit costs the same whether it fits one tire or four: only the
-    // tire line multiplies.
-    ...(tire ? [{ description: tire.name, quantity, unitPrice: tire.price, taxable: taxableAs('goods', settings) }] : []),
-    ...catalogueLineItems(catalogueLines, chosenLineIds, quantity, settings, tire),
+    // One line per tire entry the catalog could resolve, in the order the
+    // request listed them (front, then rear). The visit costs the same
+    // whether it fits one tire or four: only the tire lines multiply.
+    ...entries.filter(entry => entry.tire).map(({ tire, quantity }) =>
+      ({ description: tire.name, quantity, unitPrice: tire.price, taxable: taxableAs('goods', settings) })),
+    ...catalogueLineItems(catalogueLines, chosenLineIds, entries, settings),
   ]
 
   const totals = computeQuoteTotals(lineItems, settings)
