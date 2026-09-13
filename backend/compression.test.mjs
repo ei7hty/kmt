@@ -18,6 +18,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer, request as httpRequest } from 'node:http'
 import { readdirSync, readFileSync } from 'node:fs'
+// Real filesystem paths, joined rather than sliced out of a URL: the sliced
+// version lined up on Windows and did not on the Ubuntu runner.
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { brotliDecompressSync, gunzipSync } from 'node:zlib'
 import { BROTLI_QUALITY, COMPRESS_MIN_BYTES, compressedJson, negotiateEncoding } from './compression.mjs'
 import { createCatalogApi } from './api.mjs'
@@ -274,7 +278,7 @@ test('nothing in the repository asks for the catalogue without saying which rows
   // So this walks source, scripts, audits, workflows and docs, and classifies
   // an occurrence as a REQUEST by the verb in front of it rather than by which
   // directory it lives in.
-  const root = new URL('../', import.meta.url)
+  const root = fileURLToPath(new URL('../', import.meta.url))
   // A verb ANYWHERE in the preceding 60 characters, not one glued to the URL.
   // The strict version missed `fetch(\`${BASE}/api/catalog\`)` and
   // `fetch(base + '/api/catalog')` -- it refused to step over the quote in a
@@ -291,15 +295,22 @@ test('nothing in the repository asks for the catalogue without saying which rows
   let requests = 0
 
   for (const dir of ['backend', 'src', 'scripts', '.forge', '.github', 'docs']) {
-    const base = new URL(`${dir}/`, root)
-    for (const entry of readdirSync(base, { recursive: true, withFileTypes: true })) {
+    for (const entry of readdirSync(join(root, dir), { recursive: true, withFileTypes: true })) {
       if (!entry.isFile() || !/\.(mjs|js|jsx|yml|yaml|sh)$/.test(entry.name)) continue
       // This file is the exception, and deliberately: it requests the refused
       // URL on purpose, to prove that it is refused.
       if (entry.name === 'compression.test.mjs') continue
-      const file = new URL(`${entry.parentPath.slice(new URL(root).pathname.length - 1).replace(/\\/g, '/')}/${entry.name}`, root)
-      let source
-      try { source = readFileSync(file, 'utf8') } catch { continue }
+      // `parentPath` is already an absolute filesystem path, so it is JOINED,
+      // not sliced against the root's URL pathname. The sliced version worked
+      // on Windows -- where the pathname carries a leading slash before the
+      // drive letter and the arithmetic happened to line up -- and produced a
+      // wrong path on the Ubuntu runner, where every read threw and a
+      // `catch { continue }` swallowed it. The guard then examined zero files
+      // and would have reported success, except that the control below counts
+      // what it examined and refused. Read errors are no longer swallowed
+      // either: a file this loop selected by extension and then cannot read is
+      // a bug, not something to skip past.
+      const source = readFileSync(join(entry.parentPath, entry.name), 'utf8')
 
       for (const hit of source.matchAll(/\/api\/catalog[^'"`\s)|]*/g)) {
         const before = source.slice(Math.max(0, hit.index - 60), hit.index)
@@ -327,7 +338,7 @@ test('nothing in the repository asks for the catalogue without saying which rows
   // fetch is longer than that, so it failed against correct code. A guard
   // whose reach is a guess fails for reasons that have nothing to do with
   // what it guards.
-  const auditUi = readFileSync(new URL('.forge/audit-ui.mjs', root), 'utf8')
+  const auditUi = readFileSync(join(root, '.forge/audit-ui.mjs'), 'utf8')
   const at = auditUi.indexOf('export async function cleanTireFor')
   assert.notEqual(at, -1, 'cleanTireFor is not in audit-ui.mjs; this guard cannot find what it guards')
   const body = auditUi.slice(at, auditUi.indexOf('\n}', at))
