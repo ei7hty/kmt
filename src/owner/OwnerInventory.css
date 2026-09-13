@@ -363,3 +363,26 @@
 .oi-g-photo-toggle:hover:not(:disabled) { background: #333; border-color: #555; }
 .oi-g-photo-toggle:disabled { opacity: 0.5; cursor: progress; }
 .oi-g-photo-toggle:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+
+/* The markup rule's margin floor and ceiling.
+ *
+ * Layout only -- every colour here is an existing token on this panel
+ * (.oi-kicker, .oi-muted), so nothing new needs a contrast measurement. The
+ * two-column grid collapses to one below 800px, where .oi-refresh has already
+ * become a full-width column and a narrowed number field would be worse than
+ * a taller form.
+ *
+ * .oi-bound-effect is capped rather than left to fill: it is a live sentence
+ * about what the box says, and .oi-refresh-actions is flex-shrink:0, so an
+ * uncapped sentence would widen the whole panel on a desktop instead of
+ * wrapping inside it. */
+.oi-margin-bounds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin-top: 4px; }
+.oi-bound { display: grid; gap: 7px; align-content: start; min-width: 0; }
+.oi-bound-input { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.oi-bound-input input { flex: 1 1 auto; min-width: 0; }
+.oi-bound-input .oi-button.oi-inline { margin-left: 0; flex: 0 0 auto; white-space: nowrap; }
+.oi-bound-effect { margin-top: 0; font-size: 11px; line-height: 1.5; max-width: 34ch; }
+@media (max-width: 800px) {
+  .oi-margin-bounds { grid-template-columns: 1fr; gap: 12px; }
+  .oi-bound-effect { max-width: none; }
+}
