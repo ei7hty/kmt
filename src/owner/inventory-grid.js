@@ -29,6 +29,10 @@
  * this file is derived from the echo, never from what was requested: a header
  * that claims a sort the server ignored is a UI that lies.
  */
+// The customer's own season facet. Imported rather than restated so the
+// owner's select, the customer's filter and the server's validator are three
+// readings of one list -- see seasonChoices below.
+import { SEASON_LABELS } from '../tire-filters.js'
 
 /** What the server's pageSize allow-list accepts. Anything else is refused. */
 export const PAGE_SIZES = [24, 50, 100, 200]
@@ -499,6 +503,55 @@ export const parseMarginBound = text => {
 export const marginField = value => (value === null || value === undefined ? '' : Number(value).toFixed(2))
 
 /**
+ * What to SEND for a field the owner may correct: the text, or `null`.
+ *
+ * The season and description boxes are seeded with what a customer is being
+ * shown right now, so "unedited" and "corrected back to the supplier's own
+ * words" look identical in the form and must not be stored differently. Both
+ * send `null`, which is the server's "use the supplier's" -- so an override
+ * that merely restates the supplier cannot accumulate, and the day the
+ * supplier changes its mind the tire follows it instead of being pinned to a
+ * correction nobody remembers making.
+ *
+ * An emptied box is also `null`, which makes clearing the box the way to undo
+ * a correction. The server refuses a blank override outright rather than
+ * publishing a tire with no description, so the two agree.
+ *
+ * NO LENGTH CHECK HERE, deliberately. The limit is a catalogue rule and it
+ * lives once, in `DESCRIPTION_OVERRIDE_LIMIT` on the server; a copy of the
+ * number in the browser is the paired-literal defect this repository has
+ * already paid for three times. A refusal comes back as a 400 whose message
+ * names the limit, and `reasonLabel` renders it on the row verbatim.
+ */
+export function correctionOf(typed, supplied) {
+  const text = typeof typed === 'string' ? typed.trim() : ''
+  if (!text) return null
+  return text === (typeof supplied === 'string' ? supplied.trim() : '') ? null : text
+}
+
+/**
+ * The seasons to offer for one tire, as [key, label] pairs.
+ *
+ * The five come from `SEASON_LABELS` -- the same map the customer's own facet
+ * draws its buckets from and the same one the server validates against, so a
+ * season cannot be offerable here and unfilterable there.
+ *
+ * A SUPPLIER CATEGORY THAT IS NOT ONE OF THE FIVE IS ADDED, at the end, under
+ * its own raw name. Measured over the 1,083-row snapshot there are exactly
+ * five and this never fires -- but a select whose value matches no option
+ * renders blank, which would read as "this tire has no season" on precisely
+ * the rows whose season is the unusual thing about them. Choosing it is a
+ * no-op: it equals the supplier's value, so `correctionOf` sends null.
+ */
+export function seasonChoices(supplierCategory) {
+  const choices = Object.entries(SEASON_LABELS)
+  if (supplierCategory && !Object.prototype.hasOwnProperty.call(SEASON_LABELS, supplierCategory)) {
+    choices.push([supplierCategory, supplierCategory])
+  }
+  return choices
+}
+
+/**
  * What a margin bound field, as it currently reads, will actually do.
  *
  * Rendered live under each field, because the distinction this form exists to
@@ -674,6 +727,27 @@ export function createInventoryGrid({ api }) {
       // unchecked box has always looked like it meant.
       enabled: sellingEnabled(item),
       notes: item.offer.notes ?? '',
+      // The owner's corrections to the supplier's own record, as EDITABLE text
+      // seeded with the correction where one exists and the supplier's own
+      // words where it does not.
+      //
+      // The supplier's half is the RAW payload -- `list()` spreads the payload,
+      // while a customer's copy goes through `cleanCatalogDescription` first --
+      // so for a description carrying markup the two differ. Deliberate, and
+      // harmless: `correctionOf` compares raw to raw, so an untouched box still
+      // reads as no correction, and what Ken edits is what the supplier
+      // actually sent rather than a sanitised rendering of it.
+      //
+      // That seeding is the whole affordance: the defect this fixes is
+      // 202 characters of the supplier's advertising on a card, and deleting
+      // the first sentence of a box that already holds it is one gesture,
+      // where retyping "XL 98Y BSW" from memory into an empty box is not.
+      //
+      // `category` is the supplier's key, not its label, because the value
+      // goes straight back to the server and the server files by key. The
+      // select renders SEASON_LABELS over these.
+      category: item.offer.categoryOverride ?? item.category ?? '',
+      description: item.offer.descriptionOverride ?? item.description ?? '',
       baseVersion: item.offer.version,
     }
   }
@@ -869,7 +943,15 @@ export function createInventoryGrid({ api }) {
         set({ rowStatus: setRowStatus(id, { kind: 'error', text: 'Enter shipping from $0 to $200, or leave it blank for the default.' }) })
         return
       }
-      const body = { priceCents, shippingCents, enabled: draft.enabled, notes: draft.notes, version: draft.baseVersion }
+      const body = { priceCents, shippingCents, enabled: draft.enabled, notes: draft.notes,
+        // Against the SUPPLIER's own values, never against what is stored: the
+        // box is seeded with the correction where one exists, so comparing it
+        // to the stored correction would find them equal and send null, which
+        // would delete the correction every time Ken saved a price on a row he
+        // had already fixed.
+        categoryOverride: correctionOf(draft.category, item.category),
+        descriptionOverride: correctionOf(draft.description, item.description),
+        version: draft.baseVersion }
       try {
         const offer = await api(`offers/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) })
         const enabledDelta = Number(offer.enabled) - Number(item.offer.enabled)

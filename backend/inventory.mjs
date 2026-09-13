@@ -7,6 +7,11 @@ import { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
 import { DEFAULT_PRICING_SETTINGS, normalizePricingSettings } from '../src/pricing.js'
 import { deriveBrand } from '../src/data/brand.js'
+// The customer's own season facet owns the list of categories. Importing it
+// for the same reason the markup rate is imported above: an owner override
+// that named a sixth category would file a tire under a facet no filter draws,
+// and the tire would vanish from the shop rather than move within it.
+import { SEASON_LABELS } from '../src/tire-filters.js'
 import { ensureImagePublicationSchema, approvedImageUrls, PHOTO_JOIN, PHOTO_COLUMNS, photoState } from './image-publication.mjs'
 import { cleanCatalogDescription } from './catalog-description.mjs'
 import { describeTireSpec } from './tire-spec.mjs'
@@ -65,6 +70,33 @@ const BULK_OFFER_LIMIT = 200
 const BULK_REASONS = Object.freeze({ 404: 'not-found', 409: 'version-conflict', 400: 'invalid' })
 
 /**
+ * The categories an owner may re-file a tire under.
+ *
+ * DERIVED FROM `SEASON_LABELS`, never listed here. That map is what the
+ * customer's season facet draws its buckets from, so a category valid here and
+ * absent there would put a tire under a filter nobody can press -- and a second
+ * hand-written list of five strings is the paired-literal defect this
+ * repository has already paid for in CATALOG_FIELDS and EXPECTED_CHECKS. If a
+ * sixth season is ever added to the shop, this follows it with no edit.
+ */
+export const OVERRIDE_CATEGORIES = Object.freeze(Object.keys(SEASON_LABELS))
+
+/**
+ * The longest description an owner override may carry.
+ *
+ * MEASURED over all 1,083 rows of the tracked snapshot rather than picked
+ * round: the longest supplier description that is a real description is 47
+ * characters ("Ultra High Performance All Season · XL 116H BSW") and the
+ * median is 23. The only rows above 120 are the seven whose description is the
+ * supplier's own advertising -- "Compare tires at a glance using our easy test
+ * score® system", 202 characters of it -- which is the defect this override
+ * exists to let the owner delete. So 120 sits above every honest description
+ * in the catalogue and below every dishonest one, and it is low enough that a
+ * pasted paragraph cannot break the card it renders on.
+ */
+export const DESCRIPTION_OVERRIDE_LIMIT = 120
+
+/**
  * The ORDER BY for a listing, built from an allow-listed key.
  *
  * Two pieces here are load-bearing rather than tidy:
@@ -108,9 +140,17 @@ export const modelKey = (name) => (typeof name === 'string' ? name.trim().toLowe
  * The decoded spec a customer sees, as the fields that may cross the boundary.
  *
  * Runs the SAME cleaner the description itself goes through, so the parser is
- * fed what the customer is shown rather than the raw payload -- seven rows in
- * the snapshot carry 200 characters of the supplier's own advertising in that
- * field, and `cleanCatalogDescription` is what removes it.
+ * fed exactly what the customer is shown rather than the raw payload.
+ *
+ * CORRECTING WHAT THIS COMMENT USED TO SAY: it claimed `cleanCatalogDescription`
+ * removes the supplier's advertising from the seven rows that carry it. It does
+ * not, and cannot -- it is an HTML sanitiser, and "Compare tires at a glance
+ * using our easy test score® system" contains no markup to strip. Measured
+ * against the live row: that description reaches a customer's card in full, all
+ * 202 characters of it. Nothing removes it automatically and nothing should
+ * try; a heuristic that deleted supplier prose would eventually delete a real
+ * description. It is `description_override` on that tire's offer, set by a
+ * person who read both, that fixes it.
  *
  * Each key is omitted rather than emitted empty, because `CATALOG_FIELDS` is a
  * positive allow-list and `backend/catalog-boundary.test.mjs` asserts the
@@ -198,6 +238,7 @@ export class Inventory {
       CREATE TABLE IF NOT EXISTS offers (
         id TEXT PRIMARY KEY REFERENCES supplier(id), price_cents INTEGER, shipping_cents INTEGER,
         enabled INTEGER NOT NULL DEFAULT 0, notes TEXT NOT NULL DEFAULT '',
+        category_override TEXT, description_override TEXT,
         version INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL,
         CHECK(price_cents IS NULL OR price_cents > 0),
         CHECK(shipping_cents IS NULL OR shipping_cents >= 0)
@@ -208,8 +249,20 @@ export class Inventory {
       );
       CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `)
+    // Every column added after the table first shipped needs BOTH the CREATE
+    // above (for a fresh database) and an ALTER here (for production's, which
+    // already exists and will never run the CREATE). Neither alone is enough,
+    // and the half that is missing only fails on one of the two.
+    //
+    // NO CHECK CONSTRAINT ON `category_override`, deliberately. SQLite cannot
+    // alter one, so a CHECK listing today's five seasons would have to be
+    // migrated by rebuilding the table the day a sixth is added -- the exact
+    // trap `quotes.status` is already stuck in here. The valid set is asserted
+    // in `saveOffer`, against `OVERRIDE_CATEGORIES`, where it can change.
     const offerColumns = this.db.prepare('PRAGMA table_info(offers)').all().map(column => column.name)
     if (!offerColumns.includes('shipping_cents')) this.db.exec('ALTER TABLE offers ADD COLUMN shipping_cents INTEGER')
+    if (!offerColumns.includes('category_override')) this.db.exec('ALTER TABLE offers ADD COLUMN category_override TEXT')
+    if (!offerColumns.includes('description_override')) this.db.exec('ALTER TABLE offers ADD COLUMN description_override TEXT')
     this.seedCatalogueLines()
     ensureImagePublicationSchema(this.db)
   }
@@ -758,6 +811,7 @@ export class Inventory {
     // makes the same test the same way, and the whole distinction below turns
     // on it.
     const rows = this.db.prepare(`SELECT s.*, o.id AS offer_id, o.price_cents, o.shipping_cents, o.enabled, o.notes, o.version,
+        o.category_override, o.description_override,
         o.updated_at AS offer_updated_at, ${MARGIN_CENTS} AS margin_cents, ${PHOTO_COLUMNS} ${from}
       ORDER BY ${applied.order} LIMIT ? OFFSET ?`)
       .all(...args, pageSize, (currentPage - 1) * pageSize)
@@ -819,8 +873,14 @@ export class Inventory {
       // screen submits `offer` back field-for-field, and a photo is changed
       // through its own route, not by saving a price.
       photo: photoState(row, payload),
+      // INSIDE `offer`, unlike marginCents and photo above, because these two
+      // really are submitted back: they are corrections the owner makes and
+      // saves on the same round trip as a price. NULL means "no correction",
+      // which is a different thing from an empty string -- the screen renders
+      // the supplier's own value in that case, and sends null to return to it.
       offer: { priceCents: row.price_cents ?? null, shippingCents: row.shipping_cents ?? null, enabled: !!row.enabled,
-        notes: row.notes ?? '', version: row.version ?? 0 },
+        notes: row.notes ?? '', categoryOverride: row.category_override ?? null,
+        descriptionOverride: row.description_override ?? null, version: row.version ?? 0 },
       }
     }), total, page: currentPage, pageSize, sort: applied.sort, dir: applied.dir }
   }
@@ -833,16 +893,47 @@ export class Inventory {
           (!Number.isInteger(input.shippingCents) || input.shippingCents < 0 || input.shippingCents > 20000))) {
       throw new InputError('Enter a positive KMT price and a shipping override from $0 to $200; use at most two decimal places.')
     }
+    // The two corrections get their OWN refusals rather than joining the
+    // condition above. That message names a price and a shipping figure; a
+    // caller who mistyped a category and was told to check their decimal
+    // places would have no way to find what was actually wrong.
+    if (input.categoryOverride !== undefined && input.categoryOverride !== null &&
+        !OVERRIDE_CATEGORIES.includes(input.categoryOverride)) {
+      throw new InputError(`Choose a season from: ${OVERRIDE_CATEGORIES.join(', ')} -- or clear it to use the supplier's.`)
+    }
+    if (input.descriptionOverride !== undefined && input.descriptionOverride !== null &&
+        (typeof input.descriptionOverride !== 'string' || !input.descriptionOverride.trim() ||
+          input.descriptionOverride.length > DESCRIPTION_OVERRIDE_LIMIT)) {
+      // A blank string is refused, not quietly stored: it would render as a
+      // tire with no description at all, which is not something anybody means
+      // to publish. Clearing the box means "use the supplier's", and the way
+      // to say that is null.
+      throw new InputError(`Write a description of up to ${DESCRIPTION_OVERRIDE_LIMIT} characters, or clear it to use the supplier's.`)
+    }
     return this.transaction(() => {
       if (!this.db.prepare('SELECT id FROM supplier WHERE id=?').get(id)) throw new InputError('Tire not found', 404)
-      const current = this.db.prepare('SELECT version, shipping_cents FROM offers WHERE id=?').get(id)
+      const current = this.db.prepare('SELECT version, shipping_cents, category_override, description_override FROM offers WHERE id=?').get(id)
       if ((current?.version ?? 0) !== input.version) throw new InputError('This offer changed in another window. Reload inventory before saving.', 409)
+      // `undefined` means the caller did not mention this field and what is
+      // already stored stands; `null` means the caller cleared it. The
+      // distinction is not decoration -- the bulk price path and every older
+      // client send a body with no override keys at all, and reading those as
+      // "set both to null" would wipe every correction Ken has made across up
+      // to 200 rows per request. This is the same idiom `shippingCents` above
+      // has used since it was added, for the same reason.
+      const keep = (given, held) => (given === undefined ? (held ?? null) : given)
       const shippingCents = input.shippingCents === undefined ? (current?.shipping_cents ?? null) : input.shippingCents
-      this.db.prepare(`INSERT INTO offers (id, price_cents, shipping_cents, enabled, notes, version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+      const categoryOverride = keep(input.categoryOverride, current?.category_override)
+      const descriptionOverride = keep(input.descriptionOverride, current?.description_override)
+      this.db.prepare(`INSERT INTO offers (id, price_cents, shipping_cents, enabled, notes, category_override, description_override, version, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET price_cents=excluded.price_cents, enabled=excluded.enabled,
-          shipping_cents=excluded.shipping_cents, notes=excluded.notes, version=excluded.version, updated_at=excluded.updated_at`)
-        .run(id, input.priceCents, shippingCents, Number(input.enabled), input.notes, input.version + 1, now())
-      return { ...input, shippingCents, version: input.version + 1 }
+          shipping_cents=excluded.shipping_cents, notes=excluded.notes,
+          category_override=excluded.category_override, description_override=excluded.description_override,
+          version=excluded.version, updated_at=excluded.updated_at`)
+        .run(id, input.priceCents, shippingCents, Number(input.enabled), input.notes,
+          categoryOverride, descriptionOverride, input.version + 1, now())
+      return { ...input, shippingCents, categoryOverride, descriptionOverride, version: input.version + 1 }
     })
   }
 
@@ -1011,7 +1102,8 @@ export class Inventory {
         json_extract(s.payload,'$.category') AS category,
         json_extract(s.payload,'$.description') AS description,
         json_extract(s.payload,'$.source.url') AS source_url,
-        s.active, o.id AS offer_id, o.price_cents, o.shipping_cents, o.enabled
+        s.active, o.id AS offer_id, o.price_cents, o.shipping_cents, o.enabled,
+        o.category_override, o.description_override
       FROM supplier s LEFT JOIN offers o ON o.id=s.id
       ${where}
       ORDER BY s.size, name, s.id`).all(...args)
@@ -1032,6 +1124,28 @@ export class Inventory {
       })
       if (price === null || !offered) continue
 
+      // THE OWNER'S CORRECTION WINS, and it is read once here so that every
+      // field derived from either one moves together. The supplier gets a tire
+      // wrong in two ways a customer can see, and neither is fixable by
+      // re-scraping because the supplier's own record is what is wrong:
+      //
+      //   - the CATEGORY. All three rows filed `off-road` in 225/50R17 are
+      //     road tires (Bridgestone Turanza EverDrive, Pegasus HPX SPORT AS,
+      //     Radar Dimax AS-9), so the shop was telling customers a touring
+      //     tire is "built for dirt, gravel and mud". Filed wrong, it is also
+      //     under the wrong season facet and the wrong sort.
+      //   - the DESCRIPTION. Seven rows carry the supplier's own advertising
+      //     instead of a description -- "Compare tires at a glance using our
+      //     easy test score® system", which on this site reads as a scoring
+      //     system Ken does not have.
+      //
+      // `??`, NOT `||`: an override is either set or it is NULL, and a future
+      // empty-string override must not fall through to the supplier's text
+      // silently. `saveOffer` refuses a blank one outright rather than storing
+      // one, so the two agree, but only one of them says so at read time.
+      const category = row.category_override ?? row.category
+      const description = row.description_override ?? row.description
+
       tires.push({
         id: row.id,
         name: row.name,
@@ -1041,10 +1155,10 @@ export class Inventory {
         // snapshot said about it, and whether or not the owner priced it.
         // json_extract answers a JSON boolean as 0/1, not true/false.
         inStock: !!row.active && !!row.inStock,
-        category: row.category,
+        category,
         // Normalize at the customer boundary as well as ingress: historical
         // payloads are corrected immediately without rewriting production data.
-        description: cleanCatalogDescription(row.description),
+        description: cleanCatalogDescription(description),
         // The customer's shop filters by brand, and a brand has to come from
         // somewhere the customer boundary can see. It is READ, not inferred:
         // `deriveBrand` takes the `<brand>-tires` segment out of the supplier's
@@ -1075,7 +1189,15 @@ export class Inventory {
         // Derived from the raw description that already crosses, so nothing
         // new about the tire is exposed -- only the same sentence, readable.
         // Omitted rather than empty when there is nothing to say.
-        ...specFields(row.description),
+        //
+        // FROM THE OVERRIDDEN DESCRIPTION, which is what makes the owner's
+        // edit reach the heading and the bullets rather than only the card's
+        // small print. Deleting "Compare tires at a glance using our easy test
+        // score® system · XL 98Y BSW" down to "XL 98Y BSW" is one edit that
+        // fixes all three. There is no second control for the heading and
+        // there should not be: two fields that both decide what the panel
+        // calls a tire is how they come to disagree.
+        ...specFields(description),
         // This row's own approved photo if it has one, otherwise a photo of the
         // SAME MODEL approved on one of its other sizes. A tire's product shot
         // is of the tread and sidewall pattern, which belongs to the model and
