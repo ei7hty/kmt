@@ -74,8 +74,8 @@
 
    NO BROAD `.product-detail p` RULE, and that is the point rather than an
    omission. The first draft had one, and it silently outranked
-   `.product-detail-kicker` and `.product-detail-standing` -- both are <p>, so
-   (0,1,1) beat (0,1,0) and the kicker rendered at 13.5px body grey instead of
+   `.product-detail-kicker` -- it is a <p>, so (0,1,1) beat (0,1,0) and the
+   kicker rendered at 13.5px body grey instead of
    11px uppercase. Measured in the browser, not reasoned about; no test in this
    tree could have seen it. Each element is addressed by its own class, and the
    one shared rule is scoped to a block that contains no other paragraph. */
@@ -94,9 +94,6 @@
 .product-detail-points li { margin-bottom: 2px; }
 .product-detail-rating { color: #dedee3; font-size: 13px; }
 .product-detail-rating b { font-family: var(--mono); }
-/* The answer to "why is this one $52 and that one $516": mono and tabular, so
-   it reads as the arithmetic it is and lines up with the price on the card. */
-.product-detail-standing { color: #dedee3; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; font-variant-numeric: tabular-nums; }
 .product-detail-close { display: grid; justify-items: start; gap: 2px; padding-top: 12px; border-top: 1px solid #303033; }
 .product-detail-close p { color: #a3a3ab; font-size: 12.5px; line-height: 1.55; }
 /* A real target, not a text link squeezed into a sentence. */
