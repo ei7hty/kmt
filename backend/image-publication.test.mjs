@@ -384,3 +384,79 @@ test('once approved, eligibility offers revoke and stops explaining approval', a
   assert.equal(reviewed.eligibility.revoke, true)
   assert.deepEqual(reviewed.eligibility.issues, [], 'a state with no Approve button has nothing to justify')
 })
+
+/* ==========================================================================
+ * One photo, many sizes: serving a url that several rows share.
+ *
+ * `catalog()` now hands the same `imageUrl` to every size of a model once one
+ * of them has an approved photo. `readPublic` used to resolve the bytes by
+ * finding the FIRST catalogue row carrying that url and looking the
+ * publication up by that row's id -- which worked only while each url belonged
+ * to exactly one row.
+ *
+ * The moment a url was shared, `.find()` started returning whichever row
+ * sorted first, that row had no `image_publications` entry of its own, and
+ * EVERY photo on the site 404ed -- including ones that had served for weeks.
+ * Caught in production by the owner, not by this suite.
+ * ========================================================================== */
+
+/** Two sizes of ONE model, plus an unrelated model, in a fresh inventory. */
+async function acrossSizes(t) {
+  const directory = await mkdtemp(path.join(tmpdir(), 'kmt-across-'))
+  const database = path.join(directory, 'owner.sqlite')
+  const rows = [
+    { id: 'giga-shared-b17', name: 'Shared Model', size: '225/50R17', price: 80, inStock: true, category: 'All Season',
+      description: '<p>Fixture</p>', source: { sku: 'SHARED-17', url: 'https://provider.test/listing' } },
+    { id: 'giga-shared-a16', name: 'Shared Model', size: '215/60R16', price: 80, inStock: true, category: 'All Season',
+      description: '<p>Fixture</p>', source: { sku: 'SHARED-16', url: 'https://provider.test/listing' } },
+    { id: 'giga-other-a16', name: 'Other Model', size: '215/60R16', price: 80, inStock: true, category: 'All Season',
+      description: '<p>Fixture</p>', source: { sku: 'OTHER-16', url: 'https://provider.test/listing' } },
+  ]
+  const inventory = new Inventory(database, ['215/60R16', '225/50R17'])
+  inventory.importSnapshot({ source: 'giga-tires.com', scrapedAt: '2026-09-08T00:00:00Z', tires: rows })
+  const images = new ImagePublication(inventory, { directory: imageDirectoryForDatabase(database), python: decoderPython })
+  t.after(async () => { try { inventory.close() } catch { /* already closed */ } await rm(directory, { recursive: true, force: true }) })
+  return { inventory, images, rows }
+}
+
+test('a url shared by every size of a model still serves its bytes', async t => {
+  const { inventory, images, rows } = await acrossSizes(t)
+  // Approved on ONE size only, and on the size that sorts LAST. `catalog()`
+  // orders by size, so 215/60R16 comes first and is therefore the BORROWER --
+  // which is the arrangement the old lookup got wrong. Approving the 16 instead
+  // puts the owner first, and the old code passes while still being broken for
+  // every other size; the assertion below refuses that fixture.
+  const owner = rows.find(row => row.id === 'giga-shared-b17')
+  const packet = packetFor([owner])
+  const { digest } = await images.ingest(packet.input, packet.files)
+  approve(images, digest)
+
+  const catalogue = inventory.catalog()
+  const sharing = catalogue.filter(row => row.imageUrl === packet.url)
+  assert.equal(sharing.length, 2, 'both sizes of the model must be offering the same url for this test to mean anything')
+
+  // THE FIXTURE ONLY DISCRIMINATES IF THE FIRST MATCH IS THE BORROWER. If the
+  // owning row sorted first, the old lookup by `tire.id` would find its
+  // publication and pass while still being wrong for every other row.
+  assert.notEqual(sharing[0].id, owner.id, 'the first row carrying this url is the one that owns it; the fixture proves nothing')
+
+  assert.deepEqual(images.readPublic(packet.url).bytes, fixtures.png,
+    'a url shared across sizes did not serve -- this is the 404 that took every photo off the site')
+})
+
+test('sharing a url does not let an unrelated model borrow one', async t => {
+  const { inventory, images, rows } = await acrossSizes(t)
+  const packet = packetFor([rows.find(row => row.id === 'giga-shared-a16')])
+  const { digest } = await images.ingest(packet.input, packet.files)
+  approve(images, digest)
+
+  const other = inventory.catalog().find(row => row.id === 'giga-other-a16')
+  assert.equal(other.imageUrl, undefined, 'a different model was handed a photo')
+})
+
+test('a url no catalogue row offers is still refused', async t => {
+  // The eligibility half is unchanged and must stay: resolving by digest alone
+  // would serve a revoked or hidden photo to anyone who kept the url.
+  const { images } = await acrossSizes(t)
+  assert.throws(() => images.readPublic(`/api/images/${'d'.repeat(64)}.png`))
+})
