@@ -250,6 +250,14 @@ export function calculateDraftQuote(request, catalog = null, pricingSettings = D
   // Zero entries (an empty `tires` array) is the not-found reason, in the
   // same words, so a request naming no tire lands in his review queue and
   // never sends itself as a quote of nothing but fees.
+  //
+  // The `new Set` is LOAD-BEARING, not tidiness: the owner's screen renders
+  // each reason with the string itself as its React key
+  // (src/routes/QuoteRequests.jsx:321, `<li key={reason}>`). Two entries
+  // with the same size and no position share a label, so the same rule on
+  // both yields two identical strings -- and a duplicate key makes React
+  // reuse the wrong node and render the list wrong, with no test failing.
+  // Do not remove it; `pricing.test.mjs` pins the uniqueness.
   const exceptionReasons = entries.length === 0
     ? [NOT_FOUND]
     : [...new Set(entries.flatMap((entry, index) =>

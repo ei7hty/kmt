@@ -462,6 +462,22 @@ test('staggered: a reason names its tire by position, then by size when there is
   assert.deepEqual(reasons([{ position: 'rear', size: '275/35R19', tireSelection: 'giga-r', quantity: 2 }]), ['Selected tire is out of stock'])
 })
 
+test('staggered: reasons are unique even when two entries share a label and raise the same rule -- the owner screen keys its list by the string', () => {
+  // src/routes/QuoteRequests.jsx:321 renders <li key={reason}>. Two entries
+  // with the same size and no position label identically, so without the
+  // dedup in calculateDraftQuote the same rule on both would be two equal
+  // strings and a duplicate React key: a mis-rendered owner screen that no
+  // test would catch. This test is what makes removing that Set fail.
+  const sameSize = staggered({ tires: [
+    { size: '245/35R19', tireSelection: 'giga-f', quantity: 2 },
+    { size: '245/35R19', tireSelection: 'giga-f2', quantity: 2 },
+  ] })
+  const quote = calculateDraftQuote(sameSize, [front({ inStock: false }), front({ id: 'giga-f2', inStock: false })])
+  assert.deepEqual(quote.exceptionReasons, ['245/35R19: Selected tire is out of stock'])
+  assert.equal(new Set(quote.exceptionReasons).size, quote.exceptionReasons.length, 'every reason is a usable key')
+  assert.equal(quote.lineItems.length, 2, 'both tires still price; only the reasons collapse')
+})
+
 test('staggered: per-entry quantities are independent, and an entry quantity off the allowed list is one, as a request quantity always was', () => {
   const uneven = staggered({ tires: [
     { position: 'front', size: '245/35R19', tireSelection: 'giga-f', quantity: 1 },
