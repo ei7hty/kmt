@@ -76,7 +76,15 @@ test('GA4 widens the CSP only on / and /privacy, never on a page carrying a cust
 
   for (const csp of [home, privacy]) {
     assert.match(csp, /script-src 'self' https:\/\/www\.googletagmanager\.com/, 'GA\'s loader is allowed to run')
-    assert.match(csp, /connect-src 'self' https:\/\/\*\.google-analytics\.com https:\/\/\*\.analytics\.google\.com https:\/\/www\.googletagmanager\.com/, 'only GA4 collection endpoints are allowed to phone home')
+    // THE BARE HOST IS ASSERTED SEPARATELY from its wildcard, because that is
+    // the distinction the policy got wrong. `https://*.analytics.google.com`
+    // does not grant `analytics.google.com`, which is where GA4 actually
+    // collects -- measured in a real browser against production 2026-09-13,
+    // every beacon refused including `en=page_view`, for the five days the
+    // policy had existed. A pattern that reads the wildcard as covering both
+    // would pass over the broken policy just as happily.
+    assert.match(csp, /connect-src 'self' https:\/\/\*\.google-analytics\.com https:\/\/analytics\.google\.com https:\/\/\*\.analytics\.google\.com https:\/\/www\.googletagmanager\.com/, 'only GA4 collection endpoints are allowed to phone home')
+    assert.match(csp, /connect-src[^;]*\shttps:\/\/analytics\.google\.com\s/, 'the apex analytics host is granted in its own right, not left to a wildcard')
     assert.match(csp, /img-src 'self' data: https:\/\/\*\.google-analytics\.com https:\/\/www\.googletagmanager\.com/, 'GA4 pixel fallbacks are allowed on the marketing surface')
     assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval|doubleclick|googleadservices|googlesyndication|https:\/\/google\.com|frame-src/, 'GA4 does not widen executable, advertising, generic Google, or frame sources')
   }
@@ -99,6 +107,7 @@ test('GA4 widens the CSP only on / and /privacy, never on a page carrying a cust
     const csp = (await fetch(base + path)).headers.get('content-security-policy')
     assert.match(csp, /script-src[^;]*www\.googletagmanager\.com/, `${path} carries the GA4 loader policy over the wire`)
     assert.match(csp, /connect-src[^;]*\*\.google-analytics\.com[^;]*\*\.analytics\.google\.com[^;]*www\.googletagmanager\.com/, `${path} carries every required GA4 connection source over the wire`)
+    assert.match(csp, /connect-src[^;]*\shttps:\/\/analytics\.google\.com\s/, `${path} grants the apex analytics host over the wire, which is where GA4 actually collects`)
     assert.match(csp, /img-src[^;]*\*\.google-analytics\.com[^;]*www\.googletagmanager\.com/, `${path} carries the GA4 pixel sources over the wire`)
   }
   for (const path of strictPaths.filter(Boolean)) {

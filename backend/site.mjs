@@ -136,6 +136,23 @@ export const ANALYTICS_PATHS = new Set(['/', '/privacy'])
  * a compromise at Google's CDN could then run script on that page -- so it
  * is paid on the two pages that need it and never on the ones holding a
  * customer's own data.
+ *
+ * `analytics.google.com` IS LISTED BARE, BESIDE ITS OWN WILDCARD, and that
+ * repetition is the fix rather than an oversight. The reasoning one paragraph
+ * up -- a wildcard does not grant the apex -- was applied to
+ * `*.google-analytics.com` and not to `*.analytics.google.com`, and GA4
+ * collects on the apex of the second one. Measured in a real browser against
+ * production 2026-09-13: every beacon refused, `en=page_view` among them, from
+ * the day the policy was tightened (e7fac14, 2026-09-08). The property had
+ * never received a single hit. `region1.analytics.google.com` still needs the
+ * wildcard, so both forms stay.
+ *
+ * STILL REFUSED, ON PURPOSE: `https://www.google.com/g/collect` and
+ * `stats.g.doubleclick.net`, which GA4 also attempts and which are the Google
+ * Signals and advertising transports rather than the analytics one. Refusing
+ * them costs the pageview nothing -- it arrives on the host above -- and keeps
+ * a customer's visit to a tyre shop out of an ad network. That is a product
+ * decision (Ken's, 2026-09-13) and reversible by adding two hosts here.
  */
 export function securityHeaders({ secure, release = '', serviceAreaOn, pathname = '' }) {
   const analytics = ANALYTICS_PATHS.has(pathname)
@@ -147,7 +164,7 @@ export function securityHeaders({ secure, release = '', serviceAreaOn, pathname 
       analytics ? "img-src 'self' data: https://*.google-analytics.com https://www.googletagmanager.com" : "img-src 'self' data:",
       "font-src 'self'",
       analytics
-        ? "connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com"
+        ? "connect-src 'self' https://*.google-analytics.com https://analytics.google.com https://*.analytics.google.com https://www.googletagmanager.com"
         : "connect-src 'self'",
       "frame-ancestors 'none'",
       "base-uri 'self'",
