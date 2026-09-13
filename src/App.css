@@ -502,15 +502,98 @@
 .fitment-footer .primary-action { min-width: 175px; margin-top: 0; }
 .fitment-footer .primary-action:disabled { cursor: not-allowed; opacity: 0.45; }
 .back-action { padding: 0 !important; border: 0 !important; background: transparent !important; color: var(--accent-text) !important; font-size: 12px; }
-.tire-options { display: grid; gap: 10px; margin-top: 25px; }
-.tire-option { display: grid; grid-template-columns: 66px 1fr auto; align-items: center; gap: 15px; padding: 13px !important; border: 1px solid #303033 !important; border-radius: 3px !important; background: #121212 !important; color: #fff !important; text-align: left; }
+/* Narrowing controls. A size holds up to 323 tires and the list had no filter
+   and no sort at all, so the only way through it was pressing "show 24 more"
+   thirteen times. Everything decided here lives in src/tire-filters.js. */
+.tire-filters { display: grid; gap: 14px; margin-top: 22px; padding: 15px; border: 1px solid #303033; border-radius: 3px; background: #0d0d0e; }
+.tire-filters-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.tire-filters-count { margin: 0; color: var(--muted); font-size: 12px; }
+.tire-filters-count strong { color: #f3f3f3; font-family: var(--mono); font-size: 16px; }
+/* The range, on its own line under the count: "323 tires" over twelve tires
+   between $52 and $64 reads as a shop that tops out at $64. */
+.tire-filters-range { display: block; margin-top: 2px; color: #8e8e96; font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tire-filters-clear { padding: 4px 9px; border: 1px solid #3e3e42; border-radius: 3px; background: transparent; color: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.tire-filters-clear:hover { border-color: var(--accent); color: #fff; }
+
+/* The panel collapses on a phone, and the rule that collapses it lives in one
+   place: the narrow block in RequestFlow.css. Here -- at every other width --
+   the toggle does not exist and the body is open, so a collapsed state cannot
+   follow someone from a phone to a desktop and hide the filters there. Undo
+   this pair and the panel disappears on desktop with nothing to reopen it. */
+.tire-filters-toggle { display: none; }
+.tire-filters-body { display: grid; gap: 14px; }
+
+.tire-sorts { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.tire-sorts-label { margin-right: 2px; color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
+.tire-sort { padding: 4px 11px; border: 1px solid #3e3e42; border-radius: 999px; background: transparent; color: #dedee3; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.tire-sort.selected { border-color: var(--accent); background: var(--accent-bg); color: #fff; }
+
+.tire-facets { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 14px; }
+.tire-facet { min-width: 0; margin: 0; padding: 0; border: 0; }
+.tire-facet legend { padding: 0 0 5px; color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
+.tire-facet-option { display: flex; align-items: center; gap: 7px; padding: 3px 0; color: #dedee3; font-size: 12.5px; cursor: pointer; }
+/* Shown, never removed: dropping a zero-count option reflows the panel and
+   moves a control out from under the cursor mid-press. Which makes its colour
+   load-bearing -- it is the row saying "this brand has nothing in Winter", and
+   at #5d5d64 it measured 2.97:1 on this panel, which is not a sentence anyone
+   reads. Exempt from WCAG as a disabled control; raised anyway, for the same
+   reason as the out-of-stock card above. */
+.tire-facet-option.is-empty { color: #7d7d85; cursor: not-allowed; }
+.tire-facet-option input { width: 13px; height: 13px; margin: 0; accent-color: var(--accent); flex: 0 0 auto; }
+.tire-facet-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tire-facet-count { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+
+/* The row was one tire per line at any width, which is what made a 66px photo
+   look lost in 785px of empty space. The column count now comes from the
+   card's own minimum rather than a viewport number, because the viewport is
+   not what constrains it: .order-section caps at 1000px and the panel pads
+   40px a side, so this grid is 872px wide on any desktop. Three columns of
+   that left the tire name 81px -- measured on the running page, not guessed:
+   283px per card, less 36 padding, 66 photo, 30 gaps and a 70px price --
+   which is why "Touring Comfort" wrapped and a one-line description ran to
+   four. auto-fill fits as many 400px cards as there is really room for (two
+   here, three if the panel ever widens), and min(400px, 100%) keeps one per
+   row on a phone instead of overflowing it. */
+.tire-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(400px, 100%), 1fr)); gap: 10px; margin-top: 18px; }
+/* minmax(0, 1fr), not 1fr: a bare 1fr floors at min-content, so one long
+   unbroken model name widens the column and squeezes the rest of the card.
+   The narrow layout below already guarded this; the wide one did not.
+   Aligned to the start so every name in a row sits on the same line -- with
+   centring, a card with a two-line description pushed its own title out of
+   step with the card beside it. */
+.tire-option { display: grid; grid-template-columns: 80px minmax(0, 1fr) auto; align-items: start; gap: 15px; padding: 13px !important; border: 1px solid #303033 !important; border-radius: 3px !important; background: #121212 !important; color: #fff !important; text-align: left; }
 .tire-option:hover, .tire-option.selected { border-color: var(--accent) !important; background: var(--accent-bg) !important; transform: none; }
-.tire-option:disabled { cursor: not-allowed; opacity: 0.4; }
+/* Dimmed by choosing the colours, not by fading the card.
+   `opacity` fades the text and the ground together, and this ground is
+   already near-black, so only the text loses: at 0.55 "Currently unavailable"
+   measured 3.33:1 against the panel and the description 3.07:1 -- run through
+   the gate's own ratio() from .forge/contrast-measure.mjs, not estimated.
+   Nothing in this repo could have told me. The a11y audit measures what the
+   SEEDED database renders, and the seed holds zero out-of-stock tires, so this
+   whole state is drawn zero times in every run the gate has ever made. The
+   finding is kmt-e2's, from the same shape of hole on the owner's photo
+   states; the arithmetic here is mine.
+   A disabled control is exempt from WCAG 1.4.3, so this is not a compliance
+   fix. "Currently unavailable" is the only thing the card exists to say in
+   this state, and 3.33:1 is not enough to say it with. */
+.tire-option:disabled { cursor: not-allowed; opacity: 1; border-color: #232326 !important; background: #0f0f10 !important; }
+/* The photo may fade: it carries no words. */
+.tire-option:disabled .tire-media { opacity: 0.45; }
+.tire-option:disabled .tire-info strong, .tire-option:disabled > b { color: #a3a3ab; }
+/* :not(.tire-stock) -- the stock line keeps its own colour on a disabled
+   card. Without the exclusion this rule outranks it (0,2,2 against 0,2,0) and
+   greys out the one line the card exists to show in this state. */
+.tire-option:disabled .tire-info small:not(.tire-stock) { color: #8e8e96; }
 .tire-art { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; border: 9px solid #303033; outline: 2px solid #77777a; color: #080808; background: radial-gradient(circle, #77777a 0 9%, #171717 10% 26%, #909094 27% 31%, #121212 32% 100%); font-size: 0; }
 .tire-info { display: grid; gap: 3px; }
 .tire-info strong { font-size: 15px; }
 .tire-info small { color: var(--muted); font-size: 11px; }
-.tire-info small:last-child { color: #58d77c; }
+/* Coloured by state, not by position. A :last-child selector painted the
+   stock line green whatever it said, so an out-of-stock tire announced
+   "Currently unavailable" in the in-stock green: the colour and the words
+   disagreed, and the colour is the half a scanning eye reads first. */
+.tire-stock[data-stock="in"] { color: #58d77c; }
+.tire-stock[data-stock="out"] { color: #e0a33a; }
 .tire-option > b { display: grid; color: #f3f3f3; font-family: var(--mono); font-size: 17px; text-align: right; }
 .tire-option > b i { color: var(--muted); font-family: var(--sans); font-size: 10px; font-style: normal; font-weight: 400; }
 .vehicle-inline, .service-fields { display: grid; gap: 8px; margin-top: 26px; }
@@ -519,6 +602,9 @@
 :where(.customer-shell) input { border-color: #3e3e42; background: #080808; }
 .order-summary-line { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; padding: 13px 0; border-block: 1px solid #303033; color: #a3a3ab; font-size: 13px; }
 .order-summary-line b { color: #f1f1f1; }
+/* Said, not left blank. The vehicle is optional at intake, and a row that just
+   stops reads as data Ken lost rather than a question he still has to ask. */
+.owner-request-vehicle-missing { color: #8e8e96; font-style: italic; }
 .step-error { margin-top: 16px; color: #ff7077; font-size: 13px; }
 .success-message { margin-top: 16px; padding: 16px; border: 1px solid #3ca75b; background: rgba(60, 167, 91, 0.1); color: #71df8b; }
 .site-footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px clamp(20px, 5vw, 72px); border-top: 1px solid #303033; color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; }
@@ -566,7 +652,7 @@
   .fitment-options { grid-template-columns: repeat(3, 1fr); gap: 8px; max-height: none; overflow: visible; }
   .fitment-footer { align-items: flex-start; flex-direction: column; }
   .fitment-footer .primary-action { width: 100%; }
-  .tire-option { grid-template-columns: 48px 1fr; }
+  .tire-option { grid-template-columns: 48px minmax(0, 1fr); }
   .tire-art { width: 42px; height: 42px; border-width: 7px; }
   .tire-option > b { grid-column: 2; justify-self: start; text-align: left; }
   .service-fields { grid-template-columns: 1fr; }

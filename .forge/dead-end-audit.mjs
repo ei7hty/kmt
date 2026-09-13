@@ -951,7 +951,15 @@ async function main() {
     const tireOptionCount = await page.locator('.tire-option').count();
     await page.getByTestId('continue-to-mobile-service').click({ timeout: 5000 });
     const stillCheckingVisible = await page.locator('.step-error:has-text("still checking")').isVisible().catch(() => false);
-    const stillOnTireStep = await page.locator('h3:has-text("Your tires. Your vehicle.")').isVisible().catch(() => false);
+    // Keyed on the step's own control, not on its heading. This read
+    // `h3:has-text("Your tires. Your vehicle.")` and went red the day that
+    // heading was reworded -- reporting "advanced past the tire step" about a
+    // page that had not moved at all. The check is about whether Continue is
+    // refused; a copy edit is not an answer to that question, and the failure
+    // it produces points at the wrong thing entirely. This button exists only
+    // on step 2 (step 3's is `request-my-quote`), so its visibility is the
+    // structural form of the same question.
+    const stillOnTireStep = await page.getByTestId('continue-to-mobile-service').isVisible().catch(() => false);
 
     if (loadingVisible && tireOptionCount === 0 && stillCheckingVisible && stillOnTireStep) {
       ok('Tire step under a slow connection: no selectable tire renders before the live answer, and Continue is refused with a visible reason.');

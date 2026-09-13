@@ -152,7 +152,17 @@ export function calculateDraftQuote(request, catalog = null, pricingSettings = D
     }
   }
 
-  if (EXCEPTION_VEHICLE_PATTERN.test(request?.vehicleInfo || '')) {
+  // The vehicle is optional at intake (backend/quotes.mjs REQUIRED), and that
+  // is why the empty case is handled first rather than falling through. This
+  // test is a REVIEW GATE: a truck, pickup, van or SUV is not auto-sendable.
+  // An empty string matches no pattern, so leaving this as a bare .test() would
+  // have quietly made every vehicle-less request auto-sendable -- the gate
+  // removed for the requests that tell Ken the least. Not knowing is its own
+  // reason to look.
+  const vehicle = String(request?.vehicleInfo ?? '').trim()
+  if (!vehicle) {
+    exceptionReasons.push('No vehicle given; owner review required')
+  } else if (EXCEPTION_VEHICLE_PATTERN.test(vehicle)) {
     exceptionReasons.push('Truck, pickup, van, and SUV requests require owner review')
   }
 
