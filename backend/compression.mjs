@@ -63,15 +63,45 @@ export const COMPRESS_MIN_BYTES = 1024
  * `*` counts as acceptance for anything not named, which is what lets a curl
  * with `Accept-Encoding: *` get a compressed body, but an explicit `br;q=0`
  * still wins over it because a named entry is more specific than the wildcard.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO: honour the client's ORDERING.
+ * `br;q=0.5, gzip;q=1.0` asks for gzip more strongly and still gets brotli,
+ * because both are accepted and this returns the first of its own preferences
+ * that the client has not refused. The body is always readable, so this is a
+ * preference miss and not a correctness defect -- and changing it would change
+ * what production negotiates for every client that states a preference, which
+ * is a bigger decision than the refusal handling above. Named here so the next
+ * reader knows it is a choice rather than an oversight.
  */
 export function negotiateEncoding(header) {
   const entries = String(header ?? '')
     .split(',')
     .map(part => {
       const [name, ...parameters] = part.trim().split(';')
-      const quality = parameters.map(p => p.trim()).find(p => p.toLowerCase().startsWith('q='))
-      const value = quality === undefined ? 1 : Number(quality.slice(2))
-      return { name: name.trim().toLowerCase(), quality: Number.isFinite(value) ? value : 0 }
+      // WHITESPACE AROUND THE EQUALS IS TOLERATED, and unparseable is a
+      // REFUSAL. Those are one fix, not two, because the defect was that this
+      // failed in two directions at once: `q=abc` gave NaN and was read as
+      // quality 0 (the encoding is not used -- safe), while `q = 0` was not
+      // recognised as a q parameter at all, fell back to the default quality
+      // of 1, and sent brotli to a client that had just refused it.
+      //
+      // Which direction is safe is not symmetric. A client that gets plain
+      // JSON when it would have taken brotli pays some bytes. A client that
+      // gets brotli after refusing it cannot read the response at all. So
+      // anything that is not a well-formed qvalue in [0,1] means "do not use
+      // this encoding", and a value we do not understand is never read as
+      // permission.
+      // MATCHED AGAINST THE GRAMMAR, not merely coerced to a number and range
+      // checked. RFC 9110 §12.4.2 defines qvalue as `( "0" [ "." 0*3DIGIT ] )
+      // / ( "1" [ "." 0*3("0") ] )` and nothing else, so `1e-9` is not a
+      // qvalue -- and `Number('1e-9')` is a perfectly finite 1e-9 that a range
+      // check waves through. The rule is that input we do not fully understand
+      // never becomes permission; a numeric check quietly made an exception to
+      // that for every spelling JavaScript happens to parse.
+      const parameter = parameters.map(p => p.trim()).find(p => /^q\s*=/i.test(p))
+      const raw = parameter === undefined ? '1' : parameter.slice(parameter.indexOf('=') + 1).trim()
+      const wellFormed = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/.test(raw)
+      return { name: name.trim().toLowerCase(), quality: wellFormed ? Number(raw) : 0 }
     })
     .filter(entry => entry.name)
 
