@@ -53,6 +53,7 @@ import { SiteCopy } from './site-copy.mjs'
 import { SocialProof } from './social-proof.mjs'
 import { Outbox } from './outbox.mjs'
 import { createMailer, describeMail, drainMail, readMailConfig } from './mail.mjs'
+import { createCalendar, describeCalendar } from './calendar.mjs'
 import { Inquiries } from './inquiries.mjs'
 import { createInquiriesApi } from './inquiries-api.mjs'
 import { ImagePublication, imageDirectoryForDatabase } from './image-publication.mjs'
@@ -149,6 +150,9 @@ const mailer = createMailer({
   origin: (process.env.KMT_PUBLIC_ORIGIN || '').trim() ||
     (canonicalHost ? `https://${canonicalHost}` : `http://localhost:${process.env.PORT || 8080}`),
 })
+// A paid job into Ken's calendar; off until KMT_CALENDAR_ID is set. Built
+// after the mailer because a failed write is reported through it.
+const calendar = createCalendar({ db: inventory.db, quotes, mailer, origin: mailer.origin })
 const inquiries = new Inquiries(inventory.db)
 const api = createApi(inventory, refresher, importer, quotes, { mailer, inquiries, auth })
 const catalogApi = createCatalogApi(inventory)
@@ -185,7 +189,7 @@ mailer.probeSmtp()
 // Requests and their quotes live in the same database as inventory. The three
 // public writes are limited per address, per browser key and per email (#63).
 const publicLimiter = new RateLimiter()
-const requestsApi = createRequestsApi(quotes, { limiter: publicLimiter, mailer })
+const requestsApi = createRequestsApi(quotes, { limiter: publicLimiter, mailer, calendar })
 const inquiriesApi = createInquiriesApi(inquiries, { limiter: publicLimiter })
 
 const port = Number(process.env.PORT || 8080)
@@ -299,6 +303,7 @@ server.listen(port, bind, () => {
   }
   console.log(describeServiceArea(serviceArea))
   for (const line of describeMail(mailer.config)) console.log(line)
+  console.log(describeCalendar(calendar.config))
 })
 
 let stopping = false
@@ -323,6 +328,10 @@ async function shutdown() {
   // #285 -- the recovery pass at boot is what makes delivery at-least-once,
   // and it is deliberately independent of whether any of this runs at all.
   await drainMail(mailer)
+  // Calendar writes are in flight for the same reason and drain the same way;
+  // one bounded wait covers the fast case, and a `failed` row is the record
+  // if a write never finished.
+  await Promise.race([calendar.idle(), new Promise(resolve => setTimeout(resolve, 2000))])
   // Let an in-flight refresh stop cleanly rather than leaving a job row that
   // claims to be running forever.
   if (refresher.active) { refresher.cancel(); await refresher.done }
