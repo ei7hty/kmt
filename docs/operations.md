@@ -40,6 +40,7 @@ inferring from behaviour.
 | `KMT_CANONICAL_HOST` | **Step 2 has not been done**; the redirect is dormant | the flip is live |
 | `KMT_MAIL_SMTP_HOST` / `_USER` / `_PASSWORD` | mail is outbox-only; nothing sends | SMTP is configured (see below) |
 | `KMT_MAIL_FROM`, `KMT_OWNER_EMAIL` | fine while no SMTP variable is set | required once any is |
+| `KMT_CALENDAR_ID` | paid jobs are not added to any calendar; the boot line says so | each paid job becomes an all-day event in that Google Calendar, written by the mail service account (`KMT_MAIL_SERVICE_CLIENT` / `KMT_MAIL_PRIVATE_KEY`, both required once this is set). The calendar must be shared with the service account's address with "Make changes to events"; a write Google refuses is a `failed` row in `calendar_events` and an email to `KMT_OWNER_EMAIL` saying to add the job by hand. See `backend/calendar.mjs`. |
 
 **Two of these no longer need `flyctl` at all.** The running server now answers
 both as headers, which is faster than a secrets list and proves what actually
@@ -940,6 +941,8 @@ second performs it in one transaction and then re-reads the request through the
 owner-audience API path to confirm nothing personal survived. Both are
 idempotent: running either twice is a no-op, and the command says so rather
 than leaving you guessing whether last month's call was acted on.
+
+**If `KMT_CALENDAR_ID` is set, the request's job is also in Google Calendar**, with the customer's name, address, phone and notes on the event. The command lists those events in the dry run and deletes them from Google in the `--write` run, using the app's own credentials -- which is why it is run under `flyctl ssh console` and not from a laptop: run without them, it blanks the rows, then reports `REMOVAL INCOMPLETE` naming the calendar and event ids and exits 1, and those events must be deleted by hand in Google Calendar before the removal is complete. The same happens if Google refuses the delete; run it again, or delete by hand. `calendar_events` itself keeps no personal data -- ids, status and the provider's error only -- so it is not blanked.
 
 Three things it does that the SQL below cannot. It **derives** its statements
 from `REQUEST_PERSONAL_DATA_KEYS`, `OUTBOX_PERSONAL_DATA_KEYS`,
