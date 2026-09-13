@@ -517,6 +517,20 @@ export default function OwnerInventory({ navigate }) {
         <div><strong>{summary?.offeredCount ?? '—'}</strong><span>Chosen for KMT</span></div>
         <div><strong>{summary ? summary.fullSizeCount + summary.importedSizeCount : '—'}</strong><span>Sizes with supplier tires</span>{summary && <small title="The deep pass reads the rest.">Read to the last page: {summary.fullSizeCount} of {summary.fullSizeCount + summary.importedSizeCount}</small>}</div>
       </div>
+      {/* Outside `.oi-metrics` on purpose: that grid is three fixed columns and
+          this is not a fourth statistic, it is a warning. Shown only when there
+          are any -- on a healthy database it is zero, and a permanent zero is
+          furniture. These are tires Ken put a price on that customers cannot
+          buy, which is the state the grid had no way to show at all until this
+          change, and the reason it went unnoticed. It reports; it repairs
+          nothing. */}
+      {summary?.pricedNotOfferedCount > 0 && <p className="oi-priced-off oi-attention" role="status" data-testid="oi-priced-not-offered">
+        <strong>{summary.pricedNotOfferedCount.toLocaleString()}{' '}
+          {summary.pricedNotOfferedCount === 1 ? 'tire is' : 'tires are'} priced but not for sale.</strong>{' '}
+        You set a price on {summary.pricedNotOfferedCount === 1 ? 'it' : 'them'} and customers cannot buy
+        {summary.pricedNotOfferedCount === 1 ? ' it' : ' them'}. Choose &ldquo;Priced but not for sale&rdquo; under Show to see which,
+        then select the ones you do want to sell and use Offer all.
+      </p>}
       <div className={toolsOpen ? 'oi-tools is-open' : 'oi-tools'}>
         <button type="button" className="oi-tools-toggle" aria-expanded={toolsOpen} aria-controls="owner-tools" onClick={toggleTools}>Supplier refresh, browser import, markup rule and offers by brand</button>
         <div id="owner-tools" className="oi-tools-body" inert={!toolsOpen}>
@@ -543,7 +557,7 @@ export default function OwnerInventory({ navigate }) {
       <div className="oi-filters">
         <label>Search tires or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Brand, model, supplier SKU…" /></label>
         <label>Tire size<input aria-label="Tire size" value={sizeQuery} onChange={e => typeSize(e.target.value)} placeholder="Any size · type to find, e.g. 205/55R16" autoComplete="off" spellCheck={false} /></label>
-        <label>Show<select aria-label="Show tires" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All supplier tires</option><option value="offered">Chosen for KMT</option><option value="unselected">Not yet chosen</option><option value="available">Supplier in stock</option><option value="photo">Has a photo</option><option value="no-photo">No photo yet</option></select></label>
+        <label>Show<select aria-label="Show tires" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All supplier tires</option><option value="offered">Chosen for KMT</option><option value="unselected">Not yet chosen</option><option value="priced-not-offered">Priced but not for sale</option><option value="available">Supplier in stock</option><option value="photo">Has a photo</option><option value="no-photo">No photo yet</option></select></label>
       </div>
       {sizePending && <div className="oi-size-matches" role="status" aria-live="polite">
         {sizeMatches.length === 0

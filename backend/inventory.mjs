@@ -662,6 +662,13 @@ export class Inventory {
     }
     if (filter === 'offered') conditions.push('o.enabled=1')
     if (filter === 'unselected') conditions.push('COALESCE(o.enabled,0)=0')
+    // Priced, and not for sale. NOT a subset of `unselected` in meaning even
+    // though it is in SQL: `unselected` is "nobody has chosen this", which is
+    // the normal state of a tire, while this is "you named a price for a tire
+    // a customer cannot buy", which is never something anyone intends. It is
+    // the state the old grid could not show and the one a deliberate repair
+    // has to work from.
+    if (filter === 'priced-not-offered') conditions.push('COALESCE(o.enabled,0)=0 AND o.price_cents IS NOT NULL')
     if (filter === 'available') conditions.push("s.active=1 AND json_extract(s.payload,'$.inStock')=1 AND json_extract(s.payload,'$.source.stock')>0")
     // Photo filters. `photo` means a publication row exists at all, not that a
     // customer can see it -- hidden, stale and pending rows still answer yes,
@@ -681,14 +688,62 @@ export class Inventory {
     // screen lying about what it did.
     const applied = orderBy(sort, dir)
     const currentPage = Math.max(1, Math.min(Math.floor(Number(page)) || 1, Math.max(1, Math.ceil(total / pageSize))))
-    const rows = this.db.prepare(`SELECT s.*, o.price_cents, o.shipping_cents, o.enabled, o.notes, o.version,
+    // `o.id` is the only honest test for "does an offers row exist at all".
+    // Every other offer column is nullable in its own right, so a NULL there
+    // cannot tell a row Ken has never touched from one he has. `catalog()`
+    // makes the same test the same way, and the whole distinction below turns
+    // on it.
+    const rows = this.db.prepare(`SELECT s.*, o.id AS offer_id, o.price_cents, o.shipping_cents, o.enabled, o.notes, o.version,
         o.updated_at AS offer_updated_at, ${MARGIN_CENTS} AS margin_cents, ${PHOTO_COLUMNS} ${from}
       ORDER BY ${applied.order} LIMIT ? OFFSET ?`)
       .all(...args, pageSize, (currentPage - 1) * pageSize)
+    // Read once for the whole page, not once per row: `getMarkup()` hits the
+    // meta table, and a 200-row page would otherwise make 200 reads of a value
+    // that cannot change mid-query.
+    const settings = this.getMarkup()
     return { items: rows.map(row => {
       const payload = JSON.parse(row.payload)
+      // What a CUSTOMER is being sold right now -- answered by `quotedPrice`,
+      // called here exactly as `catalog()` calls it, rather than by a second
+      // expression of the markup rule that could drift from the first.
+      //
+      // This field exists because the two beside it are both wrong about an
+      // untouched row, and wrong in the same direction. A tire with no
+      // `offers` row has `o.enabled` NULL, so `offer.enabled` below is `false`
+      // and the screen draws an empty "Offered" box; it has no `o.price_cents`
+      // either, so "Your price" draws an em-dash. Together they read as "not
+      // for sale, no price". `catalog()` disagrees, deliberately and
+      // correctly: a missing offers row is nobody's decision, not a
+      // deselection, so the tire IS for sale at the price the markup rule
+      // proposes. Measured against a freshly seeded database: the customer
+      // catalogue was selling 1,083 of 1,083 rows while this screen showed
+      // every one of them unoffered and unpriced.
+      //
+      // `offer` is left exactly as it was -- it means what Ken has decided,
+      // which is a real and separate question. This says what is happening.
+      const offer = row.offer_id === null || row.offer_id === undefined
+        ? undefined
+        : { priceCents: row.price_cents ?? null, enabled: !!row.enabled }
+      const quoted = quotedPrice({
+        supplierPrice: payload.price, offer,
+        tire: { ...payload, shippingPerTire: row.shipping_cents === null || row.shipping_cents === undefined ? undefined : row.shipping_cents / 100 },
+        settings,
+      })
       return {
       ...payload, lastSeen: row.last_seen, supplierActive: !!row.active,
+      // `source` is 'owner' when Ken priced it and 'markup' when the rule did,
+      // which is the difference between a decision and a suggestion nobody has
+      // looked at -- markup.js exposes it for exactly that reason. No margin
+      // figure is derived here: markup.js is explicit that shipping is a
+      // freight pass-through and not goods margin, so subtracting cost from a
+      // marked-up price would report freight as profit. Deriving it properly
+      // means knowing the rule's shape, and the rule's shape is the pricing
+      // lane's to change, not this one's.
+      selling: {
+        priceCents: quoted.price === null ? null : Math.round(quoted.price * 100),
+        source: quoted.source,
+        offered: quoted.offered,
+      },
       // Derived, never stored, and deliberately OUTSIDE `offer`: that object is
       // the shape the owner screen submits back, asserted field-for-field in
       // four existing tests, and widening it would make a read-only column look
@@ -954,6 +1009,20 @@ export class Inventory {
       refreshableSizes: this.refreshableSizes(),
       supplierCount: this.db.prepare('SELECT count(*) AS n FROM supplier').get().n,
       offeredCount: this.db.prepare('SELECT count(*) AS n FROM offers WHERE enabled=1').get().n,
+      // Tires that have a price and are NOT for sale. Reads nothing and
+      // writes nothing; it is a count, deliberately not a repair.
+      //
+      // Before the fix above, this was the shape the defect left behind: the
+      // grid sent `enabled: false` alongside every price the owner typed, so
+      // a tire he priced ended up priced and off sale. `saveOffer` requires a
+      // price to enable a row, so a priced row sitting at `enabled=0` is
+      // either that bug or a tire he deliberately switched off after pricing
+      // it -- and until the grid could show the difference, nobody could tell
+      // which. This number is how big that pile is. Acting on it is Ken's
+      // call, on rows he has looked at, with the controls this change makes
+      // honest; it is explicitly NOT a sweep, because a blanket re-enable
+      // would also turn on whatever he meant to switch off.
+      pricedNotOfferedCount: this.db.prepare('SELECT count(*) AS n FROM offers WHERE enabled=0 AND price_cents IS NOT NULL').get().n,
       fullSizeCount: coverage.filter(c => c.completeness === 'full').length,
       importedSizeCount: coverage.filter(c => c.completeness === 'snapshot').length,
       job: this.getMeta('job'),
