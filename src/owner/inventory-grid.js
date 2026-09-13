@@ -135,6 +135,164 @@ export const ruledPriceCents = item =>
     ? sellingPriceCents(item)
     : null
 
+/* -------------------------------------------------------------------------- *
+ * Low stock, and the rule Ken has been keeping in his head.
+ *
+ * In his own words he switches tires off when stock is low -- "below 100, or
+ * whatever the number is". Two things follow from that, and neither is visible
+ * on this screen today.
+ *
+ * **The grid cannot show him what his own rule covers.** The stock line reads
+ * `N in stock` in the in-stock green for every row above zero, so a tire with 4
+ * left and a tire with 35,681 look identical. Measured on the 1,083 supplier
+ * rows in `src/data/scraped-tires.json`: stock runs 4 to 35,681, median 459,
+ * and 274 of them -- 25.3% -- are under 100.
+ *
+ * **And switching one off is a one-way door.** When the supplier restocks,
+ * nothing turns it back on; the off-list only grows and goes quietly stale.
+ * That half is not fixed by hiding low stock automatically, because an
+ * automatic rule knows nothing about the tires he already switched off by hand
+ * -- `offers` records that a row was disabled and never why. So the pile stays
+ * off forever unless something puts it in front of him. `stockRecovered` is
+ * that something, and it is the reason this is display work rather than a
+ * deriving rule: the deriving belongs in the backend, this is the half that
+ * makes it safe to turn on and the half that clears what is already stuck.
+ * -------------------------------------------------------------------------- */
+
+/** Ken's own number, until he changes it. `.forge/CLAIMS.md`'s brief quotes him. */
+export const DEFAULT_LOW_STOCK_THRESHOLD = 100
+
+/**
+ * The range the threshold box accepts. Whole tires, so a whole number.
+ *
+ * The floor is 1 rather than 0 on purpose: at 0 nothing could ever be under it,
+ * so a `0` here would be a silent "off" switch wearing the clothes of a
+ * threshold -- the same blank-against-zero confusion the markup form's margin
+ * bounds are careful about, and not worth reintroducing in a second place. The
+ * ceiling is above the largest stock figure in the catalogue (35,681), so
+ * "mark everything" stays reachable if Ken wants to see the whole spread.
+ */
+export const LOW_STOCK_MIN = 1
+export const LOW_STOCK_MAX = 99999
+
+/** A typed threshold, or `null` if it is not one. Whole numbers only. */
+export function parseLowStockThreshold(text) {
+  const value = String(text ?? '').trim()
+  if (!/^\d+$/.test(value)) return null
+  const number = Number(value)
+  return number >= LOW_STOCK_MIN && number <= LOW_STOCK_MAX ? number : null
+}
+
+/**
+ * What the supplier's stock says about one row.
+ *
+ * Five states, and `low` is the new one -- everything else is the expression
+ * already rendered inline in `OwnerInventoryGrid.jsx`, moved here so it can be
+ * tested. That move matters more than it looks: **three of these five states
+ * are states the seeded database never produces.** There are zero out-of-stock
+ * rows, zero delisted rows and zero rows with no stock figure in all 1,083, so
+ * no browser audit this repository runs has ever drawn `out`, `delisted` or
+ * `unknown` -- which is exactly how the customer flow's unavailable-tire card
+ * went months with colours nobody could read. A unit test can reach them.
+ *
+ * Order is load-bearing. Delisted outranks everything, because a tire the
+ * supplier has stopped listing is not "low", it is gone. `inStock === false`
+ * outranks the count for the same reason `catalog()` trusts it: the supplier
+ * can say out of stock while still reporting a number.
+ */
+export function stockState(item, threshold = DEFAULT_LOW_STOCK_THRESHOLD) {
+  if (!item?.supplierActive) return 'delisted'
+  const stock = item?.source?.stock
+  if (typeof stock !== 'number') return 'unknown'
+  if (item?.inStock === false || stock <= 0) return 'out'
+  return stock < threshold ? 'low' : 'ok'
+}
+
+/** The stock line as the owner reads it. `low` says how few, not how many. */
+export function stockLabel(item, threshold = DEFAULT_LOW_STOCK_THRESHOLD) {
+  const stock = item?.source?.stock
+  switch (stockState(item, threshold)) {
+    case 'delisted': return 'No longer listed'
+    case 'unknown': return 'Stock unconfirmed'
+    case 'out': return 'Out of stock'
+    // "left", not "in stock": the number is the same and the sentence is the
+    // point -- this is the row his own rule is about.
+    case 'low': return `${stock.toLocaleString()} left`
+    default: return `${stock.toLocaleString()} in stock`
+  }
+}
+
+/**
+ * The classes the stock line wears, decided here rather than in the component.
+ *
+ * The COLOUR comes from this screen's two settled tokens -- `.oi-stock` green
+ * and `.oi-attention` amber -- and `ok` is the only state that gets the green
+ * one. That is the behaviour change: `low` used to be green along with
+ * everything above zero.
+ *
+ * `oi-g-stock-<state>` carries no colour. It is a hook, so a reader and a test
+ * can tell which of the five a row is in without re-deriving it. Giving each
+ * state its own colour rule would put a second copy of one of those two hexes
+ * in the stylesheet, and two literals encoding one fact is the defect this
+ * repository has already paid for three times.
+ */
+export const stockClass = (item, threshold = DEFAULT_LOW_STOCK_THRESHOLD) => {
+  const state = stockState(item, threshold)
+  return `oi-g-stock oi-g-stock-${state} ${state === 'ok' ? 'oi-stock' : 'oi-attention'}`
+}
+
+/**
+ * Did Ken take this tire off sale himself?
+ *
+ * `sellingEnabled`, and NOT `offer.enabled`. That field is false for every row
+ * nobody has ever touched -- 1,083 of 1,083 on a freshly seeded database --
+ * because a tire with no `offers` record is still for sale at the rule's
+ * price, so reading it here would report the entire catalogue as deliberately
+ * switched off and put a "you switched this off" marker on every line.
+ *
+ * IT IS ONE TEST, NOT TWO, and that is worth stating because the obvious
+ * defensive version is `!neverDecided(item) && !sellingEnabled(item)` -- which
+ * is what this was, until a mutation survived: dropping the `neverDecided`
+ * half changed no answer anywhere. It cannot, and the reason is a property of
+ * `sellingEnabled` rather than a coincidence of the fixtures. Both of its
+ * paths already answer TRUE for an untouched row: the server's `selling.offered`
+ * comes from `quotedPrice`, which treats a missing offer as offered, and the
+ * fallback is `neverDecided || enabled`, whose first term is that same
+ * distinction. So `!sellingEnabled` is already exactly "he said no", and the
+ * extra conjunct was a guard that could not fire -- which reads as protection
+ * while providing none.
+ */
+export const switchedOffByHand = item => !sellingEnabled(item)
+
+/**
+ * The one-way door, on one row: he switched it off, and the supplier has since
+ * restocked it past the threshold.
+ *
+ * `=== 'ok'` rather than "not low" is deliberate. A row that is delisted, out
+ * of stock, or carrying no stock figure at all has not recovered from
+ * anything, and saying so would send him to turn a tire back on that nobody
+ * can source -- the opposite mistake, and the more expensive one.
+ */
+export const stockRecovered = (item, threshold = DEFAULT_LOW_STOCK_THRESHOLD) =>
+  switchedOffByHand(item) && stockState(item, threshold) === 'ok'
+
+/**
+ * What this page of rows looks like at the current threshold.
+ *
+ * PAGE, not catalogue, and the wording that renders it says so. The server
+ * pages at 24 rows and has no low-stock filter or count today, so a
+ * catalogue-wide figure would be a number this screen cannot actually know.
+ * Claiming one is worse than showing a smaller true one.
+ */
+export const lowStockSummary = (items, threshold = DEFAULT_LOW_STOCK_THRESHOLD) => {
+  const rows = items ?? []
+  return {
+    total: rows.length,
+    low: rows.filter(item => stockState(item, threshold) === 'low').length,
+    recovered: rows.filter(item => stockRecovered(item, threshold)).length,
+  }
+}
+
 /**
  * Which way this column's arrow points, read from what the SERVER said it did.
  *
@@ -281,6 +439,171 @@ export function previewPriceChange(items, formula, sampleSize = 3) {
 export const intersectSelection = (selected, items) => {
   const present = new Set(items.map(item => item.id))
   return selected.filter(id => present.has(id))
+}
+
+/* -------------------------------------------------------------------------- *
+ * The markup rule's form.
+ *
+ * Not the grid, but here for the reason the file header gives: there is no JSX
+ * runner in this repository, so a decision left inside a component is a
+ * decision nothing tests. `MarkupRule` in `OwnerInventory.jsx` is markup around
+ * `buildMarkupSave` the same way `OwnerInventoryGrid.jsx` is markup around the
+ * store above.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * The backend's typo guard on either margin bound, mirrored.
+ *
+ * `backend/inventory.mjs` owns this number and refuses anything past it. The
+ * copy here exists so Ken is told before a round trip, not instead of one: the
+ * server is still the thing that decides, and a mismatch surfaces as its error
+ * message rather than as a field that silently accepts and then fails.
+ */
+export const MARGIN_BOUND_LIMIT = 500
+
+/**
+ * Does the backend that answered know what a margin bound is?
+ *
+ * `minMarginPerTire` and `maxMarginPerTire` arrived with the markup rule's
+ * floor and ceiling. A server without them does not merely return null -- it
+ * returns no key at all, and `saveMarkup` there builds its stored record field
+ * by field, so a bound sent to it is accepted with a 200 and dropped on the
+ * floor. That is the one outcome this screen must never produce: a control Ken
+ * can set, that reports success, and that changes nothing.
+ *
+ * So the fields render only where the keys are actually present. The backend
+ * side pins them present-and-null deliberately -- "a missing key and a null one
+ * are not the same thing to a form deciding whether to render a field as empty"
+ * -- which is exactly the distinction being read here.
+ */
+export const supportsMarginBounds = markup =>
+  !!markup && Object.prototype.hasOwnProperty.call(markup, 'minMarginPerTire')
+
+/**
+ * A margin bound as typed, in DOLLARS -- which is the unit the markup rule is
+ * stored and sent in, unlike every other money field on this screen.
+ *
+ * `parseMoney` does the actual reading, so the three answers a money field can
+ * give are the same three they are everywhere else on this screen: `null` for
+ * blank, `NaN` for anything malformed, and a number otherwise. Reusing it
+ * rather than writing a second parser is the point -- the per-tire shipping
+ * override already carries exactly this "blank is not zero" distinction, and
+ * two idioms for one rule is how the two drift apart.
+ */
+export const parseMarginBound = text => {
+  const cents = parseMoney(text)
+  return cents === null ? null : cents / 100
+}
+
+/** A stored bound as a form value. `null` -- no bound -- is an empty field. */
+export const marginField = value => (value === null || value === undefined ? '' : Number(value).toFixed(2))
+
+/**
+ * What a margin bound field, as it currently reads, will actually do.
+ *
+ * Rendered live under each field, because the distinction this form exists to
+ * protect cannot be carried by a placeholder alone: **blank means no bound, and
+ * `0` is a different answer entirely.** Those two states look nearly identical
+ * in a text input and mean opposite things, so the screen says which one is in
+ * the box rather than leaving Ken to infer it from an empty rectangle.
+ *
+ * The `0` cases are separated on purpose, because the two ends do not agree
+ * about zero and no single sentence covers both:
+ *
+ *   - a `$0` FLOOR is legal and inert. The rate is guarded at 1 or more, so a
+ *     marked-up price is never below cost, so a floor of zero can never bind.
+ *     It stores a number that does nothing -- worth saying, not worth refusing.
+ *   - a `$0` CEILING is refused, here and by the server. It would sell every
+ *     unpriced tire at exactly what Ken paid for it. Nobody types that on
+ *     purpose, which is precisely why it must not be the accidental way to
+ *     turn the ceiling off.
+ */
+export function marginBoundSummary(text, kind) {
+  const value = parseMarginBound(text)
+  if (Number.isNaN(value)) return 'Not a dollar amount.'
+  if (value === null) {
+    return kind === 'min'
+      ? 'No least — the markup rate alone decides the price.'
+      : 'No most — the markup rate alone decides the price.'
+  }
+  if (value === 0) {
+    return kind === 'min'
+      ? 'Zero, which changes nothing the rate was not already doing. Leave the box empty to turn the least off.'
+      : 'Zero would sell the tire at what you paid for it. Leave the box empty to turn the most off.'
+  }
+  const amount = dollars(Math.round(value * 100))
+  return kind === 'min'
+    ? `Every tire you have not priced earns you at least ${amount} over what you paid, before shipping.`
+    : `No tire you have not priced earns you more than ${amount} over what you paid, before shipping.`
+}
+
+/**
+ * The body of a markup save, or the reason there is not going to be one.
+ *
+ * Two things here are load-bearing and neither is obvious from the shape:
+ *
+ * **The bounds are sent EXPLICITLY, always, including as `null`.** `saveMarkup`
+ * reads an omitted field as "this save is not about that", which is what keeps
+ * a rate-only save from wiping a floor Ken set last week -- and it is why this
+ * form cannot simply leave a blank field out. Omitting it would make a bound
+ * something Ken could switch on and never switch off again.
+ *
+ * **The bounds are sent only when the server has them.** See
+ * `supportsMarginBounds`. Where it does not, the body is byte-identical to the
+ * one this form has always sent, which is also what every existing test of that
+ * body asserts.
+ */
+export function buildMarkupSave({ rate, shippingPerTire, minMarginPerTire, maxMarginPerTire, marginBounds = false }) {
+  const parsedRate = Number(rate)
+  if (!Number.isFinite(parsedRate) || parsedRate < 1 || parsedRate > 10) {
+    return { error: 'Enter a markup between 1 and 10 times the supplier price.' }
+  }
+  const parsedShipping = Number(shippingPerTire)
+  if (!Number.isFinite(parsedShipping) || parsedShipping < 0 || parsedShipping > 200) {
+    return { error: 'Enter a per-tire shipping cost between $0 and $200.' }
+  }
+  const body = { rate: parsedRate, shippingPerTire: parsedShipping }
+  if (!marginBounds) return { body }
+
+  const min = parseMarginBound(minMarginPerTire)
+  if (Number.isNaN(min) || (min !== null && min > MARGIN_BOUND_LIMIT)) {
+    return { error: `Enter the least you make between $0 and $${MARGIN_BOUND_LIMIT}, or leave the box empty for no least.` }
+  }
+  const max = parseMarginBound(maxMarginPerTire)
+  if (Number.isNaN(max) || (max !== null && max > MARGIN_BOUND_LIMIT)) {
+    return { error: `Enter the most you make between $0 and $${MARGIN_BOUND_LIMIT}, or leave the box empty for no most.` }
+  }
+  // Zero is the one value the two ends disagree about, so it gets its own
+  // message rather than falling into the range error above -- "between $0 and
+  // $500" would be a lie about a field that refuses $0, and the refusal is the
+  // whole reason the empty box has to be the way off.
+  if (max === 0) {
+    return { error: 'The most you make cannot be $0 — that sells the tire at what you paid. Leave the box empty for no most.' }
+  }
+  if (min !== null && max !== null && min > max) {
+    return { error: 'The least you make cannot be more than the most.' }
+  }
+  return { body: { ...body, minMarginPerTire: min, maxMarginPerTire: max } }
+}
+
+/**
+ * What the screen says after a markup save, read back off what was STORED.
+ *
+ * Built from the server's response rather than from the form, so it reports
+ * what happened rather than what was asked for. That matters most in exactly
+ * the case this form is careful about: Ken clearing a bound sees the sentence
+ * change to "no least", which is the confirmation that an emptied box was read
+ * as "off" and not as something else.
+ */
+export function markupSavedNotice(markup) {
+  const base = `Default markup saved. Tires you have not priced are now offered at supplier price × ${markup.rate}, plus $${markup.shippingPerTire} shipping.`
+  if (!supportsMarginBounds(markup)) return base
+  const { minMarginPerTire: min, maxMarginPerTire: max } = markup
+  if (min === null && max === null) return `${base} No least or most set, so the rate alone decides.`
+  const parts = []
+  if (min !== null) parts.push(`at least ${dollars(Math.round(min * 100))}`)
+  if (max !== null) parts.push(`at most ${dollars(Math.round(max * 100))}`)
+  return `${base} Those prices earn you ${parts.join(' and ')} over what you paid.`
 }
 
 const EMPTY = Object.freeze({})

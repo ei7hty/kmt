@@ -74,3 +74,74 @@ export const RUN_ELSEWHERE = [
   { file: '.forge/release-check.test.mjs', runBy: '.github/workflows/fly-deploy.yml' },
   { file: '.forge/release-browser.test.mjs', runBy: '.github/workflows/fly-deploy.yml' },
 ]
+
+/**
+ * The test files that cannot run without a Python image decoder.
+ *
+ * These call `realImageFixtures()` at module scope, so with no decoder they
+ * throw at module load: node reports each as ONE failing test rather than the
+ * many it holds, and the suite total drops by `DECODER_SUITE_DELTA` below.
+ *
+ * DECLARED HERE, NOT IN `test-count-check.mjs`, for one reason: that file is a
+ * script. Importing it runs the whole four-minute suite, so nothing could ever
+ * assert against a constant living inside it, and `DECODER_SUITE_DELTA` sat
+ * stale at 45 through the addition of a fourth image suite, then at 65 through
+ * a fifth, because no instrument could reach it. A plain data module can be
+ * imported by a test in milliseconds, and `backend/decoder-fixtures.test.mjs`
+ * now does exactly that: it greps the tree for `realImageFixtures` callers and
+ * fails if this list is not the answer.
+ *
+ * SO WHEN THAT TEST FAILS, RE-MEASURE `DECODER_SUITE_DELTA` -- do not merely
+ * add the new file here. The list is the tripwire; the delta is the fact.
+ */
+export const DECODER_SUITE_FILES = [
+  'backend/image-decoder.test.mjs',
+  'backend/image-import-cli.test.mjs',
+  'backend/image-pipeline-e2e.test.mjs',
+  'backend/image-publication.test.mjs',
+  'backend/image-staging-coordinator.test.mjs',
+]
+
+/**
+ * The DIFFERENCE a decoder makes to the suite total: measured 2026-09-12 as
+ * 907 tests with one and 834 without, same tree, same command, nothing
+ * different but the resolver's ability to find the venv.
+ *
+ * Not the number of tests those five files hold. Each dead file still
+ * registers one failing test, so the five leave 5 behind and the total drops
+ * by 73 rather than by the 78 they contain. The name is the arithmetic it
+ * actually does, because calling it a suite size invited that confusion once
+ * already.
+ *
+ * WAS 45 (three dead suites), THEN 65 (four), AND BOTH WENT STALE IN SILENCE.
+ * The reason is worth more than the number, and it is not carelessness: each
+ * fix that made the decoder easier to find also removed the only way to
+ * observe its absence. #464 taught the resolver to climb out of `.worktrees/`,
+ * so unsetting `KMT_IMAGE_DECODER_PYTHON` stopped producing the no-decoder
+ * state; the git-common-dir step added alongside this constant closes the
+ * remaining 66 worktrees of 236 that #464's marker could not describe, which
+ * closes the last one. CI never reaches it either -- `fly-deploy.yml` builds a
+ * venv at :94-98 and exports the variable, in the SAME job as the count check
+ * at :134, so the branch that consumes this constant cannot fire there. (An
+ * earlier comment claimed the opposite -- "CI has no venv and is exactly where
+ * it now fires" -- and that was simply false when written.)
+ *
+ * A FIX THAT REMOVES A FAILURE MODE LOCALLY ALSO REMOVES THE ABILITY TO
+ * EXERCISE ITS GUARD LOCALLY. Name the category, because it is not specific to
+ * this constant. The answer is not to leave the failure mode in place; it is to
+ * give the constant an instrument that does not depend on reproducing it, which
+ * is what `DECODER_SUITE_FILES` above now is.
+ *
+ * HOW TO RE-MEASURE, which no longer involves renaming anything shared. Do NOT
+ * rename `decoder.local` -- other sessions run tests against it concurrently.
+ * Instead make `gitCommonDir()` in
+ * `backend/fixtures/image-provider/decoder-fixtures.mjs` return null, from any
+ * checkout that is not the main one and has no venv of its own (every agent
+ * worktree qualifies), and run the baseline invocation with
+ * KMT_IMAGE_DECODER_PYTHON unset. Then restore the line and run the same
+ * command again: the two totals differ by the decoder and nothing else, and
+ * that control is what makes the subtraction mean anything. Subtract ONE from
+ * the drop for each of your own tests that fails under the edit, if any assert
+ * on real resolution.
+ */
+export const DECODER_SUITE_DELTA = 73
