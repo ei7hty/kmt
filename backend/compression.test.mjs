@@ -59,6 +59,39 @@ test('an Accept-Encoding refusal is honoured, which a word-list match gets backw
   assert.equal(negotiateEncoding('identity'), null, 'identity is not something to encode with')
 })
 
+test('a q value this cannot read is a refusal, never permission', () => {
+  // THE DEFECT WAS TWO DIRECTIONS AT ONCE. `q=abc` already yielded NaN and was
+  // read as 0, so the encoding went unused -- safe. But `q = 0`, with spaces
+  // around the equals, was not recognised as a q parameter at all, defaulted
+  // to quality 1, and sent brotli to a client that had just refused it. Same
+  // shape of input, opposite outcomes, and only one of them was safe.
+  //
+  // Which direction is safe is not symmetric: plain JSON to a client that
+  // would have taken brotli costs bytes; brotli to a client that refused it is
+  // a response they cannot read at all.
+  assert.equal(negotiateEncoding('br ; q = 0'), null, 'a refusal written with spaces is still a refusal')
+  assert.equal(negotiateEncoding('gzip, br ; q = 0'), 'gzip', 'and the other encoding is still available')
+  assert.equal(negotiateEncoding('br;Q=0'), null, 'the parameter name is case-insensitive, like the rest of the header')
+  assert.equal(negotiateEncoding('br;q =0'), null)
+  assert.equal(negotiateEncoding('br;  q  =  0.000  '), null)
+
+  // Anything that is not a well-formed qvalue in [0,1] is read as a refusal
+  // rather than as an unstated preference. None of these is reachable from a
+  // browser -- RFC 9110 §12.4.2 permits no whitespace around the equals and
+  // no exponent -- so this is robustness on input, not a live customer bug.
+  for (const malformed of ['br;q=abc', 'br;q=-1', 'br;q=5', 'br;q=1e-9', 'br;q=NaN', 'br;q=Infinity', 'br;q=']) {
+    assert.equal(negotiateEncoding(malformed), null, `${malformed} was read as permission to compress`)
+  }
+
+  // THE CONTROL. Every assertion above expects null, which a function that
+  // returned null unconditionally would also satisfy. These are the same
+  // header shapes with a q the parser CAN read, and they must still negotiate.
+  assert.equal(negotiateEncoding('br ; q = 1'), 'br')
+  assert.equal(negotiateEncoding('br;q=0.001'), 'br', 'barely acceptable is still acceptable')
+  assert.equal(negotiateEncoding('br;q=1.0'), 'br')
+  assert.equal(negotiateEncoding('gzip;q=0.5'), 'gzip')
+})
+
 test('a compressed body decodes back to exactly what went in, by either encoding', async () => {
   const payload = bigPayload()
   for (const [header, encoding, decode] of [
