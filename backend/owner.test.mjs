@@ -1558,7 +1558,13 @@ test('a catalog row is shaped exactly like a buildCatalog row, and carries nothi
   db.saveOffer('giga-a', offer({ priceCents: 8999 }))
 
   const [row] = db.catalog()
-  const expected = ['id', 'name', 'size', 'price', 'inStock', 'category', 'description']
+  // `specPoints` joins the seven: the supplier's spec codes, decoded into
+  // English by backend/tire-spec.mjs. Derived from the description that
+  // already crosses, so nothing NEW about the tire is exposed -- and approved
+  // by name in CATALOG_OPTIONAL_FIELDS, which backend/catalog-boundary.test.mjs
+  // holds against what catalog() can actually emit. The leak assertions below
+  // are untouched and are the reason this test exists.
+  const expected = ['id', 'name', 'size', 'price', 'inStock', 'category', 'description', 'specPoints']
 
   assert.deepEqual(Object.keys(row).sort(), [...expected].sort(), 'field for field')
   // The supplier's own numbers are the thing the customer must never see.
@@ -1569,6 +1575,7 @@ test('a catalog row is shaped exactly like a buildCatalog row, and carries nothi
   assert.deepEqual(row, {
     id: 'giga-a', name: 'Test Touring', size: SIZE, price: 89.99,
     inStock: true, category: 'all-season', description: '95H BSW',
+    specPoints: ['Carries up to 1,521 lb per tire (load index 95).', 'Rated to 130 mph (speed rating H).', 'Black sidewall.'],
   })
 })
 
@@ -1707,7 +1714,7 @@ test('an enabled tire may use markup pricing with an individual shipping overrid
 
   const [customer] = db.catalog()
   assert.equal(customer.price, 87, '(50 × 1.5) + the $12 individual override')
-  assert.deepEqual(Object.keys(customer).sort(), ['category', 'description', 'id', 'inStock', 'name', 'price', 'size'])
+  assert.deepEqual(Object.keys(customer).sort(), ['category', 'description', 'id', 'inStock', 'name', 'price', 'size', 'specPoints'])
   assert.doesNotMatch(JSON.stringify(customer), /shipping/i, 'shipping remains internal to the final tire price')
 
   db.saveOffer('giga-a', { ...owner.offer, shippingCents: 0 })

@@ -288,7 +288,7 @@ export const CATALOG_FIELDS = ['id', 'name', 'size', 'price', 'inStock', 'catego
  * `deriveBrand`, and the URL itself stays behind the boundary: a supplier URL
  * is private provenance and this list is the public contract.
  */
-export const CATALOG_OPTIONAL_FIELDS = ['imageUrl', 'brand']
+export const CATALOG_OPTIONAL_FIELDS = ['imageUrl', 'brand', 'specCategory', 'specPoints']
 
 /**
  * Why a row's shape is wrong, or null if it is right.

@@ -213,3 +213,25 @@ test('the panel is rendered outside the tire card button', () => {
   assert.ok(!inside.includes('<TireDetails'), 'TireDetails is nested inside the tire card <button>')
   assert.ok(route.includes('<TireDetails'), 'TireDetails is not rendered at all')
 })
+
+test('the note is headed by the supplier\'s own words, not the coarse bucket', () => {
+  // The complaint this answers, in the owner's words: the descriptions were
+  // "the same generic new england text for everything". 230 of the 323 tires
+  // in 225/50R17 are `all-season`, so seven rows in ten were headed with the
+  // same word above the same paragraph.
+  const touring = seasonNote({ category: 'all-season', specCategory: 'Touring' })
+  const uhp = seasonNote({ category: 'all-season', specCategory: 'Ultra High Performance All Season' })
+
+  assert.equal(touring.label, 'Touring')
+  assert.equal(uhp.label, 'Ultra High Performance All Season')
+  assert.notEqual(touring.label, uhp.label, 'two different tires were headed identically')
+  // The paragraph is still the coarse one, and deliberately: a sentence about
+  // driving here is only honest for the five buckets somebody wrote one for.
+  assert.equal(touring.body, uhp.body)
+})
+
+test('a tire with no supplier label falls back to the bucket, and never to nothing', () => {
+  assert.equal(seasonNote({ category: 'winter' }).label, 'Winter')
+  assert.equal(seasonNote({ category: 'winter', specCategory: '   ' }).label, 'Winter')
+  assert.equal(seasonNote({ category: 'winter', specCategory: null }).label, 'Winter')
+})

@@ -72,7 +72,20 @@ export function seasonNote(tire) {
   const category = tire?.category
   const body = SEASON_NOTES[category]
   if (!body) return null
-  return { label: SEASON_LABELS[category] ?? category, body }
+  // THE LABEL IS THE SUPPLIER'S OWN WORDS WHERE THEY EXIST, and the coarse
+  // category only as a fallback. `category` has five values; 230 of the 323
+  // tires in 225/50R17 are `all-season`, so seven rows in ten were headed with
+  // the same word above the same paragraph and the panel read as though it had
+  // failed to load. `specCategory` carries what the supplier actually called
+  // it -- Touring, Racing, All Weather, Ultra High Performance All Season --
+  // and has fourteen values in that same size.
+  //
+  // The BODY still comes from the coarse category, because a sentence about
+  // driving here is only honest for the five buckets somebody wrote one for.
+  // So the label says what this tire is and the paragraph says what that kind
+  // of tire does, which is the split a customer needs.
+  const supplier = typeof tire?.specCategory === 'string' ? tire.specCategory.trim() : ''
+  return { label: supplier || SEASON_LABELS[category] || category, body }
 }
 
 /**
