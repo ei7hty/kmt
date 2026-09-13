@@ -22,6 +22,8 @@ import {
   createInventoryGrid, headerSortState, nextSortRequest, showEmptyState,
   applyBulkResults, bulkNotice, reasonLabel, priceFromFormula, previewPriceChange,
   parseMoney, PAGE_SIZES, BULK_LIMIT, sellingEnabled, neverDecided, ruledPriceCents,
+  DEFAULT_LOW_STOCK_THRESHOLD, LOW_STOCK_MIN, LOW_STOCK_MAX, parseLowStockThreshold,
+  stockState, stockLabel, stockClass, switchedOffByHand, stockRecovered, lowStockSummary,
   buildMarkupSave, markupSavedNotice, marginField, marginBoundSummary,
   parseMarginBound, supportsMarginBounds, MARGIN_BOUND_LIMIT,
 } from './inventory-grid.js'
@@ -949,6 +951,197 @@ test('a single-row save clears the rule line too, by the same rule', async () =>
   await grid.commitRow('sku-1')
 
   assert.equal(ruledPriceCents(grid.items()[0]), null)
+})
+
+/* ==========================================================================
+ * Low stock, and the tires Ken switched off when it was low.
+ *
+ * Measured on the 1,083 supplier rows in `src/data/scraped-tires.json`: stock
+ * runs 4 to 35,681, median 459, and 274 of them (25.3%) are under 100 -- all
+ * of which the grid rendered in the same in-stock green as the 35,681 row.
+ *
+ * THE STATES THIS FILE HAS TO COVER, because nothing else can. Those same
+ * 1,083 rows contain ZERO out-of-stock rows, ZERO delisted rows and ZERO rows
+ * with no stock figure, so `out`, `delisted` and `unknown` have never been
+ * drawn by any browser audit this repository runs -- the exact shape that left
+ * the customer flow's unavailable-tire card unreadable for months. A unit test
+ * is the only instrument that reaches them.
+ * ========================================================================== */
+
+/**
+ * The same row at a different supplier stock figure; `null` takes the figure
+ * away entirely, which is the only way to reach the `unknown` state.
+ *
+ * Built on the `untouched` and `switchedOff` fixtures already above rather
+ * than on a second pair of my own: "he said no" and "nobody asked" are the
+ * distinction this whole section turns on, and two definitions of it in one
+ * file is how they stop agreeing.
+ */
+const atStock = (item, stock, over = {}) => ({
+  ...item,
+  source: stock === null ? { sku: item.source.sku, url: item.source.url } : { ...item.source, stock },
+  ...over,
+})
+const healthy = stock => atStock(untouched(1), stock)
+const off = (stock, over = {}) => atStock(switchedOff(1), stock, over)
+
+test('the five stock states, including the three no seeded row and no audit has ever produced', () => {
+  assert.equal(stockState(healthy(500), 100), 'ok')
+  assert.equal(stockState(healthy(99), 100), 'low')
+  assert.equal(stockState(healthy(100), 100), 'ok', 'the threshold itself is not under it')
+  assert.equal(stockState(healthy(4), 100), 'low', 'the least-stocked row in the real catalogue')
+  assert.equal(stockState(healthy(35681), 100), 'ok', 'and the most')
+
+  // The three the seeded database cannot make.
+  assert.equal(stockState(healthy(0), 100), 'out')
+  assert.equal(stockState(atStock(untouched(1), 500, { inStock: false }), 100), 'out',
+    'the supplier can say out of stock while still reporting a number, and it outranks the number')
+  assert.equal(stockState(atStock(untouched(1), 500, { supplierActive: false }), 100), 'delisted',
+    'delisted outranks everything -- a tire nobody lists any more is not "low"')
+  assert.equal(stockState(atStock(untouched(1), 4, { supplierActive: false }), 100), 'delisted')
+  assert.equal(stockState(healthy(null), 100), 'unknown')
+})
+
+test('the stock line says how few are left, not how many are in stock', () => {
+  // The label is the whole reason `low` is its own state: the count was always
+  // on screen, in a sentence that read as good news.
+  assert.equal(stockLabel(healthy(4), 100), '4 left')
+  assert.equal(stockLabel(healthy(500), 100), '500 in stock')
+  assert.equal(stockLabel(healthy(35681), 100), '35,681 in stock', 'and it still groups the thousands')
+  assert.equal(stockLabel(healthy(0), 100), 'Out of stock')
+  assert.equal(stockLabel(atStock(untouched(1), 500, { supplierActive: false }), 100), 'No longer listed')
+  assert.equal(stockLabel(healthy(null), 100), 'Stock unconfirmed')
+})
+
+test('only a healthy row is green, and every other state wears the attention colour', () => {
+  // This IS the behaviour change. `low` was green, along with everything above
+  // zero, which is how 4 left and 35,681 in stock came to look identical.
+  assert.match(stockClass(healthy(500), 100), /\boi-stock\b(?!-)/)
+  assert.doesNotMatch(stockClass(healthy(500), 100), /\boi-attention\b/)
+  const attention = [healthy(99), healthy(0), healthy(null), atStock(untouched(1), 500, { supplierActive: false })]
+  for (const item of attention) {
+    const classes = stockClass(item, 100)
+    assert.match(classes, /\boi-attention\b/, classes)
+    assert.doesNotMatch(classes, /\boi-stock\b(?!-)/, `${classes} must not also claim the in-stock green`)
+  }
+  assert.match(stockClass(healthy(99), 100), /oi-g-stock-low/, 'and the state is on the element for a reader to see')
+})
+
+test('both stock colours clear 4.5:1 on every row ground they can land on', () => {
+  // Read out of the real stylesheet, both ends, for the reason the rule-price
+  // measurement above gives: a hex written here is a second copy of a fact the
+  // stylesheet owns, and it would keep passing on the day someone restyles the
+  // table.
+  //
+  // `.oi-stock` has never been measured against the TABLE ground -- the audit
+  // that walks this screen reads computed styles on elements it knows about,
+  // and the selected and error row grounds never occur in an audit run at all,
+  // because nothing in one selects a row or fails a save.
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'OwnerInventory.css'), 'utf8')
+  const rgb = h => ({ r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16) })
+  const colourOf = (selector, prop = 'color') => {
+    const rule = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^{]*\\{([^}]*)\\}').exec(css)
+    assert.ok(rule, selector + ' not found in OwnerInventory.css -- this test cannot measure what it cannot find')
+    const found = new RegExp(prop + ':\\s*(#[0-9a-f]{6})', 'i').exec(rule[1])
+    assert.ok(found, selector + ' has no ' + prop)
+    return found[1]
+  }
+
+  const grounds = {
+    table: colourOf('.oi-g-table', 'background'),
+    selected: colourOf('.oi-g-row.is-selected td, .oi-g-row.is-selected th', 'background'),
+    error: colourOf('.oi-g-row.has-error td, .oi-g-row.has-error th', 'background'),
+  }
+  for (const [token, label] of [['.oi-stock', 'the in-stock green'], ['.oi-attention', 'the low-stock amber']]) {
+    const foreground = colourOf(token)
+    for (const [name, ground] of Object.entries(grounds)) {
+      const measured = ratio(rgb(foreground), rgb(ground))
+      assert.ok(measured >= 4.5,
+        `${label} is ${measured.toFixed(2)}:1 on the ${name} ground (${foreground} on ${ground}), below the 4.5:1 floor`)
+    }
+  }
+})
+
+test('a row nobody has touched is not a row Ken switched off', () => {
+  // The trap this whole feature sits on top of. A row with no `offers` record
+  // reads `enabled: false` and is STILL for sale -- that was 1,083 of 1,083 on
+  // a freshly seeded database -- so a check on `enabled` alone would report the
+  // entire catalogue as deliberately switched off, and hang a "you switched
+  // this off" marker on every line of the grid.
+  //
+  // Note what every fixture here has: `enabled: false`. All three of them. That
+  // is deliberate -- if the fixtures differed on `enabled`, a naive
+  // implementation reading it would pass this test.
+  assert.equal(off(500).offer.enabled, false)
+  assert.equal(healthy(500).offer.enabled, false, 'the untouched row looks identical on `enabled`')
+  assert.equal(switchedOffByHand(off(500)), true)
+  assert.equal(switchedOffByHand(healthy(500)), false, 'nobody asked is not the same as he said no')
+
+  const priced = makeItem(1, {
+    offer: { priceCents: 12500, shippingCents: null, enabled: true, notes: '', version: 2 },
+    selling: { priceCents: 12500, source: 'owner', offered: true },
+  })
+  assert.equal(switchedOffByHand(priced), false, 'and a tire he is selling is not switched off either')
+
+  // Both of `sellingEnabled`'s paths, because this reads through it and the
+  // second path is the one no other test here reaches. An older response with
+  // no `selling` field at all resolves through `neverDecided || enabled`, and
+  // it has to land on the same answers.
+  const noSelling = item => { const { selling, ...rest } = item; return rest } // eslint-disable-line no-unused-vars
+  assert.equal(switchedOffByHand(noSelling(healthy(500))), false,
+    'with no server answer, a row nobody has written is still not switched off')
+  assert.equal(switchedOffByHand(noSelling(off(500))), true,
+    'and one he wrote and disabled still is')
+})
+
+test('the one-way door: a tire he switched off that the supplier has restocked', () => {
+  assert.equal(stockRecovered(off(4), 100), false,
+    'still low -- his decision and the rule agree, so there is nothing to tell him')
+  assert.equal(stockRecovered(off(500), 100), true,
+    'back above the line, and nothing was ever going to turn it on by itself')
+  assert.equal(stockRecovered(healthy(500), 100), false,
+    'a tire nobody switched off has not recovered from anything')
+
+  // Recovered means `ok`, not merely "not low". Sending him to switch a
+  // delisted or out-of-stock tire back on is the opposite mistake, and the
+  // more expensive one: it puts a tire on sale that nobody can source.
+  assert.equal(stockRecovered(off(500, { supplierActive: false }), 100), false, 'delisted has not recovered')
+  assert.equal(stockRecovered(off(500, { inStock: false }), 100), false, 'out of stock has not recovered')
+  assert.equal(stockRecovered(off(null), 100), false, 'and neither has an unknown count')
+})
+
+test('moving the threshold moves what the rule covers, in both directions', () => {
+  const item = off(120)
+  assert.equal(stockState(item, 100), 'ok', 'at his own number, 120 is healthy')
+  assert.equal(stockRecovered(item, 100), true, 'so this is one he could turn back on')
+  assert.equal(stockState(item, 150), 'low', 'raise the line and the same row is low')
+  assert.equal(stockRecovered(item, 150), false, 'and it is no longer one to turn back on')
+})
+
+test('the page summary counts this page and says nothing about the catalogue', () => {
+  const items = [healthy(4), healthy(99), healthy(500), off(900), off(12)]
+  assert.deepEqual(lowStockSummary(items, 100), { total: 5, low: 3, recovered: 1 })
+  // The 12-in-stock switched-off row is low AND switched off: counted as low,
+  // and NOT counted as recovered, because it has not recovered.
+  assert.deepEqual(lowStockSummary(items, 10), { total: 5, low: 1, recovered: 2 })
+  assert.deepEqual(lowStockSummary([], 100), { total: 0, low: 0, recovered: 0 })
+  assert.deepEqual(lowStockSummary(undefined, 100), { total: 0, low: 0, recovered: 0 })
+})
+
+test('the threshold box takes a whole number in range and refuses everything else', () => {
+  assert.equal(DEFAULT_LOW_STOCK_THRESHOLD, 100, "Ken's own number, in his own words")
+  assert.equal(parseLowStockThreshold('100'), 100)
+  assert.equal(parseLowStockThreshold(' 250 '), 250)
+  assert.equal(parseLowStockThreshold(LOW_STOCK_MIN), LOW_STOCK_MIN)
+  assert.equal(parseLowStockThreshold(String(LOW_STOCK_MAX)), LOW_STOCK_MAX)
+  for (const bad of ['', '0', '-1', '1.5', 'lots', String(LOW_STOCK_MAX + 1), null, undefined]) {
+    assert.equal(parseLowStockThreshold(bad), null, `${JSON.stringify(bad)} is not a threshold`)
+  }
+  // `0` is refused rather than quietly meaning "off". Nothing could ever be
+  // under zero, so a zero here would be a hidden off switch wearing the clothes
+  // of a threshold -- the blank-against-zero confusion the markup form's margin
+  // bounds already exist to avoid, and not worth a second home.
+  assert.equal(parseLowStockThreshold('0'), null)
 })
 
 /* ==========================================================================

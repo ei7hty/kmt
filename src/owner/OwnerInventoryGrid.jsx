@@ -2,6 +2,8 @@ import { useState } from 'react'
 import {
   GRID_COLUMNS, PAGE_SIZES, dollars, headerSortState, sortArrow,
   showEmptyState, supplierCostCents, ruledPriceCents,
+  DEFAULT_LOW_STOCK_THRESHOLD, LOW_STOCK_MIN, LOW_STOCK_MAX,
+  parseLowStockThreshold, stockState, stockLabel, stockClass, stockRecovered, lowStockSummary,
 } from './inventory-grid.js'
 
 /**
@@ -166,13 +168,64 @@ function BulkBar({ grid, state, markup }) {
   </div>
 }
 
-function GridRow({ item, grid, state, expanded, onExpand }) {
+/**
+ * The threshold Ken's own rule turns on, and what it currently covers.
+ *
+ * IT MARKS; IT DOES NOT HIDE, and the panel says so in as many words. Deriving
+ * "low stock is off sale" from the count belongs in `backend/inventory.mjs` --
+ * it has to reach the customer catalogue, which this screen cannot -- so a
+ * panel here that implied anything was being hidden from customers would be
+ * the screen lying about what it did.
+ *
+ * The number is a per-browser display preference, kept in `localStorage`
+ * exactly like the tools panel's open/closed state beside it, and wrapped
+ * because a browser with site data blocked throws on the accessor itself
+ * rather than returning nothing. When the backend gains a real setting, that
+ * value becomes the source and this becomes the fallback -- there is nothing
+ * to migrate, because nothing here is a decision Ken has recorded.
+ */
+const STORED_THRESHOLD = 'kmt_owner_low_stock'
+
+function readStoredThreshold() {
+  try { return parseLowStockThreshold(localStorage.getItem(STORED_THRESHOLD)) ?? DEFAULT_LOW_STOCK_THRESHOLD }
+  catch { return DEFAULT_LOW_STOCK_THRESHOLD }
+}
+
+function LowStockBar({ items, threshold, typed, onTyped }) {
+  const parsed = parseLowStockThreshold(typed)
+  const { total, low, recovered } = lowStockSummary(items, threshold)
+  return <section className="oi-lowstock" aria-label="Low stock">
+    <div className="oi-lowstock-set">
+      <label htmlFor="oi-low-stock">Low stock is under</label>
+      <input id="oi-low-stock" value={typed} inputMode="numeric" className="oi-lowstock-input"
+        aria-describedby="oi-low-stock-count" onChange={e => onTyped(e.target.value)} />
+      <span>in stock</span>
+    </div>
+    <p id="oi-low-stock-count" className="oi-lowstock-count" role="status" data-testid="oi-low-stock-count">
+      {parsed === null
+        ? <span className="oi-error">Enter a whole number from {LOW_STOCK_MIN} to {LOW_STOCK_MAX.toLocaleString()}.</span>
+        : <>
+          <strong>{low}</strong> of the {total} {total === 1 ? 'tire' : 'tires'} on this page {low === 1 ? 'is' : 'are'} under {threshold.toLocaleString()}.
+          {recovered > 0 && <> <span className="oi-attention" data-testid="oi-low-stock-recovered">
+            <strong>{recovered}</strong> you switched off {recovered === 1 ? 'is' : 'are'} back above it.
+          </span></>}
+        </>}
+    </p>
+    <p className="oi-muted oi-lowstock-note">
+      This marks them here. Nothing is hidden from customers by this number. Stock is what the supplier
+      last showed us, so refresh a size before acting on it.
+    </p>
+  </section>
+}
+
+function GridRow({ item, grid, state, expanded, onExpand, threshold }) {
   const values = grid.rowValues(item)
   const status = state.rowStatus[item.id]
   const dirty = Boolean(state.drafts[item.id])
   const selected = state.selected.includes(item.id)
   const stock = item.source?.stock
-  const available = item.supplierActive && item.inStock && stock > 0
+  const stocked = stockState(item, threshold)
+  const recovered = stockRecovered(item, threshold)
   const marginStale = dirty || status?.kind === 'saved'
   // The rule's price, shown only where it is the one in force -- null the
   // moment Ken has a price of his own, including in the window after a save
@@ -194,9 +247,25 @@ function GridRow({ item, grid, state, expanded, onExpand }) {
       <td className="oi-g-cell-size">{item.size}</td>
       <th scope="row" className="oi-g-cell-name">
         <span className="oi-g-name">{item.name}</span>
-        <span className={available ? 'oi-stock oi-g-stock' : 'oi-attention oi-g-stock'}>
-          {!item.supplierActive ? 'No longer listed' : stock == null ? 'Stock unconfirmed' : !item.inStock || stock === 0 ? 'Out of stock' : `${stock.toLocaleString()} in stock`}
+        {/* Five states, not two. `ok` is the only one that is good news, so it
+            is the only one in the in-stock green -- `low` used to render there
+            too, which is how a tire with 4 left and one with 35,681 came to
+            look identical on a screen whose whole job is deciding what to
+            sell. The class carries the state so a test can measure each
+            one's colour; three of the five never occur in seeded data and no
+            browser audit here has ever drawn them. */}
+        <span className={stockClass(item, threshold)}
+          data-testid={`oi-stock-${item.id}`} data-stock-state={stocked}>
+          {stockLabel(item, threshold)}
         </span>
+        {/* The one-way door, on the row where it can be closed: the Offered box
+            is two cells to the right. Shown only when he actually switched this
+            off himself -- `stockRecovered` needs `version`, because a row
+            nobody has touched also reads as not-enabled and would put this on
+            every line. */}
+        {recovered && <span className="oi-attention oi-g-recovered" data-testid={`oi-stock-recovered-${item.id}`}>
+          You switched this off. The supplier has {stock.toLocaleString()} now.
+        </span>}
       </th>
       <td className="oi-g-num">{dollars(supplierCostCents(item))}</td>
       {/* The input is Ken's own price. Under it, only while he has not set
@@ -270,6 +339,19 @@ function GridRow({ item, grid, state, expanded, onExpand }) {
 
 export default function OwnerInventoryGrid({ grid, state, markup }) {
   const [expanded, setExpanded] = useState('')
+  // Two values, not one: `typed` is whatever is in the box, `threshold` is the
+  // last value that was actually a threshold. Deriving the second from the
+  // first on every keystroke would blank the whole grid's marking the moment
+  // Ken selected the number to retype it.
+  const [typed, setTyped] = useState(() => String(readStoredThreshold()))
+  const [threshold, setThreshold] = useState(readStoredThreshold)
+  const onTyped = value => {
+    setTyped(value)
+    const parsed = parseLowStockThreshold(value)
+    if (parsed === null) return
+    setThreshold(parsed)
+    try { localStorage.setItem(STORED_THRESHOLD, String(parsed)) } catch { /* storage unavailable: forget, do not fail */ }
+  }
   const data = state.data
   const echoed = grid.echoed()
   const items = data?.items ?? []
@@ -295,6 +377,8 @@ export default function OwnerInventoryGrid({ grid, state, markup }) {
       <button type="button" className="oi-button oi-inline" onClick={() => grid.clearNotice()}>Dismiss</button>
     </div>}
 
+    {items.length > 0 && <LowStockBar items={items} threshold={threshold} typed={typed} onTyped={onTyped} />}
+
     <BulkBar grid={grid} state={state} markup={markup} />
     <BulkConfirm pending={state.pending} busy={state.busy} onConfirm={() => grid.confirmBulk()} onCancel={() => grid.cancelBulk()} />
 
@@ -314,7 +398,7 @@ export default function OwnerInventoryGrid({ grid, state, markup }) {
                 onSort={key => grid.sortBy(key)} />)}
           </tr></thead>
           <tbody>
-            {items.map(item => <GridRow key={item.id} item={item} grid={grid} state={state}
+            {items.map(item => <GridRow key={item.id} item={item} grid={grid} state={state} threshold={threshold}
               expanded={expanded === item.id} onExpand={() => setExpanded(expanded === item.id ? '' : item.id)} />)}
           </tbody>
         </table>

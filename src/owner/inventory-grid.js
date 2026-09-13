@@ -135,6 +135,164 @@ export const ruledPriceCents = item =>
     ? sellingPriceCents(item)
     : null
 
+/* -------------------------------------------------------------------------- *
+ * Low stock, and the rule Ken has been keeping in his head.
+ *
+ * In his own words he switches tires off when stock is low -- "below 100, or
+ * whatever the number is". Two things follow from that, and neither is visible
+ * on this screen today.
+ *
+ * **The grid cannot show him what his own rule covers.** The stock line reads
+ * `N in stock` in the in-stock green for every row above zero, so a tire with 4
+ * left and a tire with 35,681 look identical. Measured on the 1,083 supplier
+ * rows in `src/data/scraped-tires.json`: stock runs 4 to 35,681, median 459,
+ * and 274 of them -- 25.3% -- are under 100.
+ *
+ * **And switching one off is a one-way door.** When the supplier restocks,
+ * nothing turns it back on; the off-list only grows and goes quietly stale.
+ * That half is not fixed by hiding low stock automatically, because an
+ * automatic rule knows nothing about the tires he already switched off by hand
+ * -- `offers` records that a row was disabled and never why. So the pile stays
+ * off forever unless something puts it in front of him. `stockRecovered` is
+ * that something, and it is the reason this is display work rather than a
+ * deriving rule: the deriving belongs in the backend, this is the half that
+ * makes it safe to turn on and the half that clears what is already stuck.
+ * -------------------------------------------------------------------------- */
+
+/** Ken's own number, until he changes it. `.forge/CLAIMS.md`'s brief quotes him. */
+export const DEFAULT_LOW_STOCK_THRESHOLD = 100
+
+/**
+ * The range the threshold box accepts. Whole tires, so a whole number.
+ *
+ * The floor is 1 rather than 0 on purpose: at 0 nothing could ever be under it,
+ * so a `0` here would be a silent "off" switch wearing the clothes of a
+ * threshold -- the same blank-against-zero confusion the markup form's margin
+ * bounds are careful about, and not worth reintroducing in a second place. The
+ * ceiling is above the largest stock figure in the catalogue (35,681), so
+ * "mark everything" stays reachable if Ken wants to see the whole spread.
+ */
+export const LOW_STOCK_MIN = 1
+export const LOW_STOCK_MAX = 99999
+
+/** A typed threshold, or `null` if it is not one. Whole numbers only. */
+export function parseLowStockThreshold(text) {
+  const value = String(text ?? '').trim()
+  if (!/^\d+$/.test(value)) return null
+  const number = Number(value)
+  return number >= LOW_STOCK_MIN && number <= LOW_STOCK_MAX ? number : null
+}
+
+/**
+ * What the supplier's stock says about one row.
+ *
+ * Five states, and `low` is the new one -- everything else is the expression
+ * already rendered inline in `OwnerInventoryGrid.jsx`, moved here so it can be
+ * tested. That move matters more than it looks: **three of these five states
+ * are states the seeded database never produces.** There are zero out-of-stock
+ * rows, zero delisted rows and zero rows with no stock figure in all 1,083, so
+ * no browser audit this repository runs has ever drawn `out`, `delisted` or
+ * `unknown` -- which is exactly how the customer flow's unavailable-tire card
+ * went months with colours nobody could read. A unit test can reach them.
+ *
+ * Order is load-bearing. Delisted outranks everything, because a tire the
+ * supplier has stopped listing is not "low", it is gone. `inStock === false`
+ * outranks the count for the same reason `catalog()` trusts it: the supplier
+ * can say out of stock while still reporting a number.
+ */
+export function stockState(item, threshold = DEFAULT_LOW_STOCK_THRESHOLD) {
+  if (!item?.supplierActive) return 'delisted'
+  const stock = item?.source?.stock
+  if (typeof stock !== 'number') return 'unknown'
+  if (item?.inStock === false || stock <= 0) return 'out'
+  return stock < threshold ? 'low' : 'ok'
+}
+
+/** The stock line as the owner reads it. `low` says how few, not how many. */
+export function stockLabel(item, threshold = DEFAULT_LOW_STOCK_THRESHOLD) {
+  const stock = item?.source?.stock
+  switch (stockState(item, threshold)) {
+    case 'delisted': return 'No longer listed'
+    case 'unknown': return 'Stock unconfirmed'
+    case 'out': return 'Out of stock'
+    // "left", not "in stock": the number is the same and the sentence is the
+    // point -- this is the row his own rule is about.
+    case 'low': return `${stock.toLocaleString()} left`
+    default: return `${stock.toLocaleString()} in stock`
+  }
+}
+
+/**
+ * The classes the stock line wears, decided here rather than in the component.
+ *
+ * The COLOUR comes from this screen's two settled tokens -- `.oi-stock` green
+ * and `.oi-attention` amber -- and `ok` is the only state that gets the green
+ * one. That is the behaviour change: `low` used to be green along with
+ * everything above zero.
+ *
+ * `oi-g-stock-<state>` carries no colour. It is a hook, so a reader and a test
+ * can tell which of the five a row is in without re-deriving it. Giving each
+ * state its own colour rule would put a second copy of one of those two hexes
+ * in the stylesheet, and two literals encoding one fact is the defect this
+ * repository has already paid for three times.
+ */
+export const stockClass = (item, threshold = DEFAULT_LOW_STOCK_THRESHOLD) => {
+  const state = stockState(item, threshold)
+  return `oi-g-stock oi-g-stock-${state} ${state === 'ok' ? 'oi-stock' : 'oi-attention'}`
+}
+
+/**
+ * Did Ken take this tire off sale himself?
+ *
+ * `sellingEnabled`, and NOT `offer.enabled`. That field is false for every row
+ * nobody has ever touched -- 1,083 of 1,083 on a freshly seeded database --
+ * because a tire with no `offers` record is still for sale at the rule's
+ * price, so reading it here would report the entire catalogue as deliberately
+ * switched off and put a "you switched this off" marker on every line.
+ *
+ * IT IS ONE TEST, NOT TWO, and that is worth stating because the obvious
+ * defensive version is `!neverDecided(item) && !sellingEnabled(item)` -- which
+ * is what this was, until a mutation survived: dropping the `neverDecided`
+ * half changed no answer anywhere. It cannot, and the reason is a property of
+ * `sellingEnabled` rather than a coincidence of the fixtures. Both of its
+ * paths already answer TRUE for an untouched row: the server's `selling.offered`
+ * comes from `quotedPrice`, which treats a missing offer as offered, and the
+ * fallback is `neverDecided || enabled`, whose first term is that same
+ * distinction. So `!sellingEnabled` is already exactly "he said no", and the
+ * extra conjunct was a guard that could not fire -- which reads as protection
+ * while providing none.
+ */
+export const switchedOffByHand = item => !sellingEnabled(item)
+
+/**
+ * The one-way door, on one row: he switched it off, and the supplier has since
+ * restocked it past the threshold.
+ *
+ * `=== 'ok'` rather than "not low" is deliberate. A row that is delisted, out
+ * of stock, or carrying no stock figure at all has not recovered from
+ * anything, and saying so would send him to turn a tire back on that nobody
+ * can source -- the opposite mistake, and the more expensive one.
+ */
+export const stockRecovered = (item, threshold = DEFAULT_LOW_STOCK_THRESHOLD) =>
+  switchedOffByHand(item) && stockState(item, threshold) === 'ok'
+
+/**
+ * What this page of rows looks like at the current threshold.
+ *
+ * PAGE, not catalogue, and the wording that renders it says so. The server
+ * pages at 24 rows and has no low-stock filter or count today, so a
+ * catalogue-wide figure would be a number this screen cannot actually know.
+ * Claiming one is worse than showing a smaller true one.
+ */
+export const lowStockSummary = (items, threshold = DEFAULT_LOW_STOCK_THRESHOLD) => {
+  const rows = items ?? []
+  return {
+    total: rows.length,
+    low: rows.filter(item => stockState(item, threshold) === 'low').length,
+    recovered: rows.filter(item => stockRecovered(item, threshold)).length,
+  }
+}
+
 /**
  * Which way this column's arrow points, read from what the SERVER said it did.
  *

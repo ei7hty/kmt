@@ -364,6 +364,27 @@
 .oi-g-photo-toggle:disabled { opacity: 0.5; cursor: progress; }
 .oi-g-photo-toggle:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
 
+/* Low stock: the threshold Ken's own rule turns on, and its marks on the rows.
+ *
+ * NO NEW COLOUR, AND NO SECOND COPY OF AN OLD ONE. The stock line keeps taking
+ * its colour from `.oi-stock` and `.oi-attention`, this screen's two settled
+ * tokens, chosen per row by `stockClass` in inventory-grid.js. The
+ * `.oi-g-stock-<state>` classes below carry NO colour at all -- they are
+ * hooks, so a test and a reader can tell which of the five states a row is in.
+ * Restating either hex here would be two literals encoding one fact, which is
+ * the defect that has already cost this repository three bugs.
+ *
+ * What did change is which rows are green: `low` used to render in the
+ * in-stock green along with everything above zero, so a tire with 4 left and a
+ * tire with 35,681 looked identical. Only `ok` is green now. */
+.oi-lowstock { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding: 12px 0 4px; font-size: 13px; }
+.oi-lowstock-set { display: flex; align-items: center; gap: 8px; }
+.oi-lowstock-set label { font-size: 13px; white-space: nowrap; }
+.oi-shell input.oi-lowstock-input { width: 90px; min-height: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+.oi-lowstock-count { margin: 0; }
+.oi-lowstock-count strong { color: #fafafa; }
+.oi-lowstock-note { flex-basis: 100%; margin: 0; font-size: 11px; line-height: 1.5; }
+.oi-g-recovered { display: block; margin-top: 1px; font-size: 11px; line-height: 1.4; }
 /* The markup rule's margin floor and ceiling.
  *
  * Layout only -- every colour here is an existing token on this panel
