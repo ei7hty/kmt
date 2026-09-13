@@ -167,7 +167,14 @@ test('the shipped robots.txt keeps the owner and customer screens out of search 
 test('the shipped sitemap lists only pages meant for an index, none of which 404', () => {
   const sitemap = readFileSync(path.join(import.meta.dirname, '..', 'public', 'sitemap.xml'), 'utf8')
   const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1])
-  assert.deepEqual(locs, ['https://kensmobiletire.com/', 'https://kensmobiletire.com/privacy'], 'the customer flow and the privacy notice, never a page that belongs to one customer')
+  // `/privacy` was here until 2026-09-13. Ken asked for the privacy notice out
+  // of search results, so it carries a `noindex` now and advertising it in the
+  // sitemap would be a crawl spent to be refused. It is still CRAWLABLE on
+  // purpose -- a page Google cannot fetch never reads the noindex that would
+  // remove it -- which is why robots.txt is untouched and only this list moved.
+  // `src/indexing.test.mjs` holds the sitemap and those head tags against each
+  // other, so the two files cannot drift back into disagreeing.
+  assert.deepEqual(locs, ['https://kensmobiletire.com/'], 'the customer flow, never a page that belongs to one customer')
   assert.equal(TYPES['.xml'], 'application/xml; charset=utf-8', 'and it is served as XML, not bytes')
 })
 

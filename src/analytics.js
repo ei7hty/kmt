@@ -20,9 +20,13 @@ import { useEffect } from 'react'
  * is Ken's workspace. None of the three are excluded for an analytics
  * preference -- they are excluded because the URL itself is sensitive.
  *
- * In scope: `/` and `/privacy`, the same two pages public/sitemap.xml
- * already lists as the whole indexable surface -- a boundary drawn for a
- * different reason and correct for this one too. Kept separate from
+ * In scope: `/` and `/privacy`. That USED to be the same two pages
+ * public/sitemap.xml listed as the whole indexable surface; since 2026-09-13
+ * the sitemap lists only `/`, because Ken asked for the privacy notice out of
+ * search results and it now carries a `noindex`. This set did not follow it,
+ * and deliberately: a page can be worth measuring without being worth
+ * indexing, and /privacy is still a real page a real customer reads. Kept
+ * separate from
  * App.jsx's own `CANONICAL_PATHS` even though the two sets are equal today:
  * one answers "what should a crawler index", the other "what may send a
  * customer's URL to a third party", and nothing requires the two questions

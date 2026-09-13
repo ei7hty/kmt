@@ -1,14 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Only the pages meant for a search index: the customer flow and the
-     privacy notice (t50, #163). Everything else here is a customer's own
-     request or the shop's sign-in, and robots.txt disallows those. -->
+<!-- Only the page meant for a search index: the customer flow. Everything
+     else is a customer's own request or the shop's sign-in, and robots.txt
+     disallows those. /privacy was listed here until 2026-09-13; it is still
+     crawlable on purpose, because it now carries a noindex meta tag, and a
+     page Google cannot fetch is a page that never reads one. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://kensmobiletire.com/</loc>
     <changefreq>monthly</changefreq>
-  </url>
-  <url>
-    <loc>https://kensmobiletire.com/privacy</loc>
-    <changefreq>yearly</changefreq>
   </url>
 </urlset>

@@ -16,9 +16,19 @@ import OwnerInquiries from './owner/Inquiries.jsx'
 import SocialProofScreen from './owner/SocialProof.jsx'
 import ImagesScreen from './owner/Images.jsx'
 
-/** The apex domain, and the two routes the sitemap lists under it (t46). */
+/** The apex domain, and the route the sitemap lists under it (t46). */
 const CANONICAL_HOST = 'https://kensmobiletire.com'
-const CANONICAL_PATHS = new Set(['/', '/privacy'])
+const CANONICAL_PATHS = new Set(['/'])
+
+/**
+ * Pages that are reachable and crawlable but must not appear in results.
+ *
+ * `/privacy` only, and only because Ken asked for it. A canonical tag would
+ * be pointless here -- it answers "which URL is the real one for this
+ * content", and the answer for a page nobody should land on from a search is
+ * "none of them" -- so the two sets are disjoint rather than overlapping.
+ */
+const NOINDEX_PATHS = new Set(['/privacy'])
 
 /**
  * The pathname as the route switch sees it: trailing slashes dropped, so
@@ -59,25 +69,54 @@ function App() {
   }, [])
 
   // index.html is one static shell served for every route, so it cannot
-  // carry two pages' worth of `<link rel="canonical">`. Set it here instead,
-  // where the route already lives: the two pages the sitemap lists get their
-  // own absolute URL, everything else gets none, since every other route is
+  // carry one page's worth of `<link rel="canonical">`. Set it here instead,
+  // where the route already lives: the page the sitemap lists gets its own
+  // absolute URL, everything else gets none, since every other route is
   // already excluded from indexing by robots.txt. Google documents this
   // pattern for a page that cannot set the tag in its HTML -- inject it with
   // JavaScript and leave the HTML without one, rather than shipping one tag
   // that would tell a crawler /privacy is really /.
+  //
+  // AND `/privacy` IS NOW TOLD NOT TO INDEX, which is a different instruction
+  // from the ones robots.txt gives and has to be delivered differently.
+  // Ken does not want the privacy notice in search results. The tempting fix
+  // is `Disallow: /privacy` in robots.txt, and it is the wrong one: Disallow
+  // stops Google CRAWLING the page, a page Google cannot crawl can still be
+  // indexed from somebody else's link, and because it never fetches the page
+  // it never reads a `noindex` sitting on it. The URL then sits in results
+  // with no description and no way to ask for its removal.
+  //
+  // So the page stays crawlable, says `noindex` when it is fetched, and is
+  // out of the sitemap. That is the combination that actually removes a page:
+  // Google comes, reads the instruction, and drops it.
   useEffect(() => {
     let link = document.head.querySelector('link[rel="canonical"]')
     if (!CANONICAL_PATHS.has(route)) {
       if (link) link.remove()
+    } else {
+      if (!link) {
+        link = document.createElement('link')
+        link.rel = 'canonical'
+        document.head.appendChild(link)
+      }
+      link.href = `${CANONICAL_HOST}${route}`
+    }
+
+    // Removed rather than set to `index` on every other route: a route with
+    // no robots meta is indexable by default, and writing the default out
+    // would leave a stale `noindex` behind on the next navigation if this
+    // ever grew a second branch. There is exactly one state to clean up.
+    let meta = document.head.querySelector('meta[name="robots"]')
+    if (!NOINDEX_PATHS.has(route)) {
+      if (meta) meta.remove()
       return
     }
-    if (!link) {
-      link = document.createElement('link')
-      link.rel = 'canonical'
-      document.head.appendChild(link)
+    if (!meta) {
+      meta = document.createElement('meta')
+      meta.name = 'robots'
+      document.head.appendChild(meta)
     }
-    link.href = `${CANONICAL_HOST}${route}`
+    meta.content = 'noindex, follow'
   }, [route])
 
   useAnalytics(route)
