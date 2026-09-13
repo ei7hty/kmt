@@ -17,7 +17,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer, request as httpRequest } from 'node:http'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
+// Real filesystem paths, joined rather than sliced out of a URL: the sliced
+// version lined up on Windows and did not on the Ubuntu runner.
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { brotliDecompressSync, gunzipSync } from 'node:zlib'
 import { BROTLI_QUALITY, COMPRESS_MIN_BYTES, compressedJson, negotiateEncoding } from './compression.mjs'
 import { createCatalogApi } from './api.mjs'
@@ -172,7 +176,7 @@ test('GET /api/catalog answers a compressed body, and the same tires, over a rea
   })
   const base = await catalogServer(t, inventory)
 
-  const compressed = await rawGet(`${base}/api/catalog`, { Accept: 'application/json', 'Accept-Encoding': 'br' })
+  const compressed = await rawGet(`${base}/api/catalog?all=1`, { Accept: 'application/json', 'Accept-Encoding': 'br' })
   assert.equal(compressed.status, 200)
   assert.equal(compressed.headers['content-encoding'], 'br')
   assert.equal(compressed.headers.vary, 'Accept-Encoding')
@@ -187,9 +191,157 @@ test('GET /api/catalog answers a compressed body, and the same tires, over a rea
 
   // A client that cannot decode gets readable JSON, not a brotli body with the
   // header stripped -- the failure mode that looks like a corrupt catalogue.
-  const plain = await rawGet(`${base}/api/catalog`, { Accept: 'application/json', 'Accept-Encoding': 'identity' })
+  const plain = await rawGet(`${base}/api/catalog?all=1`, { Accept: 'application/json', 'Accept-Encoding': 'identity' })
   assert.equal(plain.headers['content-encoding'], undefined)
   assert.deepEqual(JSON.parse(plain.body.toString()).tires.length, 200)
   assert.ok(plain.body.length > compressed.body.length,
     'the plain answer is not larger than the compressed one, so the compressed one compressed nothing')
+})
+
+// ------------------------------------------------ the cap on the unsized route
+
+test('asking for every row has to say so, and being refused cannot look like an empty catalogue', async t => {
+  const inventory = new Inventory(':memory:', [SIZE])
+  t.after(() => inventory.close())
+  inventory.importSnapshot({
+    source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE],
+    coverage: { [SIZE]: { limit: 0, pagesRead: 1, totalPages: 1, complete: true, scrapedAt: '2026-09-05T15:00:00Z' } },
+    tires: Array.from({ length: 30 }, (_, n) => tire(`giga-${String(n).padStart(4, '0')}`)),
+  })
+  const base = await catalogServer(t, inventory)
+  const get = path => rawGet(`${base}${path}`, { Accept: 'application/json', 'Accept-Encoding': 'identity' })
+
+  const refused = await get('/api/catalog')
+  assert.equal(refused.status, 400, 'an unsized request is refused')
+  const why = JSON.parse(refused.body.toString())
+  // REFUSED, NOT EMPTIED. A 200 with a short list is the failure this design
+  // exists to avoid: `.forge/deployed-site-check.mjs` reads every row looking
+  // for a field leaking to customers, and would report success over the rows
+  // it never saw. A caller cannot mistake this for a catalogue.
+  assert.equal(why.tires, undefined, 'a refusal must not carry a tires array of any length')
+  // The message is the only thing a caller who did what used to work has to
+  // go on, so it names both ways out rather than saying "bad request".
+  assert.match(why.error, /\?size=/, 'the refusal does not say how to ask for one size')
+  assert.match(why.error, /\?all=1/, 'the refusal does not say how to ask for everything')
+  assert.equal(refused.headers['cache-control'], 'no-store', 'a refusal that gets cached refuses the next caller too')
+
+  const all = await get('/api/catalog?all=1')
+  assert.equal(all.status, 200)
+  assert.equal(JSON.parse(all.body.toString()).tires.length, 30, 'every row, for the audits that read every row')
+
+  const sized = await get(`/api/catalog?size=${encodeURIComponent(SIZE)}`)
+  assert.equal(sized.status, 200, 'the customer flow always sends a size and is untouched')
+  assert.equal(JSON.parse(sized.body.toString()).tires.length, 30)
+
+  // `size` is the narrower request and wins; a caller sending both has already
+  // said which rows it wants.
+  const both = await get(`/api/catalog?all=1&size=${encodeURIComponent(SIZE)}`)
+  assert.equal(both.status, 200)
+  assert.equal(JSON.parse(both.body.toString()).tires.length, 30)
+
+  // Only `1`. A truthy-looking value is a caller guessing at the contract, and
+  // a refusal that names the parameter teaches more than a silent 2.5MB answer.
+  for (const guess of ['all=true', 'all=yes', 'all', 'all=0', 'all=']) {
+    const answer = await get(`/api/catalog?${guess}`)
+    assert.equal(answer.status, 400, `?${guess} was accepted as "every row"`)
+  }
+})
+
+test('a size nobody stocks answers an empty catalogue, which is not the same as a refusal', async t => {
+  // The distinction the refusal above turns on, from the other side: 200 with
+  // zero rows is a real, complete answer about a size with no tires in it, and
+  // the cap must not have turned it into an error.
+  const inventory = new Inventory(':memory:', [SIZE, '225/50R17'])
+  t.after(() => inventory.close())
+  inventory.importSnapshot({
+    source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE],
+    coverage: { [SIZE]: { limit: 0, pagesRead: 1, totalPages: 1, complete: true, scrapedAt: '2026-09-05T15:00:00Z' } },
+    tires: [tire('giga-0001')],
+  })
+  const base = await catalogServer(t, inventory)
+
+  const empty = await rawGet(`${base}/api/catalog?size=${encodeURIComponent('225/50R17')}`, { Accept: 'application/json' })
+  assert.equal(empty.status, 200)
+  assert.deepEqual(JSON.parse(empty.body.toString()).tires, [])
+})
+
+test('nothing in the repository asks for the catalogue without saying which rows', async () => {
+  // THE WHOLE REPOSITORY, not a list of files I remembered to name. The first
+  // version of this guard checked three `.forge` scripts, and the reason it
+  // had to be widened is that a hand-written list is exactly how the real
+  // break got through: a `curl` inside .github/workflows/fly-deploy.yml asked
+  // unsized, `curl -f` exited 22 on the 400, the row count became empty, and
+  // `[ "" -lt 1 ]` errored INSIDE an `if` condition where `set -e` does not
+  // fire. The step reported success having proved nothing -- in this branch's
+  // own gate run. A grep restricted to .mjs/.js/.jsx never saw the YAML.
+  //
+  // So this walks source, scripts, audits, workflows and docs, and classifies
+  // an occurrence as a REQUEST by the verb in front of it rather than by which
+  // directory it lives in.
+  const root = fileURLToPath(new URL('../', import.meta.url))
+  // A verb ANYWHERE in the preceding 60 characters, not one glued to the URL.
+  // The strict version missed `fetch(\`${BASE}/api/catalog\`)` and
+  // `fetch(base + '/api/catalog')` -- it refused to step over the quote in a
+  // template literal or a concatenation, which is how two of the six files
+  // this guards were invisible to it. Found by mutating each of the six and
+  // watching two survive.
+  //
+  // 60 characters is short enough that the check MESSAGES nearby do not match:
+  // the closest one, deployed-site-check.mjs:507, is ~117 characters from its
+  // fetch. If that ever changes, this reports a false offender -- loudly, by
+  // name, which is the right direction for a guard to fail in.
+  const VERBS = /(?:fetch|rawGet|new URL|curl)/
+  const offenders = []
+  let requests = 0
+
+  for (const dir of ['backend', 'src', 'scripts', '.forge', '.github', 'docs']) {
+    for (const entry of readdirSync(join(root, dir), { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !/\.(mjs|js|jsx|yml|yaml|sh)$/.test(entry.name)) continue
+      // This file is the exception, and deliberately: it requests the refused
+      // URL on purpose, to prove that it is refused.
+      if (entry.name === 'compression.test.mjs') continue
+      // `parentPath` is already an absolute filesystem path, so it is JOINED,
+      // not sliced against the root's URL pathname. The sliced version worked
+      // on Windows -- where the pathname carries a leading slash before the
+      // drive letter and the arithmetic happened to line up -- and produced a
+      // wrong path on the Ubuntu runner, where every read threw and a
+      // `catch { continue }` swallowed it. The guard then examined zero files
+      // and would have reported success, except that the control below counts
+      // what it examined and refused. Read errors are no longer swallowed
+      // either: a file this loop selected by extension and then cannot read is
+      // a bug, not something to skip past.
+      const source = readFileSync(join(entry.parentPath, entry.name), 'utf8')
+
+      for (const hit of source.matchAll(/\/api\/catalog[^'"`\s)|]*/g)) {
+        const before = source.slice(Math.max(0, hit.index - 60), hit.index)
+        if (!VERBS.test(before)) continue // a message, a path list, an allow-list entry
+        // The cap is GET-only -- `createCatalogApi` declines any other method
+        // before it reaches the parameter check, so a POST to this path falls
+        // through to auth and answers 401. `owner.test.mjs:1628` asserts
+        // exactly that and is right to send no parameters; flagging it would
+        // have meant adding `?all=1` to a test about method handling, which
+        // would have hidden what it is for.
+        const after = source.slice(hit.index, hit.index + 80)
+        if (/method:\s*['"`](?:POST|PUT|DELETE|PATCH)/i.test(after)) continue
+        requests += 1
+        if (!/\?(all=1|size=)/.test(hit[0])) offenders.push(`${entry.name}: ${hit[0]}`)
+      }
+    }
+  }
+
+  assert.ok(requests > 0, 'no /api/catalog request was found anywhere; this guard is measuring nothing')
+  assert.deepEqual(offenders, [],
+    'these ask for the catalogue without saying which rows they want, and will get a 400')
+
+  // Read as a function BODY rather than a window of N characters after the
+  // name: the first version allowed 400 and the explaining comment above the
+  // fetch is longer than that, so it failed against correct code. A guard
+  // whose reach is a guess fails for reasons that have nothing to do with
+  // what it guards.
+  const auditUi = readFileSync(join(root, '.forge/audit-ui.mjs'), 'utf8')
+  const at = auditUi.indexOf('export async function cleanTireFor')
+  assert.notEqual(at, -1, 'cleanTireFor is not in audit-ui.mjs; this guard cannot find what it guards')
+  const body = auditUi.slice(at, auditUi.indexOf('\n}', at))
+  assert.match(body, /\/api\/catalog\?size=/,
+    'cleanTireFor stopped asking for the one size it filters to, and is downloading the whole catalogue again')
 })

@@ -12,9 +12,10 @@ import { getAllTires } from './catalog.js'
  * whole catalogue is 6,103 rows and ~325,000 bytes over the wire; one size is
  * 23,319 bytes in 0.17s.
  *
- * The unsized route itself stays -- three audits read every row of it, which
- * `backend/api.mjs` says in as many words -- but nothing shipped to a browser
- * can ask for it now.
+ * The unsized route no longer answers at all: it refuses unless a caller asks
+ * with `?all=1`, which the handful of audits that read every row now do. This
+ * comment said the route "stays" because at the time it did; the cap landed
+ * one change later and made the sentence false.
  *
  * After the supplier import the whole catalog is about 170 KB compressed, and
  * the flow used to download all of it on first paint, before the size step,

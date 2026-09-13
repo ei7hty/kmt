@@ -456,8 +456,20 @@ jobs:
           # This assertion sees the second kind, by asking for data rather than
           # for a pulse. It depends on the catalog being seeded at boot from
           # src/data/scraped-tires.json; if seeding ever moves, it moves too.
-          tires="$(curl -fsS http://localhost:8099/api/catalog | jq '.tires | length')"
-          echo "catalog rows: $tires"
+          tires="$(curl -fsS "http://localhost:8099/api/catalog?all=1" | jq '.tires | length')"
+          echo "catalog rows: ${tires:-<unreadable>}"
+          # AN UNREADABLE COUNT IS A FAILURE, NOT A ZERO, and this guard is
+          # here because the absence of it already cost this assertion once.
+          # When /api/catalog began refusing unsized requests, `curl -f` exited
+          # 22, `$tires` became empty, and `[ "" -lt 1 ]` errored -- inside an
+          # `if` CONDITION, where `set -e` does not fire. The step went green
+          # having proved nothing, and stayed green for every future run.
+          case "$tires" in
+            ''|*[!0-9]*)
+              echo "FAIL: could not read a row count from the running image (got '${tires}')."
+              echo "Either the container is not serving /api/catalog?all=1, or that route changed shape."
+              exit 1 ;;
+          esac
           if [ "$tires" -lt 1 ]; then
             echo "FAIL: the image boots and serves an empty catalog."
             echo "The usual cause is a .dockerignore rule excluding src/data/."

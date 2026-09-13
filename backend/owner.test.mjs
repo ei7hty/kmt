@@ -1614,7 +1614,7 @@ test('the catalog answers a customer with no session, while the owner API still 
   t.after(() => server.close())
   const base = `http://127.0.0.1:${server.address().port}`
 
-  const answer = await fetch(`${base}/api/catalog`)
+  const answer = await fetch(`${base}/api/catalog?all=1`)
   assert.equal(answer.status, 200, 'a customer is not signed in and still gets a catalog')
   assert.match(answer.headers.get('content-type'), /application\/json/)
   const body = await answer.json()
@@ -1651,7 +1651,7 @@ test('the public catalog returns plain descriptions without changing tire identi
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => server.close())
 
-  const answer = await fetch(`http://127.0.0.1:${server.address().port}/api/catalog`)
+  const answer = await fetch(`http://127.0.0.1:${server.address().port}/api/catalog?all=1`)
   const raw = await answer.text()
   assert.equal(answer.status, 200)
   assert.doesNotMatch(raw, /&lt;|&gt;|<\/?(?:sup|script)\b/i, 'no encoded or literal supplier markup crosses the API')

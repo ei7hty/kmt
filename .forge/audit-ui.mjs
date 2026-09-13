@@ -327,7 +327,13 @@ export const CATALOG_FIELDS_PHRASE =
  * good a clean-path fixture as any other, so there is nothing to pin here.
  */
 export async function cleanTireFor(base) {
-  const response = await fetch(`${base}/api/catalog`)
+  // ASKS FOR THE SIZE IT IS ABOUT TO FILTER TO. This used to fetch the whole
+  // catalogue -- 6,103 rows, 2.5MB -- and then keep the rows matching one
+  // size, which is the same answer at a thousand times the cost. Narrowing it
+  // is also what makes it survive the unsized route now refusing by default;
+  // `?all=1` would have worked too and would have been the wrong fix, since
+  // nothing here ever wanted another size's rows.
+  const response = await fetch(`${base}/api/catalog?size=${encodeURIComponent(CLEAN_SIZE)}`)
   const { tires } = await response.json()
   const supplierTire = tires.find(tire => tire.size === CLEAN_SIZE && tire.id.startsWith('giga-'))
   if (!supplierTire) {

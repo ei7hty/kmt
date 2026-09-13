@@ -150,8 +150,27 @@ export function isPublicApiCall(method, pathname) {
  * client-supplied price), so a stale display corrects itself the moment a
  * quote is actually drafted. `?size=<size>` narrows the response to one size,
  * for the customer flow to fetch after a size is chosen rather than the whole
- * catalog on first paint; omitting it answers everything, unchanged, for the
- * audits and anything else that still wants the full list.
+ * catalog on first paint.
+ *
+ * ASKING FOR EVERY ROW NOW HAS TO SAY SO. `?all=1` answers the whole
+ * catalogue, unchanged, for the three audits that genuinely read every row
+ * (`deployed-site-check` reads each row's field shape, `catalog-import-check`
+ * counts them against the walk file, `shutdown-drain-check` wants any row and
+ * knows no size) plus `scripts/photo-gaps.mjs`, which ranks gaps across all of
+ * it. A fourth audit, `audit-ui.cleanTireFor`, turned out to want ONE tire in
+ * ONE known size and asks for that size instead. A request with neither
+ * parameter is REFUSED. Measured 2026-09-13, the whole
+ * catalogue is 6,103 rows and 2,575,347 bytes raw on an unauthenticated
+ * route, and since the customer bundle's only unsized fetch was deleted
+ * (#527) nothing shipped to a browser asks for it.
+ *
+ * IT REFUSES RATHER THAN TRUNCATING, and that is the entire design rather
+ * than a detail of it. A cap that returned the first few hundred rows would
+ * leave `.forge/deployed-site-check.mjs` -- which reads EVERY row to catch a
+ * field leaking to customers -- inspecting a fraction of the catalogue and
+ * still reporting success. That is the shape of defect this repository has
+ * paid for over and over: an instrument that cannot fail. A 400 cannot be
+ * mistaken for a complete list by anything.
  */
 export function createCatalogApi(inventory) {
   return async (request, response) => {
@@ -164,6 +183,17 @@ export function createCatalogApi(inventory) {
 
     try {
       const size = url.searchParams.get('size') || ''
+      // `size` wins over `all`: it is the narrower request, and a caller that
+      // sent both has already said which rows it wants.
+      if (!size && url.searchParams.get('all') !== '1') {
+        // The message has to teach, because this is the one error a caller
+        // meets by doing what used to work. It names both ways out.
+        response.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+        response.end(JSON.stringify({
+          error: 'Ask for one size, like ?size=225%2F50R17. The whole catalogue is thousands of rows, so asking for it has to be explicit: add ?all=1.',
+        }))
+        return true
+      }
       // The one setting the wizard needs before the owner backend is anywhere
       // near it: whether disposal is offered, and at what price. Everything
       // else Ken sets (the mobile fee, tax, shipping) never needs to reach an

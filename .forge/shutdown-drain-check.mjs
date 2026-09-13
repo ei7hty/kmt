@@ -265,7 +265,9 @@ try {
 
     // A real customer submission, so the mail is fired the way production
     // fires it -- through mailer.after() from the request handler.
-    const catalog = await (await fetch(base + '/api/catalog')).json()
+    // ?all=1: this wants any giga- tire and does not know which sizes the gate
+    // database holds, so it cannot narrow the way audit-ui.cleanTireFor does.
+    const catalog = await (await fetch(base + '/api/catalog?all=1')).json()
     const tire = (catalog.tires || catalog).find?.(t => t.id?.startsWith('giga-')) ?? (catalog.tires || catalog)[0]
     const soon = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)
     const submit = await fetch(base + '/api/requests', {

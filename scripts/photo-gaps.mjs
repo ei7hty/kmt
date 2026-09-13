@@ -169,7 +169,11 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
     const options = parseArgs(process.argv.slice(2))
     if (options.help) { console.log(HELP); process.exit(0) }
 
-    const url = new URL('/api/catalog', options.from)
+    // `?all=1`: this ranks photo gaps across the WHOLE catalogue, and the
+    // unsized route refuses by default now. Without it the fetch gets a 400
+    // and reports "no tires array", which is true and points at the wrong
+    // thing entirely.
+    const url = new URL('/api/catalog?all=1', options.from)
     const response = await fetch(url, { headers: { Accept: 'application/json' } })
     const type = response.headers.get('content-type') || ''
     // Same check the customer flow makes: a dev server that does not know the

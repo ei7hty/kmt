@@ -27,7 +27,7 @@ for h in strict-transport-security content-security-policy x-content-type-option
 done
 echo
 echo "## Compression (GET with Accept-Encoding: br, gzip)"
-for p in / /api/catalog; do
+for p in / "/api/catalog?all=1"; do
   echo "  $p -> $(curl -s -o /dev/null -D - -H 'Accept-Encoding: br, gzip' -w 'downloaded=%{size_download}' "$B$p" | tr -d '\r' | grep -i -E '^content-encoding|downloaded' | tr '\n' ' ')"
 done
 echo
@@ -51,7 +51,7 @@ echo "  /api/owner/inventory: $(curl -s "$B/api/owner/inventory")"
 echo "  /api/requests/<unknown id>: $(curl -s "$B/api/requests/0123456789abcdef0123456789abcdef")"
 echo "  /api/requests (no key): $(curl -s "$B/api/requests")"
 echo "  /api/requests?customer=<key with no requests>: $(curl -s "$B/api/requests?customer=0123456789abcdef0123456789abcdef")"
-curl -s "$B/api/catalog" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const t=JSON.parse(s).tires;const keys=new Set();for(const x of t)for(const k of Object.keys(x))keys.add(k);console.log('  /api/catalog: tires='+t.length+' sizes='+new Set(t.map(x=>x.size)).size+' keys=['+[...keys].sort().join(',')+']')})"
+curl -s "$B/api/catalog?all=1" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const t=JSON.parse(s).tires;const keys=new Set();for(const x of t)for(const k of Object.keys(x))keys.add(k);console.log('  /api/catalog: tires='+t.length+' sizes='+new Set(t.map(x=>x.size)).size+' keys=['+[...keys].sort().join(',')+']')})"
 echo
 echo "## Asset caching"
 for p in /brand/og-1200x630.jpg "$(curl -s "$B/" | grep -o '/assets/index-[^"]*\.js' | head -1)"; do
