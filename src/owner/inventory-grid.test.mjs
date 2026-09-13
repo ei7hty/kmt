@@ -14,10 +14,14 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+import { ratio } from '../../.forge/contrast-measure.mjs'
 import {
   createInventoryGrid, headerSortState, nextSortRequest, showEmptyState,
   applyBulkResults, bulkNotice, reasonLabel, priceFromFormula, previewPriceChange,
-  parseMoney, PAGE_SIZES, BULK_LIMIT,
+  parseMoney, PAGE_SIZES, BULK_LIMIT, sellingEnabled, neverDecided, ruledPriceCents,
 } from './inventory-grid.js'
 
 const SORT_KEYS = ['size', 'name', 'supplierPrice', 'price', 'margin', 'enabled', 'updated']
@@ -721,4 +725,226 @@ test('a second toggle on a row already in flight is ignored, not queued', async 
   release(); await first
 
   assert.equal(calls, 1, 'a double-click must not send two writes for one row')
+})
+
+// ------------------------------------------- h. what a save asserts about sale
+
+/*
+ * Every request this store sends carries `enabled`, because both endpoints
+ * take the whole offer and not a patch. So `enabled` is asserted by every
+ * save, including the ones that are only about a price -- and it used to be
+ * read off `item.offer.enabled`, which is `false` for a tire nobody has
+ * decided about. The customer catalogue sells exactly those tires, so a price
+ * save asserted a deselection Ken never made and took the tire off sale.
+ *
+ * These drive the store and read the REQUEST BODY, which is the only place
+ * the defect was ever visible from this side.
+ */
+
+/** A tire nobody has decided about: no offers row, so no version and no price. */
+const untouched = (n, over = {}) => makeItem(n, {
+  offer: { priceCents: null, shippingCents: null, enabled: false, notes: '', version: 0 },
+  selling: { priceCents: 13500 + n, source: 'markup', offered: true },
+  ...over,
+})
+
+/** A tire Ken switched off himself. Looks identical on `offer`; is not. */
+const switchedOff = (n) => makeItem(n, {
+  offer: { priceCents: null, shippingCents: null, enabled: false, notes: '', version: 3 },
+  selling: { priceCents: null, source: 'markup', offered: false },
+})
+
+const bodiesOf = calls => calls.filter(c => c.options?.method === 'PUT').map(c => JSON.parse(c.options.body))
+
+test('typing a price on a tire nobody has decided about does not assert a deselection', async () => {
+  const pool = [untouched(1), untouched(2)]
+  const { api, calls } = makeApi({ pool })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+
+  assert.equal(grid.rowValues(pool[0]).enabled, true,
+    'the row seeds from what is actually being sold, not from the raw enabled flag')
+
+  grid.editRow('sku-1', { price: '59.99' })
+  await grid.commitRow('sku-1')
+
+  const body = bodiesOf(calls).at(-1)
+  assert.equal(body.priceCents, 5999)
+  assert.equal(body.enabled, true, 'setting a price leaves the tire on sale')
+})
+
+test('a bulk price write leaves every row it prices on sale', async () => {
+  const pool = Array.from({ length: 5 }, (_, i) => untouched(i + 1))
+  const { api, calls } = makeApi({ pool })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+  grid.selectAllOnPage(true)
+  grid.requestBulk('price', { multiplier: 1.5, addShipping: false })
+  await grid.confirmBulk()
+
+  const body = bodiesOf(calls).at(-1)
+  assert.equal(body.offers.length, 5)
+  assert.deepEqual(body.offers.map(o => o.enabled), [true, true, true, true, true],
+    'all five priced and all five still for sale')
+  assert.deepEqual(body.offers.map(o => o.priceCents), pool.map(i => Math.round(i.price * 100 * 1.5)))
+})
+
+test('a bulk shipping write does not change what is for sale either', async () => {
+  const pool = [untouched(1), untouched(2)]
+  const { api, calls } = makeApi({ pool })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+  grid.selectAllOnPage(true)
+  grid.requestBulk('shipping', { shipping: '12.50' })
+  await grid.confirmBulk()
+
+  const body = bodiesOf(calls).at(-1)
+  assert.deepEqual(body.offers.map(o => o.shippingCents), [1250, 1250])
+  assert.deepEqual(body.offers.map(o => o.enabled), [true, true])
+})
+
+test('a tire the owner switched off is not switched back on by a price write', async () => {
+  // The control. Without it, hardcoding `enabled: true` would satisfy every
+  // test above while quietly removing Ken's ability to stop selling anything.
+  const pool = [switchedOff(1), untouched(2)]
+  const { api, calls } = makeApi({ pool })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+
+  assert.equal(grid.rowValues(pool[0]).enabled, false, 'a real no survives')
+
+  grid.selectAllOnPage(true)
+  grid.requestBulk('price', { multiplier: 1.5, addShipping: false })
+  await grid.confirmBulk()
+
+  const body = bodiesOf(calls).at(-1)
+  assert.deepEqual(body.offers.map(o => o.enabled), [false, true],
+    'the switched-off row stays off; the undecided one stays on')
+})
+
+test('the offered action still decides offered, whatever a row was selling at', async () => {
+  const pool = [untouched(1), switchedOff(2)]
+  const { api, calls } = makeApi({ pool })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+  grid.selectAllOnPage(true)
+  grid.requestBulk('offered', { enabled: false })
+  await grid.confirmBulk()
+
+  assert.deepEqual(bodiesOf(calls).at(-1).offers.map(o => o.enabled), [false, false],
+    'asking to stop offering both stops offering both')
+
+  grid.selectAllOnPage(true)
+  grid.requestBulk('offered', { enabled: true })
+  await grid.confirmBulk()
+  assert.deepEqual(bodiesOf(calls).at(-1).offers.map(o => o.enabled), [true, true])
+})
+
+test('sellingEnabled falls back away from the defect, not toward it', () => {
+  // An item with no `selling` field at all -- an older response, or a row
+  // built by a test. The fallback must not resolve to `offer.enabled`, which
+  // is the value whose falseness caused this.
+  assert.equal(sellingEnabled({ offer: { enabled: false, version: 0 } }), true,
+    'no offers row means nobody has decided, so it is on sale')
+  assert.equal(sellingEnabled({ offer: { enabled: false, version: 2 } }), false,
+    'a written row with enabled false is a real decision')
+  assert.equal(sellingEnabled({ offer: { enabled: true, version: 2 } }), true)
+  assert.equal(sellingEnabled({ selling: { offered: false }, offer: { enabled: true, version: 0 } }), false,
+    'the server answer wins over the fallback whenever it is present')
+  assert.equal(neverDecided({ offer: { version: 0 } }), true)
+  assert.equal(neverDecided({ offer: { version: 1 } }), false)
+})
+
+test('the rule price clears 4.5:1 on every row background it can land on', () => {
+  // The browser audit cannot see this. It measures what the seeded database
+  // renders, and a seeded row only shows the rule price where Ken has set no
+  // price of his own -- which is every row, so the colour IS rendered, but the
+  // audit reads computed styles on elements it knows to look at and this one
+  // is new. More to the point, the SELECTED and ERROR row grounds never occur
+  // in an audit run at all, because nothing in it selects a row or fails a
+  // save. Those are the two darker-shifted backgrounds, so they are exactly
+  // the ones a measurement would want.
+  //
+  // Both ends come out of the real files. Writing #121212 here would be a
+  // second copy of a fact the stylesheet owns, and it would keep passing on
+  // the day someone restyles the table -- the defect this repo has hit with a
+  // colour test that restated hexes instead of reading them.
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'OwnerInventory.css'), 'utf8')
+  const rgb = h => ({ r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16) })
+
+  const colourOf = (selector, prop = 'color') => {
+    const rule = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^{]*\\{([^}]*)\\}').exec(css)
+    assert.ok(rule, selector + ' not found in OwnerInventory.css -- this test cannot measure what it cannot find')
+    const found = new RegExp(prop + ':\\s*(#[0-9a-f]{6})', 'i').exec(rule[1])
+    assert.ok(found, selector + ' has no ' + prop + ' -- the value this test measures is no longer stated there')
+    return found[1]
+  }
+
+  const foreground = colourOf('.oi-g-ruled')
+  const grounds = {
+    table: colourOf('.oi-g-table', 'background'),
+    selected: colourOf('.oi-g-row.is-selected td, .oi-g-row.is-selected th', 'background'),
+    error: colourOf('.oi-g-row.has-error td, .oi-g-row.has-error th', 'background'),
+  }
+
+  for (const [name, ground] of Object.entries(grounds)) {
+    const measured = ratio(rgb(foreground), rgb(ground))
+    assert.ok(measured >= 4.5,
+      `the rule price is ${measured.toFixed(2)}:1 on the ${name} ground (${foreground} on ${ground}), below the 4.5:1 floor`)
+  }
+
+  // The priced-but-not-for-sale warning, same treatment. It sits on a ground
+  // of its own rather than the page's, and it is shown only when the count is
+  // above zero -- so on a seeded database it never renders and no browser
+  // audit this repo runs has ever drawn it.
+  const warningGround = colourOf('.oi-priced-off', 'background')
+  for (const [name, fg] of [['inherited amber', colourOf('.oi-attention')], ['its heading', colourOf('.oi-priced-off strong')]]) {
+    const measured = ratio(rgb(fg), rgb(warningGround))
+    assert.ok(measured >= 4.5,
+      `the priced-but-not-for-sale warning's ${name} is ${measured.toFixed(2)}:1 (${fg} on ${warningGround}), below the 4.5:1 floor`)
+  }
+})
+
+test('the rule price stops being shown the moment the owner has a price of his own', async () => {
+  // `selling` is the SERVER's answer and the save responses do not carry a new
+  // one, so after a save the row on screen still holds the pre-save `selling`
+  // -- source 'markup', and the old rule price. Rendering the rule line off
+  // `source` alone therefore printed "$135.00 by rule" underneath the $150.00
+  // Ken had just set, announcing a price that was no longer in force. That is
+  // the same class of defect this whole change exists to remove, so it does
+  // not get to ship inside the fix for it.
+  //
+  // `ruledPriceCents` requires BOTH: the server says the rule is what is in
+  // force, AND there is no owner price on the row. The second is kept accurate
+  // locally by both save paths, so it is the one that survives a stale
+  // `selling`.
+  const pool = [untouched(1)]
+  const { api } = makeApi({ pool })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+
+  assert.equal(ruledPriceCents(grid.items()[0]), untouched(1).selling.priceCents,
+    'before he prices it, the rule price is what the tire sells for and is shown')
+
+  grid.selectAllOnPage(true)
+  grid.requestBulk('price', { multiplier: 1.5, addShipping: false })
+  await grid.confirmBulk()
+
+  const row = grid.items()[0]
+  assert.equal(row.selling.source, 'markup', 'the stale server answer is still on the row -- this is the trap')
+  assert.equal(row.offer.priceCents, Math.round(untouched(1).price * 100 * 1.5), 'and his price is now set')
+  assert.equal(ruledPriceCents(row), null,
+    'so no rule price is claimed: his price is the one in force')
+})
+
+test('a single-row save clears the rule line too, by the same rule', async () => {
+  const pool = [untouched(1)]
+  const { api } = makeApi({ pool })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+
+  grid.editRow('sku-1', { price: '61.00' })
+  await grid.commitRow('sku-1')
+
+  assert.equal(ruledPriceCents(grid.items()[0]), null)
 })
