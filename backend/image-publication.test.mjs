@@ -206,7 +206,7 @@ test('HTTP auth and strict origin guard owner decisions; public bytes have safe 
   const response = await fetch(base + packet.url)
   assert.equal(response.status, 200); assert.deepEqual(Buffer.from(await response.arrayBuffer()), fixtures.png)
   for (const [key, value] of [['content-type', 'image/png'], ['cache-control', 'no-store'], ['x-content-type-options', 'nosniff'], ['cross-origin-resource-policy', 'same-origin']]) assert.equal(response.headers.get(key), value)
-  const cat = await fetch(base + '/api/catalog'); assert.equal(cat.headers.get('cache-control'), 'no-store')
+  const cat = await fetch(base + '/api/catalog?all=1'); assert.equal(cat.headers.get('cache-control'), 'no-store')
   const json = await cat.text(); assert.ok(!json.includes('provider.test') && !json.includes('storageUrl') && !json.includes('sku'))
   assert.equal((await fetch(base + packet.url, { method: 'HEAD' })).status, 200)
   assert.equal((await post(base, 'revoked', 2)).status, 200)
@@ -511,7 +511,7 @@ test('every url the catalogue publishes can actually be fetched', async t => {
   approve(images, (await images.ingest(packet.input, packet.files)).digest)
   const { base } = await ownerServer(t, images, inventory)
 
-  const catalogue = await (await fetch(`${base}/api/catalog`)).json()
+  const catalogue = await (await fetch(`${base}/api/catalog?all=1`)).json()
   const offered = catalogue.tires.filter(row => row.imageUrl)
   assert.ok(offered.length >= 2, 'this proves nothing unless more than one row is offering a photo')
 

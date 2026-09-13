@@ -500,7 +500,10 @@ async function main() {
 
   // 1. The API, read directly. No browser needed to know whether the catalog is
   //    the shape the customer flow is built on.
-  const catalogResponse = await fetch(`${BASE}/api/catalog`, { headers: { Accept: 'application/json' } });
+  // ?all=1 because the row-shape check below reads EVERY row: one leaking
+  // row is the whole problem, and a partial answer would report success over
+  // the rows it never saw. The unsized route refuses by default now.
+  const catalogResponse = await fetch(`${BASE}/api/catalog?all=1`, { headers: { Accept: 'application/json' } });
   check(catalogResponse.status === 200, 'GET /api/catalog answers 200', `got ${catalogResponse.status}`);
 
   const type = catalogResponse.headers.get('content-type') || '';
@@ -525,7 +528,7 @@ async function main() {
   }
 
   try {
-    const transfer = await rawGet(`${BASE}/api/catalog`, {
+    const transfer = await rawGet(`${BASE}/api/catalog?all=1`, {
       headers: { Accept: 'application/json', 'Accept-Encoding': 'br, gzip' },
     });
     const encoding = transfer.headers['content-encoding'] || 'identity';

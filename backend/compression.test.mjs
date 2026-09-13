@@ -172,7 +172,7 @@ test('GET /api/catalog answers a compressed body, and the same tires, over a rea
   })
   const base = await catalogServer(t, inventory)
 
-  const compressed = await rawGet(`${base}/api/catalog`, { Accept: 'application/json', 'Accept-Encoding': 'br' })
+  const compressed = await rawGet(`${base}/api/catalog?all=1`, { Accept: 'application/json', 'Accept-Encoding': 'br' })
   assert.equal(compressed.status, 200)
   assert.equal(compressed.headers['content-encoding'], 'br')
   assert.equal(compressed.headers.vary, 'Accept-Encoding')
@@ -187,9 +187,114 @@ test('GET /api/catalog answers a compressed body, and the same tires, over a rea
 
   // A client that cannot decode gets readable JSON, not a brotli body with the
   // header stripped -- the failure mode that looks like a corrupt catalogue.
-  const plain = await rawGet(`${base}/api/catalog`, { Accept: 'application/json', 'Accept-Encoding': 'identity' })
+  const plain = await rawGet(`${base}/api/catalog?all=1`, { Accept: 'application/json', 'Accept-Encoding': 'identity' })
   assert.equal(plain.headers['content-encoding'], undefined)
   assert.deepEqual(JSON.parse(plain.body.toString()).tires.length, 200)
   assert.ok(plain.body.length > compressed.body.length,
     'the plain answer is not larger than the compressed one, so the compressed one compressed nothing')
+})
+
+// ------------------------------------------------ the cap on the unsized route
+
+test('asking for every row has to say so, and being refused cannot look like an empty catalogue', async t => {
+  const inventory = new Inventory(':memory:', [SIZE])
+  t.after(() => inventory.close())
+  inventory.importSnapshot({
+    source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE],
+    coverage: { [SIZE]: { limit: 0, pagesRead: 1, totalPages: 1, complete: true, scrapedAt: '2026-09-05T15:00:00Z' } },
+    tires: Array.from({ length: 30 }, (_, n) => tire(`giga-${String(n).padStart(4, '0')}`)),
+  })
+  const base = await catalogServer(t, inventory)
+  const get = path => rawGet(`${base}${path}`, { Accept: 'application/json', 'Accept-Encoding': 'identity' })
+
+  const refused = await get('/api/catalog')
+  assert.equal(refused.status, 400, 'an unsized request is refused')
+  const why = JSON.parse(refused.body.toString())
+  // REFUSED, NOT EMPTIED. A 200 with a short list is the failure this design
+  // exists to avoid: `.forge/deployed-site-check.mjs` reads every row looking
+  // for a field leaking to customers, and would report success over the rows
+  // it never saw. A caller cannot mistake this for a catalogue.
+  assert.equal(why.tires, undefined, 'a refusal must not carry a tires array of any length')
+  // The message is the only thing a caller who did what used to work has to
+  // go on, so it names both ways out rather than saying "bad request".
+  assert.match(why.error, /\?size=/, 'the refusal does not say how to ask for one size')
+  assert.match(why.error, /\?all=1/, 'the refusal does not say how to ask for everything')
+  assert.equal(refused.headers['cache-control'], 'no-store', 'a refusal that gets cached refuses the next caller too')
+
+  const all = await get('/api/catalog?all=1')
+  assert.equal(all.status, 200)
+  assert.equal(JSON.parse(all.body.toString()).tires.length, 30, 'every row, for the audits that read every row')
+
+  const sized = await get(`/api/catalog?size=${encodeURIComponent(SIZE)}`)
+  assert.equal(sized.status, 200, 'the customer flow always sends a size and is untouched')
+  assert.equal(JSON.parse(sized.body.toString()).tires.length, 30)
+
+  // `size` is the narrower request and wins; a caller sending both has already
+  // said which rows it wants.
+  const both = await get(`/api/catalog?all=1&size=${encodeURIComponent(SIZE)}`)
+  assert.equal(both.status, 200)
+  assert.equal(JSON.parse(both.body.toString()).tires.length, 30)
+
+  // Only `1`. A truthy-looking value is a caller guessing at the contract, and
+  // a refusal that names the parameter teaches more than a silent 2.5MB answer.
+  for (const guess of ['all=true', 'all=yes', 'all', 'all=0', 'all=']) {
+    const answer = await get(`/api/catalog?${guess}`)
+    assert.equal(answer.status, 400, `?${guess} was accepted as "every row"`)
+  }
+})
+
+test('a size nobody stocks answers an empty catalogue, which is not the same as a refusal', async t => {
+  // The distinction the refusal above turns on, from the other side: 200 with
+  // zero rows is a real, complete answer about a size with no tires in it, and
+  // the cap must not have turned it into an error.
+  const inventory = new Inventory(':memory:', [SIZE, '225/50R17'])
+  t.after(() => inventory.close())
+  inventory.importSnapshot({
+    source: 'giga-tires.com', scrapedAt: '2026-09-05T15:00:00Z', sizes: [SIZE],
+    coverage: { [SIZE]: { limit: 0, pagesRead: 1, totalPages: 1, complete: true, scrapedAt: '2026-09-05T15:00:00Z' } },
+    tires: [tire('giga-0001')],
+  })
+  const base = await catalogServer(t, inventory)
+
+  const empty = await rawGet(`${base}/api/catalog?size=${encodeURIComponent('225/50R17')}`, { Accept: 'application/json' })
+  assert.equal(empty.status, 200)
+  assert.deepEqual(JSON.parse(empty.body.toString()).tires, [])
+})
+
+test('every audit that reads the whole catalogue says so, in its own source', async () => {
+  // The guard that keeps this honest as the repo changes. Four `.forge` checks
+  // read the unsized route today and each was pointed at what it actually
+  // needs; a fifth added later without `?all=1` gets a 400 and fails loudly,
+  // but a reader of this test should not have to rediscover which is which.
+  //
+  // `audit-ui.cleanTireFor` is deliberately NOT in this list: it wants one
+  // tire in one known size and now asks for that size, which is the better
+  // fix than `?all=1` and would be undone by adding it here.
+  const forge = new URL('../.forge/', import.meta.url)
+  for (const file of ['catalog-import-check.mjs', 'deployed-site-check.mjs', 'shutdown-drain-check.mjs']) {
+    const source = readFileSync(new URL(file, forge), 'utf8')
+    // The path appears in check MESSAGES too, which request nothing. What
+    // makes an occurrence a request is a `fetch(` or `rawGet(` just before it
+    // -- comparing counts instead would have compared a number to itself.
+    const requested = [...source.matchAll(/\/api\/catalog[^'"`\s)]*/g)]
+      .filter(hit => /(?:fetch|rawGet)\(/.test(source.slice(Math.max(0, hit.index - 80), hit.index)))
+      .map(hit => hit[0])
+
+    assert.ok(requested.length > 0, `${file} makes no /api/catalog request at all; this guard is measuring nothing`)
+    for (const url of requested) {
+      assert.match(url, /\?(all=1|size=)/, `${file} asks for ${url} without saying which rows it wants; it will get a 400`)
+    }
+  }
+
+  // Read as a function BODY rather than a window of N characters after the
+  // name: the first version allowed 400 and the explaining comment above the
+  // fetch is longer than that, so it failed against correct code. A guard
+  // whose reach is a guess fails for reasons that have nothing to do with
+  // what it guards.
+  const auditUi = readFileSync(new URL('audit-ui.mjs', forge), 'utf8')
+  const at = auditUi.indexOf('export async function cleanTireFor')
+  assert.notEqual(at, -1, 'cleanTireFor is not in audit-ui.mjs; this guard cannot find what it guards')
+  const body = auditUi.slice(at, auditUi.indexOf('\n}', at))
+  assert.match(body, /\/api\/catalog\?size=/,
+    'cleanTireFor stopped asking for the one size it filters to, and is downloading the whole catalogue again')
 })

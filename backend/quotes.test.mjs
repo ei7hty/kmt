@@ -884,7 +884,7 @@ test('public writes from one address are refused past the limit, with the wait n
   // Reads are not counted: the status screen keeps working for everyone.
   assert.equal((await fetch(`${base}/api/requests/${id}`)).status, 200)
   assert.equal((await fetch(`${base}/api/requests?customer=${KEY}`)).status, 200)
-  assert.equal((await fetch(`${base}/api/catalog`)).status, 200)
+  assert.equal((await fetch(`${base}/api/catalog?all=1`)).status, 200)
 })
 
 test('one browser key and one email address have limits of their own', async t => {
@@ -1086,11 +1086,11 @@ test('a path no handler knows is 404, not an invitation to sign in', async t => 
   const owner = await fetch(`${base}/api/owner/inventory`)
   assert.equal(owner.status, 401, 'a real owner route without a session is still the sign-in answer')
   assert.equal((await fetch(`${base}/api/owner/nonsense`)).status, 401)
-  assert.equal((await fetch(`${base}/api/catalog`)).status, 200)
+  assert.equal((await fetch(`${base}/api/catalog?all=1`)).status, 200)
   // A doubled slash reaches the handler as the path it meant, end to end:
   // the collapse has to be written back onto the request, because every
   // handler parses request.url for itself.
-  const slipped = await fetch(`${base}/api//catalog`)
+  const slipped = await fetch(`${base}/api//catalog?all=1`)
   assert.equal(slipped.status, 200, 'the catalog, not a sign-in message and not a 404')
   assert.ok(Array.isArray((await slipped.json()).tires))
   assert.equal((await fetch(`${base}/api/api//catalog`)).status, 404)
@@ -1109,7 +1109,7 @@ test('the catalog handler answers the catalog and nothing else', async t => {
   assert.equal(body.tires, undefined, 'not the catalog')
   assert.ok(body.request?.id, 'the request that was asked for')
 
-  const catalog = await (await fetch(base + '/api/catalog')).json()
+  const catalog = await (await fetch(base + '/api/catalog?all=1')).json()
   assert.ok(Array.isArray(catalog.tires), 'and the catalog still answers its own path')
 })
 
@@ -1125,10 +1125,10 @@ test('the catalog is cached for five minutes, and ?size narrows it to one size',
   const quotes = new Quotes(inventory)
   const base = await serve(t, quotes, inventory)
 
-  const whole = await fetch(base + '/api/catalog')
+  const whole = await fetch(base + '/api/catalog?all=1')
   assert.equal(whole.headers.get('cache-control'), 'public, max-age=300')
   const wholeSizes = (await whole.json()).tires.map(t => t.size).sort()
-  assert.deepEqual(wholeSizes, [OTHER_SIZE, SIZE].sort(), 'no size param answers every size')
+  assert.deepEqual(wholeSizes, [OTHER_SIZE, SIZE].sort(), '?all=1 answers every size')
 
   const narrowed = await fetch(base + `/api/catalog?size=${encodeURIComponent(SIZE)}`)
   assert.equal(narrowed.headers.get('cache-control'), 'public, max-age=300')

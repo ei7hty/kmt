@@ -107,7 +107,10 @@ async function main() {
 
   console.log(`Catalog import check against ${BASE}, expecting ${expectedCount} rows across ${sampleSizes.length} sampled sizes`);
 
-  const response = await fetch(`${BASE}/api/catalog`, { headers: { Accept: 'application/json' } });
+  // ?all=1 because this check counts EVERY row against the walk file; the
+  // unsized route refuses by default now, and a count taken from a partial
+  // answer would be a wrong number reported confidently.
+  const response = await fetch(`${BASE}/api/catalog?all=1`, { headers: { Accept: 'application/json' } });
   const body = await response.json().catch(() => null);
   const tires = body?.tires;
 
