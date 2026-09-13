@@ -8,6 +8,11 @@ import {
   KNOWN_UNRESOLVED, LOAD_INDEX_KG, MAX_CATEGORY_CHARS, SIDEWALL_CODES, SPEED_SYMBOL_KMH,
   describeTireSpec, milesPerHourFromKph, parseTireSpec, poundsFromKilograms,
 } from './tire-spec.mjs'
+// Imported, never re-implemented. This is the cleaner that really runs
+// upstream of a category, so the boilerplate test below asserts against what
+// the row will actually look like rather than against an approximation of it.
+// tire-spec.mjs itself imports nothing from backend/ and still does not.
+import { cleanCatalogDescription } from './catalog-description.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SNAPSHOT = path.join(ROOT, 'src', 'data', 'scraped-tires.json')
@@ -143,8 +148,19 @@ test('supplier marketing boilerplate is refused as a category, and the spec besi
   assert.match(withMarkup.categoryRejected, /^Compare tires at a glance/)
   assert.equal(withMarkup.loadLb, 1521, 'the half that is real still parses')
 
-  const stripped = parseTireSpec(`${boilerplate.replace(/<[^>]+>/g, '')} · 95V BSW`)
-  assert.equal(stripped.category, null, 'length alone must refuse it once the tags are gone')
+  // Run through the REAL upstream cleaner, not a hand-rolled tag strip.
+  // An earlier version of this line used `replace(/<[^>]+>/g, '')`, which
+  // CodeQL flagged as incomplete multi-character sanitization -- correctly
+  // about the shape, whatever the severity: a single-pass tag strip is a
+  // classic incomplete sanitizer and writing one in a test is how the idiom
+  // spreads. There is no reason to simulate `cleanCatalogDescription()` when
+  // the actual function is one import away, and using it makes the assertion
+  // stronger: this now proves that after the cleaner that really runs
+  // upstream has done its work, LENGTH is what still refuses the boilerplate.
+  const cleaned = cleanCatalogDescription(boilerplate)
+  assert.ok(!cleaned.includes('<') && !cleaned.includes('>'), 'the cleaner really did remove the markup')
+  assert.ok(cleaned.length > MAX_CATEGORY_CHARS, 'and length is what is left to refuse it by')
+  assert.equal(parseTireSpec(`${cleaned} · 95V BSW`).category, null, 'length alone must refuse it once the tags are gone')
 
   // Headroom, stated as an assertion rather than a comment: the longest real
   // category in the snapshot is 33 characters.
