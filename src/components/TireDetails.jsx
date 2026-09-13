@@ -40,8 +40,8 @@ import { TEXT_HREF, TEXT_LABEL } from '../contact.js'
  * crosses the catalog boundary, no stars until a tire really carries a rating,
  * no season note for a category nobody has written an honest sentence for.
  */
-export default function TireDetails({ tire, tires = [] }) {
-  const { season, spec, standing, rating } = tireDetail(tire, tires)
+export default function TireDetails({ tire }) {
+  const { season, spec, rating } = tireDetail(tire)
 
   return (
     <section className="product-detail" aria-label={`About ${tire.name}`}>
@@ -69,7 +69,6 @@ export default function TireDetails({ tire, tires = [] }) {
         </p>
       )}
 
-      {standing && <p className="product-detail-standing">{standing.text}</p>}
 
       {/* The customer chose their size off the sidewall three steps ago, and
           the flow says in as many words that vehicle details do not verify

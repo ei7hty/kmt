@@ -23,7 +23,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { SEASON_LABELS } from './tire-filters.js'
-import { SEASON_NOTES, seasonNote, specPoints, priceStanding, tireRating, tireDetail } from './tire-detail.js'
+import { SEASON_NOTES, seasonNote, specPoints, tireRating, tireDetail } from './tire-detail.js'
 
 const read = name => readFileSync(new URL(name, import.meta.url), 'utf8')
 const flowCss = read('./RequestFlow.css')
@@ -87,41 +87,9 @@ test('a decoded spec is rendered when it arrives, and junk in it is not', () => 
 
 // --- where the price sits --------------------------------------------------
 
-test('the cheapest and the dearest are named as such', () => {
-  const cheap = tire({ id: 'a', price: 52.03 })
-  const mid = tire({ id: 'b', price: 154.32 })
-  const dear = tire({ id: 'c', price: 516.27 })
-  const list = [cheap, mid, dear]
-  assert.equal(priceStanding(cheap, list).text, 'Nothing else in this list costs less.')
-  assert.equal(priceStanding(dear, list).text, 'Nothing else in this list costs more.')
-  assert.equal(priceStanding(mid, list).text, 'In this list, 1 tire costs less and 1 costs more.')
-})
 
-test('the counts are real counts, and read as English at any size', () => {
-  const subject = tire({ id: 'x', price: 100 })
-  const list = [subject, tire({ id: 'a', price: 10 }), tire({ id: 'b', price: 20 }), tire({ id: 'c', price: 900 })]
-  const standing = priceStanding(subject, list)
-  assert.equal(standing.cheaper, 2)
-  assert.equal(standing.dearer, 1)
-  assert.equal(standing.text, 'In this list, 2 tires cost less and 1 costs more.')
-})
 
-test('tires at the same price count as neither cheaper nor dearer', () => {
-  const subject = tire({ id: 'x', price: 100 })
-  const list = [subject, tire({ id: 'a', price: 100 }), tire({ id: 'b', price: 100 }), tire({ id: 'c', price: 900 })]
-  const standing = priceStanding(subject, list)
-  assert.equal(standing.cheaper, 0)
-  assert.equal(standing.dearer, 1)
-  // Two ties are neither, so this is still true and the sentence stays honest.
-  assert.equal(standing.text, 'Nothing else in this list costs less.')
-})
 
-test('a list of one has no standing to report', () => {
-  const only = tire()
-  assert.equal(priceStanding(only, [only]), null)
-  assert.equal(priceStanding(only, []), null)
-  assert.equal(priceStanding(tire({ price: undefined }), [tire(), tire()]), null)
-})
 
 // --- ratings: built, empty on purpose, and a zero is not a score -----------
 
@@ -147,17 +115,16 @@ test('nothing in the live catalogue switches the rating on today', () => {
   assert.equal(rated.length, 0, `${rated.length} snapshot rows would draw a rating; ratings have no source yet`)
 })
 
-test('tireDetail composes exactly the four blocks, each nullable', () => {
-  const subject = tire({ price: 100 })
-  const detail = tireDetail(subject, [subject, tire({ id: 'b', price: 200 })])
-  assert.deepEqual(Object.keys(detail).sort(), ['rating', 'season', 'spec', 'standing'])
+test('tireDetail composes exactly the three blocks, each nullable', () => {
+  // Three, not four: the price-standing sentence was removed at the owner's
+  // request. If a fourth ever returns, this line is what says so out loud.
+  const detail = tireDetail(tire({ price: 100 }))
+  assert.deepEqual(Object.keys(detail).sort(), ['rating', 'season', 'spec'])
   assert.equal(detail.rating, null)
   assert.deepEqual(detail.spec, [])
   assert.ok(detail.season.body)
-  assert.ok(detail.standing.text)
-  const bare = tireDetail(tire({ category: 'hovercraft' }), [])
+  const bare = tireDetail(tire({ category: 'hovercraft' }))
   assert.equal(bare.season, null)
-  assert.equal(bare.standing, null)
 })
 
 // --- the stylesheet --------------------------------------------------------
