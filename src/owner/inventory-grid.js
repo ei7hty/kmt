@@ -77,6 +77,43 @@ export function parseMoney(text) {
 export const moneyField = cents => cents == null ? '' : (cents / 100).toFixed(2)
 
 /**
+ * Is a customer able to buy this tire right now?
+ *
+ * The server answers this in `selling.offered`, computed by the same
+ * `quotedPrice` the customer catalogue runs on. This wrapper exists only for
+ * the fallback, and the fallback's DIRECTION is the point: an older response
+ * with no `selling` field must not quietly resolve to `offer.enabled`, because
+ * that is the exact value whose falseness took priced tires off sale. So it
+ * falls back to the rule `quotedPrice` applies -- a tire with no offers row is
+ * offered, whatever `enabled` says -- reconstructed from `version`, which is 0
+ * for a row that has never been written and >= 1 for every row that has.
+ */
+export const sellingEnabled = item =>
+  typeof item?.selling?.offered === 'boolean'
+    ? item.selling.offered
+    : neverDecided(item) || Boolean(item?.offer?.enabled)
+
+/**
+ * Has Ken ever saved anything about this tire?
+ *
+ * `version` is 0 for a row with no `offers` record and at least 1 for every
+ * row that has one -- the first write stores `version + 1`. That makes it the
+ * one field on `offer` that distinguishes "he said no" from "nobody asked",
+ * which the `enabled` boolean on its own cannot.
+ */
+export const neverDecided = item => (item?.offer?.version ?? 0) === 0
+
+/**
+ * What one row is selling for, and whether that is Ken's number or the rule's.
+ *
+ * `source` is markup.js's own word for the difference, carried through the
+ * server untouched: 'owner' is a decision, 'markup' is a suggestion nobody has
+ * looked at, and null is a tire with no usable supplier cost to price from.
+ */
+export const sellingPriceCents = item => item?.selling?.priceCents ?? null
+export const sellingSource = item => item?.selling?.source ?? null
+
+/**
  * Which way this column's arrow points, read from what the SERVER said it did.
  *
  * `echoed` is the `{sort, dir}` off the last successful response. A column the
@@ -272,7 +309,25 @@ export function createInventoryGrid({ api }) {
     return {
       price: moneyField(item.offer.priceCents),
       shipping: moneyField(item.offer.shippingCents),
-      enabled: item.offer.enabled,
+      // `sellingEnabled`, NOT `item.offer.enabled` -- this is the whole fix.
+      //
+      // Every field here is sent straight back by `commitRow`, so this object
+      // is not "what to display", it is "what saving this row will assert".
+      // `offer.enabled` is false for a tire with no offers row, which is not a
+      // decision to stop selling it: the customer catalogue sells exactly
+      // those rows, at the markup price. Seeding the draft from it therefore
+      // attached a deselection Ken never made to the next thing he saved, so
+      // typing a price into an untouched row took the tire off sale --
+      // reproduced live: a tire selling at $48.28 was gone from
+      // /api/catalog after one price save, and a ten-row bulk price write
+      // removed all ten.
+      //
+      // `selling.offered` is the same boolean `catalog()` acts on, so a save
+      // that carries it forward asserts what was already true instead of
+      // reversing it. Ticking the box on an untouched row is then a no-op for
+      // the customer, and clearing it is a real deselection, which is what an
+      // unchecked box has always looked like it meant.
+      enabled: sellingEnabled(item),
       notes: item.offer.notes ?? '',
       baseVersion: item.offer.version,
     }
@@ -542,16 +597,28 @@ export function createInventoryGrid({ api }) {
       const pending = state.pending
       if (!pending) return
       const rows = selectedItems()
+      // `patchOf` is the ONE definition of what this write changes on a row:
+      // it builds the request body below and is replayed onto the row on
+      // screen afterwards, so anything it omits is a field where the grid and
+      // the database can disagree. `enabled` is in it for every kind, not just
+      // the 'offered' action -- see `sellingEnabled` for why a price or
+      // shipping write must not carry `item.offer.enabled` forward.
       const patchOf = item => {
-        if (pending.kind === 'price') return { priceCents: priceFromFormula(item, pending.formula) }
-        if (pending.kind === 'shipping') return { shippingCents: pending.shippingCents }
-        return { enabled: pending.enabled }
+        if (pending.kind === 'offered') return { enabled: pending.enabled }
+        const enabled = sellingEnabled(item)
+        if (pending.kind === 'price') return { priceCents: priceFromFormula(item, pending.formula), enabled }
+        return { shippingCents: pending.shippingCents, enabled }
       }
+      // `enabled` is deliberately absent from the carried-forward fields and
+      // supplied only by `patchOf`, so there is exactly one expression of it.
+      // Before this, it was read off `item.offer` here and the falseness of an
+      // untouched row's `enabled` rode along with every price write: measured
+      // at ten untouched rows in 215/60R16, all ten in the customer
+      // catalogue, one bulk price write, none of the ten left in it.
       const offers = rows.map(item => ({
         id: item.id,
         priceCents: item.offer.priceCents,
         shippingCents: item.offer.shippingCents,
-        enabled: item.offer.enabled,
         notes: item.offer.notes ?? '',
         version: item.offer.version,
         ...patchOf(item),

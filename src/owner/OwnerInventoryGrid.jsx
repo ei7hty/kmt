@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   GRID_COLUMNS, PAGE_SIZES, dollars, headerSortState, sortArrow,
-  showEmptyState, supplierCostCents,
+  showEmptyState, supplierCostCents, sellingPriceCents, sellingSource,
 } from './inventory-grid.js'
 
 /**
@@ -174,6 +174,12 @@ function GridRow({ item, grid, state, expanded, onExpand }) {
   const stock = item.source?.stock
   const available = item.supplierActive && item.inStock && stock > 0
   const marginStale = dirty || status?.kind === 'saved'
+  // The rule's price, shown only where it is the one in force: `source` is
+  // 'markup' exactly when Ken has not priced the tire himself, so this is
+  // null the moment he has. Read from the server's answer rather than
+  // recomputed here -- the markup rule belongs to markup.js and one copy of
+  // it is the whole point.
+  const ruled = sellingSource(item) === 'markup' ? sellingPriceCents(item) : null
 
   const commit = () => grid.commitRow(item.id)
   const onKey = event => { if (event.key === 'Enter') { event.preventDefault(); commit() } }
@@ -193,10 +199,20 @@ function GridRow({ item, grid, state, expanded, onExpand }) {
         </span>
       </th>
       <td className="oi-g-num">{dollars(supplierCostCents(item))}</td>
+      {/* The input is Ken's own price. Under it, only while he has not set
+          one, is the price a customer is being charged right now by the
+          markup rule -- the number this column used to render as an em-dash
+          on every row he had never touched, which was all 1,083 of them on a
+          freshly seeded database. Once he sets a price the input IS the
+          selling price, so the line goes away rather than restating it. */}
       <td className="oi-g-cell-input">
         <input aria-label={`Your price for ${item.size} ${item.name} ($)`} className="oi-g-input" inputMode="decimal"
-          value={values.price} placeholder="—" onKeyDown={onKey} onBlur={commit}
+          value={values.price} placeholder={ruled == null ? '—' : 'By rule'} onKeyDown={onKey} onBlur={commit}
           onChange={e => grid.editRow(item.id, { price: e.target.value })} />
+        {ruled != null && <span className="oi-g-ruled" data-testid={`oi-ruled-price-${item.id}`}>
+          {dollars(ruled)}<span className="oi-g-ruled-tag"> by rule</span>
+          <span className="oi-g-sr">. This is what a customer pays today, set by the markup rule because you have not priced this tire.</span>
+        </span>}
       </td>
       <td className={`oi-g-num oi-g-margin${marginStale ? ' is-stale' : ''}`}
         title={marginStale ? 'Margin is a server figure; it refreshes on the next load.' : undefined}>
