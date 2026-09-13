@@ -136,3 +136,45 @@ problems": the problem is a wrong price on a real customer's quote.
 - **Quantities.** 2 + 2 is the ordinary staggered case, but nothing here
   requires it and the per-entry `quantity` allows 1 + 2 or any other split.
   Whether the picker offers that freedom is part of D's design.
+
+## Two rulings added 2026-09-13, after stage A was built
+
+Both came out of reading the implementation (PR #539). They are here rather
+than only in a PR comment because the next person to touch this will read
+this file, not that thread.
+
+**An empty `tires` array is not the same as no array.** Absent means "this
+request predates the field"; empty means "this request names no tire". The
+engine must not quietly turn the second into the first. The failure that
+closes is reachable once stage B exists: if stage B keeps writing the legacy
+`tireSelection`/`tireSize` fields alongside the array -- a reasonable thing
+for it to do, so that a reader which does not know about the array still sees
+a valid request -- then a client bug producing `tires: []` arrives with
+populated legacy fields, and reading empty as absent prices the legacy tire
+and raises no exception. That is an auto-sendable quote for a tire the
+customer did not ask for, and it looks entirely normal.
+
+**The naive version of that fix is worse than the thing it replaces**, which
+is why it is written down. An empty resolved list with no guard produces no
+exception reasons at all -- `[].flatMap(...)` is `[]` -- and therefore a
+quote of nothing but fees that is also auto-sendable. So an empty list raises
+the not-found reason explicitly, in the same words, and lands in the owner's
+review queue. Zero tires is a thing to look at, never a thing that sends
+itself. Stage B additionally refuses an empty array at validation: engine and
+validator both, because the engine is also called on stored rows that
+validation cannot re-examine.
+
+**With more than one entry, an exception reason names which tire it is
+about.** "Selected tire is out of stock" does not tell Ken whether it is the
+front or the rear, and that is the first thing he needs in order to act. One
+entry keeps today's exact words, byte-identical -- that is the safety claim
+and it is not to be put at risk. More than one entry names the entry by its
+`position`, falling back to its `size`. Two entries both out of stock produce
+two distinct reasons rather than one deduplicated reason, because they are
+two things to look at.
+
+This belongs in the engine and therefore in stage A, not in stage C. The
+reasons are stored on the quote, so a position dropped at pricing time cannot
+be recovered by the owner's screen afterwards. Nothing can produce a
+multi-entry request yet, so there are no stored quotes to migrate -- which is
+exactly what makes now the cheap moment and later an expensive one.
