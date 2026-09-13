@@ -218,10 +218,37 @@ test('the violation detector fires on the misclassification it exists to catch',
   assert.match(runnableViolations(supplierRunnable)[0], /runnable but touches supplier/)
 
   const hostedArgument = [{ n: 2, touches: TOUCHES.LOCAL, title: 'import', run: { script: 'import-tires.mjs', args: ['--to', HOSTED_SERVER] } }]
-  assert.match(runnableViolations(hostedArgument)[0], /names/)
+  assert.match(runnableViolations(hostedArgument)[0], /targets kensmobiletire\.com, which is not loopback/)
 
-  const flyctl = [{ n: 3, touches: TOUCHES.LOCAL, title: 'ship', run: { script: 'x.mjs', args: ['flyctl', 'ssh'] } }]
-  assert.equal(runnableViolations(flyctl).length, 1)
+  const flyctl = [{ n: 3, touches: TOUCHES.LOCAL, title: 'ship', run: { script: 'photo-batch.mjs', args: ['flyctl', 'ssh'] } }]
+  assert.match(runnableViolations(flyctl)[0], /invokes flyctl/)
+})
+
+test('the detector catches what a deny-list of known-bad strings could not', () => {
+  // Why this replaced a substring deny-list, in the two cases that motivated
+  // it. A list of forbidden strings only refuses what somebody thought to name.
+
+  // 1. A host nobody listed. The old form checked for four specific domains;
+  //    this parses the URL and requires loopback, so every other host fails.
+  const unlisted = [{ n: 1, touches: TOUCHES.LOCAL, title: 'import', run: { script: 'import-tires.mjs', args: ['--to', 'https://someone-elses-box.example'] } }]
+  assert.match(runnableViolations(unlisted)[0], /targets someone-elses-box\.example/)
+
+  // 2. A supplier script with NO url in its arguments at all. Nothing in the
+  //    old deny-list matched `scrape-tires.mjs 215/60R16`, so a step invoking
+  //    the scraper and marked `local` would have passed cleanly.
+  const supplierScript = [{ n: 2, touches: TOUCHES.LOCAL, title: 'scrape', run: { script: 'scrape-tires.mjs', args: ['215/60R16'] } }]
+  assert.match(runnableViolations(supplierScript)[0], /invokes scrape-tires\.mjs, which is not on the local allow-list/)
+  const productImages = [{ n: 3, touches: TOUCHES.LOCAL, title: 'photos', run: { script: 'import-product-images.mjs', args: ['/a', '/b'] } }]
+  assert.match(runnableViolations(productImages)[0], /not on the local allow-list/)
+
+  // The same host check as assertLocalServer, so the two cannot disagree: a
+  // credential-shaped URL resolves to its real hostname here too.
+  const userinfo = [{ n: 4, touches: TOUCHES.LOCAL, title: 'import', run: { script: 'import-tires.mjs', args: ['--to', 'http://127.0.0.1@giga-tires.com/'] } }]
+  assert.match(runnableViolations(userinfo)[0], /targets giga-tires\.com/)
+
+  // And the honest loopback case still passes, or this would refuse everything.
+  const fine = [{ n: 5, touches: TOUCHES.LOCAL, title: 'import', run: { script: 'import-tires.mjs', args: ['--to', 'http://127.0.0.1:4180', '--dry-run'] } }]
+  assert.deepEqual(runnableViolations(fine), [])
 })
 
 test('the runner refuses a non-local step even when that step CARRIES a command', () => {

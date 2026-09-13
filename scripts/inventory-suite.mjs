@@ -326,24 +326,37 @@ export function buildPlan(state) {
 }
 
 /**
+ * The scripts a `local` step may invoke. An ALLOW-LIST, and deliberately short.
+ *
+ * This replaced a deny-list of supplier and production strings, and the
+ * replacement is not cosmetic. A deny-list only refuses what somebody thought
+ * to name: it would have passed a runnable step invoking
+ * `import-product-images.mjs` (contacts the supplier) or `scrape-tires.mjs`
+ * with no URL in its arguments at all, because neither names a forbidden
+ * string. This refuses everything not listed here, so a script added to
+ * `scripts/` next month is refused by default rather than allowed by omission.
+ *
+ * Adding a name here is the deliberate act of saying "this one runs against
+ * loopback and this checkout, and reaches nobody else."
+ */
+const LOCAL_SCRIPTS = new Set(['import-tires.mjs', 'photo-batch.mjs'])
+
+/**
  * The invariant the plan above is required to hold, stated as code so a step
  * added later cannot quietly break it. Exported because the test asserts it
  * over a plan built from several different states, and because a reader
  * checking "can this thing contact a supplier" should find one function to
  * read rather than six steps to audit.
+ *
+ * FOUR CHECKS, and the host one uses the SAME IDIOM as `assertLocalServer()`
+ * above -- `new URL(...).hostname` against an exact set, never a substring.
+ * A test or a lint that checks hosts more loosely than the code it guards is a
+ * small lie about what is verified, and the earlier version of this function
+ * was exactly that: a substring deny-list that said yes to
+ * `giga-tires.com.example` and no to `gigatires.com`. One idiom in the file
+ * now, so there is nothing to keep in agreement.
  */
 export function runnableViolations(steps) {
-  // THIS IS A LINT OVER LITERALS AUTHORED IN THIS FILE, NOT A URL CHECK, and
-  // the difference matters enough to say. Substring matching on a hostname is
-  // the wrong tool for deciding whether a URL is safe -- it says yes to
-  // `giga-tires.com.example` and no to `gigatires.com` -- and CodeQL flagged
-  // an earlier version of the test for exactly that shape. The host decision
-  // lives in `assertLocalServer()` above, which parses the URL and matches
-  // `hostname` against an exact set. What these patterns catch is a DEVELOPER
-  // pasting one of these strings into a step and marking it `local`, where the
-  // input is a string literal a few lines up rather than anything a user
-  // supplies. Belt and braces on top of the classification, never the guard.
-  const forbidden = [/giga-tires\.com/i, /\bflyctl\b/i, /kensmobiletire\.com/i, /kmt\.fly\.dev/i]
   const violations = []
   for (const step of steps) {
     if (!step.run) continue
@@ -351,9 +364,24 @@ export function runnableViolations(steps) {
       violations.push(`step ${step.n} (${step.title}) is runnable but touches ${step.touches}`)
       continue
     }
-    const text = [step.run.script, ...step.run.args].join(' ')
-    for (const pattern of forbidden) {
-      if (pattern.test(text)) violations.push(`step ${step.n} (${step.title}) is runnable and names ${pattern}`)
+    if (!LOCAL_SCRIPTS.has(step.run.script)) {
+      violations.push(`step ${step.n} (${step.title}) is runnable and invokes ${step.run.script}, which is not on the local allow-list`)
+    }
+    for (const arg of [step.run.script, ...step.run.args]) {
+      if (!/^https?:\/\//i.test(arg)) {
+        if (/\bflyctl\b/i.test(arg)) violations.push(`step ${step.n} (${step.title}) is runnable and invokes flyctl`)
+        continue
+      }
+      let hostname
+      try {
+        hostname = new URL(arg).hostname.replace(/^\[|\]$/g, '')
+      } catch {
+        violations.push(`step ${step.n} (${step.title}) is runnable and carries an unparseable URL: ${arg}`)
+        continue
+      }
+      if (!LOOPBACK_HOSTS.has(hostname)) {
+        violations.push(`step ${step.n} (${step.title}) is runnable and targets ${hostname}, which is not loopback`)
+      }
     }
   }
   return violations
