@@ -104,10 +104,12 @@ chooses**, which means it cannot live in settings alone:
 default is not an opt-in, and a fee that appears without the customer having
 chosen it is the thing #94 was opened about.
 
-## Shipping — resolved: Ken's cost, inside the tire price
+## Shipping — resolved: charged to the customer, undisclosed, tracked separately
 
-**The user's ruling: shipping is what Ken pays, folded into the tire cost
-along with markup. The customer never sees a shipping line.**
+**The user's ruling: the customer is charged for shipping and never sees it as
+a line, and it stays a separate figure internally rather than being folded into
+the markup.** See "The formula" below — an earlier version of this section ruled
+the opposite and is marked superseded there rather than deleted.
 
 So it is **not** a quote setting and does not belong in this document's table.
 It belongs in `src/markup.js`, which exists precisely to be "the boundary
@@ -121,24 +123,51 @@ touching a caller."* Shipping is one more of those, and the first to arrive.
 
 ### The formula, and the one decision inside it
 
-Today `retailPrice` is `supplierPrice × rate`. It becomes:
-
 ```
-retailPrice = (supplierPrice + shippingPerTire) × rate
+retailPrice = (supplierPrice × rate) + shippingPerTire
 ```
 
-**Shipping goes inside the multiplier, not outside it** — the markup applies
-to landed cost, because landed cost is what the tire actually cost Ken to
-have in his hand. Marking up goods and passing shipping through at cost is
-the other option and it is the wrong one here: it would mean Ken earns
-nothing on the money he fronted to get the tire to Malden.
+**Shipping stays OUTSIDE the multiplier.** Goods are marked up; freight is
+added at cost. The owner's ruling, 2026-09-12, in his words: *"shipping
+shouldnt be baked in because it is an outbound customer cost"*, and *"customer
+is charged for shipping although we dont disclose it — we just want it to be
+separate for sake of things."*
 
-**A useful side effect worth noting.** `markup.js` already criticises its own
-flat multiplier — *"adds $12 to a $34 tire and $60 to a $170 one, which is
-backwards."* A per-tire shipping cost is an **absolute** amount added before
-the multiplier, so it pushes cheap tires up proportionally more than
-expensive ones. That is a small step toward the tiering the module says it
-wants, arriving as a side effect rather than a redesign.
+Three properties, and the formula above is the only one that has all three:
+
+- **The customer pays it.** It is added to the per-tire price, so the money is
+  collected. Nothing here is absorbed by KMT.
+- **The customer never sees it.** It is not a line, not a field, and not
+  separable from the price by anyone reading the public API — `CATALOG_FIELDS`
+  in `.forge/audit-ui.mjs` is a positive allow-list and shipping is not on it,
+  which `backend/catalog-boundary.test.mjs` asserts on every row.
+- **Ken sees it separately.** It stays its own setting and its own term rather
+  than being folded into `rate`, so he can change what freight costs without
+  restating what his margin is. `minMarginPerTire` / `maxMarginPerTire` keep it
+  outside the clamp for the same reason: freight is not goods margin, and a
+  floor that counted it would stop protecting anything the day a shipping
+  figure was set.
+
+> **SUPERSEDED, kept so nobody re-argues it from scratch.** This section
+> previously ruled the opposite — `(supplierPrice + shippingPerTire) × rate`,
+> marking up landed cost on the grounds that otherwise *"Ken earns nothing on
+> the money he fronted to get the tire to Malden."* `src/markup.js` never
+> implemented it; the code has always passed freight through at cost.
+>
+> On 2026-09-12 that stale paragraph was read as a live decision — it was in
+> bold, and it said "the user's ruling" — and a change was routed to a lane to
+> make the code match it. It was cancelled before anything landed, on the
+> owner's correction. **The code was right and this document was wrong**, which
+> is the more dangerous direction: a confident document outranks unfamiliar
+> code in a reader's head. A written ruling records what was decided once. If
+> it is load-bearing, ask before acting on it.
+>
+> The superseded ruling also claimed a side benefit — an absolute amount inside
+> the multiplier lifts cheap tires proportionally more, answering `markup.js`'s
+> own complaint that a flat rate *"adds $12 to a $34 tire and $60 to a $170
+> one, which is backwards."* That complaint is real and still unaddressed by
+> shipping. It is answered instead by the margin floor and ceiling, which fix
+> the same skew without moving freight.
 
 ### Where it lives, and the seam that already exists
 
