@@ -460,3 +460,65 @@ test('a url no catalogue row offers is still refused', async t => {
   const { images } = await acrossSizes(t)
   assert.throws(() => images.readPublic(`/api/images/${'d'.repeat(64)}.png`))
 })
+
+/* ==========================================================================
+ * The test that would have caught it: fetch the url a customer would fetch.
+ *
+ * `readPublic` was already exercised three times before the shared-url bug
+ * shipped, and every one of those called the FUNCTION with a url taken from
+ * the packet fixture. None went through the HTTP route, and none used a url
+ * that more than one row carried -- so the suite could not see a defect that
+ * lived precisely in resolving a url several rows share.
+ *
+ * This asks the catalogue what a browser would be told, then asks for exactly
+ * that, over HTTP, and checks the bytes that come back. The url is never
+ * written down in the test: taking it from `packet.url` would be testing the
+ * fixture, and a browser does not have the fixture.
+ * ========================================================================== */
+
+test('a customer fetching the url the catalogue gave them gets the image', async t => {
+  const { inventory, images, rows } = await acrossSizes(t)
+
+  // Approved on the size that sorts LAST, so the row a customer meets first is
+  // the one BORROWING the photo. That is the case that 404ed in production.
+  const packet = packetFor([rows.find(row => row.id === 'giga-shared-b17')])
+  approve(images, (await images.ingest(packet.input, packet.files)).digest)
+  const { base } = await ownerServer(t, images, inventory)
+
+  // Exactly what a browser does: read the catalogue, take the url off a row,
+  // ask for it. No cookie -- this is the public path.
+  const catalogue = await (await fetch(`${base}/api/catalog?size=215%2F60R16`)).json()
+  const borrower = catalogue.tires.find(row => row.id === 'giga-shared-a16')
+  assert.ok(borrower?.imageUrl, 'the catalogue offered this row no photo to fetch')
+
+  const image = await fetch(base + borrower.imageUrl)
+  assert.equal(image.status, 200, `the catalogue offered ${borrower.imageUrl} and the server refused it`)
+  assert.match(image.headers.get('content-type') ?? '', /^image\//)
+
+  const bytes = Buffer.from(await image.arrayBuffer())
+  assert.ok(bytes.length > 0, 'a 200 with an empty body is not an image')
+  assert.deepEqual(bytes, fixtures.png, 'the bytes served are not the approved photo')
+  assert.equal(Number(image.headers.get('content-length')), bytes.length)
+})
+
+test('every url the catalogue publishes can actually be fetched', async t => {
+  // Not one row: ALL of them. The defect served 2,528 urls of which zero
+  // worked, and any single-row check could have been the one that happened to
+  // own its photo. A catalogue that advertises a url the server will not serve
+  // is broken however few rows it happens on.
+  const { inventory, images, rows } = await acrossSizes(t)
+  const packet = packetFor([rows.find(row => row.id === 'giga-shared-b17')])
+  approve(images, (await images.ingest(packet.input, packet.files)).digest)
+  const { base } = await ownerServer(t, images, inventory)
+
+  const catalogue = await (await fetch(`${base}/api/catalog`)).json()
+  const offered = catalogue.tires.filter(row => row.imageUrl)
+  assert.ok(offered.length >= 2, 'this proves nothing unless more than one row is offering a photo')
+
+  const refused = []
+  for (const row of offered) {
+    const response = await fetch(base + row.imageUrl)
+    if (response.status !== 200) refused.push(`${row.id} (${row.size}) -> ${response.status}`)
+  }
+  assert.deepEqual(refused, [], 'the catalogue published urls the server refuses')
+})
