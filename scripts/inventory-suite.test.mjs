@@ -186,6 +186,7 @@ test('no runnable step in any plan this builds names a supplier, flyctl or a hos
     stateWith({ server: { reachable: false, coverage: [] } }),
     stateWith({ options: { ...stateWith().options, work: null, modelsFile: null } }),
     stateWith({ snapshot: summariseSnapshot(null) }),
+    stateWith({ photos: photoStage({ work: '/w', mapping: true, packet: true, staging: true, sealed: true, sealedCount: 93, sealedDigest: 'deadbeef' }) }),
   ]
   for (const state of states) {
     const steps = buildPlan(state)
@@ -204,8 +205,14 @@ test('no runnable step in any plan this builds names a supplier, flyctl or a hos
     // script it invokes.
     assert.ok(steps.find(step => step.touches === TOUCHES.SUPPLIER).lines.some(line => line.includes('scrape-tires.mjs')),
       'the supplier command is still shown')
-    assert.ok(steps.find(step => step.touches === TOUCHES.PRODUCTION).lines.some(line => line.includes('KMT_OWNER_PASSWORD')),
-      'the production command is still shown')
+    // Found by what it DOES, not by being the first production step. A sealed
+    // batch adds a second one (the photo upload), and `.find()` then returned
+    // that instead -- so this assertion started failing about a step it was
+    // never written to describe. A plan may grow production steps; this one
+    // asserts that the snapshot push is still among them.
+    assert.ok(steps.some(step => step.touches === TOUCHES.PRODUCTION
+      && step.lines.some(line => line.includes('KMT_OWNER_PASSWORD'))),
+    'the production command is still shown')
   }
 })
 
@@ -315,4 +322,67 @@ test('the plan is ordered the way the work is actually done', () => {
   assert.equal(steps.at(-1).touches, TOUCHES.PRODUCTION, 'production is last and is never this tool\'s')
   assert.ok(steps.findIndex(s => s.title.startsWith('Ask the local database')) < steps.findIndex(s => s.title.startsWith('Import the snapshot')),
     'the dry run comes before the write')
+})
+
+// --- The rung that did not exist ---------------------------------------------
+
+test('a sealed batch reads as sealed even though its staging directory is still there', () => {
+  // The bug, exactly. Unwrapping does not remove staging/, so a real sealed
+  // batch has both. The ladder asked about staging before it asked about the
+  // manifest -- and had no rung for the manifest at all -- so a finished batch
+  // reported as unfinished and the plan told the owner to rebuild it.
+  const sealed = photoStage({ work: '/w', mapping: true, packet: true, staging: true, sealed: true })
+  assert.equal(sealed.stage, 'sealed')
+
+  // The rungs below it are unchanged; this is an addition, not a reordering.
+  assert.equal(photoStage({ work: '/w', mapping: true, packet: true, staging: true }).stage, 'staged')
+  assert.equal(photoStage({ work: '/w', mapping: true, packet: true, staging: false }).stage, 'fetched')
+})
+
+test('the seal carries its own count and digest, and says so without them', () => {
+  const full = photoStage({ work: '/w', mapping: true, packet: true, sealed: true, sealedCount: 93, sealedDigest: 'abc123' })
+  assert.equal(full.digest, 'abc123')
+  assert.equal(full.count, 93)
+  // `includes`, not a regex: the count is rendered as "93 image(s)" and those
+  // parentheses are a capture group to a regex, so /93 image(s)/ matches
+  // "93 images" and not the string actually produced.
+  assert.ok(full.detail.includes('93 image(s)'), full.detail)
+  assert.ok(full.detail.includes('abc123'), full.detail)
+
+  // An unreadable manifest must still report sealed rather than throwing or
+  // inventing a digest: a photo directory cannot be allowed to stop the plan.
+  const bare = photoStage({ work: '/w', mapping: true, packet: true, sealed: true })
+  assert.equal(bare.stage, 'sealed')
+  assert.equal(bare.digest, undefined)
+  assert.doesNotMatch(bare.detail, /manifest/)
+})
+
+test('a sealed batch is never re-run, and its upload is printed with the digest filled in', () => {
+  const steps = buildPlan(stateWith({
+    photos: photoStage({ work: '/w', mapping: true, packet: true, staging: true, sealed: true, sealedCount: 93, sealedDigest: 'eccb9f40' }),
+  }))
+
+  const build = steps.find(step => step.title.startsWith('Build the next photo batch'))
+  assert.equal(build.run, null, 'a sealed batch must not rebuild the work it has already done')
+  assert.match(build.blocked, /already sealed/)
+
+  const upload = steps.find(step => step.title.startsWith('Put the sealed photo batch'))
+  assert.ok(upload, 'a sealed batch has somewhere to go and the plan must say where')
+  assert.equal(upload.touches, TOUCHES.PRODUCTION)
+  assert.equal(upload.run, null, 'the upload writes the live volume; it is printed, never executed')
+  assert.ok(upload.lines.some(line => line.includes('eccb9f40')), 'the digest is filled in, not left for retyping')
+  assert.ok(upload.lines.some(line => line.includes('chown -R node:node')), 'the permissions step is not optional and must not be dropped')
+})
+
+test('the upload step exists only when there is a sealed packet to upload', () => {
+  // Otherwise it is an instruction to send something that does not exist.
+  for (const photos of [
+    photoStage({ work: '/w', mapping: true, packet: true, staging: true }),
+    photoStage({ work: '/w', mapping: true, packet: false }),
+    photoStage({ work: null }),
+  ]) {
+    const steps = buildPlan(stateWith({ photos }))
+    assert.equal(steps.find(step => step.title.startsWith('Put the sealed photo batch')), undefined,
+      `a ${photos.stage} batch must not be offered an upload`)
+  }
 })
