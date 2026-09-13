@@ -33,7 +33,19 @@
 /** Bumped whenever the shape below changes. See `readDraft`. */
 export const DRAFT_VERSION = 1
 
-const KEY = 'kmt_request_draft'
+/**
+ * Exported because the browser audits need to forget it.
+ *
+ * Several of them drive the size selector more than once in one browser
+ * context, which was a first-time visit every time until this module existed
+ * and silently stopped being one. They say so by clearing this key rather
+ * than by each spelling the string themselves -- two files holding one fact
+ * is how the copy nobody remembers to change gets left behind, and the copy
+ * over there is the one that would be missed.
+ */
+export const DRAFT_STORAGE_KEY = 'kmt_request_draft'
+
+const KEY = DRAFT_STORAGE_KEY
 
 /**
  * How long a remembered order stays useful.
