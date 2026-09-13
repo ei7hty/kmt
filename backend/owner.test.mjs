@@ -1,10 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createServer, request as httpRequest } from 'node:http'
-import { Inventory } from './inventory.mjs'
+import { DESCRIPTION_OVERRIDE_LIMIT, Inventory, OVERRIDE_CATEGORIES } from './inventory.mjs'
+// The shop's own season facet, and the customer-boundary contract. Both are
+// imported rather than restated: the tests below exist to prove the owner's
+// corrections agree with them, which a local copy of either could not show.
+import { SEASON_LABELS } from '../src/tire-filters.js'
+import { catalogRowProblem } from '../.forge/audit-ui.mjs'
 import { Refresher } from './refresh.mjs'
 import { createApi, createCatalogApi, isPublicApiCall, readJsonBody } from './api.mjs'
 import { createAuth, createImportToken, createSessionStore, isMonitorAuthorized, memorySessionStore, MINTED_SESSION_ACTOR, mintSession, PASSWORD_SESSION_ACTOR, readAuthConfig, readMonitorConfig, readSessionSigningConfig, SESSION_COOKIE_NAME, verifyImportToken } from './auth.mjs'
@@ -12,6 +17,9 @@ import { LoginThrottle } from './limits.mjs'
 import { SHARED_PASSWORD_ACTOR } from './quotes.mjs'
 import { PageImporter } from './import.mjs'
 import { DEFAULT_MARKUP_SETTINGS, quotedPrice } from '../src/markup.js'
+// The quote engine, imported because `catalog()` is its input too and a season
+// correction therefore reaches it -- see the review-gate test at the bottom.
+import { calculateDraftQuote } from '../src/pricing.js'
 // The owner grid's own helper, imported rather than reimplemented: the defect
 // these tests cover lives in the seam between what list() returns and what the
 // screen sends back, so a test that rebuilt the screen's half by hand would
@@ -72,7 +80,7 @@ test('refresh updates supplier data without overwriting owner price, choice, or 
   const row = db.list().items.find(row => row.id === 'giga-a')
   assert.equal(row.price, 72)
   assert.equal(row.inStock, false)
-  assert.deepEqual(row.offer, { ...offer(), shippingCents: null, version: 1 })
+  assert.deepEqual(row.offer, { ...offer(), shippingCents: null, categoryOverride: null, descriptionOverride: null, version: 1 })
   assert.equal(db.summary().fullSizeCount, 1)
 })
 
@@ -1709,7 +1717,8 @@ test('an enabled tire may use markup pricing with an individual shipping overrid
 
   const owner = db.list().items[0]
   assert.deepEqual(owner.offer, {
-    priceCents: null, shippingCents: 1200, enabled: true, notes: 'Owner choice', version: 1,
+    priceCents: null, shippingCents: 1200, enabled: true, notes: 'Owner choice',
+    categoryOverride: null, descriptionOverride: null, version: 1,
   }, 'the owner round trip keeps cents and distinguishes an override from the global value')
 
   const [customer] = db.catalog()
@@ -1753,9 +1762,17 @@ test('an existing offers table gains nullable shipping cents without changing ow
 
     db = new Inventory(filename, [SIZE])
     const columns = db.db.prepare('PRAGMA table_info(offers)').all().map(column => column.name)
-    assert.ok(columns.includes('shipping_cents'))
+    // Every column added to `offers` after it first shipped, not just the one
+    // this test was written for. The fixture above rebuilds the table to the
+    // ORIGINAL schema, so each of these is genuinely absent when the database
+    // is reopened -- an assertion that could not fail is worth nothing, and
+    // this one is the only thing standing between a new column and a
+    // production database that never runs the CREATE statement.
+    for (const column of ['shipping_cents', 'category_override', 'description_override']) {
+      assert.ok(columns.includes(column), `reopening an old database did not add ${column}`)
+    }
     assert.deepEqual(db.list().items[0].offer, {
-      ...offer(), shippingCents: null, version: 1,
+      ...offer(), shippingCents: null, categoryOverride: null, descriptionOverride: null, version: 1,
     }, 'the old owner decision survives and the new override starts unset')
   } finally {
     db?.close()
@@ -1862,7 +1879,7 @@ test('a snapshot applied to a live database upserts rows and leaves offers and u
   assert.equal(result.dryRun, false)
   const rows = Object.fromEntries(db.list().items.map(row => [row.id, row]))
   assert.equal(rows['giga-a'].price, 72, 'supplier data moved')
-  assert.deepEqual(rows['giga-a'].offer, { ...offer(), shippingCents: null, version: 1 }, 'the owner price and choice did not')
+  assert.deepEqual(rows['giga-a'].offer, { ...offer(), shippingCents: null, categoryOverride: null, descriptionOverride: null, version: 1 }, 'the owner price and choice did not')
   assert.equal(rows['giga-b'].supplierActive, true)
   assert.equal(db.summary().importedSizeCount, 2, 'a partial import is labelled as such')
   assert.equal(db.summary().job.status, 'completed', 'and /owner is told')
@@ -2382,4 +2399,205 @@ test('a priced tire that is not for sale is counted and reachable, and nothing r
   assert.equal(db.summary().pricedNotOfferedCount, 1, 'and still counted')
   assert.equal(db.list().items.find(r => r.id === 'giga-a').offer.version, 1,
     'the row was not rewritten by any read')
+})
+
+// ---------------------------------------------------------------------------
+// The owner's corrections to the supplier's own record.
+//
+// Two things the supplier gets wrong about tires it sells, neither of which a
+// re-scrape can fix, because the supplier's record is what is wrong:
+//
+//   - the CATEGORY. Measured on the live site 2026-09-13, every row filed
+//     `off-road` in 225/50R17 is a road tire -- Bridgestone Turanza EverDrive,
+//     Pegasus HPX SPORT AS, Radar Dimax AS-9 -- so the shop was telling
+//     customers a touring tire is "built for dirt, gravel and mud", and filing
+//     it under a season facet no buyer of it would press.
+//   - the DESCRIPTION. Seven rows of 1,083 carry the supplier's own
+//     advertising where the description belongs.
+// ---------------------------------------------------------------------------
+
+/**
+ * The supplier's advertising, copied from the live Armstrong Blu-Trac HP3 row.
+ *
+ * Not paraphrased and not shortened: its length is the point of one assertion
+ * below, and its trailing spec codes are the point of another.
+ */
+const SUPPLIER_ADVERT = 'Compare tires at a glance using our easy test score® system. Our proprietary algorithm factors in performance, expert insights, user reviews, and Uniform Tire Quality Grading (UTQG) scores. · XL 98Y BSW'
+
+test('the seasons an owner may choose are the shop’s own facet, not a second list of five strings', () => {
+  assert.deepEqual([...OVERRIDE_CATEGORIES], Object.keys(SEASON_LABELS),
+    'the owner may file a tire under a season the shop cannot draw, or not under one it can')
+  assert.ok(OVERRIDE_CATEGORIES.length > 0, 'an empty list would make every assertion about it vacuous')
+
+  // The deepEqual above cannot catch a hand-written copy on the day it is
+  // written -- it would agree with itself until someone changed SEASON_LABELS
+  // alone, which is exactly how the CATALOG_FIELDS and EXPECTED_CHECKS pairs
+  // drifted here. So the derivation itself is asserted, at the source.
+  const source = readFileSync(new URL('./inventory.mjs', import.meta.url), 'utf8')
+  const declaration = source.slice(source.indexOf('export const OVERRIDE_CATEGORIES'))
+    .slice(0, source.slice(source.indexOf('export const OVERRIDE_CATEGORIES')).indexOf('\n'))
+  assert.match(declaration, /SEASON_LABELS/,
+    `OVERRIDE_CATEGORIES stopped being derived from the shop's facet: ${declaration}`)
+  for (const season of Object.keys(SEASON_LABELS)) {
+    assert.doesNotMatch(declaration, new RegExp(`['"]${season}['"]`),
+      `"${season}" is written out again beside the map it should be read from`)
+  }
+})
+
+test('an owner season correction moves the tire for a customer, and clearing it gives the supplier back', t => {
+  const db = setup(t)
+  assert.equal(db.catalog()[0].category, 'all-season', "the fixture starts on the supplier's own filing")
+
+  db.saveOffer('giga-a', offer({ categoryOverride: 'winter' }))
+  assert.equal(db.catalog()[0].category, 'winter', 'the customer is shown the correction')
+
+  const held = db.list().items[0].offer
+  assert.equal(held.categoryOverride, 'winter', 'and the owner screen reads back what it saved')
+
+  db.saveOffer('giga-a', { ...held, categoryOverride: null })
+  assert.equal(db.catalog()[0].category, 'all-season',
+    'null means "use the supplier\'s", which is not the same as "no season"')
+  assert.equal(db.list().items[0].offer.categoryOverride, null)
+})
+
+test('an owner description correction reaches the card, the heading and the decoded spec together', t => {
+  // Seeded straight rather than through setup(), which has already imported a
+  // giga-a: `importSnapshot` adds rows and does not rewrite one it already
+  // holds, so importing over it left the fixture's own '95H BSW' in place and
+  // this test measured a tire it had not built. Caught by the assertion below
+  // failing, which is the only reason it is worth writing them this way round.
+  const db = new Inventory(':memory:', [SIZE, otherSize])
+  t.after(() => db.close())
+  db.importSnapshot(snapshot([tire('giga-a', { description: SUPPLIER_ADVERT })]))
+
+  const before = db.catalog()[0]
+  assert.equal(before.description, SUPPLIER_ADVERT,
+    "nothing removes the supplier's advertising on the way to a customer; cleanCatalogDescription is an HTML sanitiser and this carries no markup")
+  assert.ok(before.description.length > DESCRIPTION_OVERRIDE_LIMIT,
+    'the row this exists for is longer than any correction may be, which is how it was found')
+  assert.equal(before.specCategory, undefined,
+    'and it parses as no category at all, so the panel heads the tire with nothing')
+
+  db.saveOffer('giga-a', offer({ descriptionOverride: 'High Performance All Season · XL 98Y BSW' }))
+
+  const after = db.catalog()[0]
+  assert.equal(after.description, 'High Performance All Season · XL 98Y BSW', 'the card line is the owner\'s')
+  assert.equal(after.specCategory, 'High Performance All Season',
+    'and so is the heading -- one edit, not a second control that could disagree with the first')
+  assert.deepEqual(after.specPoints, before.specPoints,
+    'while the decoded spec, which was never wrong, is untouched: the codes were always at the end of that string')
+  assert.ok(after.specPoints.length > 0, 'a spec that decoded to nothing would make the line above vacuous')
+})
+
+test('a save that never mentions the corrections keeps them, which is every bulk write and every older client', t => {
+  const db = setup(t)
+  db.saveOffer('giga-a', offer({ categoryOverride: 'winter', descriptionOverride: 'Winter / snow · 95H BSW' }))
+  const held = db.list().items[0].offer
+
+  // Exactly the body the bulk price path builds -- no override keys at all.
+  // Reading their absence as null would wipe every correction on up to 200
+  // rows per request, silently, on the way to changing a price.
+  db.saveOffers({ offers: [{
+    id: 'giga-a', priceCents: 7500, shippingCents: null,
+    enabled: held.enabled, notes: held.notes, version: held.version,
+  }] })
+
+  const after = db.list().items[0]
+  assert.equal(after.offer.priceCents, 7500, 'the field it did send moved')
+  assert.equal(after.offer.categoryOverride, 'winter', 'the correction it did not send survived')
+  assert.equal(after.offer.descriptionOverride, 'Winter / snow · 95H BSW')
+  assert.equal(db.catalog()[0].category, 'winter', 'and the customer still sees it')
+})
+
+test('a correction the shop could not draw is refused, by name, and writes nothing', t => {
+  const db = setup(t)
+  const tooLong = 'x'.repeat(DESCRIPTION_OVERRIDE_LIMIT + 1)
+  assert.throws(() => db.saveOffer('giga-a', offer({ categoryOverride: 'mud-and-snow' })), /Choose a season/,
+    'a season the facet has no bucket for would hide the tire from every filter')
+  assert.throws(() => db.saveOffer('giga-a', offer({ categoryOverride: 'All-season' })), /Choose a season/,
+    "the label is not the key; 'All-season' is what the shop prints, 'all-season' is what it files under")
+  assert.throws(() => db.saveOffer('giga-a', offer({ descriptionOverride: '   ' })),
+    new RegExp(`up to ${DESCRIPTION_OVERRIDE_LIMIT} characters`),
+    'a blank correction would publish a tire with no description, which nobody means to do')
+  assert.throws(() => db.saveOffer('giga-a', offer({ descriptionOverride: tooLong })),
+    new RegExp(`up to ${DESCRIPTION_OVERRIDE_LIMIT} characters`))
+  assert.equal(db.list().items[0].offer.version, 0, 'and not one of the four wrote a row')
+
+  // THE CONTROL. Without it the four refusals above are equally consistent with
+  // a save path that refuses everything it is given.
+  db.saveOffer('giga-a', offer({
+    categoryOverride: 'off-road', descriptionOverride: tooLong.slice(0, DESCRIPTION_OVERRIDE_LIMIT),
+  }))
+  const saved = db.list().items[0].offer
+  assert.equal(saved.categoryOverride, 'off-road')
+  assert.equal(saved.descriptionOverride.length, DESCRIPTION_OVERRIDE_LIMIT, 'the limit itself is allowed, not one short of it')
+})
+
+test('a supplier refresh moves the supplier’s record and leaves the owner’s correction standing', t => {
+  const db = setup(t)
+  db.saveOffer('giga-a', offer({ categoryOverride: 'winter', descriptionOverride: 'Winter / snow · 95H BSW' }))
+  db.refreshSize(SIZE, [tire('giga-a', { category: 'performance', description: 'Summer · 95H BSW' })])
+
+  const row = db.list().items[0]
+  assert.equal(row.category, 'performance', "the owner screen shows what the supplier now says")
+  assert.equal(row.description, 'Summer · 95H BSW', 'both of them, so a correction that has gone stale is visible where it was made')
+  assert.equal(row.offer.categoryOverride, 'winter', 'beside what the owner said')
+  assert.equal(db.catalog()[0].category, 'winter', 'and the customer sees the owner')
+  assert.equal(db.catalog()[0].description, 'Winter / snow · 95H BSW')
+})
+
+test('a correction changes what a customer reads, never which fields reach them', t => {
+  const db = setup(t)
+  db.saveOffer('giga-a', offer({ categoryOverride: 'winter', descriptionOverride: 'Winter / snow · 95H BSW' }))
+  const [customer] = db.catalog()
+
+  // `category` and `description` are already required customer fields, so this
+  // whole feature adds nothing to the boundary -- which is the reason it was
+  // built on those two fields rather than on a pair of new ones.
+  assert.equal(catalogRowProblem(customer), null, 'a corrected row is still exactly the contract')
+  assert.doesNotMatch(JSON.stringify(customer), /override/i,
+    'the correction reaches a customer as the tire\'s own category and description, not as a correction')
+})
+
+test('a season correction also moves the owner-review gate, which is the point and is not obvious', t => {
+  // FOUND IN REVIEW, not in writing this. `catalog()` is not only what a
+  // customer reads: `QuoteStore.catalog()` returns it verbatim and hands it to
+  // `calculateDraftQuote`, which holds a quote for the owner when
+  // `tire.category === 'off-road'` (src/pricing.js). So a control labelled
+  // "Season a customer filters by" also decides which quotes land in Ken's
+  // review queue, and nothing said so.
+  //
+  // The coupling is CORRECT and worth keeping. The gate exists so a person
+  // looks before an off-road tire is sold, and the three rows this feature was
+  // built for -- Bridgestone Turanza EverDrive, Pegasus HPX SPORT AS, Radar
+  // Dimax AS-9, every one a road tire the supplier filed `off-road` -- are
+  // holding quotes today for a reason that is not true. Correcting them stops
+  // a false hold; filing something as off-road starts a real one.
+  //
+  // It is pinned here so the next person to change either side finds the other.
+  const db = setup(t)
+  const draft = () => calculateDraftQuote({ tireSelection: 'giga-a', quantity: 4 }, db.catalog())
+  const heldForOffRoad = () => draft().exceptionReasons.some(reason => /off-road/i.test(reason))
+
+  assert.equal(db.catalog()[0].category, 'all-season')
+  assert.equal(heldForOffRoad(), false, 'the fixture is a road tire and is not held')
+
+  db.saveOffer('giga-a', offer({ categoryOverride: 'off-road' }))
+  assert.equal(heldForOffRoad(), true, 'filing a tire as off-road sends its quotes to the owner')
+
+  const held = db.list().items[0].offer
+  db.saveOffer('giga-a', { ...held, categoryOverride: 'all-season' })
+  assert.equal(heldForOffRoad(), false, 'and correcting a mis-filed one stops a hold that was never true')
+
+  // The control this most needs: the gate must still fire on the SUPPLIER's
+  // own filing, with no override at all. Otherwise the three assertions above
+  // are equally consistent with a quote engine that stopped reading category.
+  const other = new Inventory(':memory:', [SIZE, otherSize])
+  t.after(() => other.close())
+  other.importSnapshot(snapshot([tire('giga-a', { category: 'off-road' })]))
+  assert.equal(
+    calculateDraftQuote({ tireSelection: 'giga-a', quantity: 4 }, other.catalog())
+      .exceptionReasons.some(reason => /off-road/i.test(reason)),
+    true,
+    'a tire the supplier itself calls off-road is still held, override or no override')
 })

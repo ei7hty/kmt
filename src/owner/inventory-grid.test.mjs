@@ -18,6 +18,9 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { ratio } from '../../.forge/contrast-measure.mjs'
+// The shop's own season facet: the tests below prove the owner's select offers
+// exactly what the customer's filter draws, which a local copy could not show.
+import { SEASON_LABELS } from '../tire-filters.js'
 import {
   createInventoryGrid, headerSortState, nextSortRequest, showEmptyState,
   applyBulkResults, bulkNotice, reasonLabel, priceFromFormula, previewPriceChange,
@@ -26,6 +29,7 @@ import {
   stockState, stockLabel, stockClass, switchedOffByHand, stockRecovered, lowStockSummary,
   buildMarkupSave, markupSavedNotice, marginField, marginBoundSummary,
   parseMarginBound, supportsMarginBounds, MARGIN_BOUND_LIMIT,
+  correctionOf, seasonChoices,
 } from './inventory-grid.js'
 
 const SORT_KEYS = ['size', 'name', 'supplierPrice', 'price', 'margin', 'enabled', 'updated']
@@ -38,9 +42,10 @@ const makeItem = (n, over = {}) => ({
   inStock: true,
   supplierActive: true,
   category: 'all-season',
+  description: 'Touring All Season · 95H BSW',
   marginCents: 2500 + n,
   source: { sku: `SKU${n}`, stock: 4, url: 'https://www.giga-tires.com/tires/205-55-16' },
-  offer: { priceCents: 12500 + n, shippingCents: null, enabled: false, notes: '', version: 1 },
+  offer: { priceCents: 12500 + n, shippingCents: null, enabled: false, notes: '', categoryOverride: null, descriptionOverride: null, version: 1 },
   ...over,
 })
 
@@ -1283,4 +1288,181 @@ test('the notice after a save reads back what was stored, so clearing a bound is
   // must not report it as one.
   assert.match(saved({ minMarginPerTire: 0, maxMarginPerTire: null }), /at least \$0\.00/)
   assert.doesNotMatch(saved({ minMarginPerTire: 0, maxMarginPerTire: null }), /No least or most set/)
+})
+
+// ------------------------------------------- c. correcting the supplier's record
+
+/**
+ * The season and description boxes are seeded with what a customer is being
+ * shown, so "untouched" and "typed back to the supplier's own words" look
+ * identical in the form. They must not be stored differently, or an override
+ * that restates the supplier would pin the tire to a correction nobody
+ * remembers making, and the supplier's next revision would never reach it.
+ */
+test('a box holding the supplier’s own value is not a correction, whatever put it there', () => {
+  assert.equal(correctionOf('winter', 'all-season'), 'winter', 'a real change is sent')
+  assert.equal(correctionOf('all-season', 'all-season'), null, 'the supplier’s own value is not a correction')
+  assert.equal(correctionOf('', 'all-season'), null, 'an emptied box is how a correction is undone')
+  assert.equal(correctionOf('   ', 'all-season'), null, 'and whitespace is empty')
+  assert.equal(correctionOf('  winter  ', 'all-season'), 'winter', 'what is sent is trimmed')
+  assert.equal(correctionOf('all-season', '  all-season '), null, 'so is what it is compared against')
+  assert.equal(correctionOf(undefined, 'all-season'), null)
+  assert.equal(correctionOf('winter', undefined), 'winter', 'a row with no supplier value can still be corrected')
+})
+
+test('the seasons offered are the shop’s own five, plus whatever this tire actually is', () => {
+  const known = seasonChoices('all-season')
+  assert.deepEqual(known.map(([key]) => key), Object.keys(SEASON_LABELS),
+    'the owner may file a tire under a season the customer’s filter cannot draw')
+  assert.ok(known.length > 0, 'an empty list would make every assertion here vacuous')
+  assert.deepEqual(known.find(([key]) => key === 'all-season'), ['all-season', SEASON_LABELS['all-season']],
+    'and the label shown is the one the shop prints, not the key it files under')
+
+  // Never fires on today's data -- all 1,083 rows carry one of the five. It
+  // exists because a select whose value matches no option renders BLANK, which
+  // would read as "this tire has no season" on exactly the rows whose season is
+  // the unusual thing about them.
+  const odd = seasonChoices('mud-terrain')
+  assert.deepEqual(odd.at(-1), ['mud-terrain', 'mud-terrain'])
+  assert.equal(odd.length, known.length + 1)
+
+  // What stood here was `seasonChoices('all-season').length === known.length`,
+  // and `known` IS `seasonChoices('all-season')` -- it compared a call to
+  // itself and was true of any implementation, including one that duplicates.
+  // Raised in review. The duplication it meant to catch is caught by the
+  // deepEqual above; what had no guard at all is the derivation, which the
+  // server's OVERRIDE_CATEGORIES asserts at its own source and this did not.
+  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'inventory-grid.js'), 'utf8')
+  const after = source.slice(source.indexOf('export function seasonChoices'))
+  const body = after.slice(0, after.indexOf('\n}'))
+  assert.ok(body.includes('SEASON_LABELS'), 'seasonChoices stopped reading the shop’s own facet')
+  for (const season of Object.keys(SEASON_LABELS)) {
+    assert.doesNotMatch(body, new RegExp(`['"]${season}['"]`),
+      `"${season}" is written out again inside seasonChoices, beside the map it should be read from`)
+  }
+})
+
+test('the correction boxes open holding what a customer sees, correction or supplier', async () => {
+  const { api } = makeApi({ pool: [
+    makeItem(1),
+    makeItem(2, { offer: { ...makeItem(2).offer, categoryOverride: 'winter', descriptionOverride: 'Winter / snow · 95H BSW' } }),
+  ] })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+
+  const [untouched, corrected] = grid.items()
+  assert.equal(grid.rowValues(untouched).category, 'all-season', 'the supplier’s own filing')
+  assert.equal(grid.rowValues(untouched).description, 'Touring All Season · 95H BSW', 'and its own words')
+  assert.equal(grid.rowValues(corrected).category, 'winter')
+  assert.equal(grid.rowValues(corrected).description, 'Winter / snow · 95H BSW',
+    'a corrected row opens on the correction, which is the text there is to edit')
+})
+
+test('saving a row measures its corrections against the SUPPLIER, not against what is stored', async () => {
+  // The regression this exists to stop. The box is seeded with the stored
+  // correction, so comparing the two would find them equal, read that as "no
+  // correction", and delete Ken's fix every time he touched the price of a row
+  // he had already fixed.
+  const item = makeItem(1, { offer: {
+    ...makeItem(1).offer, categoryOverride: 'winter', descriptionOverride: 'Winter / snow · 95H BSW',
+  } })
+  const { api, calls } = makeApi({ pool: [item] })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+
+  grid.editRow('sku-1', { price: '150.00' })
+  await grid.commitRow('sku-1')
+
+  const body = JSON.parse(calls.at(-1).options.body)
+  assert.equal(body.priceCents, 15000, 'the price he typed')
+  assert.equal(body.categoryOverride, 'winter', 'and the correction he did not touch, still his')
+  assert.equal(body.descriptionOverride, 'Winter / snow · 95H BSW')
+})
+
+test('a row nobody has corrected sends no correction, even though both boxes are full', async () => {
+  const { api, calls } = makeApi({ pool: [makeItem(1)] })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+
+  grid.editRow('sku-1', { price: '150.00' })
+  await grid.commitRow('sku-1')
+
+  const body = JSON.parse(calls.at(-1).options.body)
+  assert.equal(body.categoryOverride, null,
+    'the season box holds "all-season" because the supplier says so, which is not a decision of Ken’s')
+  assert.equal(body.descriptionOverride, null)
+})
+
+test('re-filing a tire sends the season; emptying the description box sends the undo', async () => {
+  const item = makeItem(1, { offer: {
+    ...makeItem(1).offer, categoryOverride: null, descriptionOverride: 'Winter / snow · 95H BSW',
+  } })
+  const { api, calls } = makeApi({ pool: [item] })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+
+  // Exactly the two gestures the screen offers: pick a season, clear a box.
+  grid.editRow('sku-1', { category: 'winter', description: '' })
+  await grid.commitRow('sku-1')
+
+  const body = JSON.parse(calls.at(-1).options.body)
+  assert.equal(body.categoryOverride, 'winter')
+  assert.equal(body.descriptionOverride, null, 'an emptied box asks for the supplier’s words back')
+
+  // The control: the same call with the description left alone keeps it, so the
+  // null above is the clearing and not this path sending null for everything.
+  const next = grid.items()[0]
+  grid.editRow('sku-1', { description: 'Ultra High Performance · 95H BSW', baseVersion: next.offer.version })
+  await grid.commitRow('sku-1')
+  assert.equal(JSON.parse(calls.at(-1).options.body).descriptionOverride, 'Ultra High Performance · 95H BSW')
+})
+
+test('typing the supplier’s own words back into the box clears the correction', async () => {
+  const item = makeItem(1, { offer: { ...makeItem(1).offer, descriptionOverride: 'Something Ken wrote' } })
+  const { api, calls } = makeApi({ pool: [item] })
+  const grid = createInventoryGrid({ api })
+  await grid.load()
+
+  grid.editRow('sku-1', { description: 'Touring All Season · 95H BSW' })
+  await grid.commitRow('sku-1')
+
+  assert.equal(JSON.parse(calls.at(-1).options.body).descriptionOverride, null,
+    'an override that merely restates the supplier would outlive the supplier changing its mind')
+})
+
+test('the marker on a corrected field is the screen’s settled amber, and it is readable on the detail row', () => {
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'OwnerInventory.css'), 'utf8')
+  const rgb = h => ({ r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16) })
+  // Every rule for this selector, not the first one mentioning it. Written the
+  // obvious way -- first match wins -- this reported ".oi-correct-hint has no
+  // color" while it plainly has one: the first rule bearing that selector is a
+  // shared `margin/font-size` rule and the colour is set two lines below it.
+  // An instrument that stops at the first candidate answers a narrower question
+  // than the one asked, and here it answered it confidently and wrongly.
+  //
+  // This stylesheet is one complete rule per line, which is what makes the
+  // split sound; a rule spread over several lines simply will not be found and
+  // the assertion says so rather than measuring the wrong thing.
+  const rules = css.split('\n').filter(line => line.includes('{') && line.includes('}'))
+  const hexIn = (selector, prop) => {
+    const bodies = rules.filter(line => line.slice(0, line.indexOf('{')).includes(selector))
+    assert.ok(bodies.length, `${selector} is not a one-line rule in OwnerInventory.css -- this test cannot measure what it cannot find`)
+    const found = bodies.map(line => new RegExp(prop + ':[^;]*?(#[0-9a-f]{6})', 'i').exec(line)).find(Boolean)
+    assert.ok(found, `${selector} sets no ${prop} in any of its ${bodies.length} rule(s)`)
+    return found[1]
+  }
+
+  // Two literals encoding one fact is the defect this repository keeps paying
+  // for, and a border colour beside a text colour is exactly where it hides.
+  const attention = hexIn('.oi-attention', 'color')
+  assert.equal(hexIn('.oi-shell .oi-correct [data-corrected="yes"]', 'border-left'), attention,
+    'the corrected-field edge drifted from .oi-attention, so one marker now means two colours')
+
+  // The detail row has its own ground, darker than the table's, and nothing
+  // measured either of these against it before.
+  const ground = hexIn('.oi-g-detailrow > td', 'background')
+  for (const [hex, what] of [[attention, 'the corrected-field amber'], [hexIn('.oi-correct-hint', 'color'), 'the supplier-value hint']]) {
+    const measured = ratio(rgb(hex), rgb(ground))
+    assert.ok(measured >= 4.5, `${what} is ${measured.toFixed(2)}:1 on the detail row (${hex} on ${ground}), below the 4.5:1 floor`)
+  }
 })
