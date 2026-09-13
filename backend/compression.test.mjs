@@ -83,6 +83,28 @@ test('a q value this cannot read is a refusal, never permission', () => {
     assert.equal(negotiateEncoding(malformed), null, `${malformed} was read as permission to compress`)
   }
 
+  // THE DIGIT BOUND, pinned on both branches of the grammar. RFC 9110 §12.4.2
+  // allows at most three digits after the point, and widening `\d{0,3}` to
+  // `\d{0,4}` was the ONE mutation of twelve that survived the suite: the
+  // probe above, `br;q=0.0000`, cannot separate them, because `Number` reads
+  // it as 0 under either grammar and the refusal comes out the same for the
+  // wrong reason. These two are non-zero at the fourth place, so they are
+  // refused only by a grammar that stops at three.
+  assert.equal(negotiateEncoding('br;q=0.0001'), null, 'a fourth decimal place is not a qvalue')
+  assert.equal(negotiateEncoding('br;q=1.0000'), null)
+  assert.equal(negotiateEncoding('br;q=0.001'), 'br', 'and the third place still is')
+  assert.equal(negotiateEncoding('br;q=1.000'), 'br')
+
+  // A `q` WITH NO VALUE IS NOT A REFUSAL, and this is deliberate rather than
+  // incidental -- which is why it is asserted. `br;q` carries no weight to
+  // honour, so accepting it cannot send anyone an encoding they refused, and
+  // that is the property the fail-closed rule exists to protect. The rule is
+  // about a q VALUE that cannot be read; the comment on `negotiateEncoding`
+  // used to claim more than that and now says which. Pinned so it cannot be
+  // flipped in either direction without someone deciding to.
+  assert.equal(negotiateEncoding('br;q'), 'br')
+  assert.equal(negotiateEncoding('br;q=0'), null, 'while a q that IS a refusal still refuses')
+
   // THE CONTROL. Every assertion above expects null, which a function that
   // returned null unconditionally would also satisfy. These are the same
   // header shapes with a q the parser CAN read, and they must still negotiate.

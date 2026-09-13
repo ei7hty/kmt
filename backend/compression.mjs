@@ -87,17 +87,31 @@ export function negotiateEncoding(header) {
       //
       // Which direction is safe is not symmetric. A client that gets plain
       // JSON when it would have taken brotli pays some bytes. A client that
-      // gets brotli after refusing it cannot read the response at all. So
-      // anything that is not a well-formed qvalue in [0,1] means "do not use
-      // this encoding", and a value we do not understand is never read as
-      // permission.
+      // gets brotli after refusing it cannot read the response at all. So a q
+      // VALUE that is not a well-formed qvalue means "do not use this
+      // encoding".
+      //
+      // THAT RULE IS ABOUT THE VALUE, and the distinction is not pedantry.
+      // `br;q`, with no value at all, is still accepted: it is not a weight,
+      // so there is no refusal in it to honour, and accepting it cannot send
+      // anyone an encoding they said no to -- which is the only property the
+      // rule exists to protect. This comment used to say that anything
+      // unparseable becomes a refusal, which was a wider claim than the code
+      // makes and than it needs to make. `backend/compression.test.mjs` pins
+      // both halves so neither can be flipped without someone deciding to.
       // MATCHED AGAINST THE GRAMMAR, not merely coerced to a number and range
       // checked. RFC 9110 §12.4.2 defines qvalue as `( "0" [ "." 0*3DIGIT ] )
       // / ( "1" [ "." 0*3("0") ] )` and nothing else, so `1e-9` is not a
       // qvalue -- and `Number('1e-9')` is a perfectly finite 1e-9 that a range
-      // check waves through. The rule is that input we do not fully understand
-      // never becomes permission; a numeric check quietly made an exception to
-      // that for every spelling JavaScript happens to parse.
+      // check waves through. A q value we cannot read never becomes
+      // permission; a numeric check quietly made an exception to that for
+      // every spelling JavaScript happens to parse.
+      //
+      // The `{0,3}` bound is the RFC's, and it is asserted rather than left to
+      // read right: widening it to `{0,4}` was the one mutation of twelve that
+      // survived the suite, because the probe that should have caught it
+      // (`q=0.0000`) is read as zero by both grammars and refused by both for
+      // different reasons. `q=0.0001` is what separates them.
       const parameter = parameters.map(p => p.trim()).find(p => /^q\s*=/i.test(p))
       const raw = parameter === undefined ? '1' : parameter.slice(parameter.indexOf('=') + 1).trim()
       const wellFormed = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/.test(raw)
