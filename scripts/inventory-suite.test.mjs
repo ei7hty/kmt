@@ -194,8 +194,18 @@ test('no runnable step in any plan this builds names a supplier, flyctl or a hos
     // not omitted. A plan that dropped them would also pass the line above.
     assert.ok(steps.some(step => step.touches === TOUCHES.SUPPLIER && !step.run))
     assert.ok(steps.some(step => step.touches === TOUCHES.PRODUCTION && !step.run))
-    assert.ok(steps.some(step => step.lines.join(' ').includes('giga-tires.com')), 'the supplier command is still shown')
-    assert.ok(steps.some(step => step.lines.join(' ').includes(HOSTED_SERVER)), 'the production command is still shown')
+    // Asserted on the SCRIPT and the environment variable rather than on a
+    // hostname appearing somewhere in a joined string. CodeQL flagged the
+    // earlier form as incomplete URL substring sanitization, and it was right
+    // that the shape is wrong even though this is a test and sanitizes nothing:
+    // `includes('giga-tires.com')` is true of `giga-tires.com.example` and
+    // false of `gigatires.com`, so it was never the assertion I meant. What I
+    // meant is "the command is still printed", and the command is named by the
+    // script it invokes.
+    assert.ok(steps.find(step => step.touches === TOUCHES.SUPPLIER).lines.some(line => line.includes('scrape-tires.mjs')),
+      'the supplier command is still shown')
+    assert.ok(steps.find(step => step.touches === TOUCHES.PRODUCTION).lines.some(line => line.includes('KMT_OWNER_PASSWORD')),
+      'the production command is still shown')
   }
 })
 

@@ -333,6 +333,16 @@ export function buildPlan(state) {
  * read rather than six steps to audit.
  */
 export function runnableViolations(steps) {
+  // THIS IS A LINT OVER LITERALS AUTHORED IN THIS FILE, NOT A URL CHECK, and
+  // the difference matters enough to say. Substring matching on a hostname is
+  // the wrong tool for deciding whether a URL is safe -- it says yes to
+  // `giga-tires.com.example` and no to `gigatires.com` -- and CodeQL flagged
+  // an earlier version of the test for exactly that shape. The host decision
+  // lives in `assertLocalServer()` above, which parses the URL and matches
+  // `hostname` against an exact set. What these patterns catch is a DEVELOPER
+  // pasting one of these strings into a step and marking it `local`, where the
+  // input is a string literal a few lines up rather than anything a user
+  // supplies. Belt and braces on top of the classification, never the guard.
   const forbidden = [/giga-tires\.com/i, /\bflyctl\b/i, /kensmobiletire\.com/i, /kmt\.fly\.dev/i]
   const violations = []
   for (const step of steps) {
