@@ -17,7 +17,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer, request as httpRequest } from 'node:http'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { brotliDecompressSync, gunzipSync } from 'node:zlib'
 import { BROTLI_QUALITY, COMPRESS_MIN_BYTES, compressedJson, negotiateEncoding } from './compression.mjs'
 import { createCatalogApi } from './api.mjs'
@@ -261,37 +261,73 @@ test('a size nobody stocks answers an empty catalogue, which is not the same as 
   assert.deepEqual(JSON.parse(empty.body.toString()).tires, [])
 })
 
-test('every audit that reads the whole catalogue says so, in its own source', async () => {
-  // The guard that keeps this honest as the repo changes. Four `.forge` checks
-  // read the unsized route today and each was pointed at what it actually
-  // needs; a fifth added later without `?all=1` gets a 400 and fails loudly,
-  // but a reader of this test should not have to rediscover which is which.
+test('nothing in the repository asks for the catalogue without saying which rows', async () => {
+  // THE WHOLE REPOSITORY, not a list of files I remembered to name. The first
+  // version of this guard checked three `.forge` scripts, and the reason it
+  // had to be widened is that a hand-written list is exactly how the real
+  // break got through: a `curl` inside .github/workflows/fly-deploy.yml asked
+  // unsized, `curl -f` exited 22 on the 400, the row count became empty, and
+  // `[ "" -lt 1 ]` errored INSIDE an `if` condition where `set -e` does not
+  // fire. The step reported success having proved nothing -- in this branch's
+  // own gate run. A grep restricted to .mjs/.js/.jsx never saw the YAML.
   //
-  // `audit-ui.cleanTireFor` is deliberately NOT in this list: it wants one
-  // tire in one known size and now asks for that size, which is the better
-  // fix than `?all=1` and would be undone by adding it here.
-  const forge = new URL('../.forge/', import.meta.url)
-  for (const file of ['catalog-import-check.mjs', 'deployed-site-check.mjs', 'shutdown-drain-check.mjs']) {
-    const source = readFileSync(new URL(file, forge), 'utf8')
-    // The path appears in check MESSAGES too, which request nothing. What
-    // makes an occurrence a request is a `fetch(` or `rawGet(` just before it
-    // -- comparing counts instead would have compared a number to itself.
-    const requested = [...source.matchAll(/\/api\/catalog[^'"`\s)]*/g)]
-      .filter(hit => /(?:fetch|rawGet)\(/.test(source.slice(Math.max(0, hit.index - 80), hit.index)))
-      .map(hit => hit[0])
+  // So this walks source, scripts, audits, workflows and docs, and classifies
+  // an occurrence as a REQUEST by the verb in front of it rather than by which
+  // directory it lives in.
+  const root = new URL('../', import.meta.url)
+  // A verb ANYWHERE in the preceding 60 characters, not one glued to the URL.
+  // The strict version missed `fetch(\`${BASE}/api/catalog\`)` and
+  // `fetch(base + '/api/catalog')` -- it refused to step over the quote in a
+  // template literal or a concatenation, which is how two of the six files
+  // this guards were invisible to it. Found by mutating each of the six and
+  // watching two survive.
+  //
+  // 60 characters is short enough that the check MESSAGES nearby do not match:
+  // the closest one, deployed-site-check.mjs:507, is ~117 characters from its
+  // fetch. If that ever changes, this reports a false offender -- loudly, by
+  // name, which is the right direction for a guard to fail in.
+  const VERBS = /(?:fetch|rawGet|new URL|curl)/
+  const offenders = []
+  let requests = 0
 
-    assert.ok(requested.length > 0, `${file} makes no /api/catalog request at all; this guard is measuring nothing`)
-    for (const url of requested) {
-      assert.match(url, /\?(all=1|size=)/, `${file} asks for ${url} without saying which rows it wants; it will get a 400`)
+  for (const dir of ['backend', 'src', 'scripts', '.forge', '.github', 'docs']) {
+    const base = new URL(`${dir}/`, root)
+    for (const entry of readdirSync(base, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !/\.(mjs|js|jsx|yml|yaml|sh)$/.test(entry.name)) continue
+      // This file is the exception, and deliberately: it requests the refused
+      // URL on purpose, to prove that it is refused.
+      if (entry.name === 'compression.test.mjs') continue
+      const file = new URL(`${entry.parentPath.slice(new URL(root).pathname.length - 1).replace(/\\/g, '/')}/${entry.name}`, root)
+      let source
+      try { source = readFileSync(file, 'utf8') } catch { continue }
+
+      for (const hit of source.matchAll(/\/api\/catalog[^'"`\s)|]*/g)) {
+        const before = source.slice(Math.max(0, hit.index - 60), hit.index)
+        if (!VERBS.test(before)) continue // a message, a path list, an allow-list entry
+        // The cap is GET-only -- `createCatalogApi` declines any other method
+        // before it reaches the parameter check, so a POST to this path falls
+        // through to auth and answers 401. `owner.test.mjs:1628` asserts
+        // exactly that and is right to send no parameters; flagging it would
+        // have meant adding `?all=1` to a test about method handling, which
+        // would have hidden what it is for.
+        const after = source.slice(hit.index, hit.index + 80)
+        if (/method:\s*['"`](?:POST|PUT|DELETE|PATCH)/i.test(after)) continue
+        requests += 1
+        if (!/\?(all=1|size=)/.test(hit[0])) offenders.push(`${entry.name}: ${hit[0]}`)
+      }
     }
   }
+
+  assert.ok(requests > 0, 'no /api/catalog request was found anywhere; this guard is measuring nothing')
+  assert.deepEqual(offenders, [],
+    'these ask for the catalogue without saying which rows they want, and will get a 400')
 
   // Read as a function BODY rather than a window of N characters after the
   // name: the first version allowed 400 and the explaining comment above the
   // fetch is longer than that, so it failed against correct code. A guard
   // whose reach is a guess fails for reasons that have nothing to do with
   // what it guards.
-  const auditUi = readFileSync(new URL('audit-ui.mjs', forge), 'utf8')
+  const auditUi = readFileSync(new URL('.forge/audit-ui.mjs', root), 'utf8')
   const at = auditUi.indexOf('export async function cleanTireFor')
   assert.notEqual(at, -1, 'cleanTireFor is not in audit-ui.mjs; this guard cannot find what it guards')
   const body = auditUi.slice(at, auditUi.indexOf('\n}', at))

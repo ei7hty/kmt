@@ -153,8 +153,13 @@ export function isPublicApiCall(method, pathname) {
  * catalog on first paint.
  *
  * ASKING FOR EVERY ROW NOW HAS TO SAY SO. `?all=1` answers the whole
- * catalogue, unchanged, for the four audits that read every row of it; a
- * request with neither parameter is REFUSED. Measured 2026-09-13, the whole
+ * catalogue, unchanged, for the three audits that genuinely read every row
+ * (`deployed-site-check` reads each row's field shape, `catalog-import-check`
+ * counts them against the walk file, `shutdown-drain-check` wants any row and
+ * knows no size) plus `scripts/photo-gaps.mjs`, which ranks gaps across all of
+ * it. A fourth audit, `audit-ui.cleanTireFor`, turned out to want ONE tire in
+ * ONE known size and asks for that size instead. A request with neither
+ * parameter is REFUSED. Measured 2026-09-13, the whole
  * catalogue is 6,103 rows and 2,575,347 bytes raw on an unauthenticated
  * route, and since the customer bundle's only unsized fetch was deleted
  * (#527) nothing shipped to a browser asks for it.
