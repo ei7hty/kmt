@@ -45,19 +45,27 @@ import path from 'node:path'
 // consult, so this check cannot disagree with them about whether the decoder
 // is present -- the CATALOG_FIELDS lesson, applied before it could bite.
 import { decoderPython } from '../backend/fixtures/image-provider/decoder-fixtures.mjs'
-import { BASELINE_PATTERNS } from './test-baseline.mjs'
+import { BASELINE_PATTERNS, DECODER_SUITE_DELTA } from './test-baseline.mjs'
 
 /**
  * The number of tests the named suites contain when every one of them can run.
  *
  * Measured on origin/main with the image decoder environment present. Without
- * one the same command reports 664 -- this baseline minus the image suites that
- * die at module load, which is DECODER_SUITE_DELTA below and not a miscount
- * here.
+ * one the same command reports this baseline minus DECODER_SUITE_DELTA (in
+ * `test-baseline.mjs`) -- the image suites that die at module load, and not a
+ * miscount here.
  *
- * The gap USED to be the cwd-relative decoder defect. #464 fixed that, so a
- * worktree now finds the shared venv and reports this same number; reaching the
- * no-decoder state deliberately is described under DECODER_SUITE_DELTA.
+ * NO FIGURE FOR THE NO-DECODER TOTAL IS WRITTEN HERE ON PURPOSE. It used to say
+ * "reports 664", and 664 was two baselines out of date by the time anybody read
+ * it: a second number derived from this one is a second copy of a fact, and it
+ * goes stale every single time this one moves, which is several times a night.
+ * The subtraction is one operation; the reader can do it against a delta that
+ * has its own instrument.
+ *
+ * The gap USED to be the cwd-relative decoder defect. #464 fixed that for
+ * `.worktrees/` checkouts and the git-common-dir step fixed the other 66
+ * worktrees of 236 that its marker could not describe, so every checkout on
+ * this machine now finds the shared venv and reports this same number.
  *
  * CHANGING THIS NUMBER: if the run came back LOWER, find the suite that stopped
  * running before you touch it. If it came back HIGHER because you added tests,
@@ -67,44 +75,6 @@ import { BASELINE_PATTERNS } from './test-baseline.mjs'
  */
 const EXPECTED_TESTS = 901
 
-/**
- * The DIFFERENCE the image suites make to the total: 729 with a decoder, 664
- * without. Measured 2026-09-10 at f5daa12.
- *
- * Not the number of tests they contain. A file that dies at module load still
- * registers one failing test, so the four dead files leave 4 behind and the
- * total drops by 65 rather than by the 69 they hold. Calling it a suite size
- * invited exactly that confusion once already, and the name is now the
- * arithmetic it actually does.
- *
- * WAS 45, MEASURED WHEN THREE SUITES DIED RATHER THAN FOUR. It went stale
- * silently, and the reason is worth more than the number: since #464 the
- * fixtures resolve the shared venv from `import.meta.url` and walk out of
- * `.worktrees/` to the main checkout, so unsetting KMT_IMAGE_DECODER_PYTHON no
- * longer produces the no-decoder state on any machine that has the venv. The
- * branch below became unreachable on every developer machine here, so nothing
- * exercised it and nothing contradicted the constant while a fourth image suite
- * was added.
- *
- * NAME THE CATEGORY, because it is not specific to this constant: A FIX THAT
- * REMOVES A FAILURE MODE LOCALLY ALSO REMOVES THE ABILITY TO EXERCISE ITS GUARD
- * LOCALLY. #464 was correct and this is its cost. A guard that can only run in
- * CI decays at the speed of whatever it guards.
- *
- * HOW TO RE-MEASURE, since the obvious way no longer works. Do NOT rename the
- * shared `decoder.local` -- other sessions run tests against it concurrently and
- * you would break their runs, which is the shared-resource collision this
- * repository has already paid for. Instead put a checkout OUTSIDE `.worktrees/`
- * (a scratch directory is fine), junction `node_modules` in so the only
- * difference is the decoder, and run there: the resolver walks up looking for a
- * `.worktrees/` marker, finds none, and resolves `decoder.local` against that
- * scratch root where it does not exist. Then run the SAME command in the SAME
- * tree with KMT_IMAGE_DECODER_PYTHON set, so the two totals differ by the
- * decoder and nothing else -- that control is what makes the subtraction mean
- * anything. Remove the junction with `rmdir`, never `rm -rf`, which follows it
- * into the shared install.
- */
-const DECODER_SUITE_DELTA = 65
 
 /**
  * The patterns EXPECTED_TESTS was measured against, and the whole reason this
@@ -219,16 +189,27 @@ if (!invocationMatches) {
   // shortfall. #464 fixed that resolution, so a compliant worktree now finds the
   // shared venv and this branch no longer fires for anyone following the rules.
   //
-  // It is kept, not deleted, because CI has no venv and is exactly where it now
-  // fires -- but note what that cost: the branch became unreachable on every
-  // developer machine, nothing exercised it, and DECODER_SUITE_DELTA sat at a
-  // stale 45 through the addition of a fourth image suite until somebody
-  // reproduced the no-decoder state deliberately. A guard only CI can reach
-  // decays at the speed of whatever it guards.
+  // "IT IS KEPT BECAUSE CI HAS NO VENV" USED TO BE WRITTEN HERE, AND IT WAS
+  // FALSE WHEN IT WAS WRITTEN. `fly-deploy.yml` builds a venv at :94-98 and
+  // exports KMT_IMAGE_DECODER_PYTHON, in the SAME job (`check`) as the count
+  // check at :134 -- so CI is precisely where this branch CANNOT fire. Between
+  // that and the resolver fixes (#464 for `.worktrees/`, the git-common-dir
+  // step for the other 66 worktrees of 236 the marker could not describe), this
+  // branch now fires in exactly one honest situation: a fresh clone with no
+  // venv built yet. That is a real situation and worth serving well, which is
+  // why the branch stays.
   //
-  // Keyed on the decoder being ABSENT, not on the shortfall being 65. A number
-  // that happens to match is not a diagnosis, and inferring a cause from a
-  // coincidental count is the exact mistake this file exists to catch.
+  // What it cost to have a branch nothing could reach: DECODER_SUITE_DELTA sat
+  // stale at 45 through the addition of a fourth image suite, then at 65
+  // through a fifth, and each time the message below confidently invented a
+  // remainder. A guard nothing can reach decays at the speed of whatever it
+  // guards -- so the delta now lives in `test-baseline.mjs` beside
+  // DECODER_SUITE_FILES, and `backend/decoder-fixtures.test.mjs` fails the
+  // moment a sixth such suite appears.
+  //
+  // Keyed on the decoder being ABSENT, not on the shortfall matching the delta.
+  // A number that happens to match is not a diagnosis, and inferring a cause
+  // from a coincidental count is the exact mistake this file exists to catch.
   if (!decoderPython && short === DECODER_SUITE_DELTA) {
     console.error('')
     console.error(`FAIL: ${short} test(s) short, and this environment cannot run them.`)
@@ -238,14 +219,35 @@ if (!invocationMatches) {
     console.error('      To run them, build the decoder the way CI does:')
     console.error('        python -m venv decoder.local')
     console.error('        decoder.local/Scripts/python -m pip install -r scripts/image-decoder-requirements.txt   # bin/python on POSIX')
-    console.error('      or point KMT_IMAGE_DECODER_PYTHON at one you already have. Two agents each built their own')
-    console.error('      because neither could find the one the other had built; #464 fixed the cwd-relative lookup')
-    console.error('      behind that, so a venv in the main checkout is now found from every worktree.')
-  } else if (!decoderPython) {
+    console.error('      or point KMT_IMAGE_DECODER_PYTHON at one you already have. Build it in the MAIN')
+    console.error('      checkout: every worktree resolves the same one from there, whatever its layout.')
+  } else if (!decoderPython && short > DECODER_SUITE_DELTA) {
     console.error('')
     console.error(`FAIL: ${short} test(s) short of the baseline (${total} of ${EXPECTED_TESTS}).`)
     console.error(`      This environment has no image decoder, which accounts for ${DECODER_SUITE_DELTA} of that.`)
     console.error(`      The remaining ${short - DECODER_SUITE_DELTA} is something else and is worth finding.`)
+  } else if (!decoderPython) {
+    // short < DECODER_SUITE_DELTA. The `=` case is handled above, so the only
+    // way here is a shortfall SMALLER than the decoder alone should have caused
+    // -- which is not a thing that can happen if the constant is right.
+    //
+    // THIS BRANCH EXISTS BECAUSE THE ONE ABOVE USED TO SWALLOW IT, and printed
+    // "the remaining -6 is something else and is worth finding". That sentence
+    // sent at least one reader hunting tests that did not exist, which is the
+    // specific harm: a diagnosis nobody can act on is worse than none, because
+    // it spends someone's night before it is disbelieved. The delta was 65
+    // against a real 73 for exactly this reason, and no instrument could see it.
+    //
+    // So: say what is actually known, and name the constant that is most likely
+    // wrong rather than inventing a missing suite to blame.
+    console.error('')
+    console.error(`FAIL: ${short} test(s) short of the baseline (${total} of ${EXPECTED_TESTS}).`)
+    console.error(`      This environment has no image decoder, which should have cost ${DECODER_SUITE_DELTA} tests --`)
+    console.error(`      MORE than the ${short} actually missing. Those two cannot both be right.`)
+    console.error('      The likeliest cause is DECODER_SUITE_DELTA in .forge/test-baseline.mjs being stale')
+    console.error('      (it has been twice: 45, then 65, each time after an image suite was added).')
+    console.error('      Re-measure it the way that file describes before treating this as a lost suite,')
+    console.error('      and do not go looking for tests this arithmetic cannot prove are missing.')
   } else {
     console.error(`\nFAIL: ${EXPECTED_TESTS - total} test(s) short of the baseline (${total} of ${EXPECTED_TESTS}).`)
     console.error('      A test that did not run did not pass. Before changing the number, find out which suite stopped:')

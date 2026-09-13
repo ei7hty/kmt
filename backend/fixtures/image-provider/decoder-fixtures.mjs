@@ -60,18 +60,114 @@ export function defaultDecoderPython(moduleDir, platform = process.platform) {
   const worktreeMarker = `${p.sep}.worktrees${p.sep}`
   const worktreeIndex = repoRoot.indexOf(worktreeMarker)
   const mainCheckoutRoot = worktreeIndex === -1 ? repoRoot : repoRoot.slice(0, worktreeIndex)
-  return p.resolve(mainCheckoutRoot, 'decoder.local', platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+  return venvPython(mainCheckoutRoot, platform)
 }
 
-const local = defaultDecoderPython(path.dirname(fileURLToPath(import.meta.url)))
-export const decoderPython = process.env.KMT_IMAGE_DECODER_PYTHON || (existsSync(local) ? local : null)
+/**
+ * Where the venv lives inside a checkout root. The one place that spelling
+ * exists, so the two resolvers above and below cannot disagree about it.
+ */
+export function venvPython(checkoutRoot, platform = process.platform) {
+  const p = platform === 'win32' ? path.win32 : path.posix
+  return p.resolve(checkoutRoot, 'decoder.local', platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+}
+
+/**
+ * The main checkout, from git's own common directory: `<main checkout>/.git`
+ * whichever worktree asks, so its parent is the main checkout every time.
+ *
+ * WHY THE MARKER ABOVE IS NOT ENOUGH, measured rather than assumed. #464
+ * climbed past a literal `.worktrees/` segment because that is the layout
+ * `AGENTS.md` prescribes. It is not the layout this machine has:
+ * `git worktree list` reports 236 worktrees registered against this repository
+ * in SIX different path shapes, and only 170 of them contain that marker.
+ *
+ *   170  <main>/.worktrees/<name>                     marker matches
+ *    31  ~/.codex/worktrees/<h>/kmt/.worktrees/<name>  marker matches the WRONG root
+ *    17  ~/.codex/worktrees/<h>/kmt                    no marker
+ *     5  <main>/.claude/worktrees/<name>               no marker (the agent harness)
+ *     3  ~/.codex/worktrees/<other>                    no marker
+ *    10  %TEMP%/<name>, and one checkout beside <main> no marker
+ *
+ * Every shape without a matching marker resolves `decoder.local` against its
+ * own root, where nothing has ever created one, so `decoderPython` comes back
+ * null and 73 tests vanish while five more suites fail at module load looking
+ * exactly like broken code. The 31 nested codex trees are worse than a miss:
+ * the marker fires and climbs to `~/.codex/worktrees/<h>/kmt`, which is itself
+ * a worktree with no venv, so the answer is confidently wrong rather than
+ * absent.
+ *
+ * ADDING A SECOND LITERAL MARKER WOULD FIX 5 OF THOSE 66. That is the reason
+ * this asks git instead: a marker encodes a guess about where somebody put a
+ * checkout, and any such guess is a fact that can stop being true without
+ * anything going red. Git already knows the answer and cannot be wrong about
+ * it. `scripts/worktree.mjs` reached the same conclusion independently and for
+ * the same reason -- see its `OUR_COMMON_DIR` -- so this is the established
+ * shape in this repository, not a new one.
+ *
+ * Pure, and takes the common dir as an argument, so the tests can assert on
+ * synthetic paths for either platform without a repository or a subprocess --
+ * the property #464's comment argues for, kept.
+ */
+export function checkoutRootFromGitCommonDir(gitCommonDir, platform = process.platform) {
+  const p = platform === 'win32' ? path.win32 : path.posix
+  return p.dirname(p.resolve(gitCommonDir))
+}
+
+/**
+ * Ask git where the common directory is. Returns null rather than throwing:
+ * a tarball with no `.git`, or a machine with no git on PATH, is a legitimate
+ * place to run these tests with KMT_IMAGE_DECODER_PYTHON set by hand.
+ */
+function gitCommonDir(cwd) {
+  try {
+    const run = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+      { cwd, encoding: 'utf8', windowsHide: true, timeout: 10000 })
+    if (run.status !== 0 || !run.stdout) return null
+    return run.stdout.trim() || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The search, in cost order, and the order is the point.
+ *
+ * The subprocess runs ONLY when the two free answers miss. CI sets the
+ * environment variable (`fly-deploy.yml`'s "Install isolated image decoder test
+ * runtime" step, in the same job as the count check), and the main checkout and
+ * every `.worktrees/` tree are answered by the pure path -- so the ~40 test
+ * processes a run spawns pay nothing for this on the paths that already worked.
+ * Only a layout the marker cannot describe reaches git.
+ */
+export function resolveDecoderPython(moduleDir, env = process.env) {
+  if (env.KMT_IMAGE_DECODER_PYTHON) return { python: env.KMT_IMAGE_DECODER_PYTHON, searched: [] }
+  const searched = []
+
+  const byMarker = defaultDecoderPython(moduleDir)
+  searched.push(byMarker)
+  if (existsSync(byMarker)) return { python: byMarker, searched }
+
+  const common = gitCommonDir(moduleDir)
+  if (common) {
+    const byGit = venvPython(checkoutRootFromGitCommonDir(common))
+    if (byGit !== byMarker) {
+      searched.push(byGit)
+      if (existsSync(byGit)) return { python: byGit, searched }
+    }
+  }
+  return { python: null, searched }
+}
+
+const resolved = resolveDecoderPython(path.dirname(fileURLToPath(import.meta.url)))
+export const decoderPython = resolved.python
 export function realImageFixtures() {
   if (!decoderPython) {
     throw new Error(
       'Real decoder tests require a Python interpreter with scripts/image-decoder-requirements.txt ' +
-      `installed. Looked for the shared venv at ${local} and found none. Either build it there ` +
-      '(docs/image-mirroring.md: `python -m venv decoder.local` in the main checkout, then ' +
-      'install the pinned requirements) so every worktree finds the same one, or set ' +
+      `installed. Looked for the shared venv at ${resolved.searched.join(' and at ')} and found none. ` +
+      'Either build it in the MAIN checkout (docs/image-mirroring.md: `python -m venv decoder.local`, ' +
+      'then install the pinned requirements) so every worktree finds the same one, or set ' +
       'KMT_IMAGE_DECODER_PYTHON to an absolute interpreter path of your own.',
     )
   }
