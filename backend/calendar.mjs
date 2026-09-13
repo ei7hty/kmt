@@ -1,4 +1,4 @@
-import { createSign, randomBytes } from 'node:crypto'
+import { createPrivateKey, createSign, randomBytes } from 'node:crypto'
 
 import { InputError } from './inventory.mjs'
 
@@ -20,12 +20,23 @@ import { InputError } from './inventory.mjs'
  * `paid` has no exit but `done`, so an entry made earlier would have nothing
  * to clean it up when the quote is declined.
  *
- * **Why the mail service account, and a calendar shared with it.** The
- * server already holds one Google service account for SMTP
- * (`KMT_MAIL_SERVICE_CLIENT` / `KMT_MAIL_PRIVATE_KEY`, `mail.mjs`). A
- * calendar Ken creates and shares with that account's address ("make changes
- * to events") lets the same key write events with no Admin-console scope
- * change: least privilege (one calendar, not Ken's identity across the
+ * **Its own service account, its own two secrets, and a calendar shared
+ * with it.** `KMT_CALENDAR_SERVICE_CLIENT` and `KMT_CALENDAR_PRIVATE_KEY`
+ * are the `client_email` and `private_key` of a service-account JSON key
+ * made for this feature alone, read here and nowhere else. **They are not
+ * the mail secrets.** `mail.mjs` can run on a delegated service account,
+ * but production mail does not: it is password SMTP (`KMT_MAIL_SMTP_*`),
+ * and `KMT_MAIL_SERVICE_CLIENT` / `KMT_MAIL_PRIVATE_KEY` do not exist on
+ * the machine -- an earlier draft of this file said "the same key mail
+ * uses" and sent the OWNER AGENT looking for a credential that was never
+ * there. There is deliberately no fallback to the mail names: in production
+ * they hold an SMTP host and a mailbox password, and handing those to a JWT
+ * signer would fail while naming the wrong thing. Two systems, two
+ * credentials, either revocable without taking the other down.
+ *
+ * A calendar Ken creates and shares with that account's address ("make
+ * changes to events") lets the key write events with no Admin-console scope
+ * change: least privilege (one calendar, not anyone's identity across the
  * domain), and revocation is Ken un-sharing one calendar in a screen he
  * already knows, with nothing to deploy. The token exchange is the standard
  * service-account JWT grant, signed here with node:crypto -- no new
@@ -66,25 +77,41 @@ const now = () => new Date().toISOString()
 /**
  * Read the calendar configuration from the environment, or say it is off.
  *
- * Three cases, and the middle one is refused on purpose:
+ * Four cases, and the two in the middle are refused on purpose:
  *
  * - `KMT_CALENDAR_ID` unset: `null`. Off. The normal state until Ken has
  *   created and shared the calendar, and the server must boot in it.
- * - `KMT_CALENDAR_ID` set with no service account: a misconfigured deploy,
- *   refused at boot the same way SMTP without its addresses is. Failing
- *   per-event instead would record `failed` on every paid job forever with
- *   nothing at boot saying why.
- * - Both: on. The credential is the mail one; there is no second key to
- *   rotate or lose.
+ * - `KMT_CALENDAR_ID` set with a calendar secret missing: a misconfigured
+ *   deploy, refused at boot the same way SMTP without its addresses is.
+ *   Failing per-event instead would record `failed` on every paid job
+ *   forever with nothing at boot saying why. The message names the two
+ *   secrets, where they come from, and that the mail secrets are not them.
+ * - Both calendar secrets set but the key does not parse: refused at boot
+ *   too, and told apart from "missing" -- a key pasted with its newlines
+ *   lost, or a client id/secret pair (an OAuth client, not a service
+ *   account) in the key's place, is the most likely state on the first
+ *   deploy, and "invalid_grant" from Google an hour later would not say so.
+ * - All present and parseable: on.
+ *
+ * The mail names are never read here, and that is not an oversight to fix.
  */
+export const CALENDAR_SECRETS_HINT = 'KMT_CALENDAR_SERVICE_CLIENT and KMT_CALENDAR_PRIVATE_KEY are the client_email and ' +
+  'private_key of the calendar service account\'s JSON key file. The mail secrets (KMT_MAIL_*) are not them and are not read for this.'
+
 export function readCalendarConfig(env = process.env) {
   const calendarId = (env.KMT_CALENDAR_ID || '').trim()
   if (!calendarId) return null
-  const serviceClient = (env.KMT_MAIL_SERVICE_CLIENT || '').trim()
-  const privateKey = (env.KMT_MAIL_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim()
+  const serviceClient = (env.KMT_CALENDAR_SERVICE_CLIENT || '').trim()
+  const privateKey = (env.KMT_CALENDAR_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim()
   if (!serviceClient || !privateKey) {
-    throw new Error('KMT_CALENDAR_ID is set but the Google service account is not: calendar events are written with ' +
-      'KMT_MAIL_SERVICE_CLIENT and KMT_MAIL_PRIVATE_KEY, the same key mail uses. Set both, or unset KMT_CALENDAR_ID.')
+    const missing = [!serviceClient && 'KMT_CALENDAR_SERVICE_CLIENT', !privateKey && 'KMT_CALENDAR_PRIVATE_KEY'].filter(Boolean).join(' and ')
+    throw new Error(`KMT_CALENDAR_ID is set but ${missing} is not. ${CALENDAR_SECRETS_HINT} Set both, or unset KMT_CALENDAR_ID.`)
+  }
+  try {
+    createPrivateKey(privateKey)
+  } catch (error) {
+    throw new Error(`KMT_CALENDAR_PRIVATE_KEY is set but is not a private key this server can sign with (${error.message}). ${CALENDAR_SECRETS_HINT} ` +
+      'Paste the private_key value whole, PEM header to footer; newlines may be literal or written as \\n.', { cause: error })
   }
   return { calendarId, serviceClient, privateKey }
 }
@@ -186,7 +213,7 @@ export function eventFor({ request, quote, tire, origin }) {
 export function explainRefusal(status, body, at) {
   const text = String(body ?? '')
   if (at === 'token') {
-    return `Google refused the service account's credentials at the token exchange (${status}): KMT_MAIL_SERVICE_CLIENT and KMT_MAIL_PRIVATE_KEY must be the client_email and private_key of one key file.`
+    return `Google refused the service account's credentials at the token exchange (${status}). ${CALENDAR_SECRETS_HINT} Both must come from one key file, and the key must not have been deleted in the Cloud console.`
   }
   if (status === 403 && /accessNotConfigured|has not been used in project|is disabled/i.test(text)) {
     return 'The Google Calendar API is not enabled on the service account\'s project (403 accessNotConfigured): enable it in the Cloud console.'

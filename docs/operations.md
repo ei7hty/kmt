@@ -40,7 +40,7 @@ inferring from behaviour.
 | `KMT_CANONICAL_HOST` | **Step 2 has not been done**; the redirect is dormant | the flip is live |
 | `KMT_MAIL_SMTP_HOST` / `_USER` / `_PASSWORD` | mail is outbox-only; nothing sends | SMTP is configured (see below) |
 | `KMT_MAIL_FROM`, `KMT_OWNER_EMAIL` | fine while no SMTP variable is set | required once any is |
-| `KMT_CALENDAR_ID` | paid jobs are not added to any calendar; the boot line says so | each paid job becomes an all-day event in that Google Calendar, written by the mail service account (`KMT_MAIL_SERVICE_CLIENT` / `KMT_MAIL_PRIVATE_KEY`, both required once this is set). The calendar must be shared with the service account's address with "Make changes to events"; a write Google refuses is a `failed` row in `calendar_events` and an email to `KMT_OWNER_EMAIL` saying to add the job by hand. See `backend/calendar.mjs`. |
+| `KMT_CALENDAR_ID` | paid jobs are not added to any calendar; the boot line says so | each paid job becomes an all-day event in that Google Calendar, written by the calendar's own service account: `KMT_CALENDAR_SERVICE_CLIENT` and `KMT_CALENDAR_PRIVATE_KEY`, the `client_email` and `private_key` of its JSON key file, both required once this is set and never read from the `KMT_MAIL_*` names (production mail is password SMTP; those hold no key). The calendar must be shared with the service account's address with "Make changes to events"; a write Google refuses is a `failed` row in `calendar_events` and an email to `KMT_OWNER_EMAIL` saying to add the job by hand. See `backend/calendar.mjs`. |
 
 **Two of these no longer need `flyctl` at all.** The running server now answers
 both as headers, which is faster than a secrets list and proves what actually

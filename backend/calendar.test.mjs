@@ -79,10 +79,15 @@ function world(t, { config = CONFIG, script, env, token } = {}) {
 test('the configuration is the environment: no calendar id means off; an id without the service account is refused at boot', () => {
   assert.equal(readCalendarConfig({}), null)
   assert.equal(readCalendarConfig({ KMT_CALENDAR_ID: '   ' }), null, 'blank is unset')
-  assert.throws(() => readCalendarConfig({ KMT_CALENDAR_ID: 'cal' }), /KMT_MAIL_SERVICE_CLIENT and KMT_MAIL_PRIVATE_KEY/)
-  assert.throws(() => readCalendarConfig({ KMT_CALENDAR_ID: 'cal', KMT_MAIL_SERVICE_CLIENT: 'sa@x' }), /same key mail uses/)
-  const on = readCalendarConfig({ KMT_CALENDAR_ID: ' cal ', KMT_MAIL_SERVICE_CLIENT: 'sa@x', KMT_MAIL_PRIVATE_KEY: 'a\\nb' })
-  assert.deepEqual(on, { calendarId: 'cal', serviceClient: 'sa@x', privateKey: 'a\nb' }, 'the key keeps the same escaped-newline convention mail uses')
+  assert.throws(() => readCalendarConfig({ KMT_CALENDAR_ID: 'cal' }), /KMT_CALENDAR_SERVICE_CLIENT and KMT_CALENDAR_PRIVATE_KEY is not/)
+  assert.throws(() => readCalendarConfig({ KMT_CALENDAR_ID: 'cal', KMT_CALENDAR_SERVICE_CLIENT: 'sa@x' }), /KMT_CALENDAR_PRIVATE_KEY is not\. .*JSON key file.*KMT_MAIL_\*\) are not them/)
+  assert.throws(() => readCalendarConfig({ KMT_CALENDAR_ID: 'cal', KMT_CALENDAR_PRIVATE_KEY: PEM }), /KMT_CALENDAR_SERVICE_CLIENT is not\./)
+  // The mail names are not a fallback: in production they hold an SMTP host and a mailbox password.
+  assert.throws(() => readCalendarConfig({ KMT_CALENDAR_ID: 'cal', KMT_MAIL_SERVICE_CLIENT: 'sa@x', KMT_MAIL_PRIVATE_KEY: PEM }), /KMT_CALENDAR_SERVICE_CLIENT and KMT_CALENDAR_PRIVATE_KEY is not/)
+  // A key that is not a key is told apart from a key that is missing.
+  assert.throws(() => readCalendarConfig({ KMT_CALENDAR_ID: 'cal', KMT_CALENDAR_SERVICE_CLIENT: 'sa@x', KMT_CALENDAR_PRIVATE_KEY: 'GOCSPX-not-a-key' }), /not a private key this server can sign with .*KMT_MAIL_\*\) are not them.*PEM header to footer/)
+  const on = readCalendarConfig({ KMT_CALENDAR_ID: ' cal ', KMT_CALENDAR_SERVICE_CLIENT: 'sa@x', KMT_CALENDAR_PRIVATE_KEY: PEM.replace(/\n/g, '\\n') })
+  assert.deepEqual(on, { calendarId: 'cal', serviceClient: 'sa@x', privateKey: PEM.trim() }, 'a PEM pasted with escaped newlines is the same key')
   assert.match(describeCalendar(null), /KMT_CALENDAR_ID unset; paid jobs are not added/)
   assert.match(describeCalendar(on), /all-day events to cal by service account sa@x/)
 })
@@ -239,7 +244,7 @@ test('the three gates fail distinguishably: credentials, API enablement, share -
     [{ script: [notEnabled] }, /^The Google Calendar API is not enabled on the service account's project \(403 accessNotConfigured\)/],
     [{ script: [readOnly] }, /^The service account may not change this calendar \(403\): share it .* "Make changes to events"/],
     [{ script: [notFound] }, /^Google shows this service account no calendar under KMT_CALENDAR_ID \(404\): either the id is wrong, or the calendar is not shared .* both the same way/],
-    [{ token: { status: 400, body: { error: 'invalid_grant', error_description: 'Invalid JWT Signature.' } } }, /^Google refused the service account's credentials at the token exchange \(400\): KMT_MAIL_SERVICE_CLIENT and KMT_MAIL_PRIVATE_KEY/],
+    [{ token: { status: 400, body: { error: 'invalid_grant', error_description: 'Invalid JWT Signature.' } } }, /^Google refused the service account's credentials at the token exchange \(400\)\. KMT_CALENDAR_SERVICE_CLIENT and KMT_CALENDAR_PRIVATE_KEY/],
   ]
   for (const [setup, expected] of cases) {
     const { calendar, mailer, outbox, paidRequest } = world(t, setup)
@@ -324,11 +329,11 @@ test('createCalendar reads the environment: off with nothing set, on with the th
   const off = world(t, { env: {} })
   assert.equal(off.calendar.enabled, false)
   assert.equal(off.calendar.client.name, 'none')
-  const on = world(t, { env: { KMT_CALENDAR_ID: CONFIG.calendarId, KMT_MAIL_SERVICE_CLIENT: CONFIG.serviceClient, KMT_MAIL_PRIVATE_KEY: PEM } })
+  const on = world(t, { env: { KMT_CALENDAR_ID: CONFIG.calendarId, KMT_CALENDAR_SERVICE_CLIENT: CONFIG.serviceClient, KMT_CALENDAR_PRIVATE_KEY: PEM } })
   assert.equal(on.calendar.enabled, true)
   assert.equal(on.calendar.client.name, 'google')
   assert.equal((await on.calendar.record(on.paidRequest().id)).status, 'created')
-  assert.throws(() => world(t, { env: { KMT_CALENDAR_ID: 'cal' } }), /KMT_MAIL_SERVICE_CLIENT/)
+  assert.throws(() => world(t, { env: { KMT_CALENDAR_ID: 'cal' } }), /KMT_CALENDAR_SERVICE_CLIENT/)
 })
 
 /* ------------------------------------------------------------ the table */
