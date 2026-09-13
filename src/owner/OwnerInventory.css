@@ -49,7 +49,6 @@
    re-measures them; it does not trust this sentence. */
 .oi-priced-off { margin: -12px 0 24px; padding: 12px 16px; border: 1px solid #4a3a1c; border-left-width: 3px; border-radius: 6px; background: #191309; font-size: 13px; line-height: 1.5; }
 .oi-priced-off strong { color: #f3d08a; }
-.oi-description { color: #a3a3ab; font-size: 13px; }
 .oi-shell dt { font-size: 11px; color: #a3a3ab; margin-bottom: 5px; }
 .oi-shell dd { font-size: 13px; margin: 0; color: #dedee3; overflow-wrap: anywhere; }
 .oi-shell details { font-size: 12px; color: #a3a3ab; }
@@ -272,7 +271,27 @@
 .oi-g-statusrow.is-saved td { background: #10201a; color: #73dba3; }
 .oi-g-detailrow > td { padding: 16px; background: #0d0d0d; border-bottom: 1px solid #303033; }
 .oi-g-detail { display: grid; gap: 10px; }
-.oi-g-detail .oi-source { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.oi-g-detail .oi-source { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+
+/* The owner's corrections to the supplier's own record, inside the expanded
+   row. Side by side, because they are read together: a tire filed off-road
+   whose description says "Touring All Season" is the defect, and neither half
+   of it is visible on its own. Stacked below 800px with the rest of the panel.
+
+   A field carrying a correction gets the amber edge. That hex is NOT a new
+   colour -- it is .oi-attention's, the settled marker on this screen for
+   "you decided this, and it is not what the supplier says". A test asserts
+   the two stay equal rather than trusting this sentence. */
+.oi-correct { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(260px, 2fr); gap: 10px 20px; }
+.oi-correct-field { display: grid; gap: 5px; align-content: start; }
+/* Left to inherit .oi-shell label so these read as the same kind of field as
+   the Owner notes box directly above them, which they are. */
+.oi-shell .oi-correct label { margin: 0; }
+.oi-shell .oi-correct-text { min-height: 68px; }
+.oi-correct-hint, .oi-correct-was { margin: 0; font-size: 12px; line-height: 1.45; }
+.oi-correct-hint { color: #a3a3ab; }
+.oi-shell .oi-correct [data-corrected="yes"] { border-left: 3px solid #edbf6d; }
+
 
 /* The bulk bar. Only ever visible with a selection, and every one of its
    actions confirms before it writes. */
@@ -300,6 +319,7 @@
 @media (max-width: 800px) {
   .oi-g-controls { justify-content: flex-start; }
   .oi-g-detail .oi-source { grid-template-columns: 1fr 1fr; }
+  .oi-correct { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
   /* The table keeps its width and scrolls inside its own box. Reflowing a

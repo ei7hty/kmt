@@ -4,6 +4,7 @@ import {
   showEmptyState, supplierCostCents, ruledPriceCents,
   DEFAULT_LOW_STOCK_THRESHOLD, LOW_STOCK_MIN, LOW_STOCK_MAX,
   parseLowStockThreshold, stockState, stockLabel, stockClass, stockRecovered, lowStockSummary,
+  correctionOf, seasonChoices,
 } from './inventory-grid.js'
 
 /**
@@ -218,6 +219,67 @@ function LowStockBar({ items, threshold, typed, onTyped }) {
   </section>
 }
 
+/**
+ * The two things the supplier gets wrong about a tire, made correctable.
+ *
+ * WHY THIS EXISTS. Walked on the live site 2026-09-13: every row the supplier
+ * files `off-road` in 225/50R17 is a road tire -- Bridgestone Turanza
+ * EverDrive, Pegasus HPX SPORT AS, Radar Dimax AS-9 -- so the shop tells a
+ * customer a touring tire is "built for dirt, gravel and mud" and hides it
+ * behind a facet no buyer of it would press. And seven rows of 1,083 print the
+ * supplier's own advertising where a description belongs: "Compare tires at a
+ * glance using our easy test score® system", 202 characters of it. Neither is
+ * fixable by re-scraping; the supplier's own record is what is wrong.
+ *
+ * BOTH BOXES ARE SEEDED WITH WHAT A CUSTOMER SEES RIGHT NOW, which is the
+ * whole affordance: the fix for the advertising is to delete its first
+ * sentence, and you cannot delete a sentence from an empty box. Sending the
+ * supplier's own value back is a no-op -- `correctionOf` reads it as "no
+ * correction" -- so an override that merely restates the supplier never
+ * accumulates, and clearing the box is how you undo one.
+ *
+ * When a correction IS in force, the supplier's own value is shown beneath it.
+ * That is not decoration: the supplier can revise a description under a
+ * correction made months ago, and the only place anyone would notice is here,
+ * beside the box where the decision was made.
+ */
+function TireCorrections({ item, values, grid, commit }) {
+  const choices = seasonChoices(item.category)
+  const seasonCorrected = correctionOf(values.category, item.category) !== null
+  const textCorrected = correctionOf(values.description, item.description) !== null
+  const supplierSeason = Object.fromEntries(choices)[item.category] ?? item.category
+
+  return <div className="oi-correct">
+    <div className="oi-correct-field">
+      <label htmlFor={`oi-season-${item.id}`}>Season a customer filters by</label>
+      {/* Committed on change, like the Offered box two cells up, because a
+          select has no natural "finished typing" moment to blur on. */}
+      <select id={`oi-season-${item.id}`} className="oi-correct-season" value={values.category}
+        data-testid={`oi-season-${item.id}`} data-corrected={seasonCorrected ? 'yes' : 'no'}
+        onChange={event => { grid.editRow(item.id, { category: event.target.value }); grid.commitRow(item.id) }}>
+        {choices.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select>
+      {seasonCorrected
+        ? <p className="oi-attention oi-correct-was" data-testid={`oi-season-was-${item.id}`}>
+          Yours. The supplier files it under <strong>{supplierSeason}</strong>.
+        </p>
+        : <p className="oi-correct-hint">The supplier’s filing. It decides the season filter and the advice a customer reads.</p>}
+    </div>
+
+    <div className="oi-correct-field">
+      <label htmlFor={`oi-description-${item.id}`}>What a customer reads</label>
+      <textarea id={`oi-description-${item.id}`} className="oi-correct-text" rows={2} value={values.description}
+        data-testid={`oi-description-${item.id}`} data-corrected={textCorrected ? 'yes' : 'no'}
+        onBlur={commit} onChange={event => grid.editRow(item.id, { description: event.target.value })} />
+      {textCorrected
+        ? <p className="oi-attention oi-correct-was" data-testid={`oi-description-was-${item.id}`}>
+          Yours. The supplier says “{item.description}”. Clear the box to go back to it.
+        </p>
+        : <p className="oi-correct-hint">The supplier’s own words, and the tire’s heading and spec are read out of them.</p>}
+    </div>
+  </div>
+}
+
 function GridRow({ item, grid, state, expanded, onExpand, threshold }) {
   const values = grid.rowValues(item)
   const status = state.rowStatus[item.id]
@@ -328,10 +390,14 @@ function GridRow({ item, grid, state, expanded, onExpand, threshold }) {
         <dl className="oi-source">
           <div><dt>Supplier SKU</dt><dd>{item.source?.sku}</dd></div>
           <div><dt>Giga list price</dt><dd>{item.source?.listPrice == null ? 'Not provided' : dollars(Math.round(item.source.listPrice * 100))}</dd></div>
-          <div><dt>Category</dt><dd>{item.category}</dd></div>
           <div><dt>Last seen</dt><dd>{dateLabel(item.lastSeen)}</dd></div>
         </dl>
-        <p className="oi-description">{item.description}</p>
+        {/* The season and the description were a read-only <dd> and a
+            read-only <p> here, which is where the two supplier defects this
+            fixes were visible and unfixable. They are controls now. Same
+            place, same expander, no new screen: correcting a tire is
+            something you do while looking at it, next to its price. */}
+        <TireCorrections item={item} values={values} grid={grid} commit={commit} />
       </div>
     </td></tr>}
   </>
