@@ -73,7 +73,7 @@ import { BASELINE_PATTERNS, DECODER_SUITE_DELTA } from './test-baseline.mjs'
  * reviewer sees the baseline move deliberately rather than discovering it later
  * in a diff nobody read.
  */
-const EXPECTED_TESTS = 942
+const EXPECTED_TESTS = 946
 
 
 /**
