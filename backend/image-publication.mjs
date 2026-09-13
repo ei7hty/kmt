@@ -2,7 +2,7 @@ import path from 'node:path'
 import { sha256Bytes, imageStorageKey } from './image-assets.mjs'
 import { createPrivateImageStorage } from './image-staging.mjs'
 import { createIsolatedImageDecoder } from './image-decoder.mjs'
-import { IMAGE_DIGEST, parseImagePacket, supplierImageRevision } from './image-manifest.mjs'
+import { IMAGE_DIGEST, IMAGE_PUBLIC_PATH, parseImagePacket, supplierImageRevision } from './image-manifest.mjs'
 
 const failure = (status = 409) => Object.assign(new Error('Image packet unavailable, stale or invalid'), { status })
 export function ensureImagePublicationSchema(db) {
@@ -346,11 +346,28 @@ export class ImagePublication {
   }
 
   readPublic(url) {
-    // Same customer eligibility as /api/catalog, including disabled offers.
+    // ELIGIBILITY, unchanged: the url has to be one `/api/catalog` is actually
+    // offering. `catalog()` only ever emits urls from `approvedImageUrls`, so a
+    // hidden, revoked, delisted or stale-revision photo has already been
+    // dropped before this line, and one that reaches it is public by definition.
     const tire = this.inventory.catalog().find(row => row.imageUrl === url)
     if (!tire) throw failure(404)
-    const row = this.db.prepare(`SELECT a.metadata FROM image_publications p JOIN image_packet_assets a
-      ON a.packet=p.packet AND a.ordinal=p.ordinal WHERE p.supplier_id=?`).get(tire.id)
+
+    // THE BYTES ARE FOUND BY THE DIGEST IN THE URL, not by the row that matched
+    // first. That distinction did not exist until one approved photo began
+    // serving every size of its model: before that each url matched exactly one
+    // row -- its owner -- and looking the publication up by `tire.id` always
+    // found it.
+    //
+    // Now 110 rows can share a url, `.find()` returns whichever sorts first,
+    // and that row is almost never the one the publication is attached to. It
+    // has no `image_publications` entry, so the lookup missed and EVERY photo
+    // on the site 404ed, including the ones that had been serving for weeks.
+    // The digest is in the url and identifies the bytes exactly; the row that
+    // happened to match never did.
+    const found = IMAGE_PUBLIC_PATH.exec(url)
+    if (!found) throw failure(404)
+    const row = this.db.prepare("SELECT metadata FROM image_packet_assets WHERE json_extract(metadata,'$.sha256')=?").get(found[1])
     if (!row) throw failure(404)
     const metadata = JSON.parse(row.metadata)
     return this.storage.read({ ...metadata, byteLength: metadata.bytes })
