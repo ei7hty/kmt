@@ -94,6 +94,47 @@ export class InputError extends Error {
 
 const now = () => new Date().toISOString()
 
+/**
+ * How a model is identified across its sizes, and it is the display name.
+ *
+ * The same tire in 205/55R16 and 225/50R17 carries that name and a different
+ * id, so the name is the only thing grouping them. Trimmed and lowercased: a
+ * stray space or a capital is not a different tire.
+ */
+export const modelKey = (name) => (typeof name === 'string' ? name.trim().toLowerCase() : '')
+
+/**
+ * One approved photo per MODEL, for rows of that model that have none of their own.
+ *
+ * IT MUST NOT BE BUILT FROM THE ROWS `catalog()` IS RETURNING. `catalog(size)`
+ * filters to one size, and the photo of that model very likely lives on a
+ * different size -- which is the entire point. Reading the model map out of the
+ * filtered result set would find nothing and quietly change nothing, and the
+ * feature would look implemented. So this asks the supplier table directly,
+ * across every size, whatever the caller filtered to.
+ *
+ * The id, not the url, breaks ties: two sizes of one model can both be
+ * approved, and picking by url would reorder whenever a hash changed. Lowest id
+ * wins, so two requests over one database answer identically.
+ */
+export function modelImageUrls(db, imageUrls) {
+  const byModel = new Map()
+  if (!imageUrls || imageUrls.size === 0) return byModel
+  // Two small columns for every supplier row. Cheap next to the catalogue query
+  // itself, and free of the placeholder limit that `WHERE id IN (...)` would
+  // hit once approvals pass 999.
+  const rows = db.prepare("SELECT id, json_extract(payload,'$.name') AS name FROM supplier").all()
+  for (const row of rows) {
+    const url = imageUrls.get(row.id)
+    if (!url) continue
+    const key = modelKey(row.name)
+    if (!key) continue
+    const held = byModel.get(key)
+    if (!held || String(row.id) < String(held.id)) byModel.set(key, { id: row.id, url })
+  }
+  return new Map([...byModel].map(([key, held]) => [key, held.url]))
+}
+
 export function validateTire(tire, size) {
   if (!tire || typeof tire.id !== 'string' || !tire.id.startsWith('giga-') ||
       typeof tire.name !== 'string' || !tire.name.trim() || tire.size !== size ||
@@ -935,6 +976,7 @@ export class Inventory {
   catalog({ size = '' } = {}) {
     const settings = this.getMarkup()
     const imageUrls = approvedImageUrls(this.db)
+    const modelImages = modelImageUrls(this.db, imageUrls)
     const where = size ? 'WHERE s.size=?' : ''
     const args = size ? [size] : []
     const rows = this.db.prepare(`SELECT
@@ -993,7 +1035,19 @@ export class Inventory {
         // Omitted, not null, when the URL has no recognisable brand segment: a
         // filter should offer the brands that exist, and "null" is not one.
         ...(deriveBrand(row.source_url) ? { brand: deriveBrand(row.source_url).label } : {}),
-        ...(imageUrls.has(row.id) ? { imageUrl: imageUrls.get(row.id) } : {}),
+        // This row's own approved photo if it has one, otherwise a photo of the
+        // SAME MODEL approved on one of its other sizes. A tire's product shot
+        // is of the tread and sidewall pattern, which belongs to the model and
+        // not to the size, so one photo is honest for every listing of it.
+        //
+        // The row's own photo always wins; the fallback only ever fills a gap.
+        // Measured on production 2026-09-13, which is why this exists: 189
+        // approved photos, every one of them attached to exactly one row, while
+        // the 189 models they belong to span 2,528 listings. 2,339 rows were
+        // showing a grey placeholder next to a photo of the same tire.
+        ...(imageUrls.has(row.id)
+          ? { imageUrl: imageUrls.get(row.id) }
+          : modelImages.has(modelKey(row.name)) ? { imageUrl: modelImages.get(modelKey(row.name)) } : {}),
       })
     }
     return tires
