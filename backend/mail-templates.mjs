@@ -114,7 +114,10 @@ export const TEMPLATES = {
     audience: 'customer',
     data: baseData,
     render: d => {
-      const text = `Hi ${d.to_name},\n\nGot your request for ${d.quantity} × ${d.tireName}${d.tireSize ? ` (${d.tireSize})` : ''} on your ${d.vehicleInfo}, to be fitted at ${d.locationType?.toLowerCase() || 'your location'} on ${d.date}.\n\nI'll look it over and send you a quote. Nothing is charged until I do. Your request is here:\n${d.statusUrl}${signoff}`
+      // The vehicle is optional at intake, so the phrase is too: without this
+      // the line read "... (225/50R17) on your , to be fitted at home".
+      const onYour = d.vehicleInfo ? ` on your ${d.vehicleInfo}` : ''
+      const text = `Hi ${d.to_name},\n\nGot your request for ${d.quantity} × ${d.tireName}${d.tireSize ? ` (${d.tireSize})` : ''}${onYour}, to be fitted at ${d.locationType?.toLowerCase() || 'your location'} on ${d.date}.\n\nI'll look it over and send you a quote. Nothing is charged until I do. Your request is here:\n${d.statusUrl}${signoff}`
       return { subject: `Got your tire request, ${d.to_name}`, text, html: htmlOf(text) }
     },
   },
@@ -124,7 +127,7 @@ export const TEMPLATES = {
     data: baseData,
     render: d => {
       const notes = d.customerNotes && String(d.customerNotes).trim() ? `\n\nAnything else I should know?\n${String(d.customerNotes).trim()}` : ''
-      const text = `A new request is waiting for you.\n\n${d.quantity} × ${d.tireName}${d.tireSize ? ` (${d.tireSize})` : ''}\nVehicle: ${d.vehicleInfo}\nWhere: ${d.locationType || ''} ${d.serviceZip || ''}\nWhen: ${d.date}${notes}\n\nDraft total: ${d.total == null ? '(none)' : money(d.total)}\n\nReview it here:\n${d.ownerUrl}`
+      const text = `A new request is waiting for you.\n\n${d.quantity} × ${d.tireName}${d.tireSize ? ` (${d.tireSize})` : ''}\nVehicle: ${d.vehicleInfo || 'not given'}\nWhere: ${d.locationType || ''} ${d.serviceZip || ''}\nWhen: ${d.date}${notes}\n\nDraft total: ${d.total == null ? '(none)' : money(d.total)}\n\nReview it here:\n${d.ownerUrl}`
       return { subject: `New request: ${d.quantity} × ${d.tireName}${d.tireSize ? ` ${d.tireSize}` : ''}`, text, html: htmlOf(text) }
     },
   },

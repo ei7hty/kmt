@@ -282,7 +282,7 @@ function QuoteRequests({ navigate, ownerVersion, setOwnerVersion }) {
               <div key={request.id} id={`request-${request.id}`}
                 className={request.id === linkedId && linkedSearch === 'found' ? 'panel owner-request owner-request-linked' : 'panel owner-request'}>
                 <div className="owner-request-head">
-                  <p className="owner-request-vehicle">{request.vehicleInfo}</p>
+                  {request.vehicleInfo ? <p className="owner-request-vehicle">{request.vehicleInfo}</p> : <p className="owner-request-vehicle owner-request-vehicle-missing">Vehicle not given</p>}
                   <code className="owner-request-ref" title={`Request ${request.id}`}>#{request.id.slice(0, 8)}</code>
                 </div>
                 {request.createdAt && <p className="owner-request-age" title={exactTime(request.createdAt)}>Submitted {timeAgo(request.createdAt)}</p>}
