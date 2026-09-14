@@ -41,9 +41,26 @@ the tire supplier only ever hears which sizes are wanted. That stops being
 the whole answer the moment a paid job is written into Ken's calendar.
 
 **What goes, and when.** On `paid` -- never earlier -- an all-day event is
-created carrying the customer's **name, service address, mobile number and
-any notes on finding the vehicle**. A quote that is never paid sends
-nothing. The trigger is `paid` rather than `sent` because payment here is
+created carrying the customer's **name, mobile number, service address and
+location type, the notes on finding the vehicle (`locationNotes`), and the
+"anything else" free text (`customerNotes`)**, alongside the business fields:
+the tire and quantity, `vehicleInfo`, the quote total, and an owner-only link
+to the request. A quote that is never paid sends nothing.
+
+**`customerNotes` is the one to name explicitly, and the first draft of the
+notice missed it.** That draft said "any notes on finding the vehicle", which
+is `locationNotes` -- a different field. `customerNotes` is 500 characters of
+whatever the customer chose to type, and it is on
+`REQUEST_PERSONAL_DATA_KEYS` in `backend/quotes.mjs`, so this project already
+classifies it as personal data redacted on a removal request. A disclosure
+that omits it is worst on exactly the field where a customer is least able to
+predict what they said. `vehicleInfo` is deliberately NOT on that list -- the
+comment beside it calls it a business field -- which is why the notice names
+the vehicle for completeness rather than as a personal-data disclosure.
+
+The owner link in the event is `/owner/quotes?request=<id>`, which is session
+-gated. It is deliberately **not** `/status?request=<id>`, where the id is
+itself the credential to the customer's own record. The trigger is `paid` rather than `sent` because payment here is
 the customer confirming the job, which is the moment it belongs in Ken's
 day; `sent` would fill his calendar with jobs that never happen and leave
 no way to clear them.

@@ -74,6 +74,32 @@ test('the notice says the details reach Google, under "Who sees it"', () => {
     'the Analytics section no longer names Google, so the scoping above is no longer distinguishing anything')
 })
 
+test('the disclosure covers the free-text notes, which the first draft missed', () => {
+  // THE FIELD THAT WAS NEARLY SHIPPED UNDISCLOSED. `eventFor()` puts
+  // `customerNotes` -- the "anything else" box, 500 characters of whatever
+  // the customer chose to type -- into the event description. The first
+  // draft of this notice said "any notes on finding the vehicle", which is
+  // `locationNotes`, a different field. The word "notes" was doing two jobs
+  // in the decision record I drafted from, and I only read one of them.
+  //
+  // It matters because `backend/quotes.mjs` lists `customerNotes` in
+  // `REQUEST_PERSONAL_DATA_KEYS` -- the keys a removal request redacts. This
+  // project already calls it personal data. An omission there is worst on
+  // exactly the field where a customer is least able to predict what they
+  // said.
+  const whoSeesIt = section(privacy, 'Who sees it')
+  assert.match(whoSeesIt, /notes/i,
+    '"Who sees it" does not mention the notes at all')
+  assert.match(whoSeesIt, /anything you typed|anything else/i,
+    'the disclosure names only the finding-the-vehicle notes; the "anything else" free text goes to Google too and a customer cannot guess that from "notes on finding the vehicle"')
+
+  // And the policy behind it says which field, by name, so the next person
+  // drafting copy reads the field rather than the summary -- which is the
+  // mistake this test exists because of.
+  assert.match(policy, /customerNotes/,
+    'docs/data-policy.md does not name customerNotes, so the next draft of this copy has the same summary to go wrong from')
+})
+
 test('the notice promises removal reaches the calendar entry', () => {
   const removal = /<h2>Removing your details<\/h2>\s*<p>([\s\S]*?)<\/p>/.exec(privacy)
   assert.ok(removal, 'the "Removing your details" paragraph is gone or restructured')

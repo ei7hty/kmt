@@ -27,7 +27,7 @@ function Privacy({ navigate }) {
           <p>To draft your quote, to reach you about it, to come to the right place with the right tires, and to reply to a more-than-tires inquiry.</p>
           <h2>Who sees it</h2>
           <p>Ken does. The tire supplier never does; it only ever hears which sizes are wanted.</p>
-          <p>Once you have paid, the job goes into Ken&apos;s calendar so it is in his day. That calendar is Google&apos;s, so your name, the address, your mobile number and any notes on finding the vehicle sit there too. Nothing is sent there for a quote you did not take.</p>
+          <p>Once you have paid, the job goes into Ken&apos;s calendar so it is in his day. That calendar is Google&apos;s, so your name, the address, your mobile number, the vehicle and tires, and anything you typed in the notes sit there too. Nothing is sent there for a quote you did not take.</p>
           <h2>How long it is kept</h2>
           <p>Your request and quote are kept as the record of what was quoted, approved and paid. They are not deleted automatically.</p>
           <h2>Removing your details</h2>
