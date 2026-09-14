@@ -681,6 +681,37 @@
   .hero-section { display: block; min-height: 0; }
   .hero-copy { padding: 65px 24px 38px; }
   .hero-copy h1 { font-size: clamp(4rem, 18vw, 6rem); }
+  /* THE ORDER FORM COMES BEFORE THE TRUST STRIP ON A PHONE.
+     Measured on production at 375x812 (release 4bfc736) before this existed:
+     the first control a customer can actually touch -- a width option in the
+     size selector -- sat 1931px down, 2.38 screens into a 5.8-screen page.
+     Between the hero's own "Order Tires" button and that control were the
+     three service-strip rows (382px) and a second copy of the logo (268px),
+     under a nav that already carries the logo.
+
+     `order` on a flex column, NEVER a move in the markup, and that is
+     load-bearing rather than stylistic: `.forge/request-flow-check.mjs:156`
+     asserts the social section's immediate DOM SIBLINGS are `#order` before
+     it and `.site-footer` after it. Reordering the JSX breaks that check
+     whichever way the strip is moved; reordering visually does not, because
+     the document still reads nav, hero, order, services, social, footer.
+
+     Every child needs an explicit order once one of them has a non-default
+     value, or the unset ones all share 0 and sort by document position
+     around it. The fixed contact bar is out of flow and takes none. */
+  .customer-shell { display: flex; flex-direction: column; }
+  .customer-shell > .site-nav { order: 0; }
+  .customer-shell > .hero-section { order: 1; }
+  .customer-shell > .order-section { order: 2; }
+  .customer-shell > .service-strip { order: 3; }
+  .customer-shell > .social-proof { order: 4; }
+  .customer-shell > .site-footer { order: 5; }
+
+  /* These two are overridden by a second (max-width: 760px) block further
+     down, which says so itself: "This follows the block above so it wins."
+     The sizes that actually apply on a phone are there, and that is where
+     this change had to be made -- edited here first, and the built page did
+     not move, which is how the second block was found. */
   .hero-visual { min-height: 245px; clip-path: none; }
   .hero-logo { width: 180px; }
   .hero-visual-label { right: 50%; bottom: 12px; transform: translateX(50%); white-space: nowrap; }
@@ -1635,11 +1666,30 @@
 /* Focus rings on the navy. */
 .oi-shell :focus-visible { outline-color: var(--accent-text); }
 
-/* On a phone the hero visual is a short band; the lockup sits inside it with
-   room for the caption below. This follows the block above so it wins. */
+/* On a desktop the hero visual is a band with the lockup inside it and room
+   for the caption below. On a phone it is gone, and that is Ken's own call
+   rather than a layout preference -- asked and answered, 2026-09-14: "hide
+   the logo too".
+
+   It was 268px of the KMT mark sitting directly below the hero's own "Order
+   Tires" button, under a nav that already carries the same mark, on a page
+   where the first control a customer could touch was 2.38 screens down.
+   Removing it on phones takes that to 1.52 screens; shrinking it alone had
+   taken it to 1.73, and the difference is what he decided was worth the
+   mark.
+
+   WHAT ELSE GOES WITH IT, said here because it is not obvious from the
+   selector: `.hero-visual-label` lives inside this block, so Ken's own
+   `hero.visualLabel` copy ("Real mobile service / Boston") is hidden on
+   phones too. The claim itself is not lost from the page -- the hero says
+   "I come to you" and "Mobile Tire Service", and the footer says "Mobile
+   tire service. Malden, MA." Anyone restoring the label on mobile has to
+   restore a container for it, not just the label.
+
+   This block still follows the one above, so it wins; the sizes up there are
+   inert on a phone and say so. */
 @media (max-width: 760px) {
-  .hero-visual { min-height: 268px; }
-  .hero-logo { width: 200px; }
+  .hero-visual { display: none; }
 }
 
 /* The quote card's reference and age (t59): the short id is what a customer
