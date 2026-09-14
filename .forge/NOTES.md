@@ -3606,3 +3606,69 @@ happening. So, the convention instead, and it is the whole fix:
 - **Never execute a script from a shared temp path you did not write this
   session.** `check.mjs` in `%TEMP%` belongs to whoever wrote it last, and that
   is not reliably you.
+
+
+## A feature can break a promise a helper made, in a file the feature never touches
+
+**2026-09-14 — OWNER AGENT (local_44d1e1f9)**
+
+I edited two files in the gate engineer's lane during #537 and this is the
+write-up, because the SWE DEV reading the PR was right that a lane crossing
+should be recorded by the person who crossed it rather than discovered later
+by the person who owns it.
+
+**What happened.** #537 made the order flow remember the customer's size and
+tire across a reload. Three browser audits drive the size selector more than
+once in one browser context, and every one of them was a first-time visit
+until that landed. Then the second pass arrived with the first pass's size
+still chosen, went to the ZIP question instead of the width step, and waited
+for a width button that was not on the screen.
+
+The point worth keeping is where the breakage lived. `freshPage` in
+`.forge/audit-ui.mjs` is documented as *"a viewport-sized context with
+nothing carried over from the last scenario"* — and that was true for free
+until a feature in `src/` made it false, without touching `.forge/` at
+all. **A doc comment can be a promise that something elsewhere silently stops
+keeping.** Grepping for the code you changed would never have found this; the
+only thing that did was running the audits.
+
+**What the minimum was**, since a lane crossing should be as small as it can
+be and still honest:
+
+- The fix is in `freshPage`, which three audits share, rather than at each
+  of the ~12 call sites that drive the selector. `addInitScript`, not a
+  one-off clear, because the audits `goto` repeatedly from one page and it
+  has to run on every navigation.
+- `deployed-site-check.mjs` builds its own page, so `selectSize` clears
+  directly. The `reload` there is load-bearing, not tidying: the flow reads
+  its draft as an initial value, so by the time an `evaluate` runs the
+  restore has already happened.
+- **Only the draft key, never `localStorage.clear()`.** The device key lives
+  in the same store and several checks depend on what it does and does not
+  carry — the shared-status-link one especially.
+- The key is exported from `src/request-draft.js` and imported by both
+  audits rather than spelled in each. Two files holding one string is the
+  paired-literal trap this repo has been bitten by before, and the copies in
+  `.forge/` are the ones that would be missed.
+
+**Both audits behaved correctly and that is the part to keep.** Neither
+reported a truncated run as a pass: `only 18 of 53 checks ran` and `26 of
+88`, each with *"a check that stopped running is not a check that passed"*.
+That sentence is why this cost one red gate instead of a wrong belief.
+
+**And a method note.** After reproducing the first failure locally I ran the
+other three audits rather than pushing a fix and waiting — which is how the
+second one was found before CI saw it. When a change breaks one audit for a
+structural reason, the same reason is probably true of its siblings; the four
+minutes of running them beats the eight of finding out one at a time.
+
+**One thing left better than I wrote it.** `src/request-draft.js` explains
+why the service ZIP is not stored with a privacy argument: a ZIP on a mobile
+service is where a van drives to, nearer an address than a tire. The SWE DEV
+gave a stronger one during the review — the restore lands the customer on the
+ZIP question anyway, because the ZIP is asked in step 1 and nowhere later, so
+storing it buys nothing and would be data on a device with no reader, which is
+the same argument that file already makes about `orderStep`. It is stronger
+because it holds even for someone who disagrees that a ZIP is personal. Not
+worth a deploy on its own; **fold it into that comment next time the file is
+open.**
