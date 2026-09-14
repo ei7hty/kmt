@@ -32,6 +32,41 @@ nothing about logs, backups, or anything DEV OPS's document covers; ask
 there for how long an infrastructure copy of a redacted row might still
 exist.
 
+## Google Calendar: the one place customer data leaves this system
+
+Added 2026-09-14 by the OWNER AGENT, alongside the privacy-notice wording
+for the same change (#535, the scheduling ruling in `.forge/decisions.md`).
+Until this, the honest answer to "who sees it" was "Ken, and nobody else" --
+the tire supplier only ever hears which sizes are wanted. That stops being
+the whole answer the moment a paid job is written into Ken's calendar.
+
+**What goes, and when.** On `paid` -- never earlier -- an all-day event is
+created carrying the customer's **name, service address, mobile number and
+any notes on finding the vehicle**. A quote that is never paid sends
+nothing. The trigger is `paid` rather than `sent` because payment here is
+the customer confirming the job, which is the moment it belongs in Ken's
+day; `sent` would fill his calendar with jobs that never happen and leave
+no way to clear them.
+
+**Why this document has to say so.** The privacy notice points here, and
+this document is what makes that page's promises true. A page that says
+"Ken does. The tire supplier never does" while a customer's address sits in
+Google is a page that is wrong by omission -- which is the exact failure the
+header of this file warns against, so it would be a poor place to commit it.
+
+**Removal reaches it.** A removal request redacts the personal columns in
+`requests` AND deletes the Google event: `scripts/redact.mjs` calls
+`calendar.forget(requestId)`, which is read off the code rather than assumed
+(`backend/calendar.mjs`, `scripts/redact.mjs:193`). That is what lets the
+notice promise the calendar entry goes with the rest. **If that call is ever
+removed, the privacy notice becomes false and has to change in the same
+commit** -- the promise is the constraint, not the convenience.
+
+**What this does not claim.** Nothing here says how long Google keeps a
+deleted event, or what its own backups hold. That is Google's retention,
+not KMT's, and neither this document nor the notice should imply KMT can
+speak for it.
+
 ## What a removal request does: redaction, not deletion
 
 A customer's removal request is honoured by **redacting name, email,
