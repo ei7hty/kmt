@@ -45,7 +45,10 @@ function fakeGoogle(script = [], { token = null } = {}) {
       if (token) return { ok: false, status: token.status, text: async () => JSON.stringify(token.body) }
       return { ok: true, status: 200, text: async () => JSON.stringify({ access_token: 'tok-1', expires_in: 3600 }) }
     }
-    const next = answers.shift() ?? { status: 200, body: { id: 'evt-1' } }
+    // A GET is the removal sweep asking for events by request id; with no
+    // scripted answer it finds nothing, so the tests written before the
+    // sweep keep their meaning.
+    const next = answers.shift() ?? (init.method === 'GET' ? { status: 200, body: { items: [] } } : { status: 200, body: { id: 'evt-1' } })
     return { ok: next.status < 300, status: next.status, text: async () => next.body === undefined ? '' : (typeof next.body === 'string' ? next.body : JSON.stringify(next.body)) }
   }
   return { calls, fetch }
@@ -272,8 +275,7 @@ test('a redaction after KMT_CALENDAR_ID has moved still deletes the event where 
   const later = new Calendar({ db: inventory.db, quotes, config: moved, client: new GoogleCalendarClient(moved, { fetch: google.fetch }), log: () => {} })
   const summary = await later.forget(request.id)
   assert.equal(summary.deleted, 1)
-  const del = google.calls.at(-1)
-  assert.equal(del.method, 'DELETE')
+  const del = google.calls.filter(c => c.method === 'DELETE').at(-1)
   assert.ok(del.url.includes(encodeURIComponent(CONFIG.calendarId)), 'the stored calendar id, not the configured one')
   assert.ok(!del.url.includes('moved'), del.url)
 })
@@ -362,8 +364,7 @@ test('forget removes the request\'s events from Google and marks the rows delete
   await calendar.record(request.id)
   const summary = await calendar.forget(request.id)
   assert.deepEqual({ deleted: summary.deleted, failed: summary.failed, pending: summary.pending }, { deleted: 1, failed: 0, pending: 0 })
-  const del = google.calls.at(-1)
-  assert.equal(del.method, 'DELETE')
+  const del = google.calls.filter(c => c.method === 'DELETE').at(-1)
   assert.equal(del.url, `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CONFIG.calendarId)}/events/evt-9`)
   assert.deepEqual(calendar.forRequest(request.id).map(r => r.status), ['deleted'])
   assert.deepEqual(await calendar.forget(request.id).then(s => [s.deleted, s.rows.length]), [0, 0], 'idempotent')
@@ -387,6 +388,67 @@ test('a delete Google refuses stays on the row as delete-failed, with the error,
   const second = await calendar.forget(request.id)
   assert.equal(second.deleted, 1)
   assert.equal(calendar.forRequest(request.id)[0].status, 'deleted')
+})
+
+test('the removal sweep deletes an event Google holds that no row recorded, and records that it did', async t => {
+  // record() creates at Google and only then writes the row, so a process
+  // that dies between the two leaves an orphan. The privacy notice promises
+  // the entry is deleted on removal; this is what keeps that true.
+  const { calendar, google, paidRequest } = world(t, { script: [
+    { status: 200, body: { items: [{ id: 'orphan-9', summary: 'x' }] } },   // GET: the sweep finds one
+    { status: 204 },                                                        // DELETE it
+  ] })
+  const request = paidRequest()
+  assert.equal(calendar.forRequest(request.id).length, 0, 'no row: the table knows nothing')
+  const summary = await calendar.forget(request.id)
+  assert.deepEqual({ deleted: summary.deleted, swept: summary.swept, failed: summary.failed, pending: summary.pending }, { deleted: 0, swept: 1, failed: 0, pending: 0 })
+  const get = google.calls.find(c => c.method === 'GET')
+  assert.ok(get.url.includes(`/calendars/${encodeURIComponent(CONFIG.calendarId)}/events?privateExtendedProperty=${encodeURIComponent('kmtRequestId=' + request.id)}`), get.url)
+  const del = google.calls.at(-1)
+  assert.equal(del.method, 'DELETE')
+  assert.ok(del.url.endsWith('/events/orphan-9'))
+  const [row] = calendar.forRequest(request.id)
+  assert.equal(row.status, 'deleted')
+  assert.equal(row.eventId, 'orphan-9')
+  assert.match(row.error, /found by the removal sweep/, 'the record says how it was found')
+})
+
+test('the removal sweep covers a create the table recorded as failed but Google completed, and leaves known rows alone', async t => {
+  // A timeout after Google created the event: the row says failed, the
+  // event exists. And a second calendar id from an older row is swept too.
+  const { calendar, google, paidRequest, inventory, quotes } = world(t, { script: [
+    { status: 500, body: 'timeout after create' },                          // the create "fails"
+  ] })
+  const request = paidRequest()
+  await calendar.record(request.id)
+  assert.equal(calendar.forRequest(request.id)[0].status, 'failed')
+  const older = new Calendar({ db: inventory.db, quotes, config: { ...CONFIG, calendarId: 'old@group.calendar.google.com' }, client: calendar.client, log: () => {} })
+  older.insertRow({ requestId: request.id, calendarId: 'old@group.calendar.google.com', eventId: 'known-1', status: 'created' })
+  google.calls.length = 0
+  const answers = [
+    { status: 204 },                                                        // DELETE known-1 by its row
+    { status: 200, body: { items: [{ id: 'ghost-1' }] } },                  // GET configured calendar: the failed create's ghost
+    { status: 204 },                                                        // DELETE ghost-1
+    { status: 200, body: { items: [{ id: 'known-1' }] } },                  // GET old calendar: only the one already handled
+  ]
+  calendar.client.fetch = async (url, init = {}) => {
+    google.calls.push({ url, method: init.method })
+    if (url.endsWith('/token')) return { ok: true, status: 200, text: async () => JSON.stringify({ access_token: 'tok-2', expires_in: 3600 }) }
+    const next = answers.shift() ?? { status: 200, body: { items: [] } }
+    return { ok: next.status < 300, status: next.status, text: async () => next.body === undefined ? '' : JSON.stringify(next.body) }
+  }
+  const summary = await calendar.forget(request.id)
+  assert.deepEqual({ deleted: summary.deleted, swept: summary.swept, failed: summary.failed, pending: summary.pending }, { deleted: 1, swept: 1, failed: 0, pending: 0 })
+  const deletes = google.calls.filter(c => c.method === 'DELETE').map(c => c.url.split('/events/')[1])
+  assert.deepEqual(deletes, ['known-1', 'ghost-1'], 'known-1 is deleted once by its row, never again by the sweep')
+  assert.deepEqual(calendar.forRequest(request.id).map(r => [r.eventId, r.status]).sort(), [[null, 'failed'], ['ghost-1', 'deleted'], ['known-1', 'deleted']])
+})
+
+test('a sweep the calendar refuses counts as failed: the removal is not called complete on a calendar that could not be read', async t => {
+  const { calendar, paidRequest } = world(t, { script: [{ status: 403, body: 'Forbidden' }] })
+  const summary = await calendar.forget(paidRequest().id)
+  assert.equal(summary.failed, 1)
+  assert.equal(summary.swept, 0)
 })
 
 test('forget with the feature off cannot reach Google: the rows stay and are reported as pending, never silently dropped', async t => {
@@ -432,12 +494,12 @@ test('redact.mjs names the calendar event in the dry run, and without credential
   const run = (...args) => spawnSync(process.execPath, ['scripts/redact.mjs', '--request', request.id, ...args], { encoding: 'utf8', env })
   const dry = run()
   assert.equal(dry.status, 0, dry.stderr)
-  assert.ok(dry.stdout.includes(`Google Calendar: 1 event(s) to delete -- ${CONFIG.calendarId}/evt-1`), dry.stdout)
+  assert.ok(dry.stdout.includes(`Google Calendar: 1 recorded event(s) to delete -- ${CONFIG.calendarId}/evt-1`), dry.stdout)
   assert.match(dry.stdout, /Nothing was written/)
 
   const write = run('--write')
   assert.equal(write.status, 1, 'incomplete removal is a non-zero exit')
-  assert.match(write.stdout, /Google Calendar: deleted 0, refused 0, unreachable 1/)
+  assert.match(write.stdout, /Google Calendar: deleted 0 recorded, 0 found by sweep, refused 0, unreachable 1/)
   assert.ok(write.stderr.includes(`REMOVAL INCOMPLETE: 1 calendar event(s) still exist in Google: ${CONFIG.calendarId}/evt-1`), write.stderr)
   assert.match(write.stderr, /KMT_CALENDAR_ID is not set in this shell/)
   const after = new DatabaseSync(dbPath, { readOnly: true })

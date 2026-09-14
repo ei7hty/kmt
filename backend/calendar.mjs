@@ -280,6 +280,18 @@ export class GoogleCalendarClient {
     return created.id
   }
 
+  /**
+   * Every event in a calendar that this server made for one request, by the
+   * private property `eventFor` stamps on each one -- whether or not the
+   * local table has a row for it. This is what makes a removal reach an
+   * event the table never recorded (see `Calendar.forget`).
+   */
+  async findByRequest(calendarId, requestId) {
+    const query = `privateExtendedProperty=${encodeURIComponent(`kmtRequestId=${requestId}`)}&showDeleted=false&maxResults=250`
+    const listed = await this.call('GET', `/calendars/${encodeURIComponent(calendarId)}/events?${query}`)
+    return (listed?.items ?? []).map(item => item.id).filter(Boolean)
+  }
+
   /** Delete one event. An event Google already lost (404/410) counts as deleted: the goal is that it is gone. */
   async remove(calendarId, eventId) {
     try {
@@ -416,16 +428,32 @@ export class Calendar {
   /**
    * Remove a request's events from Google, for a data-removal request.
    *
-   * Returns `{ deleted, failed, pending }`: how many were removed now, how
-   * many Google refused (their rows say `delete-failed` with the error), and
-   * how many could not even be attempted because the feature is off here --
-   * those stay `created` and the caller must say so, loudly, because the
-   * event still exists somewhere this process cannot reach. A row already
-   * `deleted` or `failed` (no event was ever made) is not counted.
+   * Returns `{ deleted, swept, failed, pending }`: how many were removed by
+   * their rows, how many more were found in the calendar itself and removed
+   * (below), how many Google refused (their rows say `delete-failed` with
+   * the error), and how many could not even be attempted because the feature
+   * is off here -- those stay `created` and the caller must say so, loudly,
+   * because the event still exists somewhere this process cannot reach. A
+   * row already `deleted` or `failed` (no event was ever made) is not
+   * counted.
+   *
+   * THE SWEEP, and why the rows alone are not enough. `record()` asks Google
+   * to create the event and only then writes the row, so a process that dies
+   * between the two -- or a send that times out after Google has already
+   * created the event and is recorded `failed` -- leaves an event Google
+   * holds and the table does not. The privacy notice promises a removal
+   * request deletes the calendar entry, and a promise kept "unless the
+   * server crashed at the wrong millisecond" is not the promise made. So a
+   * removal also asks each calendar this request could have been written to
+   * (the configured one, and every one a row names) for events stamped with
+   * this request's id, and deletes any it finds, recording a `deleted` row
+   * for each so the removal leaves the same record a clean run would. A
+   * sweep the calendar refuses counts as `failed`: the caller must not say
+   * the removal is complete on a calendar it could not read.
    */
   async forget(requestId) {
     const rows = this.forRequest(requestId).filter(row => row.status === 'created' || row.status === 'delete-failed')
-    const summary = { deleted: 0, failed: 0, pending: 0, rows }
+    const summary = { deleted: 0, swept: 0, failed: 0, pending: 0, rows }
     for (const row of rows) {
       if (!this.enabled) { summary.pending += 1; continue }
       try {
@@ -437,6 +465,35 @@ export class Calendar {
         this.updateRow(row.id, { status: 'delete-failed', error: message })
         this.log(`calendar: delete FAILED ${row.id} event=${row.eventId}: ${message}`)
         summary.failed += 1
+      }
+    }
+    if (!this.enabled) return summary
+
+    const calendars = new Set([this.config.calendarId, ...this.forRequest(requestId).map(row => row.calendarId)])
+    const known = new Set(this.forRequest(requestId).map(row => row.eventId).filter(Boolean))
+    for (const calendarId of calendars) {
+      let found
+      try {
+        found = await this.client.findByRequest(calendarId, requestId)
+      } catch (error) {
+        const message = String(error?.message ?? error).slice(0, ERROR_LIMIT)
+        this.log(`calendar: sweep FAILED calendar=${calendarId} request=${requestId}: ${message}`)
+        summary.failed += 1
+        continue
+      }
+      for (const eventId of found) {
+        if (known.has(eventId)) continue
+        try {
+          await this.client.remove(calendarId, eventId)
+          this.insertRow({ requestId, calendarId, eventId, status: 'deleted', error: 'found by the removal sweep; no row had recorded it' })
+          this.log(`calendar: swept event=${eventId} for request ${requestId} from ${calendarId}`)
+          summary.swept += 1
+        } catch (error) {
+          const message = String(error?.message ?? error).slice(0, ERROR_LIMIT)
+          this.insertRow({ requestId, calendarId, eventId, status: 'delete-failed', error: `found by the removal sweep; ${message}` })
+          this.log(`calendar: sweep delete FAILED event=${eventId}: ${message}`)
+          summary.failed += 1
+        }
       }
     }
     return summary
