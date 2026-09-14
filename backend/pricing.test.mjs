@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_PRICING_SETTINGS, calculateDraftQuote, computeQuoteTotals, normalizePricingSettings } from '../src/pricing.js'
+import { getAllTires } from '../src/data/catalog.js'
 
 const tire = (overrides = {}) => ({
   id: 'giga-a', name: 'Test Touring', size: '205/65R15', price: 50,
@@ -293,4 +294,208 @@ test('computeQuoteTotals still returns a tax object at $0 when every line is unt
   const totals = computeQuoteTotals([{ quantity: 1, unitPrice: 100, taxable: false }], settings)
   assert.deepEqual(totals.tax, { rate: 0.1, appliesTo: 'goods', amount: 0 })
   assert.equal(totals.total, 100)
+})
+
+
+/* ------------------------------------- staggered fitments, stage A (#538) --- */
+
+/**
+ * The whole safety claim of stage A, as a fixture rather than a sentence:
+ * a single-tire request produces byte-identical output to what it produced
+ * before the engine read a list. The expected object below was captured by
+ * running this exact fixture through src/pricing.js at origin/main before
+ * this change existed -- it is not derived from the code under test. The
+ * fixture is deliberately rich: quantity 4, a perJob fee with SKU and size
+ * overrides (the SKU wins), an optional perTire fee with a size override, an
+ * automatic perTire fee, and tax on everything.
+ */
+const richLines = () => [
+  { id: 'mobile-service', label: 'Mobile service fee', amountCents: 4999, basis: 'perJob', mode: 'automatic', taxable: false, enabled: true, amountOverrides: { sizes: { '205/65R15': 5999 }, skus: { a: 6999 } } },
+  { id: 'disposal', label: 'Old tire disposal', amountCents: 1000, basis: 'perTire', mode: 'optional', taxable: true, enabled: true, amountOverrides: { sizes: { '205/65R15': 1250 } } },
+  { id: 'install', label: 'Tire installation', amountCents: 1500, basis: 'perTire', mode: 'automatic', taxable: true, enabled: true },
+]
+const TAX_ALL = { tax: { rate: 0.0625, appliesTo: 'all' } }
+const CAPTURED_AT_MAIN = {
+  requestId: 'req-1',
+  lineItems: [
+    { description: 'Test Touring', quantity: 4, unitPrice: 50 },
+    { description: 'Mobile service fee', quantity: 1, unitPrice: 69.99 },
+    { description: 'Old tire disposal', quantity: 4, unitPrice: 12.5 },
+    { description: 'Tire installation', quantity: 4, unitPrice: 15 },
+  ],
+  subtotal: 379.99,
+  tax: { rate: 0.0625, appliesTo: 'all', amount: 19.38 },
+  total: 399.37,
+  exception: false,
+  exceptionReasons: [],
+}
+
+test('stage A safety claim: a single-tire request is byte-identical to the draft captured at main before the list existed', () => {
+  const legacy = request({ tireSize: '205/65R15', quantity: 4, chosenLineIds: ['disposal'] })
+  const quote = calculateDraftQuote(legacy, [tire()], TAX_ALL, richLines(), ['disposal'])
+  assert.deepEqual(quote, CAPTURED_AT_MAIN)
+  assert.deepEqual(Object.keys(quote), Object.keys(CAPTURED_AT_MAIN), 'same keys in the same order')
+  assert.equal(JSON.stringify(quote), JSON.stringify(CAPTURED_AT_MAIN), 'and the same bytes')
+})
+
+test('stage A: the legacy fields and a one-element tires array are the same request to the engine', () => {
+  const legacy = request({ tireSize: '205/65R15', quantity: 2, chosenLineIds: ['disposal'] })
+  const listed = request({ tires: [{ position: 'all', size: '205/65R15', tireSelection: 'giga-a', quantity: 2 }], chosenLineIds: ['disposal'] })
+  const a = calculateDraftQuote(legacy, [tire()], TAX_ALL, richLines(), ['disposal'])
+  const b = calculateDraftQuote(listed, [tire()], TAX_ALL, richLines(), ['disposal'])
+  assert.deepEqual(a, b)
+  assert.equal(a.lineItems[0].quantity, 2, 'the legacy one-element list carries the legacy quantity, not a default')
+  const exceptional = calculateDraftQuote(request({ tireSelection: 'tire-1', quantity: 4 }), [tire({ id: 'tire-1', inStock: false })])
+  assert.deepEqual(exceptional.exceptionReasons, ['Selected tire is out of stock', 'Not a supplier-listed tire; owner review required'], 'reasons keep their words and their order')
+  assert.equal(exceptional.lineItems[0].quantity, 4)
+})
+
+test('stage A: an EMPTY tires array names no tire and is an exception, never the legacy tire and never a quote of fees alone', () => {
+  // Absent means the request predates the field; empty means it names no
+  // tire. The legacy fields are populated here on purpose: a later stage may
+  // write them alongside the array, and a client bug producing [] must not
+  // auto-send a quote for a tire the customer did not ask for.
+  const empty = calculateDraftQuote(request({ quantity: 4, tires: [] }), [tire()], undefined, richLines())
+  assert.equal(empty.exception, true)
+  assert.deepEqual(empty.exceptionReasons, ['Selected tire was not found in the catalog'])
+  assert.deepEqual(empty.lineItems.map(line => line.description), ['Mobile service fee'], 'no tire line and no per-tire fee; the visit fee alone is not a quote that may send itself')
+  // And absent still means the legacy fields, priced exactly as always.
+  const none = calculateDraftQuote(request({ quantity: 4 }), [tire()], undefined, richLines())
+  assert.equal(none.exception, false)
+  assert.equal(none.lineItems[0].description, 'Test Touring')
+  assert.equal(none.lineItems[0].quantity, 4)
+})
+
+const front = (overrides = {}) => tire({ id: 'giga-f', name: 'Front Sport', size: '245/35R19', price: 180, ...overrides })
+const rear = (overrides = {}) => tire({ id: 'giga-r', name: 'Rear Sport', size: '275/35R19', price: 220, ...overrides })
+const staggered = (overrides = {}) => request({
+  tireSelection: undefined, tireSize: undefined, quantity: undefined,
+  tires: [
+    { position: 'front', size: '245/35R19', tireSelection: 'giga-f', quantity: 2 },
+    { position: 'rear', size: '275/35R19', tireSelection: 'giga-r', quantity: 2 },
+  ],
+  ...overrides,
+})
+const staggeredLines = () => [
+  { id: 'mobile-service', label: 'Mobile service fee', amountCents: 4999, basis: 'perJob', mode: 'automatic', taxable: false, enabled: true, amountOverrides: { sizes: { '245/35R19': 5999, '275/35R19': 7999 }, skus: { f: 6999, r: 8999 } } },
+  { id: 'disposal', label: 'Old tire disposal', amountCents: 1000, basis: 'perTire', mode: 'optional', taxable: true, enabled: true, amountOverrides: { sizes: { '275/35R19': 1500 }, skus: { f: 800 } } },
+]
+
+test('staggered: one tire line per entry in request order, each with its own quantity and price', () => {
+  const quote = calculateDraftQuote(staggered(), [front(), rear()])
+  assert.deepEqual(quote.lineItems, [
+    { description: 'Front Sport', quantity: 2, unitPrice: 180 },
+    { description: 'Rear Sport', quantity: 2, unitPrice: 220 },
+  ])
+  assert.equal(quote.total, 800)
+  assert.equal(quote.exception, false)
+})
+
+test('staggered fee ruling: perTire fees split per entry with their own scoping; a perJob fee is charged once at the site-wide amount, overrides dropped', () => {
+  const quote = calculateDraftQuote(staggered({ chosenLineIds: ['disposal'] }), [front(), rear()], undefined, staggeredLines(), ['disposal'])
+  assert.deepEqual(quote.lineItems, [
+    { description: 'Front Sport', quantity: 2, unitPrice: 180 },
+    { description: 'Rear Sport', quantity: 2, unitPrice: 220 },
+    // perJob, once, at amountCents -- neither size override nor SKU override, and not multiplied by the two entries
+    { description: 'Mobile service fee', quantity: 1, unitPrice: 49.99 },
+    // perTire, one per entry: the front by its SKU override, the rear by its size override
+    { description: 'Old tire disposal', quantity: 2, unitPrice: 8 },
+    { description: 'Old tire disposal', quantity: 2, unitPrice: 15 },
+  ])
+  assert.equal(quote.subtotal, 895.99)
+  assert.equal(quote.total, 895.99)
+})
+
+test('staggered fee ruling: a perJob fee is not scoped to the FIRST entry -- reversing the order changes no price', () => {
+  const lines = staggeredLines()
+  const forward = calculateDraftQuote(staggered(), [front(), rear()], undefined, lines)
+  const reversed = calculateDraftQuote(staggered({ tires: [...staggered().tires].reverse() }), [front(), rear()], undefined, lines)
+  const fee = quote => quote.lineItems.find(line => line.description === 'Mobile service fee')
+  assert.equal(fee(forward).unitPrice, 49.99)
+  assert.equal(fee(reversed).unitPrice, 49.99, 'the visit costs the same whichever tire the customer picked first')
+  assert.equal(forward.total, reversed.total)
+})
+
+test('staggered: two entries of the SAME tire are one distinct tire, so a perJob fee keeps its scoping exactly as today', () => {
+  const same = staggered({ tires: [
+    { position: 'front', size: '245/35R19', tireSelection: 'giga-f', quantity: 2 },
+    { position: 'rear', size: '245/35R19', tireSelection: 'giga-f', quantity: 2 },
+  ] })
+  const quote = calculateDraftQuote(same, [front()], undefined, staggeredLines())
+  const fee = quote.lineItems.find(line => line.description === 'Mobile service fee')
+  assert.equal(fee.unitPrice, 69.99, 'one distinct tire: the SKU override applies, as it always did')
+  assert.equal(fee.quantity, 1)
+})
+
+test('staggered: a rule raised by the SECOND entry alone makes the request an exception, and a reason both raise is listed once', () => {
+  const offRoadRear = calculateDraftQuote(staggered(), [front(), rear({ category: 'off-road' })])
+  assert.equal(offRoadRear.exception, true)
+  assert.deepEqual(offRoadRear.exceptionReasons, ['Rear (275/35R19): Off-road tire requires owner review'], 'an off-road rear with a road-going front is still an off-road job, and the reason says which tire')
+
+  const rearMissing = calculateDraftQuote(staggered(), [front()])
+  assert.deepEqual(rearMissing.exceptionReasons, ['Rear (275/35R19): Selected tire was not found in the catalog'])
+  assert.deepEqual(rearMissing.lineItems.map(line => line.description), ['Front Sport'], 'the front still prices; the missing rear is the exception')
+
+  const bothOut = calculateDraftQuote(staggered(), [front({ inStock: false }), rear({ inStock: false })])
+  assert.deepEqual(bothOut.exceptionReasons, ['Front (245/35R19): Selected tire is out of stock', 'Rear (275/35R19): Selected tire is out of stock'], 'two tires out of stock are two things to look at')
+
+  const mixed = calculateDraftQuote(staggered({ vehicleInfo: '2019 Ford F-150 Pickup', tires: [staggered().tires[0], { ...staggered().tires[1], tireSelection: 'tire-r' }] }), [front({ inStock: false }), rear({ id: 'tire-r', category: 'off-road' })])
+  assert.deepEqual(mixed.exceptionReasons, [
+    'Front (245/35R19): Selected tire is out of stock',
+    'Rear (275/35R19): Off-road tire requires owner review',
+    'Rear (275/35R19): Not a supplier-listed tire; owner review required',
+    'Truck, pickup, van, and SUV requests require owner review',
+  ], 'entry reasons in entry order, then the vehicle gate, as before')
+})
+
+test('staggered: a reason names its tire by position, then by size when there is no position, then by place in the list', () => {
+  const reasons = tires => calculateDraftQuote(staggered({ tires }), [front({ inStock: false }), rear({ inStock: false })]).exceptionReasons
+  assert.deepEqual(reasons([
+    { position: 'front', tireSelection: 'giga-f', quantity: 2 },
+    { size: '275/35R19', tireSelection: 'giga-r', quantity: 2 },
+  ]), ['Front: Selected tire is out of stock', '275/35R19: Selected tire is out of stock'])
+  assert.deepEqual(reasons([
+    { tireSelection: 'giga-f', quantity: 2 },
+    { tireSelection: 'giga-r', quantity: 2 },
+  ]), ['Tire 1: Selected tire is out of stock', 'Tire 2: Selected tire is out of stock'])
+  // One entry in an array is still one tire: the words are exactly today's, no label.
+  assert.deepEqual(reasons([{ position: 'rear', size: '275/35R19', tireSelection: 'giga-r', quantity: 2 }]), ['Selected tire is out of stock'])
+})
+
+test('staggered: reasons are unique even when two entries share a label and raise the same rule -- the owner screen keys its list by the string', () => {
+  // src/routes/QuoteRequests.jsx:321 renders <li key={reason}>. Two entries
+  // with the same size and no position label identically, so without the
+  // dedup in calculateDraftQuote the same rule on both would be two equal
+  // strings and a duplicate React key: a mis-rendered owner screen that no
+  // test would catch. This test is what makes removing that Set fail.
+  const sameSize = staggered({ tires: [
+    { size: '245/35R19', tireSelection: 'giga-f', quantity: 2 },
+    { size: '245/35R19', tireSelection: 'giga-f2', quantity: 2 },
+  ] })
+  const quote = calculateDraftQuote(sameSize, [front({ inStock: false }), front({ id: 'giga-f2', inStock: false })])
+  assert.deepEqual(quote.exceptionReasons, ['245/35R19: Selected tire is out of stock'])
+  assert.equal(new Set(quote.exceptionReasons).size, quote.exceptionReasons.length, 'every reason is a usable key')
+  assert.equal(quote.lineItems.length, 2, 'both tires still price; only the reasons collapse')
+})
+
+test('staggered: per-entry quantities are independent, and an entry quantity off the allowed list is one, as a request quantity always was', () => {
+  const uneven = staggered({ tires: [
+    { position: 'front', size: '245/35R19', tireSelection: 'giga-f', quantity: 1 },
+    { position: 'rear', size: '275/35R19', tireSelection: 'giga-r', quantity: 2 },
+  ] })
+  const quote = calculateDraftQuote(uneven, [front(), rear()], undefined, [staggeredLines()[1]], ['disposal'])
+  assert.deepEqual(quote.lineItems.map(line => [line.description, line.quantity]), [
+    ['Front Sport', 1], ['Rear Sport', 2], ['Old tire disposal', 1], ['Old tire disposal', 2],
+  ])
+  const odd = calculateDraftQuote(staggered({ tires: [{ position: 'front', size: '245/35R19', tireSelection: 'giga-f', quantity: 3 }] }), [front()])
+  assert.equal(odd.lineItems[0].quantity, 1)
+})
+
+test('staggered: without a catalog handed in, the engine resolves every entry from the built-in catalog, not just the first', () => {
+  const [a, b] = getAllTires().filter(item => item.inStock).slice(0, 2)
+  const quote = calculateDraftQuote(staggered({ tires: [
+    { position: 'front', size: a.size, tireSelection: a.id, quantity: 2 },
+    { position: 'rear', size: b.size, tireSelection: b.id, quantity: 2 },
+  ] }))
+  assert.deepEqual(quote.lineItems.map(line => line.description), [a.name, b.name])
 })
