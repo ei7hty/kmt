@@ -210,3 +210,32 @@ The full shape, the staging, and the reasoning are in [`staggered-fitment.md`](s
 **A per-visit fee is charged once at the site-wide amount when a request has more than one distinct tire.** `scopedAmountCents` prices an owner-authored fee by SKU, then size, then the site-wide amount, and `saveCatalogueLines` really does persist those overrides — so with two sizes in one request, "the tire" stops having an answer. Per-tire fees (disposal) split per entry and keep their own scoping, because disposing of a 275 costs what a 275 costs. Per-job fees (mobile service) drop the scoping, because the alternative — scope it to the first entry — makes the price of the visit depend on which tire the customer clicked first, and a price that moves with the order of clicks cannot be defended to a customer who asks about it. Neither rule changes any existing request: one distinct tire means the second never fires and the first produces the line it always produced, and that is asserted rather than assumed.
 
 **The ordering is not negotiable: a customer must never be able to submit a request the pricing engine cannot price.** Engine first, then storage, then the owner's screen and the email, and only then the picker. If the schedule pushes, the lever is to build the picker behind a flag that stays off — never to ship it and watch for problems, because the problem is a wrong price on a real customer's quote.
+
+
+## 2026-09-14 — The calendar-sharing decision rested on a false premise, and the fix was to reverse the direction of the share
+
+Correcting the 2026-09-13 scheduling entry above, which is left as written because a record that quietly repairs itself teaches nobody. Its reasoning for choosing a shared calendar over delegation was: *"Sharing one 'KMT jobs' calendar with its address needs **no Admin-console scope change** — which keeps this out of a class of change Ken cannot easily undo."*
+
+**That was false, and it was the load-bearing half of the comparison.** A service account's address is outside the Workspace domain, and sharing a secondary calendar outward to an external address is capped by the Admin console's external-sharing setting for secondary calendars — it offers "free/busy only" and nothing more. So the option chosen *because* it avoided an Admin-console change required one after all, and the option rejected for needing one was never actually worse on that axis.
+
+**The near-miss is the part worth keeping.** The obvious next move — the one already on screen — was to widen that setting to "share all information, and outsiders can change calendars". It would have worked. It would also have let **any** user share **any** secondary calendar externally with full edit rights, domain-wide, standing, to solve one integration. A blocker had turned into a security decision without anyone noticing it had, because it arrived wearing the clothes of a configuration step.
+
+**What actually worked: reverse the direction.** Rather than the owner sharing his calendar out to the service account, the service account creates and owns the calendar (`calendars.insert`) and grants him access (`acl.insert`). His domain is then *receiving* an external share rather than making one, and the outbound cap is not in the path. **No Admin-console change of any kind.**
+
+Proven by the user on his own machine, with his own key, output read back verbatim:
+
+```
+calendars.get: "KMT - Installation Schedule" (America/New_York)
+acl: user c_9eb22f5c...@group.calendar.google.com -> owner
+acl: user admin@kensmobiletire.com -> owner
+acl: domain kensmobiletire.com -> reader
+acl: user calendarservice@...iam.gserviceaccount.com -> owner
+```
+
+The service account is owner on the calendar whose id is set in Fly. **`acl.list` itself requires owner access**, so the call returning at all is the proof — it does not report a UI label that might be describing something else.
+
+**And the instrument that said the opposite.** The check script's own VERDICT line failed it, keyed on the service account's `calendarList` returning 404. That is true and irrelevant: the calendar is not in the service account's *subscription* list, which writing events never requires. A check can be correct about a real fact and still answer a question nobody asked — the same shape as every other instrument failure in `NOTES.md`, and it nearly reversed a conclusion the ACL had already settled.
+
+**The rule this leaves.** When a step that looks like configuration turns out to need a *standing, domain-wide permission change*, that is the moment to re-open the decision, not to make the change. The premise that produced the original choice has usually changed too, and the narrower option is often the one that was rejected for a reason that no longer holds.
+
+Direct to main rather than through a pull request: this is a correction of fact, docs-only with no deploy, and the entry it corrects currently points the next reader at the Admin-console switch.
