@@ -61,11 +61,36 @@ function mediaText(css, condition) {
  * nobody asked whenever a selector appears twice, which in CSS is normal.
  */
 function orderOf(css, child) {
-  const rules = new RegExp(`\\.customer-shell\\s*>\\s*\\${child}\\s*\\{([^}]*)\\}`, 'g')
+  const value = declaredValue(css, `\\.customer-shell\\s*>\\s*\\${child}`, 'order')
+  return value === null ? null : Number(value)
+}
+
+/**
+ * The value of `property` that actually applies, given every rule for
+ * `selector` in `css`, at equal specificity.
+ *
+ * Cascade resolution is PER PROPERTY, not per rule, and the difference is not
+ * academic here -- it is two separate bugs this file has already had:
+ *
+ *   - `.customer-shell > .site-nav` has two rules in the phone block. The
+ *     first is about nav layout and declares no `order`; a reader that
+ *     stopped at the first rule called the nav unordered.
+ *   - `.hero-visual` has THREE rules across the phone blocks -- a size, a
+ *     `display`, and a later one setting only `background`. A reader that
+ *     took the last RULE saw `background: #080808` and concluded the element
+ *     was not hidden, when the `display: none` two blocks earlier is still
+ *     what applies.
+ *
+ * So: walk every matching rule in order, keep the last value seen for this
+ * property, and ignore rules that say nothing about it.
+ */
+function declaredValue(css, selectorPattern, property) {
+  const rules = new RegExp(`${selectorPattern}\\s*\\{([^}]*)\\}`, 'g')
+  const declaration = new RegExp(`(?:^|;|\\s)${property}\\s*:\\s*([^;]+)`)
   let last = null
   for (const rule of css.matchAll(rules)) {
-    const value = /(?:^|;|\s)order\s*:\s*(-?\d+)/.exec(rule[1])
-    if (value) last = Number(value[1])
+    const found = declaration.exec(rule[1])
+    if (found) last = found[1].trim()
   }
   return last
 }
@@ -112,26 +137,28 @@ test('every child is ordered, because one unset child sorts around the rest', ()
     '.customer-shell is not a column, so the children would lay out in a row')
 })
 
-test('the strip and the logo are moved and resized, never removed', () => {
-  // Ken has not been asked to drop anything from the page, and this change
-  // deliberately does not need him to. If a future edit reaches for
-  // `display: none` on either, that is a different decision and his to make.
-  const hidden = /\.(service-strip|hero-visual|hero-logo)\s*\{[^}]*display:\s*none/.exec(phone)
-  assert.equal(hidden, null,
-    `${hidden?.[1]} is hidden on phones; moving and resizing needs no ruling, removing does`)
-
-  // The repeated logo block is smaller than it was, which is the space this
-  // reclaims.
+test('the repeated logo block is gone from phones, and the strip is only moved', () => {
+  // TWO DIFFERENT DECISIONS, and the test says which is which.
   //
-  // LAST declaration, not the first, and this is not pedantry: App.css has
-  // TWO `(max-width: 760px)` blocks that both size `.hero-visual`, and the
-  // second one wins and says so in its own comment. The first version of this
-  // change edited the first block, the built page did not move, and only
-  // looking at it in a browser found the second. A test that read the first
-  // declaration would have agreed with the edit that did nothing.
-  const declared = [...phone.matchAll(/\.hero-visual\s*\{[^}]*min-height:\s*(\d+)px/g)].map(m => Number(m[1]))
-  assert.ok(declared.length > 0, '.hero-visual has no min-height on a phone')
-  const winning = declared[declared.length - 1]
-  assert.ok(winning <= 160,
-    `.hero-visual resolves to ${winning}px on a phone (declared: ${declared.join(', ')}); it was 268px of a logo the nav already carries`)
+  // Hiding the hero's logo block is Ken's, asked and answered on 2026-09-14
+  // ("hide the logo too") after he was shown what shrinking it alone bought
+  // (1.73 screens) against removing it (1.52). Removing something from the
+  // page is his call and this records that it was made, not assumed.
+  //
+  // Resolved per property across all three phone rules for this selector --
+  // see `declaredValue`. Reading the last RULE instead reports
+  // `background: #080808` and concludes the block is still visible.
+  assert.equal(declaredValue(phone, '\\.hero-visual', 'display'), 'none',
+    '.hero-visual is not display:none on a phone; the 268px repeated logo block is back')
+
+  // The strip is a different matter and was NOT part of that ruling. It is
+  // moved below the order form, and it stays on the page. If a future edit
+  // reaches for display:none here, that is another decision and Ken's to
+  // make, not one this change licenses by precedent.
+  const stripRules = [...phone.matchAll(/\.service-strip\s*\{([^}]*)\}/g)].map(match => match[1])
+  assert.ok(stripRules.length > 0, '.service-strip has no phone rule at all')
+  for (const rule of stripRules) {
+    assert.doesNotMatch(rule, /display:\s*none/,
+      'the service strip is hidden on phones; it was moved, not removed, and removing it was never ruled on')
+  }
 })
