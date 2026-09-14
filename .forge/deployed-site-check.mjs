@@ -5,6 +5,7 @@ import https from 'node:https';
 import { promises as dns } from 'node:dns';
 import { CATALOG_FIELDS_PHRASE, catalogRowProblem } from './audit-ui.mjs';
 import { GA_MEASUREMENT_ID } from '../src/analytics.js';
+import { DRAFT_STORAGE_KEY } from '../src/request-draft.js';
 import { candidateConfig, candidateFetch, candidateAsset, transferBudget, MAX_CANDIDATE_BODY, assertCandidateRequest, guardCandidateContext, assertCandidateClean } from './release-candidate.mjs';
 
 /**
@@ -481,6 +482,26 @@ async function selectSize(page, size) {
   const [width, rest] = size.split('/');
   const [ratio, diameter] = rest.split('R');
   await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+
+  // Every call here is a FIRST-TIME visitor, which this helper always assumed
+  // and never said. The flow now remembers the shopping across a reload, so
+  // the assumption stopped holding for free: the second call arrived with the
+  // first call's size still chosen, landed on the ZIP question instead of the
+  // width step, and sat there until `page.click` timed out -- 18 of 53 checks,
+  // reported honestly as "a check that stopped running is not a check that
+  // passed".
+  //
+  // The key is imported rather than spelled here -- two files holding one
+  // string is how the copy nobody remembers to change gets left behind. Only
+  // the draft, never `clear()`: the device key lives in the same store and
+  // other checks depend on what it does and does not carry.
+  //
+  // The reload is the load-bearing half. Removing the item after the page has
+  // loaded is too late: the flow reads its draft as an initial value, so the
+  // restore has already happened by the time this runs.
+  await page.evaluate(key => { try { localStorage.removeItem(key); } catch { /* storage denied; nothing to clear either way */ } }, DRAFT_STORAGE_KEY);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+
   for (const value of [width, ratio, diameter]) {
     await page.click(`.fitment-option:has-text("${value}")`, { timeout: 20000 });
   }

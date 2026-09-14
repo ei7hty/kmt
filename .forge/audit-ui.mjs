@@ -14,6 +14,8 @@
  * The audit then holds whether or not the data lives in this browser, which is
  * how it can gate a change that moves it.
  */
+import { DRAFT_STORAGE_KEY } from '../src/request-draft.js'
+
 
 /**
  * The owner password, read when it is needed rather than when this module
@@ -227,9 +229,33 @@ export async function submitRequest(page, { base, size, tireId, vehicle, locatio
   await page.waitForSelector('.success-message', step)
 }
 
-/** A viewport-sized context with nothing carried over from the last scenario. */
+/**
+ * A viewport-sized context with nothing carried over from the last scenario.
+ *
+ * That used to be free and is not any more. The order flow now remembers the
+ * shopping across a reload, so a scenario that drives the size selector twice
+ * arrived the second time with the first size still chosen, landed on the ZIP
+ * question instead of the width step, and waited for a width button that was
+ * not on the screen -- 26 of 88 dead-end checks and 18 of 53 deployed-site
+ * checks, each reported honestly as "a check that stopped running is not a
+ * check that passed" rather than as a pass.
+ *
+ * The init script runs before page scripts on EVERY navigation in this
+ * context, not just the first, because the audits `goto` the same page
+ * repeatedly from one `freshPage`. The key is imported rather than spelled
+ * here: two files holding one string is how the copy nobody remembers to
+ * change gets left behind, and the copy over here is the one that would be
+ * missed.
+ *
+ * Only the draft key, never `clear()`: the device key lives in the same store
+ * and several checks -- the shared-status-link one especially -- depend on
+ * what it does and does not carry.
+ */
 export async function freshPage(browser, viewport) {
   const context = await browser.newContext({ viewport })
+  await context.addInitScript(key => {
+    try { localStorage.removeItem(key) } catch { /* storage denied; nothing to clear either way */ }
+  }, DRAFT_STORAGE_KEY)
   const page = await context.newPage()
   return { context, page }
 }

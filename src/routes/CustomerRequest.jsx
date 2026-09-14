@@ -11,6 +11,7 @@ import { applyFilters, NO_FILTERS } from '../tire-filters.js'
 import { MIN_LEAD_DAYS, serviceDay } from '../components/serviceDay'
 import { TEXT_HREF, TEXT_LABEL, URGENT_TEXT_HREF } from '../contact.js'
 import { siteCopy } from '../site-copy.js'
+import { readDraft, writeDraft, clearDraft } from '../request-draft.js'
 import SocialProof from '../components/SocialProof.jsx'
 
 /**
@@ -114,7 +115,23 @@ const DEFAULT_QUANTITY = 4
 const money = amount => `$${Number(amount).toFixed(2)}`
 
 function CustomerRequest({ navigate }) {
-  const [formData, setFormData] = useState({
+  // WHAT A RETURNING CUSTOMER GETS BACK.
+  //
+  // Before this, nothing survived a reload: measured on production, choosing
+  // 225/50R17 and reloading came back to the width step with nothing kept. On
+  // a phone that is the ordinary case, not an edge one -- tabs get evicted
+  // under memory pressure, people follow a link and come back, someone takes
+  // a call mid-form. All of them started again from zero, at the point where
+  // they had already spent the most effort.
+  //
+  // Read once, as an initial value rather than in an effect, so the first
+  // paint is already the restored flow -- there is no frame showing an empty
+  // selector, and no window in which a save could write the empty form over
+  // the draft it is about to read. `request-draft.js` decides what may be
+  // kept; by Ken's rule it is the shopping only, never the person.
+  const [restoredDraft] = useState(readDraft)
+
+  const [formData, setFormData] = useState(() => ({
     tireSize: '',
     vehicleInfo: '',
     tireSelection: '',
@@ -122,7 +139,8 @@ function CustomerRequest({ navigate }) {
     location: '',
     date: '', locationType: 'Home', serviceZip: '', locationNotes: '',
     customerName: '', customerEmail: '', customerPhone: '', disposeOldTires: false,
-  })
+    ...restoredDraft,
+  }))
   const [vehicle, setVehicle] = useState({ year: '', make: '', model: '' })
   const [validationErrors, setValidationErrors] = useState({})
   const [submissionMessage, setSubmissionMessage] = useState('')
@@ -135,8 +153,25 @@ function CustomerRequest({ navigate }) {
   const [submittedId, setSubmittedId] = useState('')
   const [orderStep, setOrderStep] = useState(1)
   const [stepError, setStepError] = useState('')
-  const [fitment, setFitment] = useState({ width: '', ratio: '', diameter: '', zip: '' })
-  const [fitmentStage, setFitmentStage] = useState('width')
+  // A restored customer is put back at the ZIP question with their size
+  // already chosen, never further in, because the service ZIP is asked for
+  // here and nowhere else -- it is not stored (it says where a van drives to,
+  // which is not "the shopping") and it is not editable on any later step.
+  // Restoring someone to step 2 or 3 without one would let them fill in
+  // everything and then refuse the submit with "Enter the five-digit ZIP
+  // code", naming a field that is not on the screen they are looking at.
+  // Re-asking is also the honest thing: where they need the van is the part
+  // most likely to have changed since they left.
+  //
+  // The three parts are filled in from the size so the Back button steps
+  // through a real selection rather than an empty one.
+  const [fitment, setFitment] = useState(() => {
+    const parts = /^(\d+)\/(\d+)R(\d+)$/.exec(restoredDraft?.tireSize ?? '')
+    return parts
+      ? { width: parts[1], ratio: parts[2], diameter: parts[3], zip: '' }
+      : { width: '', ratio: '', diameter: '', zip: '' }
+  })
+  const [fitmentStage, setFitmentStage] = useState(() => (restoredDraft?.tireSize ? 'zip' : 'width'))
   const [fitmentSearch, setFitmentSearch] = useState('')
   // Pages of the tire list revealed past the preview, reset when the size changes.
   const [tirePages, setTirePages] = useState(0)
@@ -162,6 +197,21 @@ function CustomerRequest({ navigate }) {
   const [tireList, setTireList] = useState(NO_TIRE_LIST)
   // What a refresh did to the customer's choice, said in one line.
   const [listNote, setListNote] = useState(null)
+
+  // Remember the shopping as it changes. `formData` goes in whole and the
+  // allow-list in request-draft.js decides what is kept, so the customer's
+  // name, email, phone and address cannot reach the device however this is
+  // called -- "the caller only passes the safe fields" is not a property
+  // anyone could rely on, and there is a test that hands it the whole form.
+  //
+  // Safe from the first render precisely because the draft is an initial
+  // value above rather than an effect: `formData` already holds it, so this
+  // writes it back unchanged instead of clobbering it with an empty form.
+  // A tire id no longer in the catalogue needs no handling here -- the
+  // refresh path below already clears a vanished choice and says so.
+  useEffect(() => {
+    writeDraft(formData)
+  }, [formData])
 
   // One size, fetched when it is chosen (#154). Choosing another size aborts
   // the previous fetch and its timer.
@@ -480,6 +530,12 @@ function CustomerRequest({ navigate }) {
       const { request, quote } = await submitRequest(submission)
       setSubmissionMessage(`Quote request submitted. Draft quote total: $${quote.total.toFixed(2)}. Ken reviews it before anything is charged.`)
       setLastSubmission(null)
+      // Explicit, though the reset below would clear it anyway once the saving
+      // effect sees an empty form: an order that has been placed is not a
+      // draft, and leaving that to a side effect of "empty means forget" means
+      // a future change to this reset silently leaves a finished order
+      // remembered on the customer's device.
+      clearDraft()
       setFormData({ tireSize: '', vehicleInfo: '', tireSelection: '', quantity: DEFAULT_QUANTITY, location: '', date: '', locationType: 'Home', serviceZip: '', locationNotes: '', customerName: '', customerEmail: '', customerPhone: '', disposeOldTires: false })
       setVehicle({ year: '', make: '', model: '' })
       setFitment({ width: '', ratio: '', diameter: '', zip: '' })
