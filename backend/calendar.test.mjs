@@ -335,7 +335,130 @@ test('createCalendar reads the environment: off with nothing set, on with the th
   assert.equal(on.calendar.enabled, true)
   assert.equal(on.calendar.client.name, 'google')
   assert.equal((await on.calendar.record(on.paidRequest().id)).status, 'created')
-  assert.throws(() => world(t, { env: { KMT_CALENDAR_ID: 'cal' } }), /KMT_CALENDAR_SERVICE_CLIENT/)
+  // A calendar secret missing no longer throws out of createCalendar: the
+  // calendar is refused, the server is not. See the fault tests below.
+  const broken = world(t, { env: { KMT_CALENDAR_ID: 'cal' } })
+  assert.equal(broken.calendar.enabled, false)
+  assert.match(broken.calendar.fault, /KMT_CALENDAR_SERVICE_CLIENT/)
+})
+
+/* ---------------------------------------------- a misconfigured calendar */
+
+/**
+ * 2026-09-15: a private key whose newlines a PowerShell "$(...)" substitution
+ * had turned into spaces reached Fly, readCalendarConfig threw at boot as it
+ * was built to, and the throw took the customer site down for four minutes.
+ * The OWNER AGENT's ruling: a calendar misconfiguration must refuse the
+ * CALENDAR, never the process. These pin that, from createCalendar up to the
+ * real server.
+ */
+const MANGLED_PEM = PEM.replace(/\n/g, ' ')   // exactly what the shell did
+
+test('a mangled key refuses the calendar, not the process: createCalendar returns an OFF calendar carrying the fault', async t => {
+  const env = { KMT_CALENDAR_ID: CONFIG.calendarId, KMT_CALENDAR_SERVICE_CLIENT: CONFIG.serviceClient, KMT_CALENDAR_PRIVATE_KEY: MANGLED_PEM }
+  let broken
+  assert.doesNotThrow(() => { broken = world(t, { env }) }, 'createCalendar threw; that throw is what took the site down')
+  const { calendar, lines } = broken
+  assert.equal(calendar.enabled, false)
+  assert.equal(calendar.config, null)
+  assert.match(calendar.fault, /^KMT_CALENDAR_PRIVATE_KEY is set but is not a private key this server can sign with/)
+  assert.match(calendar.fault, /KMT_MAIL_\*\) are not them/)
+  assert.ok(lines.some(line => line.startsWith('calendar: OFF -- KMT_CALENDAR_PRIVATE_KEY is set but is not a private key')), 'the fault is logged at construction')
+
+  // The boot line: OFF first, then the fault, on one line.
+  const boot = describeCalendar(calendar.config, calendar.fault)
+  assert.match(boot, /^Calendar: OFF -- KMT_CALENDAR_PRIVATE_KEY is set but is not a private key/)
+  assert.doesNotMatch(boot, /KMT_CALENDAR_ID unset/, 'a configured-but-broken calendar must not read as merely unset')
+  // The two other states are unchanged.
+  assert.match(describeCalendar(null), /KMT_CALENDAR_ID unset/)
+  assert.match(describeCalendar(CONFIG, null), /paid jobs are added as all-day events/)
+})
+
+test('with a misconfigured calendar, a paid job writes a failed row and tells Ken -- once per request, never per tap', async t => {
+  const env = { KMT_CALENDAR_ID: CONFIG.calendarId, KMT_CALENDAR_SERVICE_CLIENT: CONFIG.serviceClient, KMT_CALENDAR_PRIVATE_KEY: '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-key' }
+  const { calendar, mailer, outbox, paidRequest, google } = world(t, { env })
+  const request = paidRequest()
+  const row = await calendar.record(request.id)
+  await mailer.idle()
+  assert.equal(row.status, 'failed')
+  assert.equal(row.calendarId, '(misconfigured)')
+  assert.match(row.error, /not a private key this server can sign with/)
+  assert.equal(google.calls.length, 0, 'nothing is asked of Google with no usable key')
+  const alerts = outbox.forRequest(request.id)
+  assert.equal(alerts.length, 1)
+  assert.equal(alerts[0].type, 'calendar-failed')
+  assert.match(alerts[0].data.reason, /^KMT_CALENDAR_PRIVATE_KEY is set but is not a private key/)
+  const { text } = TEMPLATES['calendar-failed'].render(alerts[0].data)
+  assert.match(text, /Add it by hand/)
+  assert.match(text, /Why: KMT_CALENDAR_PRIVATE_KEY is set but is not a private key/)
+
+  // A second pay POST on the same request: the same row, no second alert.
+  const again = await calendar.record(request.id)
+  await mailer.idle()
+  assert.equal(again.id, row.id)
+  assert.equal(calendar.forRequest(request.id).length, 1)
+  assert.equal(outbox.forRequest(request.id).length, 1)
+
+  // And simply unset is still silent: no row, no alert, no fault.
+  const off = world(t, { env: {} })
+  assert.equal(off.calendar.fault, null)
+  assert.equal(await off.calendar.record(off.paidRequest().id), null)
+})
+
+test('the REAL server boots and serves with a mangled calendar key, and its boot line names the fault', async t => {
+  // The assertion that did not exist on 2026-09-15. It spawns backend/server.mjs
+  // itself, because the throw that took the site down was at module top level
+  // and no unit of the calendar module can stand in for the process.
+  const { spawn } = await import('node:child_process')
+  const { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { tmpdir } = await import('node:os')
+  const { createServer } = await import('node:net')
+  const { fileURLToPath } = await import('node:url')
+
+  const root = fileURLToPath(new URL('../', import.meta.url))
+  // server.mjs refuses to start without a build. CI runs this suite before
+  // `npm run build`, so stand in a one-line placeholder and take it away
+  // after; a real build, when present, is left alone.
+  const indexHtml = join(root, 'dist', 'index.html')
+  const placeholder = !existsSync(indexHtml)
+  if (placeholder) { mkdirSync(join(root, 'dist'), { recursive: true }); writeFileSync(indexHtml, '<!doctype html><title>placeholder for calendar.test.mjs</title>') }
+  const dir = mkdtempSync(join(tmpdir(), 'kmt-calendar-boot-'))
+  const port = await new Promise(resolve => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)) }) })
+
+  const child = spawn(process.execPath, ['backend/server.mjs'], {
+    cwd: root,
+    env: {
+      ...process.env,
+      KMT_OWNER_PASSWORD: 'boot-test-password-not-a-secret', KMT_OWNER_DB: join(dir, 'boot.sqlite'), KMT_SESSION_SECRET: 'boot-test-session-secret',
+      PORT: String(port), KMT_BIND: '127.0.0.1',
+      KMT_CALENDAR_ID: CONFIG.calendarId, KMT_CALENDAR_SERVICE_CLIENT: CONFIG.serviceClient, KMT_CALENDAR_PRIVATE_KEY: MANGLED_PEM,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let output = ''
+  child.stdout.on('data', chunk => { output += chunk })
+  child.stderr.on('data', chunk => { output += chunk })
+  let exited = null
+  child.on('exit', code => { exited = code })
+  t.after(async () => {
+    child.kill()
+    await new Promise(resolve => setTimeout(resolve, 500))
+    if (placeholder) rmSync(join(root, 'dist'), { recursive: true, force: true })
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  let health = null
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline && health === null && exited === null) {
+    try { const res = await fetch(`http://127.0.0.1:${port}/api/health`); if (res.status === 200) health = await res.json() } catch { /* not up yet */ }
+    if (health === null) await new Promise(resolve => setTimeout(resolve, 250))
+  }
+  assert.equal(exited, null, `the server exited with code ${exited} instead of booting; output:\n${output}`)
+  assert.ok(health, `the server never answered /api/health within 30s; output:\n${output}`)
+  assert.equal(health.ok, true)
+  assert.match(output, /Calendar: OFF -- KMT_CALENDAR_PRIVATE_KEY is set but is not a private key this server can sign with/, `the boot line does not name the fault; output:\n${output}`)
+  assert.doesNotMatch(output, /paid jobs are added as all-day events/, 'a broken calendar must not announce itself as on')
 })
 
 /* ------------------------------------------------------------ the table */

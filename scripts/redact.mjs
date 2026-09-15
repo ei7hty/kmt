@@ -200,8 +200,9 @@ async function main() {
       // missed.
       const calendar = createCalendar({ db: inventory.db, quotes: new Quotes(inventory), log: () => {} })
       const gone = await calendar.forget(options.request)
+      const why = calendar.fault ? `the calendar is misconfigured here (${calendar.fault.split('\n')[0]})` : 'KMT_CALENDAR_ID is not set in this shell'
       if (!calendar.enabled && !liveEvents.length) {
-        console.error('\nREMOVAL INCOMPLETE: KMT_CALENDAR_ID is not set in this shell, so the calendar could not be checked for events this table did not record. Run from the app\'s environment (flyctl ssh console), or confirm by hand in Google Calendar that no event carries this request.')
+        console.error(`\nREMOVAL INCOMPLETE: ${why}, so the calendar could not be checked for events this table did not record. Run from the app's environment (flyctl ssh console) with working calendar secrets, or confirm by hand in Google Calendar that no event carries this request.`)
         process.exitCode = 1
         return
       }
@@ -209,7 +210,7 @@ async function main() {
       if (gone.failed || gone.pending) {
         const left = liveCalendarEvents(options.db, options.request)
         console.error(`\nREMOVAL INCOMPLETE: ${left.length} calendar event(s) still exist in Google: ${left.map(row => `${row.calendarId}/${row.eventId}${row.error ? ` (${row.error.split('\n')[0]})` : ''}`).join(', ')}. ` +
-          (gone.pending ? 'KMT_CALENDAR_ID is not set in this shell; run from the app\'s environment, or delete them by hand in Google Calendar.' : 'Google refused; run again, or delete them by hand in Google Calendar.'))
+          (gone.pending ? `${why}; run from the app's environment with working calendar secrets, or delete them by hand in Google Calendar.` : 'Google refused; run again, or delete them by hand in Google Calendar.'))
         process.exitCode = 1
         return
       }

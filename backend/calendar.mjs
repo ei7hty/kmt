@@ -82,16 +82,29 @@ const now = () => new Date().toISOString()
  * - `KMT_CALENDAR_ID` unset: `null`. Off. The normal state until Ken has
  *   created and shared the calendar, and the server must boot in it.
  * - `KMT_CALENDAR_ID` set with a calendar secret missing: a misconfigured
- *   deploy, refused at boot the same way SMTP without its addresses is.
- *   Failing per-event instead would record `failed` on every paid job
- *   forever with nothing at boot saying why. The message names the two
- *   secrets, where they come from, and that the mail secrets are not them.
- * - Both calendar secrets set but the key does not parse: refused at boot
- *   too, and told apart from "missing" -- a key pasted with its newlines
- *   lost, or a client id/secret pair (an OAuth client, not a service
- *   account) in the key's place, is the most likely state on the first
- *   deploy, and "invalid_grant" from Google an hour later would not say so.
+ *   deploy. This function throws, with a message naming the two secrets,
+ *   where they come from, and that the mail secrets are not them.
+ * - Both calendar secrets set but the key does not parse: throws too, told
+ *   apart from "missing" -- a key pasted with its newlines lost (or joined
+ *   with spaces by a shell), or a client id/secret pair (an OAuth client,
+ *   not a service account) in the key's place, is the most likely state on
+ *   the first deploy, and "invalid_grant" from Google an hour later would
+ *   not say so.
  * - All present and parseable: on.
+ *
+ * WHAT A THROW HERE COSTS, and who pays it. This function throws so the
+ * fault is one message with the actual cause in it. It must NOT take the
+ * server down: `createCalendar` catches it, boots the calendar OFF with the
+ * fault kept, the boot line prints it, and the first paid job sends Ken the
+ * `calendar-failed` alert with the same words. That is the OWNER AGENT's
+ * ruling after 2026-09-15, when this guard was fail-closed at boot like
+ * SMTP's and a private key that a PowerShell substitution had joined with
+ * spaces took the customer site down for four minutes. "Fail closed" is a
+ * rule about blast radius: SMTP without addresses is a broken product, so
+ * refusing to boot is proportionate; the calendar is owner tooling over a
+ * job already paid for, and a missing entry costs Ken a note in his day
+ * where a refusing server costs him every customer who arrives meanwhile.
+ * The guard was right and it was pointed at the wrong thing.
  *
  * The mail names are never read here, and that is not an oversight to fix.
  */
@@ -116,8 +129,14 @@ export function readCalendarConfig(env = process.env) {
   return { calendarId, serviceClient, privateKey }
 }
 
-/** The boot line for the calendar: what a person confirms before believing an event exists. */
-export function describeCalendar(config) {
+/**
+ * The boot line for the calendar: what a person confirms before believing an
+ * event exists. A configured-but-broken calendar says OFF and names the
+ * fault, on one line, first word first -- it is the line to read after any
+ * deploy that touched these secrets.
+ */
+export function describeCalendar(config, fault = null) {
+  if (fault) return `Calendar: OFF -- ${fault}`
   if (!config) return 'Calendar: KMT_CALENDAR_ID unset; paid jobs are not added to any calendar.'
   return `Calendar: paid jobs are added as all-day events to ${config.calendarId} by service account ${config.serviceClient}.`
 }
@@ -337,11 +356,13 @@ export function calendarEventsFor(db, requestId) {
 }
 
 export class Calendar {
-  constructor({ db, quotes, client, config = null, mailer = null, origin = '', log = console.log }) {
+  constructor({ db, quotes, client, config = null, fault = null, mailer = null, origin = '', log = console.log }) {
     this.db = db
     this.quotes = quotes
     this.client = client
     this.config = config
+    /** Why the calendar is off although KMT_CALENDAR_ID is set; null when it is on, or simply unset. */
+    this.fault = fault
     this.mailer = mailer
     this.origin = origin
     this.log = log
@@ -386,10 +407,22 @@ export class Calendar {
    * customer shape carries no name, address or phone (t44).
    */
   async record(requestId) {
-    if (!this.enabled) return null
+    if (!this.enabled && !this.fault) return null
     const found = this.quotes.get(requestId, 'owner')
     if (!found?.request || found.quote?.status !== 'paid') return null
     if (this.forRequest(requestId).some(row => row.status === 'created' || row.status === 'delete-failed')) return null
+    if (this.fault) {
+      // Configured and broken: the job did not land, and this is the moment
+      // Ken should hear it -- a paid job with nowhere to go -- rather than a
+      // boot line he does not read. One row and one alert per request, not
+      // one per tap on the pay button.
+      const already = this.forRequest(requestId).find(row => row.status === 'failed' && row.error === this.fault)
+      if (already) return already
+      const row = this.insertRow({ requestId, calendarId: '(misconfigured)', eventId: null, status: 'failed', error: this.fault })
+      this.log(`calendar: OFF (misconfigured); paid job ${requestId} not added: ${this.fault}`)
+      if (this.mailer) this.mailer.after('calendar-failed', requestId, { calendarId: '(misconfigured)', reason: this.fault.split('\n')[0].slice(0, 320) })
+      return row
+    }
     const { request, quote } = found
     const tire = this.quotes.catalog().find(item => item.id === request.tireSelection) ?? null
     const { calendarId } = this.config
@@ -502,7 +535,15 @@ export class Calendar {
 
 /** The calendar for a server or a script: on or off by configuration, nothing else. */
 export function createCalendar({ db, quotes, mailer = null, env = process.env, origin = '', fetch: fetchFn = globalThis.fetch, log = console.log }) {
-  const config = readCalendarConfig(env)
+  let config = null
+  let fault = null
+  try {
+    config = readCalendarConfig(env)
+  } catch (error) {
+    // The calendar is refused; the server is not. See readCalendarConfig.
+    fault = String(error?.message ?? error)
+    log(`calendar: OFF -- ${fault}`)
+  }
   const client = config ? new GoogleCalendarClient(config, { fetch: fetchFn }) : new NullCalendarClient()
-  return new Calendar({ db, quotes, client, config, mailer, origin, log })
+  return new Calendar({ db, quotes, client, config, fault, mailer, origin, log })
 }
