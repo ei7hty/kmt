@@ -415,7 +415,7 @@ export function createMailStatusApi(mailer, monitorConfig, { isAuthorized } = {}
  * nothing without the id or the key. Without a limiter, as in most tests,
  * nothing is counted.
  */
-export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}) {
+export function createRequestsApi(quotes, { limiter = null, mailer = null, calendar = null } = {}) {
   /** Count one hit; answer 429 and return true if it was over. */
   const over = (response, rule, id, message) => {
     if (!limiter || !id) return false
@@ -486,6 +486,10 @@ export function createRequestsApi(quotes, { limiter = null, mailer = null } = {}
         const paid = quotes.pay(decodeURIComponent(payMatch[1]))
         send(200, paid)
         if (mailer && paid?.quote?.status === 'paid') mailer.after('payment-recorded', paid.request.id)
+        // The paid job into Ken's calendar (backend/calendar.mjs), after the
+        // answer for the same reason the mail is: a calendar failure is Ken's
+        // problem to hear about, never the customer's payment to lose.
+        if (calendar && paid?.quote?.status === 'paid') calendar.after(paid.request.id)
         return true
       }
 

@@ -21,7 +21,7 @@ import { SHOP_NUMBER, TEXT_HREF } from '../src/contact.js'
 const MOBILE = 'Ken\'s Mobile Tire'
 const PHONE = SHOP_NUMBER
 
-export const MAIL_TYPES = ['request-received', 'request-arrived', 'quote-sent', 'payment-recorded', 'quote-declined']
+export const MAIL_TYPES = ['request-received', 'request-arrived', 'quote-sent', 'payment-recorded', 'quote-declined', 'calendar-failed']
 
 const money = value => `$${Number(value).toFixed(2)}`
 
@@ -171,6 +171,32 @@ export const TEMPLATES = {
       const line = d.reason ? `I can't take this one on: ${d.reason}.` : `I can't take this one on.`
       const text = `Hi ${d.to_name},\n\nAbout your request for ${which}.\n\n${line} You haven't been charged. Text me at ${PHONE} if you'd like to talk it through.\n\n— Ken`
       return { subject: `About your tire request${d.tireSize ? `, ${d.tireSize}` : ''}`, text, html: htmlOf(text) }
+    },
+  },
+  // Ken's calendar could not take a paid job (backend/calendar.mjs). Owner
+  // audience, so it goes to KMT_OWNER_EMAIL: the one place he looks that is
+  // not a server log. It tells him which job and to add it by hand; the
+  // reason is the provider's first line, trimmed, carried in from the
+  // calendar module through notify()'s `extra` because the request itself
+  // does not know why Google refused. Nothing about it reaches the customer.
+  'calendar-failed': {
+    version: 1,
+    audience: 'owner',
+    data: ctx => ({ ...baseData(ctx), calendarId: ctx.extra?.calendarId ?? null, reason: ctx.extra?.reason ?? null }),
+    render: d => {
+      const size = d.tireSize ? ` (${d.tireSize})` : ''
+      const text = `A paid job could not be added to your calendar. Add it by hand.
+
+${d.quantity} × ${d.tireName}${size}
+When: ${d.date}
+Where: ${[d.locationType, d.location].filter(Boolean).join(' — ') || 'not given'}
+Phone: ${d.customerPhone || 'not given'}
+
+Why: ${d.reason || 'no reason was recorded'}
+
+The request:
+${d.ownerUrl}`
+      return { subject: `Calendar: add by hand — ${d.date}, ${d.quantity} × ${d.tireName}${size}`, text, html: htmlOf(text) }
     },
   },
 }

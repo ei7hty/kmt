@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url'
 
 import { Inventory } from '../backend/inventory.mjs'
 import { Quotes } from '../backend/quotes.mjs'
+import { calendarEventsFor, createCalendar } from '../backend/calendar.mjs'
 import {
   planInquiryRedaction, planRequestRedaction, redactInquiry, redactRequest, verifyRequestRedaction,
 } from '../backend/redaction.mjs'
@@ -116,7 +117,7 @@ function describe(plan) {
   return lines
 }
 
-function main() {
+async function main() {
   let options
   try { options = parseArgs(process.argv.slice(2)) }
   catch (error) { console.error(error.message); process.exitCode = 1; return }
@@ -155,7 +156,22 @@ function main() {
 
   for (const line of describe(plan)) console.log(line)
 
-  if (plan.empty) {
+  // The request's Google Calendar events (backend/calendar.mjs). They hold
+  // the name, address, phone and notes in a place no UPDATE here can reach,
+  // so removal means deleting them from Google, after the rows below are
+  // blanked. Read from a read-only handle so the dry run names them;
+  // `calendarEventsFor` answers empty on a database from before the table.
+  // The rows are what is KNOWN; the --write run also sweeps the calendar
+  // itself for events stamped with this request's id that no row recorded,
+  // so "no rows" is never read as "nothing in Google".
+  const liveEvents = options.request ? liveCalendarEvents(options.db, options.request) : []
+  if (liveEvents.length) {
+    console.log(`\nGoogle Calendar: ${liveEvents.length} recorded event(s) to delete -- ${liveEvents.map(row => `${row.calendarId}/${row.eventId}`).join(', ')}; the --write run also sweeps the calendar for any this table did not record`)
+  } else if (options.request) {
+    console.log('\nGoogle Calendar: no recorded events; the --write run still sweeps the calendar for any this table did not record')
+  }
+
+  if (plan.empty && !liveEvents.length) {
     console.log('\nNothing to do: this record is already redacted, or never carried these fields.')
     if (!options.write) console.log('(Running with --write would be a no-op. Redaction is idempotent.)')
     return
@@ -169,9 +185,35 @@ function main() {
   const inventory = new Inventory(options.db, [])
   try {
     const summary = options.request
-      ? redactRequest(inventory, options.request)
+      ? (plan.empty ? { requests: 0, quoteReasons: 0, outbox: 0 } : redactRequest(inventory, options.request))
       : redactInquiry(inventory, options.inquiry)
     console.log(`\nDone: ${JSON.stringify(summary)}`)
+
+    if (options.request) {
+      // Deleted from Google with the same credentials the server writes with
+      // (the app's own environment under `flyctl ssh console`). Off here --
+      // no KMT_CALENDAR_ID in this shell -- means recorded events cannot be
+      // reached and unrecorded ones cannot even be looked for: the removal
+      // is NOT complete, say so, name what is known, exit 1. With the
+      // calendar configured, forget() also sweeps it for events no row
+      // recorded, so the notice's promise holds even for an event the table
+      // missed.
+      const calendar = createCalendar({ db: inventory.db, quotes: new Quotes(inventory), log: () => {} })
+      const gone = await calendar.forget(options.request)
+      if (!calendar.enabled && !liveEvents.length) {
+        console.error('\nREMOVAL INCOMPLETE: KMT_CALENDAR_ID is not set in this shell, so the calendar could not be checked for events this table did not record. Run from the app\'s environment (flyctl ssh console), or confirm by hand in Google Calendar that no event carries this request.')
+        process.exitCode = 1
+        return
+      }
+      console.log(`Google Calendar: deleted ${gone.deleted} recorded, ${gone.swept} found by sweep, refused ${gone.failed}, unreachable ${gone.pending}`)
+      if (gone.failed || gone.pending) {
+        const left = liveCalendarEvents(options.db, options.request)
+        console.error(`\nREMOVAL INCOMPLETE: ${left.length} calendar event(s) still exist in Google: ${left.map(row => `${row.calendarId}/${row.eventId}${row.error ? ` (${row.error.split('\n')[0]})` : ''}`).join(', ')}. ` +
+          (gone.pending ? 'KMT_CALENDAR_ID is not set in this shell; run from the app\'s environment, or delete them by hand in Google Calendar.' : 'Google refused; run again, or delete them by hand in Google Calendar.'))
+        process.exitCode = 1
+        return
+      }
+    }
 
     if (options.request) {
       // Read it back the way the customer's own link does. A row blanked in
@@ -190,6 +232,16 @@ function main() {
     process.exitCode = 1
   } finally {
     inventory.close()
+  }
+}
+
+/** The calendar rows that still hold a live Google event, read without opening the database for writing. */
+function liveCalendarEvents(dbPath, requestId) {
+  const reader = new DatabaseSync(dbPath, { readOnly: true })
+  try {
+    return calendarEventsFor(reader, requestId).filter(row => row.status === 'created' || row.status === 'delete-failed')
+  } finally {
+    reader.close()
   }
 }
 

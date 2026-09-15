@@ -394,7 +394,7 @@ export class Mailer {
    * The request is re-read here as the owner sees it: what the handlers
    * return is the customer shape, which carries no contact fields (t44).
    */
-  async notify(type, requestId) {
+  async notify(type, requestId, extra = null) {
     const template = this.templates[type]
     if (!template) throw new InputError(`No mail template for ${type}.`)
     const found = this.quotes.get(requestId, 'owner')
@@ -406,7 +406,10 @@ export class Mailer {
       this.log(`mail: ${type} for request ${request.id} has no recipient; not recorded`)
       return null
     }
-    const data = template.data({ request, quote, tire, origin: this.origin, to, toName })
+    // `extra` is what the caller knows and the request does not -- today only
+    // the calendar's failure reason. A template that wants it reads it; baseData
+    // ignores it, so nothing already sent changes shape.
+    const data = template.data({ request, quote, tire, origin: this.origin, to, toName, extra })
     const row = this.outbox.record({ requestId: request.id, type, templateVersion: template.version, data, to, toName })
     this.log(`mail: queued ${row.id} ${type} to=${addressLabel(to)}`)
 
@@ -587,8 +590,8 @@ export class Mailer {
    * and nothing about mail may reach the customer's response. `idle()` lets
    * a test wait for what was started.
    */
-  after(type, requestId) {
-    const task = this.notify(type, requestId).catch(error => this.log(`mail: ${type} for ${requestId} threw: ${error.message}`))
+  after(type, requestId, extra = null) {
+    const task = this.notify(type, requestId, extra).catch(error => this.log(`mail: ${type} for ${requestId} threw: ${error.message}`))
     this.inFlight.add(task)
     task.finally(() => this.inFlight.delete(task))
     return task
