@@ -335,7 +335,15 @@ test('createCalendar reads the environment: off with nothing set, on with the th
   assert.equal(on.calendar.enabled, true)
   assert.equal(on.calendar.client.name, 'google')
   assert.equal((await on.calendar.record(on.paidRequest().id)).status, 'created')
-  assert.throws(() => world(t, { env: { KMT_CALENDAR_ID: 'cal' } }), /KMT_CALENDAR_SERVICE_CLIENT/)
+  // A half-set config no longer THROWS out of createCalendar -- it disables
+  // the calendar and lets the server boot (the 2026-09-15 outage; see the
+  // tests at the end of this file). `readCalendarConfig` still refuses in
+  // the same words, which is what this now asserts: the refusal is intact,
+  // and what changed is only what it costs.
+  const halfSet = world(t, { env: { KMT_CALENDAR_ID: 'cal' } })
+  assert.equal(halfSet.calendar.enabled, false)
+  assert.match(halfSet.calendar.configError.message, /KMT_CALENDAR_SERVICE_CLIENT/)
+  assert.throws(() => readCalendarConfig({ KMT_CALENDAR_ID: 'cal' }), /KMT_CALENDAR_SERVICE_CLIENT/)
 })
 
 /* ------------------------------------------------------------ the table */
@@ -511,4 +519,80 @@ test('redact.mjs names the calendar event in the dry run, and without credential
   const again = run('--write')
   assert.equal(again.status, 1, 'and it stays incomplete, not "nothing to do", until the event is gone')
   assert.match(again.stderr, /REMOVAL INCOMPLETE/)
+})
+
+/* ------------------------------------- a bad config disables the calendar,
+                                          never the server (the 2026-09-15 outage) */
+
+/**
+ * The PEM as PowerShell delivered it on 2026-09-15.
+ *
+ * `KMT_CALENDAR_PRIVATE_KEY="$(node -p ...private_key)"` -- a double-quoted
+ * command substitution joins the output's lines with SPACES, so Fly received
+ * a one-line PEM with spaces where the newlines belong. The unescape handles
+ * a literal `\n` and has nothing to say about a space, so `createPrivateKey`
+ * threw `DECODER routines::unsupported`, `readCalendarConfig` threw with it,
+ * and the machine crash-looped: apex and kmt.fly.dev both answering nothing
+ * for about four minutes.
+ */
+const MANGLED_PEM = PEM.replace(/\n/g, ' ')
+
+test('a refused calendar config disables the calendar and the server still boots', () => {
+  const env = { KMT_CALENDAR_ID: 'cal@group.calendar.google.com', KMT_CALENDAR_SERVICE_CLIENT: 'sa@x', KMT_CALENDAR_PRIVATE_KEY: MANGLED_PEM }
+
+  // The control first: this key really is refused, so the assertions below
+  // are about a genuine fault rather than a value that happens to parse.
+  assert.throws(() => readCalendarConfig(env), /not a private key this server can sign with/)
+
+  // And the whole point: creating the calendar from that same env does NOT
+  // throw. Before this, it did, and it took the customer site with it.
+  let calendar
+  assert.doesNotThrow(() => { calendar = createCalendar({ db: new DatabaseSync(':memory:'), quotes: null, env, log: () => {} }) })
+  assert.equal(calendar.enabled, false, 'a calendar with a refused config must not think it is on')
+  assert.ok(calendar.configError, 'the fault is kept, not swallowed')
+
+  // The boot line distinguishes refused from unset. "Unset" for a mangled key
+  // sends the reader hunting for a secret that is sitting right there.
+  const line = describeCalendar(calendar.config, calendar.configError)
+  assert.match(line, /REFUSED/)
+  assert.match(line, /the site is serving/)
+  assert.match(line, /not a private key/, 'the boot line carries the actual fault, not a generic one')
+
+  // The control on the other two states, so "REFUSED" means something.
+  assert.match(describeCalendar(null, null), /unset/)
+  assert.match(describeCalendar(CONFIG, null), /paid jobs are added/)
+})
+
+test('a paid job on a refused calendar records a failure and tells Ken, once', async (t) => {
+  const env = { KMT_CALENDAR_ID: 'cal@group.calendar.google.com', KMT_CALENDAR_SERVICE_CLIENT: 'sa@x', KMT_CALENDAR_PRIVATE_KEY: MANGLED_PEM }
+  const { calendar, outbox, paidRequest, lines } = world(t, { env })
+  const request = paidRequest()
+
+  const row = await calendar.record(request.id)
+  assert.ok(row, 'a paid job that could not be scheduled must leave a record')
+  assert.equal(row.status, 'failed')
+  assert.equal(row.calendarId, 'cal@group.calendar.google.com', 'the row names the calendar the job was meant for')
+  assert.match(row.error, /disabled by a configuration fault/)
+  assert.ok(lines.some(line => /CONFIG-FAILED/.test(line)), 'and says so in the log')
+
+  const alerts = outbox.forRequest(request.id).filter(message => message.type === 'calendar-failed')
+  assert.equal(alerts.length, 1, 'Ken hears about it on the job that needed it')
+
+  // Twice must not mail twice. A repeated payment callback is ordinary, and
+  // five identical emails for one fault teach him to ignore the sixth.
+  assert.equal(await calendar.record(request.id), null)
+  assert.equal(outbox.forRequest(request.id).filter(message => message.type === 'calendar-failed').length, 1)
+})
+
+test('a calendar nobody asked for stays silent, which is the difference that matters', async (t) => {
+  // Unset is a choice, not a fault. It must not fill the outbox with alerts
+  // about a feature Ken never turned on -- this is the case that would make
+  // the alert above worthless if it were not kept apart.
+  const { calendar, outbox, paidRequest } = world(t, { env: {} })
+  const request = paidRequest()
+
+  assert.equal(calendar.enabled, false)
+  assert.equal(calendar.configError, null, 'unset is not an error')
+  assert.equal(await calendar.record(request.id), null, 'no row')
+  assert.equal(outbox.forRequest(request.id).filter(message => message.type === 'calendar-failed').length, 0, 'no alert')
 })

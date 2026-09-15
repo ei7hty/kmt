@@ -117,7 +117,14 @@ export function readCalendarConfig(env = process.env) {
 }
 
 /** The boot line for the calendar: what a person confirms before believing an event exists. */
-export function describeCalendar(config) {
+export function describeCalendar(config, configError = null) {
+  // Three states, not two, and the third is the one that matters. "Unset" and
+  // "refused" both mean no events; only one of them is somebody's mistake,
+  // and a boot line that says "unset" for a mangled key sends the reader to
+  // look for a missing secret that is actually sitting right there.
+  if (configError) {
+    return `Calendar: REFUSED and disabled; the site is serving but paid jobs are NOT being added to any calendar. ${configError.message}`
+  }
   if (!config) return 'Calendar: KMT_CALENDAR_ID unset; paid jobs are not added to any calendar.'
   return `Calendar: paid jobs are added as all-day events to ${config.calendarId} by service account ${config.serviceClient}.`
 }
@@ -337,9 +344,15 @@ export function calendarEventsFor(db, requestId) {
 }
 
 export class Calendar {
-  constructor({ db, quotes, client, config = null, mailer = null, origin = '', log = console.log }) {
+  constructor({ db, quotes, client, config = null, configError = null, attemptedCalendarId = null, mailer = null, origin = '', log = console.log }) {
     this.db = db
     this.quotes = quotes
+    // Why the calendar is off, when it is off for a reason rather than by
+    // choice. `null` here means nobody asked for a calendar; an Error means
+    // somebody did and the configuration was refused. `record()` treats those
+    // two differently and that difference is the point of keeping it.
+    this.configError = configError
+    this.attemptedCalendarId = attemptedCalendarId
     this.client = client
     this.config = config
     this.mailer = mailer
@@ -386,7 +399,51 @@ export class Calendar {
    * customer shape carries no name, address or phone (t44).
    */
   async record(requestId) {
-    if (!this.enabled) return null
+    // OFF BY CHOICE IS SILENT; OFF BECAUSE IT IS BROKEN IS LOUD, and on the
+    // first job that actually needed it rather than at boot.
+    //
+    // Booting instead of refusing buys the site its life and buys a new
+    // failure with it: a calendar that is quietly off, a green deploy, and
+    // Ken finding out when he is not somewhere he was meant to be. So a
+    // configuration fault is reported HERE -- where there is a real request
+    // to name, through the same failed row and the same `calendar-failed`
+    // alert a refused write uses, with no new template and no second
+    // mechanism to keep working.
+    //
+    // At boot instead would mean mail on every restart while the fault
+    // stands, and Fly restarts a machine more than once. Five identical
+    // emails for one fault teach Ken to ignore the sixth.
+    // `failed`, NOT a new status, and that is a schema decision rather than a
+    // naming one. `status` carries `CHECK(status IN (...))`, and the table is
+    // made with `CREATE TABLE IF NOT EXISTS`, which does nothing at all to a
+    // table that already exists. A new value would pass every test here, where
+    // the database is built fresh, and violate the constraint in production,
+    // where it was built by an earlier deploy -- failing only there, only on a
+    // real customer's paid job, which is the worst place to learn it. Adding a
+    // status needs `migrate()` and a migration test; this needs neither,
+    // because "the job was not added to the calendar" IS a failure and the
+    // `error` column says which kind.
+    if (!this.enabled) {
+      if (!this.configError) return null
+      const found = this.quotes.get(requestId, 'owner')
+      if (found?.quote?.status !== 'paid') return null
+      // Any existing row means this job has already been recorded and alerted
+      // on; a repeated payment callback must not mail Ken a second time.
+      if (this.forRequest(requestId).length) return null
+      const message = `the calendar is disabled by a configuration fault, so this paid job was not added to it. ${this.configError.message}`
+        .slice(0, ERROR_LIMIT)
+      // `attemptedCalendarId` is never null here: `readCalendarConfig` returns
+      // null (no throw) when KMT_CALENDAR_ID is unset, so a configError at all
+      // means the id was set. That matters because `calendar_id` is NOT NULL.
+      const row = this.insertRow({ requestId, calendarId: this.attemptedCalendarId, eventId: null, status: 'failed', error: message })
+      this.log(`calendar: CONFIG-FAILED ${row.id} for request ${requestId}: ${message}`)
+      if (this.mailer) {
+        this.mailer.after('calendar-failed', requestId, {
+          calendarId: this.attemptedCalendarId, reason: message.split('\n')[0].slice(0, 320),
+        })
+      }
+      return row
+    }
     const found = this.quotes.get(requestId, 'owner')
     if (!found?.request || found.quote?.status !== 'paid') return null
     if (this.forRequest(requestId).some(row => row.status === 'created' || row.status === 'delete-failed')) return null
@@ -502,7 +559,34 @@ export class Calendar {
 
 /** The calendar for a server or a script: on or off by configuration, nothing else. */
 export function createCalendar({ db, quotes, mailer = null, env = process.env, origin = '', fetch: fetchFn = globalThis.fetch, log = console.log }) {
-  const config = readCalendarConfig(env)
+  // A BAD CALENDAR CONFIG DISABLES THE CALENDAR. IT MUST NEVER STOP THE
+  // SERVER. This catch is the whole of that, and it is here rather than in
+  // `readCalendarConfig` so the refusal keeps its shape: that function still
+  // says no, in the same words, and this decides what "no" costs.
+  //
+  // It cost the site four minutes on 2026-09-15. `KMT_CALENDAR_PRIVATE_KEY`
+  // held a PEM whose newlines PowerShell had joined with spaces, so
+  // `createPrivateKey` threw at boot, `readCalendarConfig` threw with it, and
+  // the machine crash-looped with the apex answering nothing. The guard was
+  // right and it was pointed at the wrong thing.
+  //
+  // Fail-closed at boot is still correct for SMTP, and the difference is not
+  // taste: a quote that cannot reach a customer is a broken product, so a
+  // server that cannot mail should not pretend to work. A calendar entry is
+  // owner tooling over a job already paid for. A missing one costs Ken a note
+  // in his day; a refusing server costs him every customer who arrives while
+  // it is down. Match the blast radius to what the thing is for.
+  let config = null
+  let configError = null
+  try {
+    config = readCalendarConfig(env)
+  } catch (error) {
+    configError = error
+    log(`calendar: DISABLED by a configuration fault -- the site is serving, paid jobs are NOT being added to any calendar. ${error.message}`)
+  }
   const client = config ? new GoogleCalendarClient(config, { fetch: fetchFn }) : new NullCalendarClient()
-  return new Calendar({ db, quotes, client, config, mailer, origin, log })
+  // The id is kept even when the rest of the config was refused, so a failed
+  // row can name the calendar the job was meant for rather than a null.
+  const attemptedCalendarId = config ? config.calendarId : (env.KMT_CALENDAR_ID || '').trim() || null
+  return new Calendar({ db, quotes, client, config, configError, attemptedCalendarId, mailer, origin, log })
 }

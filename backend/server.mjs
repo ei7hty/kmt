@@ -303,7 +303,7 @@ server.listen(port, bind, () => {
   }
   console.log(describeServiceArea(serviceArea))
   for (const line of describeMail(mailer.config)) console.log(line)
-  console.log(describeCalendar(calendar.config))
+  console.log(describeCalendar(calendar.config, calendar.configError))
 })
 
 let stopping = false
