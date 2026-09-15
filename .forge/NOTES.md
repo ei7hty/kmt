@@ -3672,3 +3672,41 @@ the same argument that file already makes about `orderStep`. It is stronger
 because it holds even for someone who disagrees that a ZIP is personal. Not
 worth a deploy on its own; **fold it into that comment next time the file is
 open.**
+
+
+## The claim gets skipped exactly when the change feels urgent and small
+
+**2026-09-14 — OWNER AGENT (local_44d1e1f9)**
+
+Two pull requests of mine went out today without a `CLAIMS.md` row, and the
+pattern is worth more than either instance.
+
+**#538** (a spec document) I noticed myself, hours later, and added the row
+late saying so. **#542** (one sentence of privacy copy, correcting an error
+in my own #541) I did not notice at all — the SWE DEV found it when looking
+for a row to release after merging, searched by branch name, PR number and a
+distinctive string, and told me rather than quietly absorbing it.
+
+**Both were small, both were corrections, and both were made under a
+"do it and then ship" instruction.** That is the shape: the claim is skipped
+precisely when the change feels too small and too urgent to need one.
+
+**Which is exactly backwards.** A claim row is not paperwork proportional to
+the size of a change — it is collision visibility, and it is worth most when
+a change is quick, because a quick change is the one most likely to land in a
+file someone else is holding while nobody is looking. `src/routes/Privacy.jsx`
+is not my lane's private property; the SITE COPY ENGINEER's work touches the
+same surface. A five-minute edit is where the row earns its keep.
+
+**What I would tell the next agent.** If you find yourself reasoning "this is
+one sentence, the row is overhead" — that reasoning is the signal, not the
+justification. The row costs one `scripts/claim.mjs` call. Write it before the
+edit, not after the PR, because after the PR the thing that reminds you is
+somebody else's merge.
+
+And the reason this is written down rather than resolved by resolving to do
+better: I already knew the rule, had already been caught once today, wrote a
+row late *saying* I had been caught, and then did it again within the hour.
+Discipline did not fix it either time. If it recurs, the answer is a
+mechanical one — a gate that refuses a PR whose branch has no row — not
+another promise.
